@@ -194,7 +194,8 @@ function Members() {
                 Removing someone takes them out of this organization; their
                 account stays. Leave the organization from General.
               </p>
-              <p className="flex flex-wrap gap-x-4 font-mono text-2xs text-mut">
+              {/* One command a line, so where one ends is plain. */}
+              <p className="flex flex-col gap-0.5 font-mono text-2xs text-mut">
                 {(enforce
                   ? [
                       "dock group add|remove <group> <email>",
@@ -256,7 +257,11 @@ function Roles() {
   );
 }
 
-/** Invites someone by email with a role; opened from the bar's button. */
+/**
+ * Invites someone by email with a role; opened from the bar's button. No
+ * role is picked for them: the admin chooses one, each with what it can do
+ * beside it, so nobody gets the wrong access by default.
+ */
 function InviteForm({
   onCreated,
   onCancel,
@@ -266,34 +271,38 @@ function InviteForm({
 }) {
   const create = useCreateInvite();
   const [email, setEmail] = useState("");
-  // The least privilege: an admin raises it on purpose.
-  const [role, setRole] = useState<Scope>("read");
+  const [role, setRole] = useState<Scope>();
   const v = useValidation();
   const typed = email.trim();
+  const validEmail = /^[^\s@]+@[^\s@]+$/.test(typed);
   const emailError =
     v.required(!typed, "Enter their email address.") ??
     v.required(
-      !!typed && !/^[^\s@]+@[^\s@]+$/.test(typed),
+      !!typed && !validEmail,
       "Enter an email address, like name@company.com.",
     );
+  const roleError = v.required(
+    !role,
+    "Pick a role: it decides what they can do here.",
+  );
   return (
     <form
       ref={v.form}
       noValidate
       aria-label="Invite someone"
-      className="flex flex-wrap items-end gap-2.5"
+      className="flex flex-col gap-3"
       onSubmit={(e) => {
         e.preventDefault();
-        if (!v.check(/^[^\s@]+@[^\s@]+$/.test(typed))) return;
+        if (!v.check(validEmail && !!role) || !role) return;
         create.mutate(
-          { email: email.trim(), role },
+          { email: typed, role },
           {
             onSuccess: (c) => onCreated(linkInfo(c)),
           },
         );
       }}
     >
-      <label className="flex min-w-0 flex-[1_1_260px] flex-col gap-1">
+      <label className="flex max-w-[420px] flex-col gap-1">
         <span className="text-xs text-sec">Email</span>
         <input
           type="email"
@@ -306,36 +315,67 @@ function InviteForm({
           aria-describedby={emailError ? "invite-email-error" : undefined}
           className={`field ${emailError ? "border-fail" : ""}`}
         />
+        {emailError && (
+          <span
+            id="invite-email-error"
+            role="alert"
+            className="text-xs text-fail"
+          >
+            {emailError}
+          </span>
+        )}
       </label>
-      <span className="flex flex-col gap-1">
-        <label htmlFor="invite-role" className="text-xs text-sec">
-          Role
-        </label>
-        <RoleSelect id="invite-role" value={role} onChange={setRole} />
-      </span>
-      <Act
-        primary
-        type="submit"
-        cli={`dock org invite ${email.trim() || "<email>"} --role ${role}`}
-        disabled={create.isPending}
+      <fieldset
+        className="flex flex-col"
+        aria-describedby={roleError ? "invite-role-error" : undefined}
       >
-        Create invite link
-      </Act>
-      <Button onClick={onCancel}>Cancel</Button>
-      {emailError && (
-        <span
-          id="invite-email-error"
-          role="alert"
-          className="basis-full text-xs text-fail"
+        <legend className="mb-1 text-xs text-sec">Role</legend>
+        {roles.map((r) => (
+          <label key={r} className="flex min-h-[24px] items-center gap-2">
+            <input
+              type="radio"
+              name="invite-role"
+              className="accent-fg"
+              value={r}
+              checked={role === r}
+              onChange={() => setRole(r)}
+              aria-invalid={!!roleError}
+            />
+            <span className="w-16 font-medium">{r}</span>{" "}
+            {/* The space keeps "deploy also deploy…" two words when read. */}
+            <span className="text-xs text-mut">{roleNote[r]}</span>
+          </label>
+        ))}
+        {roleError && (
+          <span
+            id="invite-role-error"
+            role="alert"
+            className="text-xs text-fail"
+          >
+            {roleError}
+          </span>
+        )}
+      </fieldset>
+      <div className="flex flex-wrap items-center gap-2.5">
+        <Act
+          primary
+          type="submit"
+          cli={`dock org invite ${typed || "<email>"} --role ${role ?? "<role>"}`}
+          // No role is preselected (a wrong default invites with the wrong
+          // access), so the link waits for one, saying so.
+          disabled={create.isPending || !role}
         >
-          {emailError}
-        </span>
-      )}
+          Create invite link
+        </Act>
+        <Button onClick={onCancel}>Cancel</Button>
+        {!role && <span className="text-xs text-mut">Pick a role first</span>}
+      </div>
       <ErrorText error={create.error} />
-      {/* Before they press it, not after: no email goes out. */}
-      <p className="basis-full text-xs text-mut">
-        Dock doesn't send email. You get a link to copy and send them; it works
-        once, for this address.
+      {/* Before they press it, not after: whether a mail goes out depends
+          on the platform's email (ADR 0079), which members can't see. */}
+      <p className="text-xs text-mut">
+        You get a link to copy, also emailed to them when this Dock sends email.
+        It works once, for this address.
       </p>
     </form>
   );

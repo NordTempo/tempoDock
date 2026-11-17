@@ -26,7 +26,7 @@ a typo takes an app down.
 
 | Topic | Decision |
 |---|---|
-| Restore points | Backups and snapshots are both *restore points* of a service: listed together, newest first, each saying what it is (backup or snapshot, where it lives, its size and age), and restored with one action and one dialog |
+| Restore points | Backups and snapshots are both *restore points* of a service: listed in one table, grouped by kind (database dumps, volume snapshots), newest first, the newest usable dump (else snapshot) marked latest (a failed or empty point never is), each saying what it is (backup or snapshot, where it lives, its size and age), and restored with one action and one dialog |
 | A template database | Always restores into a new service, `<db>-restored` by default (the dialog can rename it), from a backup or a snapshot alike. The live service is not touched. A snapshot's restore keeps the snapshot's credentials; a backup's gets new ones, as before |
 | Using the restored database | Once it checks out, **Use db-restored** switches the environment's references to it: `POST {service}/switch-references` (`dock service switch-references db --to db-restored`) rewrites every `${{db.KEY}}` in the environment's variables, service and shared, to `${{db-restored.KEY}}` and applies it, so the services using db get config releases. `dry_run` lists them first; the dialog shows that list |
 | Switching back | The same action the other way (`switch-references db-restored --to db`). The old service keeps running until someone archives it, so going back is one click while it exists |

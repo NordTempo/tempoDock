@@ -377,7 +377,7 @@ export function EnvironmentTable({
 /**
  * One service: its status, release, domains, usage and volumes. `hidden`
  * is a failed deploy a later rollback or restart hides (failed.ts),
- * shown under the status until a newer deploy succeeds.
+ * marked beside the release until a newer deploy succeeds.
  */
 const ServiceRow = memo(function ServiceRow({
   view,
@@ -395,7 +395,9 @@ const ServiceRow = memo(function ServiceRow({
   } = view;
   const ref = serviceRef(service);
   const volumes = useQuery(queries.volumes(ref)).data ?? [];
-  const failed = !deploying && latest?.status === "failed" ? latest : undefined;
+  // The latest release if it failed, else one a rollback or restart hides.
+  const failed =
+    (!deploying && latest?.status === "failed" ? latest : undefined) ?? hidden;
   const [primary, ...rest] = [...view.domains].sort(
     (a, b) => Number(a.generated) - Number(b.generated),
   );
@@ -442,35 +444,7 @@ const ServiceRow = memo(function ServiceRow({
         </div>
       </td>
       <td className="py-2.5">
-        {failed ? (
-          <>
-            <Link
-              to="/$org/$project/$environment/$service/history/$number"
-              params={{ org, ...ref, number: String(failed.number) }}
-              className="text-fail hover:underline"
-            >
-              ✕ r{failed.number} failed
-            </Link>
-            {active && (
-              <div className="text-2xs text-faint">
-                r{active.number} serving
-              </div>
-            )}
-          </>
-        ) : (
-          <StateText state={serviceState(view)} />
-        )}
-        {hidden && (
-          <div className="text-2xs">
-            <Link
-              to="/$org/$project/$environment/$service/history/$number"
-              params={{ org, ...ref, number: String(hidden.number) }}
-              className="text-fail hover:underline"
-            >
-              ✕ r{hidden.number} failed {ago(hidden.created_at)}
-            </Link>
-          </div>
-        )}
+        <StateText state={serviceState(view)} />
         {service.staged === "archive" && (
           <div className="text-2xs text-mut">archive staged</div>
         )}
@@ -478,6 +452,19 @@ const ServiceRow = memo(function ServiceRow({
       <td className="py-2.5 font-mono">
         {active ? `r${active.number}` : <span className="text-faint">·</span>}
         {deploying && <span className="text-prog"> → r{deploying.number}</span>}
+        {/* A failed deploy is state here, a mark beside what serves; the
+            problems list above says what went wrong (a failure is said once). */}
+        {failed && (
+          <Link
+            to="/$org/$project/$environment/$service/history/$number"
+            params={{ org, ...ref, number: String(failed.number) }}
+            title={`r${failed.number} failed ${ago(failed.created_at)}`}
+            aria-label={`r${failed.number} failed`}
+            className="ml-1.5 text-fail hover:underline"
+          >
+            ✕ r{failed.number}
+          </Link>
+        )}
       </td>
       <td className="truncate py-2.5 font-mono">
         {primary ? (

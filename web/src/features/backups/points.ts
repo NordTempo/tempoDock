@@ -2,7 +2,8 @@ import type { BackupRun, ServiceBackups } from "../../data/types";
 import type { Snapshot, SnapshotRestore } from "./data";
 
 // One restore model (ADR 0061): a service's backups and snapshots are
-// both restore points, listed together, newest first.
+// both restore points, restored with one action and one dialog; the list
+// groups them by kind, newest first.
 
 /** Where a restore point stands. */
 export type PointState = "running" | "ready" | "failed" | "removed";
@@ -13,8 +14,10 @@ export type RestorePoint = {
   at: string;
   size: number;
   state: PointState;
-  /** "this server" or "off-site" for a backup; the server for a snapshot. */
+  /** "this server" or "off-site"; "server <name>" for a snapshot elsewhere. */
   where: string;
+  /** The server's name, when known and the column says "this server". */
+  server?: string;
   /** The error, a snapshot's note or why it can't be restored here. */
   detail?: string;
   by: string;
@@ -33,10 +36,15 @@ const backupState = (r: BackupRun): PointState =>
         ? "removed"
         : "ready";
 
-/** Backups and snapshots, newest first. Restores of runs are left out. */
+/**
+ * Backups and snapshots, newest first. Restores of runs are left out.
+ * server is the service's server (operators only), so a snapshot kept
+ * there reads "this server" like a backup kept there.
+ */
 export function restorePoints(
   backups: ServiceBackups,
   snapshots: Snapshot[],
+  server?: string,
 ): RestorePoint[] {
   const fromBackups = (backups.runs ?? [])
     .filter((r) => r.operation === "backup")
@@ -49,6 +57,7 @@ export function restorePoints(
         size: run.size_bytes,
         state: backupState(run),
         where: run.off_box ? "off-site" : "this server",
+        server: run.off_box ? undefined : server,
         detail:
           run.error ??
           (run.pruned ? "removed by retention" : undefined) ??
@@ -65,8 +74,13 @@ export function restorePoints(
       at: snapshot.started_at,
       size: snapshot.size_bytes,
       state: snapshot.status,
-      // Only operators see the server's name.
-      where: snapshot.server || "its server",
+      // Only operators see the server's name; snapshots stay on the
+      // service's server unless it moved since.
+      where:
+        !snapshot.server || snapshot.server === server
+          ? "this server"
+          : `server ${snapshot.server}`,
+      server: snapshot.server || undefined,
       detail: snapshot.error ?? snapshot.note,
       by: snapshot.created_by,
       trigger: snapshot.trigger.replace("_", " "),
@@ -76,6 +90,13 @@ export function restorePoints(
     (a, b) => Date.parse(b.at) - Date.parse(a.at),
   );
 }
+
+/**
+ * A finished point with nothing in it: a dump or a copy of 0 bytes (an
+ * empty volume measures 0 KiB on some filesystems). It restores nothing,
+ * so it is never "latest" and its dialog warns.
+ */
+export const isEmpty = (p: RestorePoint) => p.state === "ready" && p.size <= 0;
 
 /** "backup 9d03b7a1", "snapshot 2": a point by kind and id. */
 export const pointName = (p: RestorePoint) =>

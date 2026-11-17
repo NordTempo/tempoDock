@@ -95,7 +95,7 @@ export function Waterfall({
   const total = Math.max(trace.duration_ms, 0.001);
   const shown = limit ? rows.slice(0, limit) : rows;
   return (
-    <div className="panel text-[13px]">
+    <div className="panel text-xs">
       <div className="grid grid-cols-[minmax(200px,38%)_1fr_72px] items-center gap-3 border-b border-line px-3 py-1.5 text-xs text-faint">
         <span>Span</span>
         <span className="relative h-3.5 tabular-nums">
@@ -205,7 +205,7 @@ export function SpanDetails({
       ? { project: s.project, environment: s.environment, service: s.service }
       : undefined;
   return (
-    <div className="flex flex-col gap-2 border-b border-soft bg-panel px-3 py-2.5 text-[13px]">
+    <div className="flex flex-col gap-2 border-b border-soft bg-panel px-3 py-2.5 text-xs">
       <div className="text-xs text-mut">
         {[
           s.service,

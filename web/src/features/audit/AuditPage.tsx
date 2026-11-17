@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { queries, useAuditLog } from "../../data/queries";
 import type { AuditEvent } from "../../data/types";
-import { Act, Button, Page, PageBar } from "../../ui/kit";
+import { Act, actorLabel, Button, Page, PageBar } from "../../ui/kit";
 import { OrgSettingsBar } from "../org/SettingsBar";
 import { AuditTable } from "./AuditTable";
 import { type AuditSearch, MAX } from "./search";
@@ -196,7 +196,9 @@ export function AuditPage({
           >
             <option value="">any actor</option>
             {actors.map((a) => (
-              <option key={a}>{a}</option>
+              <option key={a} value={a}>
+                {actorLabel(a)}
+              </option>
             ))}
           </select>
           <select
@@ -252,7 +254,7 @@ export function AuditPage({
             placeholder="search target"
             value={search.q ?? ""}
             onChange={(e) => set({ q: e.target.value || undefined })}
-            className={`${control} max-w-[240px] min-w-[140px] flex-[1_1_140px] rounded-ctl border border-edge bg-page px-[9px] text-[12px] outline-none hover:border-dash focus:border-info`}
+            className={`${control} max-w-[240px] min-w-[140px] flex-[1_1_140px] rounded-ctl border border-edge bg-page px-[9px] text-ctl outline-none hover:border-dash focus:border-info`}
           />
           {filtered && (
             <button

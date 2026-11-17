@@ -18,6 +18,7 @@ import {
 } from "../features/deploy/start";
 import { ServiceBar, ServiceTabs } from "../features/service/ServiceHeader";
 import { rememberProject } from "../shell/location";
+import { RoutePending } from "../shell/Shell";
 import { Page } from "../ui/kit";
 
 // Service layout: header bar and tabs stay put while tabs swap below.
@@ -38,6 +39,9 @@ export const Route = createFileRoute(
     ]);
   },
   component: ServiceLayout,
+  // A slow service shows its header and tabs from the address meanwhile,
+  // inside the shell, instead of holding the last page.
+  pendingComponent: RoutePending,
 });
 
 /**

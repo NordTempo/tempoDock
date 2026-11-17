@@ -288,7 +288,7 @@ export function FromTemplate({
                     <span className="min-w-0 truncate text-xs text-mut">
                       {x.summary}
                     </span>
-                    <span className="ml-auto flex-none pl-1 font-mono text-[11.5px] text-faint">
+                    <span className="ml-auto flex-none pl-1 font-mono text-tag text-faint">
                       {memText(x.memory_mb)}
                     </span>
                   </button>

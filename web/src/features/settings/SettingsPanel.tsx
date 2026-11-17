@@ -26,11 +26,13 @@ import type {
   SettingChange,
   SettingsPatch,
 } from "../../data/types";
+import { modKey } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
 import { CliHint } from "../../ui/CliHint";
 import { Act, Button, Check, ErrorText, SectionHead } from "../../ui/kit";
 import { SourceSection } from "../git/SourceSection";
 import { EnvServer } from "../servers/parts";
+import { useDiagnosis } from "../service/Diagnosis";
 import { imageSetting } from "../service/releases";
 import { limitText } from "../service/Usage";
 import {
@@ -70,12 +72,14 @@ export function SettingsPanel({
   );
 
   const change = (key: SettingKey) => changes.find((c) => c.key === key);
+  const portFix = usePortFix(ref, service, change("port"));
   // One row of settings: its fields edit together in one small form.
   const row = (
     label: string,
     hint: string,
     parts: Part[],
     extra?: ReactNode,
+    suggest?: Suggestion,
   ) => (
     <SettingRow
       key={label}
@@ -86,7 +90,9 @@ export function SettingsPanel({
       changes={changes}
       service={service}
       open={!!edit && parts.some((p) => p.key === edit)}
+      staged={pending.count > 0}
       extra={extra}
+      suggest={suggest}
     />
   );
 
@@ -126,6 +132,7 @@ export function SettingsPanel({
             <span className="font-mono text-xs text-mut">
               private address {service.name}:{listenPort(service)}
             </span>,
+            portFix,
           )}
           {row("Start command", "Instead of the image's own.", [
             { key: "start_command" },
@@ -462,12 +469,45 @@ function ImageNote({ serviceRef: ref }: { serviceRef: ServiceRef }) {
 /** One field in a settings row: its key, the word before it, and how to show it. */
 type Part = { key: TextSettingKey; word?: string; shown?: string };
 
+/** A value the evidence suggests for a row's field, with why: "Use 8080". */
+type Suggestion = { key: TextSettingKey; value: string; why: string };
+
+/**
+ * The port the app said it listened on, when the last release that ran
+ * the port about to be used (staged, or the setting) failed its health
+ * check because the app listened elsewhere: the deploy diagnosis' fix
+ * (ADR 0071, rule port_mismatch). Undefined otherwise.
+ */
+function usePortFix(
+  ref: ServiceRef,
+  service: Service,
+  staged: KeyedChange | undefined,
+): Suggestion | undefined {
+  const port = staged ? Number(staged.new) : service.port;
+  const last = useReleases(ref).find((r) => r.config.port === port);
+  const failed =
+    last?.status === "failed" && last.diagnosis?.rule === "port_mismatch"
+      ? last
+      : undefined;
+  const fix = useDiagnosis(ref, failed)?.cause.fix;
+  if (!failed || fix?.setting !== "port" || !fix.suggested) return undefined;
+  if (fix.suggested === String(port)) return undefined;
+  return {
+    key: "port",
+    value: fix.suggested,
+    why: `The app listened on ${fix.suggested} in r${failed.number}`,
+  };
+}
+
 /**
  * A row of settings that edit together: the values as text, and Edit,
  * which opens a small form with one field per setting. Save stages the
  * change (it goes live with Apply in the bar under the page, like
  * variables); Cancel or Esc leaves it. Saved values show old → new until
- * applied, with Discard. `open` starts in the form (?edit=port).
+ * applied, with Discard. `open` starts in the form (?edit=port). The
+ * form names Apply only once the environment has staged changes
+ * (`staged`), when the header shows it. `suggest`, open or not, stages
+ * a value the evidence suggests in one click.
  */
 function SettingRow({
   serviceRef: ref,
@@ -477,7 +517,9 @@ function SettingRow({
   changes,
   service,
   open,
+  staged,
   extra,
+  suggest,
 }: {
   serviceRef: ServiceRef;
   label: string;
@@ -486,7 +528,9 @@ function SettingRow({
   changes: KeyedChange[];
   service: Service;
   open: boolean;
+  staged: boolean;
   extra?: ReactNode;
+  suggest?: Suggestion;
 }) {
   const stage = useStageSettings();
   const discard = useDiscardChanges();
@@ -537,6 +581,21 @@ function SettingRow({
     }
     return <Shown text={shown ?? formatSetting(key, service[key])} />;
   };
+  const suggestion = suggest && (
+    <span className="text-xs text-warn-text">
+      {suggest.why}.{" "}
+      <button
+        type="button"
+        className="lnk"
+        disabled={stage.isPending}
+        onClick={() =>
+          submit({ ...(draft ?? start()), [suggest.key]: suggest.value })
+        }
+      >
+        Use {suggest.value}
+      </button>
+    </span>
+  );
 
   return (
     <Item label={label} hint={hint}>
@@ -580,9 +639,11 @@ function SettingRow({
               </Button>
             </span>
           </span>
+          {suggestion}
           <span className="text-xs text-mut">
-            Saved changes wait to apply: Apply in the service's header (Ctrl
-            Enter) puts them live together. Empty means the default.
+            {staged &&
+              `Saved changes wait for Apply in the header (${modKey.trim()} Enter), which puts them live together. `}
+            Empty means the default.
           </span>
           <ErrorText error={error ?? stage.error} />
         </form>
@@ -601,6 +662,12 @@ function SettingRow({
                 </span>
               ))}
             </span>
+            {saved.length > 0 && (
+              <span className="text-xs text-mut">
+                Saved: Apply in the header puts it live.
+              </span>
+            )}
+            {suggestion}
             {extra}
           </span>
           {saved.length > 0 && (

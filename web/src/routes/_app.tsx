@@ -1,8 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { setInConsole } from "../api/client";
 import { queries } from "../data/queries";
-import { Shell } from "../shell/Shell";
-import { ShellPending } from "../ui/RouteStates";
+import { Shell, ShellPending } from "../shell/Shell";
 
 // Pathless layout for everything behind login: sidebar, palette, live updates.
 export const Route = createFileRoute("/_app")({
@@ -52,7 +51,8 @@ export const Route = createFileRoute("/_app")({
     }
   },
   component: Shell,
-  // A slow first load shows the frame, not a blank page.
+  // A slow first load shows the shell as it will look (top bar, left
+  // column, the page's header), not a blank page.
   pendingComponent: ShellPending,
   pendingMs: 300,
 });

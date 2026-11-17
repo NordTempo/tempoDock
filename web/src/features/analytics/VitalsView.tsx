@@ -164,8 +164,9 @@ export function VitalsView({
             </button>
           ))}
         </span>
-        {/* The legend; what p75 means is its tooltip, what each vital
-            measures the tiles' and the link's. */}
+        {/* The legend; the value shown is the 75th percentile (p75),
+            said as "3 in 4 loads", with the term in its tooltip; what
+            each vital measures is the tiles' and the link's. */}
         <span className="flex flex-wrap items-center gap-x-3 text-faint">
           <span>
             <span className="text-ok">●</span> good
@@ -176,10 +177,8 @@ export function VitalsView({
           <span>
             <span className="text-fail">■</span> poor
           </span>
-          <span
-            title={`p75 is the 75th percentile: 3 in 4 of ${count(data.all.loads)} page loads were this fast or faster.`}
-          >
-            p75 of {count(data.all.loads)} page loads
+          <span title="The 75th percentile (p75): a quarter of loads were slower">
+            3 in 4 of {count(data.all.loads)} page loads this fast or faster
           </span>
           <a
             href="https://web.dev/articles/vitals"
@@ -226,7 +225,7 @@ export function VitalsView({
         })}
       </div>
       <LineChart
-        title={`${names[metric][1]}, p75 per ${data.bucket}`}
+        title={`${names[metric][1]} per ${data.bucket}, 3 in 4 loads this fast`}
         points={series}
         from={data.from - (data.from % step)}
         to={data.to}
@@ -342,7 +341,12 @@ function Breakdown({
             <tr>
               <th className="sr-only">{tabs[tab]?.[0]}</th>
               <th className="w-16 text-right">Loads</th>
-              <th className="w-20 text-right">p75</th>
+              <th
+                className="w-20 text-right"
+                title="3 in 4 loads were this fast or faster: the 75th percentile (p75)"
+              >
+                3 in 4
+              </th>
               <th className="w-28">Split</th>
             </tr>
           </thead>

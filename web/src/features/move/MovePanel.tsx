@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useServers } from "../../data/queries";
 import type { EnvironmentKind, EnvRef, Server } from "../../data/types";
 import { clockSec, elapsed, size } from "../../ui/format";
-import { Act, Confirm, Panel } from "../../ui/kit";
+import { Act, actorLabel, Confirm, Panel } from "../../ui/kit";
 import { kindLabel } from "../../ui/status";
 import {
   type EnvironmentMove,
@@ -232,7 +232,7 @@ function MoveProgress({ move }: { move: EnvironmentMove }) {
         </span>
         <span className="text-mut">{held(move)}</span>
         <span className="text-faint">
-          by {move.created_by} at {clockSec(move.started_at)}
+          by {actorLabel(move.created_by)} at {clockSec(move.started_at)}
         </span>
       </div>
       {move.status === "failed" && move.error && (

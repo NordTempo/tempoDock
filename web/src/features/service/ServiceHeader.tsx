@@ -179,7 +179,8 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const mine = (c: { service?: string }) =>
     !c.service || c.service === ref.service;
   // Two marks: the staged-change dot ("1 change staged") for changes not
-  // yet applied, and ▲ for something that needs a look. Each says which.
+  // yet applied, and ▲ with a word for something that needs a look
+  // ("▲ domain"); its title and accessible name say the whole of it.
   const staged: Partial<Record<ServiceTab["label"], boolean>> = {
     Variables: changes.variables.some(mine),
     Settings:
@@ -187,11 +188,18 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       changes.volumes.some((v) => v.service === ref.service) ||
       changes.domains.some((d) => d.service === ref.service),
   };
-  const warnings: Partial<Record<ServiceTab["label"], string>> = {
+  const warnings: Partial<
+    Record<ServiceTab["label"], { word: string; says: string }>
+  > = {
     ...(view.domains.some(domainNeedsAttention) && {
-      Settings: "a domain needs attention",
+      Settings: {
+        word: "domain",
+        says: "a domain needs attention: waiting for DNS or failing",
+      },
     }),
-    ...(view.uptime?.state === "down" && { Metrics: "a check is down" }),
+    ...(view.uptime?.state === "down" && {
+      Metrics: { word: "down", says: "an uptime check is down" },
+    }),
   };
   return (
     <nav
@@ -229,12 +237,12 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
             )}
             {warnings[tab.label] && (
               <span
-                className="ml-1 text-warn"
+                className="ml-1.5 text-xs text-warn"
                 role="img"
-                aria-label={`, ${warnings[tab.label]}`}
-                title={warnings[tab.label]}
+                aria-label={`, ${warnings[tab.label]?.says}`}
+                title={warnings[tab.label]?.says}
               >
-                ▲
+                ▲ {warnings[tab.label]?.word}
               </span>
             )}
           </Link>

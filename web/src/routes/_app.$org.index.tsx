@@ -1,5 +1,6 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import type { ReactNode } from "react";
 import { isFailing } from "../data/problems";
 import {
   queries,
@@ -8,7 +9,7 @@ import {
   useSession,
 } from "../data/queries";
 import type { ProjectOverview } from "../data/types";
-import { useOrgOpenAlerts } from "../features/alerts/data";
+import { type Alert, useOrgOpenAlerts } from "../features/alerts/data";
 import { AlertLink } from "../features/alerts/source";
 import { AuditTable } from "../features/audit/AuditTable";
 import { canCreateProject } from "../features/create/access";
@@ -353,13 +354,25 @@ function NoProjects() {
   );
 }
 
-/** Open alerts, worst first, the newest six; the rest are in the Inbox. */
+/** Alert kinds about error issues, which the Errors section lists. */
+const errorKinds = new Set<Alert["kind"]>([
+  "new_error",
+  "error_regressed",
+  "error_spike",
+]);
+
+/**
+ * The Inbox on the Overview: every open alert, so its count is the top
+ * bar's Inbox count. Error alerts fold into one row pointing at Errors
+ * (each issue is listed once, below); the others are rows of their own,
+ * worst first, the newest six.
+ */
 function NeedsYou() {
   const org = useOrg();
-  // Error alerts are the Errors section's below; said once (ADR 0076).
-  const open = useOrgOpenAlerts().filter(
-    (a) => !["new_error", "error_regressed", "error_spike"].includes(a.kind),
-  );
+  const open = useOrgOpenAlerts();
+  const errors = open.filter((a) => errorKinds.has(a.kind));
+  const rest = open.filter((a) => !errorKinds.has(a.kind)).slice(0, 6);
+  const [newestError] = errors;
   return (
     <section aria-labelledby="needs-head">
       <SectionHead
@@ -379,30 +392,77 @@ function NeedsYou() {
         // A grid shared by the rows (subgrid), so the times line up
         // whatever the width of the button after them.
         <ul className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] gap-x-3 border-t border-line">
-          {open.slice(0, 6).map((a) => (
-            <li
+          {rest.map((a) => (
+            <NeedsRow
               key={a.id}
-              className="col-span-full grid grid-cols-subgrid items-baseline border-b border-soft py-2"
-            >
-              <span
-                className={
-                  a.severity === "critical" ? "text-fail" : "text-warn"
-                }
-              >
-                {a.severity === "critical" ? "✕" : "▲"}
-              </span>
-              <span className="min-w-0">{a.title}</span>
-              <span className="text-right text-xs text-mut">
-                {ago(a.opened_at)}
-              </span>
-              <span className="justify-self-end">
-                <AlertLink alert={a} className="btn sm no-underline" />
-              </span>
-            </li>
+              alert={a}
+              title={a.title}
+              action={<AlertLink alert={a} className="btn sm no-underline" />}
+            />
           ))}
+          {errors.length === 1 && newestError && (
+            <NeedsRow
+              alert={newestError}
+              title={newestError.title}
+              action={
+                <AlertLink
+                  alert={newestError}
+                  className="btn sm no-underline"
+                />
+              }
+            />
+          )}
+          {errors.length > 1 && newestError && (
+            <NeedsRow
+              // Critical if any is; opened when the newest was.
+              alert={
+                errors.find((a) => a.severity === "critical") ?? newestError
+              }
+              title={
+                errors.every((a) => a.kind === "new_error")
+                  ? `${errors.length} new errors`
+                  : `${errors.length} error alerts`
+              }
+              opened={newestError.opened_at}
+              action={
+                <Link
+                  to="/$org/errors"
+                  params={{ org }}
+                  className="btn sm no-underline"
+                >
+                  See errors
+                </Link>
+              }
+            />
+          )}
         </ul>
       )}
     </section>
+  );
+}
+
+/** One row of Needs you: severity, what, when and where to act. */
+function NeedsRow({
+  alert: a,
+  title,
+  opened = a.opened_at,
+  action,
+}: {
+  alert: Alert;
+  title: string;
+  opened?: string;
+  action: ReactNode;
+}) {
+  const critical = a.severity === "critical";
+  return (
+    <li className="col-span-full grid grid-cols-subgrid items-baseline border-b border-soft py-2">
+      <span className={critical ? "text-fail" : "text-warn"}>
+        {critical ? "✕" : "▲"}
+      </span>
+      <span className="min-w-0">{title}</span>
+      <span className="text-right text-xs text-mut">{ago(opened)}</span>
+      <span className="justify-self-end">{action}</span>
+    </li>
   );
 }
 

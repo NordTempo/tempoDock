@@ -278,7 +278,11 @@ export function LockStrip({
   );
 }
 
-/** Asks for an optional reason and locks an unlocked environment. */
+/**
+ * Asks for an optional reason and locks an unlocked environment. It opens
+ * right under the environment's heading and scrolls itself into view, so
+ * it is seen next to the Lock button that opened it.
+ */
 export function LockForm({
   envRef: ref,
   onDone,
@@ -289,13 +293,19 @@ export function LockForm({
   const lock = useLock();
   const [reason, setReason] = useState("");
   const [people, setPeople] = useState(false);
-  // Opened by clicking Lock: the reason is the first thing to type.
+  // Opened by clicking Lock: the reason is the first thing to type, and the
+  // whole form (with what locking does) is on screen.
+  const form = useRef<HTMLFormElement>(null);
   const reasonField = useRef<HTMLInputElement>(null);
-  useEffect(() => reasonField.current?.focus(), []);
+  useEffect(() => {
+    reasonField.current?.focus({ preventScroll: true });
+    form.current?.scrollIntoView({ block: "nearest" });
+  }, []);
   const cli = `dock environment lock ${ref.environment}${reason.trim() ? ` --reason ${JSON.stringify(reason.trim())}` : ""}${people ? " --people" : ""}`;
   return (
     <form
-      className={strip}
+      ref={form}
+      className={`${strip} scroll-mb-4`}
       onSubmit={(e) => {
         e.preventDefault();
         lock.mutate(
@@ -315,26 +325,26 @@ export function LockForm({
         onChange={(e) => setReason(e.target.value)}
         className="field min-w-0 flex-[1_1_220px] py-[3px] text-fg"
       />
-      <Act small primary type="submit" cli={cli} disabled={lock.isPending}>
-        Lock
-      </Act>
-      <Button small onClick={onDone}>
-        Cancel
-      </Button>
-      <label className="flex items-center gap-1.5 text-fg">
+      <label className="flex min-h-[24px] items-center gap-1.5 text-fg">
         <input
           type="checkbox"
           className="accent-fg"
           checked={people}
           onChange={(e) => setPeople(e.target.checked)}
         />
-        People too
+        Hold people's changes too (full code freeze)
       </label>
-      <span className="text-mut">
+      <Act small primary type="submit" cli={cli} disabled={lock.isPending}>
+        Lock
+      </Act>
+      <Button small onClick={onDone}>
+        Cancel
+      </Button>
+      <span className="basis-full text-mut">
         Then{" "}
         {people
-          ? lockPeopleEffect
-          : `${lockEffect}. People signed in here aren't affected`}
+          ? `${lockPeopleEffect}, people's and tokens' alike`
+          : `${lockEffect}; people still change it directly unless you hold their changes too`}
         .
       </span>
       <ErrorText error={lock.error} />

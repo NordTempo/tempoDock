@@ -33,19 +33,22 @@
   --font-mono:
     "JetBrains Mono", "Inter", ui-monospace, "SF Mono", Menlo, monospace;
 
-  /* Meta and hints share one size, 13.5px (a blind trial, 2026-11: the
-     two smaller sizes read as small grey text). */
-  --text-2xs: 13.5px;
-  --text-xs: 13.5px;
-  --text-sm: 14px;
-  --text-base: 14px;
-  --text-md: 15px;
+  /* Body 15px, meta and hints 14px (Saile's pick D, 2026-11-17: blind
+     reviewers found 13.5px grey secondary text tiring). The root stays
+     14px, so the spacing scale and density don't move. */
+  --text-2xs: 14px;
+  --text-xs: 14px;
+  --text-sm: 15px;
+  --text-base: 15px;
+  --text-md: 16px;
   --text-lg: 16px;
   --text-xl: 20px;
   /* Page titles. */
   --text-2xl: 24px;
-  /* Small tags and chips inside text (KEV, an error's state). */
-  --text-tag: 11.5px;
+  /* Small tags and chips inside text (an error's state), keys. */
+  --text-tag: 12px;
+  /* Buttons, selects, chips, pills and segmented choices. */
+  --text-ctl: 13px;
 
   --radius-ctl: 6px;
   /* Small tags and keys inside text. */
@@ -69,12 +72,16 @@
   --color-field: #5e5e66;
   --color-dash: #3a3a40;
 
-  /* Text: primary, secondary, muted, faint. */
+  /* Text: primary and two secondary tones (pick D, 2026-11-17). Faint is
+     the muted tone now; it stays a name so quiet text keeps its intent. */
   --color-fg: #fafafa;
-  --color-sec: #d0d0d6;
-  --color-mut: #a1a1aa;
-  --color-faint: #8b8b94;
-  --color-kbd: #a1a1aa;
+  --color-sec: #e4e4e7;
+  --color-mut: #b9b9c1;
+  --color-faint: #b9b9c1;
+  --color-kbd: #b9b9c1;
+  /* Disabled controls only (exempt from text contrast): dimmer than any
+     text, so a disabled button still reads as one. */
+  --color-off: #8b8b94;
 
   /* Status. In progress is amber in style A, like staged changes. */
   --color-ok: #4ade80;
@@ -124,6 +131,11 @@
     font-feature-settings: "cv11", "ss01";
     -webkit-font-smoothing: antialiased;
     scrollbar-color: var(--color-edge) transparent;
+  }
+
+  /* Body text is 15px over the 14px root (the spacing scale's base). */
+  body {
+    font-size: var(--text-base);
   }
 
   :focus-visible {
@@ -206,7 +218,7 @@
     border: 1px solid var(--color-edge);
     border-radius: var(--radius-ctl);
     padding: 4px 26px 4px 9px;
-    font-size: 12px;
+    font-size: var(--text-ctl);
     line-height: 18px;
     background-color: var(--color-page);
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none' stroke='%23a1a1aa' stroke-width='1.4'%3E%3Cpath d='M2.5 4l2.5 2.5L7.5 4'/%3E%3C/svg%3E");
@@ -221,7 +233,7 @@
   }
 
   select:disabled {
-    color: var(--color-faint);
+    color: var(--color-off);
     cursor: not-allowed;
   }
 
@@ -356,9 +368,9 @@
 
   th {
     font-weight: 500;
-    font-size: 13px;
+    font-size: var(--text-xs);
     text-align: left;
-    color: var(--color-mut);
+    color: var(--color-sec);
     padding: 8px 14px 8px 0;
     white-space: nowrap;
     border-bottom: 1px solid var(--color-line);
@@ -383,7 +395,9 @@
     white-space: normal;
   }
 
-  tr:hover > td {
+  /* A spanning cell (a message, a detail opened under its row) isn't a
+     row to point at, so it doesn't light up. */
+  tr:hover > td:not([colspan]) {
     background: var(--color-hover);
   }
 
@@ -444,7 +458,7 @@
     align-items: center;
     gap: 8px;
     white-space: nowrap;
-    font-size: 12px;
+    font-size: var(--text-ctl);
     font-weight: 500;
     color: var(--color-fg);
     background: transparent;
@@ -473,7 +487,7 @@
   }
 
   .btn:disabled {
-    color: var(--color-faint);
+    color: var(--color-off);
     border-color: var(--color-line);
     background: transparent;
   }
@@ -503,13 +517,13 @@
    */
   .btn.pri:disabled {
     background: transparent;
-    color: var(--color-faint);
+    color: var(--color-off);
     border-color: var(--color-line);
   }
 
   .btn.pri:disabled kbd {
     background: transparent;
-    color: var(--color-faint);
+    color: var(--color-off);
     border-color: var(--color-line);
   }
 
@@ -569,7 +583,7 @@
   .btn.danger.solid:disabled {
     background: var(--color-fail-bg);
     border-color: var(--color-fail-edge);
-    color: var(--color-faint);
+    color: var(--color-off);
   }
 
   /* A text button that reads like a quiet link; still a 24px target. */
@@ -580,7 +594,7 @@
     min-height: 24px;
     min-width: 24px;
     color: var(--color-mut);
-    font-size: 12px;
+    font-size: var(--text-ctl);
   }
 
   .lnk:hover {
@@ -663,7 +677,7 @@
 
   .props > dt {
     color: var(--color-faint);
-    font-size: 13px;
+    font-size: var(--text-xs);
     line-height: 20px;
   }
 
@@ -686,7 +700,7 @@
     gap: 4px;
     padding: 0 8px;
     border-radius: 9999px;
-    font-size: 12px;
+    font-size: var(--text-ctl);
     font-weight: 500;
     line-height: 20px;
     white-space: nowrap;
@@ -750,7 +764,7 @@
     align-items: center;
     gap: 5px;
     white-space: nowrap;
-    font-size: 12px;
+    font-size: var(--text-ctl);
     line-height: 16px;
     padding: 1px 8px;
     border-radius: 9999px;
@@ -764,7 +778,7 @@
     display: inline-flex;
     flex-wrap: wrap;
     gap: 2px;
-    font-size: 12px;
+    font-size: var(--text-ctl);
   }
 
   .seg > * {
@@ -880,7 +894,7 @@
     background: var(--color-side);
     white-space: normal;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--text-ctl);
     color: var(--color-faint);
   }
 }

@@ -89,18 +89,23 @@ function Bypass() {
                 {t.project &&
                   ` on ${t.project}${t.environment ? `/${t.environment}` : ""}`}
               </td>
-              <td className="py-1.5">
-                <input
-                  type="checkbox"
-                  className="accent-fg"
-                  aria-label={`${t.name} bypasses the agent rules`}
+              <td className="py-0">
+                {/* The label is the hit area: at least 24 px square. */}
+                <label
+                  className="inline-flex min-h-[24px] min-w-[24px] cursor-pointer items-center justify-center"
                   title={`dock token bypass ${t.name} ${t.rules_bypass ? "off" : "on"}`}
-                  checked={!!t.rules_bypass}
-                  disabled={set.isPending}
-                  onChange={(e) =>
-                    set.mutate({ name: t.name, bypass: e.target.checked })
-                  }
-                />
+                >
+                  <input
+                    type="checkbox"
+                    className="accent-fg"
+                    aria-label={`${t.name} bypasses the agent rules`}
+                    checked={!!t.rules_bypass}
+                    disabled={set.isPending}
+                    onChange={(e) =>
+                      set.mutate({ name: t.name, bypass: e.target.checked })
+                    }
+                  />
+                </label>
               </td>
             </tr>
           ))}

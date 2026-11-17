@@ -1265,14 +1265,16 @@ func (r *Runtime) RunJob(ctx context.Context, spec node.JobSpec) (node.JobResult
 	}
 	if strings.Contains(spec.Script, "dock-snapshot: size") {
 		// A volume snapshot (ADR 0047) reports its size like the real
-		// script, so `make dev` and the agent eval can take snapshots.
+		// script, so `make dev` and the agent eval can take snapshots:
+		// du -sk counts each volume's directory too (4 KiB on ext4), so
+		// a volume the fake holds no data for isn't reported as 0.
 		r.mu.Lock()
-		var n int
+		kib := 0
 		for _, m := range spec.Mounts {
-			n += len(r.data[m.Volume])
+			kib += 4 + (len(r.data[m.Volume])+1023)/1024
 		}
 		r.mu.Unlock()
-		return node.JobResult{Output: fmt.Sprintf("dock-snapshot: size %d\n", (n+1023)/1024)}, nil
+		return node.JobResult{Output: fmt.Sprintf("dock-snapshot: size %d\n", kib)}, nil
 	}
 	if st := spec.Stream; st != nil {
 		if vol, ok := tarVolume(spec, "tar -cf"); ok && st.Stdout != nil {

@@ -361,7 +361,7 @@ function Vulnerabilities({
 
 /**
  * One kind of fix as a ruled block: its title and counts, then one mono
- * line per package, "openssl 3.3.1-r0 → 3.3.2-r0 · CVE-2026-31337 KEV +2".
+ * line per package, "openssl 3.3.1-r0 → 3.3.2-r0 · CVE-2026-31337 exploited +2".
  */
 function Group({
   group,

@@ -18,7 +18,8 @@ export function statusTitle(s: Server) {
  * The server an environment runs on, marked when deploys can't reach it:
  * "homelab ✕ offline", with a link to its page. Only operators get server
  * names; for everyone else it is "server ✕ offline", and nothing while
- * the server is online.
+ * the server is online. The bare name says what it is in its title
+ * ("Server homelab"), for places that don't say "server" beside it.
  */
 export function EnvServer({ environment }: { environment: Environment }) {
   const { server: name, server_status: status } = environment;
@@ -28,6 +29,7 @@ export function EnvServer({ environment }: { environment: Environment }) {
       to="/console/servers/$server"
       params={{ server: name }}
       className="font-mono text-inherit"
+      title={`Server ${name}`}
     >
       {name}
     </Link>

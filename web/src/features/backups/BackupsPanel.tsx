@@ -12,6 +12,7 @@ import { useOrg } from "../../shell/location";
 import { ago, clock, day, plural, size, until } from "../../ui/format";
 import {
   Act,
+  actorLabel,
   Button,
   Check,
   Confirm,
@@ -25,6 +26,7 @@ import { Saved } from "../create/form";
 import { backupWhat, hourLabel } from "./backups";
 import { useDeleteSnapshot, useSnapshots, useTakeSnapshot } from "./data";
 import {
+  isEmpty,
   type PointState,
   pointName,
   type RestorePoint,
@@ -43,11 +45,30 @@ type Open =
   | { what: "restore" | "log" | "delete"; point: RestorePoint }
   | { what: "switch"; to: string; since?: string };
 
+/** One kind of restore point in the list, under its own heading row. */
+type Group = {
+  kind: RestorePoint["kind"];
+  title: string;
+  points: RestorePoint[];
+  /** The newest point of the kind that restores something. */
+  latest?: string;
+};
+
+/** What the dumps group is called, by the kind of backup. */
+const backupTitle: Record<ServiceBackups["kind"], string> = {
+  postgres: "Database dumps",
+  mysql: "Database dumps",
+  redis: "Redis dumps",
+  volume: "File backups",
+};
+
 /**
  * A stateful service's restore points (ADR 0061): how backups and
- * snapshots are made, then both in one list, newest first, the newest
- * good one marked latest and failed runs secondary. One Restore per point
- * opens one dialog; the latest restores into new services offer Use.
+ * snapshots are made, then one table with a group per kind, newest first,
+ * one point marked latest: the newest usable dump, else snapshot (never a
+ * failed or empty one; two "latest" read as a choice), and failed runs
+ * secondary. One Restore per point opens one dialog;
+ * the latest restores into new services offer Use.
  */
 export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const backups = useBackups(ref);
@@ -57,8 +78,9 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const take = useTakeSnapshot();
   const [note, setNote] = useState("");
   const [open, setOpen] = useState<Open | null>(null);
+  const { environment } = useEnvironment(ref);
   // Taking a snapshot pauses the service: production asks first.
-  const production = useEnvironment(ref).environment.kind === "production";
+  const production = environment.kind === "production";
   const [askSnapshot, setAskSnapshot] = useState(false);
   const takeNow = () =>
     take.mutate(
@@ -74,7 +96,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const flags = `-s ${ref.service} -e ${ref.environment}`;
   // A template database restores into a new service, from either kind.
   const intoNew = snaps.into_new;
-  const points = restorePoints(backups, snaps.snapshots);
+  const points = restorePoints(backups, snaps.snapshots, environment.server);
   const records = restoreRecords(backups, snaps.restores, snaps.snapshots);
   const busy =
     points.some((p) => p.state === "running") ||
@@ -87,7 +109,20 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const restorable = (p: RestorePoint) =>
     p.state === "ready" &&
     (p.kind === "snapshot" || (backups.restorable && !p.run.not_restorable));
-  const latest = points.find(restorable)?.key;
+  const groups = (["backup", "snapshot"] as const).map((kind): Group => {
+    const of = points.filter((p) => p.kind === kind);
+    return {
+      kind,
+      title: kind === "backup" ? backupTitle[backups.kind] : "Volume snapshots",
+      points: of,
+      latest: of.find((p) => restorable(p) && !isEmpty(p))?.key,
+    };
+  });
+  // The one latest point, and the Restore to lead with: the latest dump,
+  // else the latest snapshot. It leads only into a new service, which
+  // changes nothing live.
+  const latest = groups.find((g) => g.latest)?.latest;
+  const lead = intoNew ? latest : undefined;
   // #backup-<id> (a failed backup's alert links there): scroll to its row
   // and open its log, once per hash.
   const hash = useLocation({ select: (l) => l.hash });
@@ -101,9 +136,6 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     document.getElementById(hash)?.scrollIntoView({ block: "center" });
     setOpen({ what: "log", point });
   }, [hash]);
-  // Retry sits on the newest run of a kind only, when that one failed.
-  const newest = (kind: RestorePoint["kind"]) =>
-    points.find((p) => p.kind === kind)?.key;
 
   return (
     <section aria-labelledby="restore-points" className="flex flex-col gap-3">
@@ -170,9 +202,14 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         </dd>
         <dt>Snapshots</dt>
         <dd>
-          Volume copies on {snaps.snapshots[0]?.server || "its server"}, the
-          service paused while copied; keeps {plural(snaps.keep, "snapshot")}{" "}
-          for {plural(snaps.keep_days, "day")}
+          Volume copies on this server, the service paused while copied; keeps{" "}
+          {plural(snaps.keep, "snapshot")} for {plural(snaps.keep_days, "day")}
+        </dd>
+        <dt>Restoring</dt>
+        <dd>
+          {intoNew
+            ? `Into a new service beside ${ref.service}; ${ref.service} itself is not changed`
+            : `In place: ${ref.service} stops, a safety snapshot keeps what it holds now, then the copy goes in`}
         </dd>
       </dl>
       {askSnapshot && (
@@ -206,30 +243,44 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           }
         />
       )}
-      {points.length === 0 ? (
-        <p className="text-mut">No backups or snapshots yet.</p>
-      ) : (
-        <Panel>
-          <table>
-            <thead>
+      <Panel>
+        <table>
+          <thead>
+            <tr>
+              <th>Taken</th>
+              <th>Restore point</th>
+              <th>Size</th>
+              <th>Where</th>
+              <th className="w-full">Detail</th>
+              <th colSpan={4}>
+                <span className="sr-only">Actions</span>
+              </th>
+            </tr>
+          </thead>
+          {groups.map((g) => (
+            <tbody key={g.kind}>
               <tr>
-                <th>Taken</th>
-                <th>Restore point</th>
-                <th>Size</th>
-                <th>Where</th>
-                <th className="w-full">Detail</th>
-                <th colSpan={4}>
-                  <span className="sr-only">Actions</span>
+                <th
+                  scope="rowgroup"
+                  colSpan={9}
+                  className="pt-4 text-left font-semibold text-fg"
+                >
+                  {g.title}
                 </th>
               </tr>
-            </thead>
-            <tbody>
-              {points.map((p) => (
+              {g.points.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="text-mut">
+                    None yet
+                  </td>
+                </tr>
+              )}
+              {g.points.map((p) => (
                 <PointRow
                   key={p.key}
                   point={p}
                   latest={p.key === latest}
-                  intoNew={intoNew}
+                  lead={p.key === lead}
                   restore={
                     restorable(p)
                       ? () => setOpen({ what: "restore", point: p })
@@ -245,7 +296,8 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                       : undefined
                   }
                   onRetry={
-                    p.state === "failed" && p.key === newest(p.kind) && !why
+                    // On the newest point of a kind only, when it failed.
+                    p.state === "failed" && p === g.points[0] && !why
                       ? () =>
                           p.kind === "backup"
                             ? run.mutate(ref)
@@ -260,9 +312,9 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                 />
               ))}
             </tbody>
-          </table>
-        </Panel>
-      )}
+          ))}
+        </table>
+      </Panel>
       <Suspense fallback={null}>
         {open?.what === "restore" && (
           <RestoreDialog
@@ -403,13 +455,14 @@ const none = <span className="text-faint">-</span>;
 /**
  * One restore point: when, what (kind, id, trigger), size, where and its
  * note or error, with its actions in fixed slots at the right edge. Failed
- * and removed points are muted: they can't be restored.
+ * and removed points are muted: they can't be restored. An empty one says
+ * so in its size.
  */
 function PointRow({
   point: p,
   latest,
+  lead,
   restore,
-  intoNew,
   why,
   onLog,
   onRetry,
@@ -417,10 +470,10 @@ function PointRow({
 }: {
   point: RestorePoint;
   latest: boolean;
+  /** The Restore to lead with: its button is the primary one. */
+  lead: boolean;
   /** Opens the restore dialog; unset where the point can't be restored. */
   restore?: () => void;
-  /** Restoring makes a new service beside this one; the button says so. */
-  intoNew?: boolean;
   /** Why Restore waits, when it does. */
   why?: string;
   onLog?: () => void;
@@ -449,12 +502,27 @@ function PointRow({
         <span className="text-mut">
           {" "}
           · {p.trigger}
-          {p.by !== "system" && ` by ${p.by}`}
+          {p.by !== "system" && ` by ${actorLabel(p.by)}`}
         </span>
       </td>
-      <td className="font-mono">{p.size > 0 ? size(p.size) : none}</td>
+      <td className="font-mono">
+        {isEmpty(p) ? (
+          <span className="font-sans text-warn" title="It holds no data">
+            empty
+          </span>
+        ) : p.size > 0 ? (
+          size(p.size)
+        ) : (
+          none
+        )}
+      </td>
       {/* Plain: "kept on this server only" above says the risk once. */}
-      <td className="whitespace-nowrap">{p.where}</td>
+      <td
+        className="whitespace-nowrap"
+        title={p.server ? `Kept on server ${p.server}` : undefined}
+      >
+        {p.where}
+      </td>
       <td className="max-w-[420px] whitespace-normal">
         {p.detail ? (
           <span className={p.state === "failed" ? "text-fail" : ""}>
@@ -488,8 +556,14 @@ function PointRow({
       </td>
       <td className="text-right">
         {restore && (
-          <Button small disabled={!!why} reason={why} onClick={restore}>
-            {intoNew ? "Restore as new service" : "Restore"}
+          <Button
+            small
+            primary={lead && !why}
+            disabled={!!why}
+            reason={why}
+            onClick={restore}
+          >
+            Restore
           </Button>
         )}
       </td>

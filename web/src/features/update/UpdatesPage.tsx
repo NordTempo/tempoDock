@@ -18,7 +18,7 @@ import {
   useStartUpdate,
   useUpdateStatus,
 } from "./data";
-import { Notes } from "./Notes";
+import { headlines, Inline, Notes } from "./Notes";
 
 // The console's Updates page (ADR 0028, mock A): the newer releases' notes
 // beside what an update does to each server, in order. While an update
@@ -29,8 +29,11 @@ import { Notes } from "./Notes";
 const UPGRADING =
   "https://github.com/NordTempo/tempoDock/blob/main/docs/guide/install.md#upgrading";
 
-/** How many releases' notes are shown; older ones are a count. */
-const NOTES_SHOWN = 8;
+/** How many releases are listed; older ones are a count. */
+const NOTES_SHOWN = 10;
+
+/** How many of the newest releases open with their headlines. */
+const NOTES_OPEN = 3;
 
 export function UpdatesPage() {
   const st = useUpdateStatus();
@@ -205,16 +208,24 @@ function LastFailed({ last }: { last: NonNullable<UpdateStatus["last"]> }) {
   );
 }
 
+/**
+ * The newer releases, newest first: the newest few open with each
+ * section's headlines, the rest one line each that opens the same way.
+ * The full notes are behind a disclosure and on the release's page.
+ */
 function ReleaseNotes({ st }: { st: UpdateStatus }) {
-  const shown = (st.releases ?? []).slice(0, NOTES_SHOWN);
-  const more = (st.releases ?? []).length - shown.length;
+  const releases = st.releases ?? [];
+  const shown = releases.slice(0, NOTES_SHOWN);
+  const more = releases.length - shown.length;
+  // The source's list of releases, from a release's own page.
+  const all = releases[0]?.url?.replace(/\/tag\/[^/]+$/, "");
   return (
     <section aria-labelledby="notes" className="min-w-0">
       <SectionHead
         id="notes"
         aside={
-          (st.releases ?? []).length > 0
-            ? `${plural((st.releases ?? []).length, "release")} newer than ${st.version}`
+          releases.length > 0
+            ? `${plural(releases.length, "release")} newer than ${st.version}`
             : undefined
         }
       >
@@ -231,44 +242,103 @@ function ReleaseNotes({ st }: { st: UpdateStatus }) {
             ` Last update: ${st.last.from} to ${st.last.to}, ${ago(st.last.finished_at)}.`}
         </p>
       ) : (
-        <div className="flex flex-col gap-4">
-          {shown.map((r) => (
-            <article key={r.version}>
-              <h3 className="text-sm font-semibold">
-                <span className="font-mono">{r.version}</span>{" "}
-                <span className="text-2xs font-normal text-faint">
-                  · {day(r.published_at)}
-                  {r.prerelease && " · pre-release"}
-                  {r.url && (
-                    <>
-                      {" · "}
-                      <a
-                        href={r.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-info"
-                      >
-                        GitHub
-                      </a>
-                    </>
-                  )}
-                </span>
-              </h3>
-              {r.notes.trim() ? (
-                <Notes text={r.notes} />
-              ) : (
-                <p className="text-xs text-faint">No notes.</p>
-              )}
-            </article>
+        <div className="border-t border-line">
+          {shown.map((r, i) => (
+            <Release key={r.version} release={r} open={i < NOTES_OPEN} />
           ))}
           {more > 0 && (
-            <p className="text-xs text-faint">
-              {plural(more, "older release")} not shown.
+            <p className="py-2 text-xs text-faint">
+              {plural(more, "older release")} not shown.{" "}
+              {all && (
+                <a
+                  href={all}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-info"
+                >
+                  All releases
+                </a>
+              )}
             </p>
           )}
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * One release: version and date, then its headlines (one line while
+ * closed, a row per section when open), the full notes and its page.
+ */
+function Release({
+  release: r,
+  open,
+}: {
+  release: NonNullable<UpdateStatus["releases"]>[number];
+  open: boolean;
+}) {
+  const sections = headlines(r.notes);
+  // Closed, upgrade steps are noise; open, they are their own row.
+  const line = sections
+    .filter((s) => !/^upgrading$/i.test(s.title))
+    .flatMap((s) => s.lines)
+    .join(" · ");
+  return (
+    <details open={open} className="group border-b border-soft py-2">
+      <summary className="flex cursor-pointer list-none items-baseline gap-2 [&::-webkit-details-marker]:hidden">
+        <span aria-hidden className="w-2 text-mut group-open:rotate-90">
+          ›
+        </span>
+        <span className="font-mono text-sm font-semibold">{r.version}</span>
+        <span className="text-2xs whitespace-nowrap text-faint">
+          {day(r.published_at)}
+          {r.prerelease && " · pre-release"}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-xs text-sec group-open:hidden">
+          <Inline text={line} plain />
+        </span>
+      </summary>
+      <div className="flex flex-col gap-2 pt-2 pl-4 text-xs">
+        {sections.length > 0 ? (
+          <dl className="grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)] gap-x-3 gap-y-1.5">
+            {sections.map((s, i) => (
+              <div key={i} className="contents">
+                <dt className="text-mut">{s.title}</dt>
+                <dd className="text-sec">
+                  <Inline text={s.lines.join(" · ")} />
+                </dd>
+              </div>
+            ))}
+          </dl>
+        ) : (
+          <p className="text-faint">No notes.</p>
+        )}
+        <div className="flex items-baseline gap-3">
+          {r.notes.trim() && (
+            <details className="group/full min-w-0 flex-1">
+              <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 text-mut hover:text-fg [&::-webkit-details-marker]:hidden">
+                <span aria-hidden className="group-open/full:rotate-90">
+                  ›
+                </span>
+                Full notes
+              </summary>
+              <Notes text={r.notes} />
+            </details>
+          )}
+          {r.url && (
+            <a
+              href={r.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-auto text-info"
+            >
+              Release page
+            </a>
+          )}
+        </div>
+      </div>
+    </details>
   );
 }
 
