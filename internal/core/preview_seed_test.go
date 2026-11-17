@@ -53,7 +53,6 @@ func TestPreviewSeedFromSnapshot(t *testing.T) {
 	base := ServiceRef{"shop", "staging", "db"}
 	h.snapshot(base)
 	s := h.snapshot(base) // the newest is used
-	h.settled("staging")
 	before := h.envSnapshot("staging")
 	if _, err := h.deliver(appHook, "d1", prEvent{action: "opened", number: 7, sha: shaA, updated: time.Now()}); err != nil {
 		t.Fatal(err)

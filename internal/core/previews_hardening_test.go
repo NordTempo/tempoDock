@@ -36,9 +36,12 @@ func (h *harness) previewLive(env string) {
 }
 
 // envSnapshot is what a change to an environment would show: each
-// service's releases and the environment's variables, revealed.
+// service's releases and the environment's variables, revealed. It waits
+// for env's deploys to settle first, so a release still health checking
+// doesn't read as a change.
 func (h *harness) envSnapshot(env string) string {
 	h.t.Helper()
+	h.settled(env)
 	var b strings.Builder
 	for _, svc := range []string{"web", "api", "db"} {
 		rels, err := h.c.ListReleases(h.ctx, testSystem, ServiceRef{"shop", env, svc}, 50)
@@ -132,7 +135,6 @@ func (h *harness) waitArchived(id int64, vols []string) {
 func TestPreviewLockedBase(t *testing.T) {
 	h, _, _, appHook := previewHarness(t)
 	h.lock("staging")
-	h.settled("staging")
 	before := h.envSnapshot("staging")
 	h.openPreview(appHook, 7)
 	h.previewLive("pr-7")
