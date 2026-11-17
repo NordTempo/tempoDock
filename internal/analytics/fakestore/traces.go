@@ -295,7 +295,8 @@ func (t *Traces) metricNames(q analytics.MetricNamesQuery) analytics.MetricNames
 
 // queryMetrics answers each chart with one line, whatever its
 // aggregation and attribute: a step's values averaged for a level (a
-// gauge's), summed for the rest.
+// gauge's), summed for the rest. An aggregation the metric's shape
+// doesn't take is the chart's error, as in the store.
 func (t *Traces) queryMetrics(q analytics.MetricsQuery) analytics.MetricsResult {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -323,6 +324,13 @@ func (t *Traces) queryMetrics(q analytics.MetricsQuery) analytics.MetricsResult 
 			}
 			line[i] = &v
 			n[i]++
+		}
+		if out.Shape != "" && c.Agg != "" {
+			// As the store: an aggregation the metric doesn't take is
+			// the chart's error.
+			if out.Error = analytics.AggError(c.Name, out.Shape, c.Agg); out.Error != "" {
+				line = nil
+			}
 		}
 		if out.Shape == analytics.ShapeLevel {
 			for i, v := range line {

@@ -259,9 +259,12 @@ type TraceSummary struct {
 }
 
 // OnePerTrace appends the entries to out, one per trace: a trace that
-// enters a service twice (it calls itself) is listed once, by its
-// earliest entry, the outer one, in the place its first entry had. Nil
-// entries are skipped.
+// enters a service twice (it calls itself, or Caddy's edge span and the
+// app's server span) is listed once, by its outer entry, in the place
+// its first entry had. The edge span is the outer one whenever it is
+// there: Caddy's clock and the app's differ by a fraction of a
+// millisecond, so start order alone would flip between the two. Without
+// one the earliest entry is. Nil entries are skipped.
 func OnePerTrace(out []TraceSummary, entries []*TraceSummary) []TraceSummary {
 	at := make(map[TraceID]int, len(entries))
 	for _, e := range entries {
@@ -273,11 +276,20 @@ func OnePerTrace(out []TraceSummary, entries []*TraceSummary) []TraceSummary {
 		case !seen:
 			at[e.Trace] = len(out)
 			out = append(out, *e)
-		case e.Start < out[i].Start:
+		case outer(e, &out[i]):
 			out[i] = *e
 		}
 	}
 	return out
+}
+
+// outer reports whether entry a encloses entry b of the same trace: an
+// edge span encloses the app's, else the earlier one does.
+func outer(a, b *TraceSummary) bool {
+	if ea, eb := a.Kind == SpanEdge, b.Kind == SpanEdge; ea != eb {
+		return ea
+	}
+	return a.Start < b.Start
 }
 
 // TracesResult answers a TracesQuery.

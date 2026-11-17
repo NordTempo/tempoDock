@@ -413,9 +413,12 @@ type PublicStatusFeed struct {
 	Updated time.Time
 }
 
-// PublicFeedEntry is one posted update with its incident.
+// PublicFeedEntry is one posted update with its incident. Update is the
+// update's own ID, which tells apart updates posted in one second (a
+// maintenance window's "Scheduled" and "In progress").
 type PublicFeedEntry struct {
 	Incident, Title string
+	Update          int64
 	PublicUpdate
 }
 

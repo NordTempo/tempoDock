@@ -79,9 +79,10 @@ func newLogDrainAddCmd(g *globals) *cobra.Command {
 write is sent there:
 
   http    POST application/x-ndjson, one JSON object per line: time, stream,
-          text, project, environment, service, release, server
+          text, project, environment, service, release
   syslog  RFC 5424 to tcp://, tls:// or udp:// host[:port] (514, tls 6514);
-          APP-NAME is the service, MSGID the stream, HOSTNAME the server
+          APP-NAME is the service, MSGID the stream, HOSTNAME
+          project.environment
   loki    Loki's push API at the URL (/loki/api/v1/push is added), streams
           labelled project, environment, service and stream
 

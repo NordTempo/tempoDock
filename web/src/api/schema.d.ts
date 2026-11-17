@@ -7179,6 +7179,8 @@ export interface components {
             attrs: components["schemas"]["AppMetricAttr"][] | null;
             by?: string;
             dock: boolean;
+            /** @description Why the chart can't be read, such as an aggregation its metric doesn't take; unpin it or pin it with one of aggs */
+            error?: string;
             kind?: string;
             lines: components["schemas"]["AppMetricLine"][] | null;
             /** Format: int64 */
@@ -7934,6 +7936,8 @@ export interface components {
         CreatedAlertChannel: {
             channel: components["schemas"]["AlertChannel"];
             secret?: string;
+            /** @description Why the channel can't send yet, such as an email channel while Dock's email isn't set up */
+            warning?: string;
         };
         CreatedInvite: {
             code: string;

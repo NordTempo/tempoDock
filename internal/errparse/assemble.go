@@ -73,6 +73,10 @@ type Assembler struct {
 	pyFrames []pyFrame
 	// stopped: an npm block says its script was stopped (npmStopped).
 	stopped bool
+	// quoted: the open error line came right after a Node location
+	// ("/app/server.js:12"), so it may be the line Node quotes above an
+	// uncaught exception, which a caret line under it then shows.
+	quoted bool
 	// prev is the last line outside an event: a JavaScript or Java
 	// exception's first line, if frames follow it.
 	prev string
@@ -89,6 +93,12 @@ func (a *Assembler) Open() bool { return a.mode != modeNone }
 func (a *Assembler) Line(s string) (Event, bool) {
 	if a.mode == modeNone {
 		a.start(s)
+		return Event{}, false
+	}
+	if a.quoted && a.lines == 1 && isCaret(s) {
+		// Node's quote of the line that threw, above the exception it
+		// prints next: no error of its own.
+		a.reset()
 		return Event{}, false
 	}
 	if a.continues(s) {
@@ -123,8 +133,8 @@ func (a *Assembler) start(s string) {
 		a.mode, a.head = modeStack, a.prev
 		a.add(a.prev)
 		a.continues(s)
-	case LineLevel(s) == LevelError:
-		a.mode, a.head = modeLine, s
+	case LineLevel(s) == LevelError && !nodeLocation(s) && !routine(s):
+		a.mode, a.head, a.quoted = modeLine, s, nodeLocation(a.prev)
 	default:
 		a.prev = s
 		return
@@ -176,6 +186,11 @@ func (a *Assembler) continues(s string) bool {
 		}
 		return true
 	case strings.HasPrefix(s, "Caused by: "):
+		a.cause = true
+		return true
+	case a.mode == modeStack && strings.HasPrefix(s, "Emitted '"):
+		// Node's unhandled 'error' event: where it was emitted, with
+		// frames that don't count.
 		a.cause = true
 		return true
 	case s != "" && isSpace(s[0]):
@@ -423,7 +438,7 @@ func (a *Assembler) finish() (ev Event, ok bool) {
 func (a *Assembler) reset() {
 	a.mode, a.head, a.lines = modeNone, "", 0
 	a.frames, a.culprit, a.goFunc, a.goroutines, a.cause = a.frames[:0], "", "", 0, false
-	a.pyDone, a.pyFrames, a.stopped = false, a.pyFrames[:0], false
+	a.pyDone, a.pyFrames, a.stopped, a.quoted = false, a.pyFrames[:0], false, false
 	// An idle follower keeps no sample buffer; errors are rare enough to
 	// allocate one each.
 	a.sample = nil
@@ -458,6 +473,51 @@ func (a *Assembler) stackFrames(stack string) {
 		}
 		a.frames = append(a.frames, py[i].norm)
 	}
+}
+
+// nodeLocation reports whether s is where Node says an uncaught
+// exception was thrown, the line above the source line it quotes: a path
+// or a node: module, and a line number ("/app/server.js:12",
+// "node:events:497", "file:///app/x.mjs:3").
+func nodeLocation(s string) bool {
+	i := strings.LastIndexByte(s, ':')
+	if i <= 0 || i == len(s)-1 || digits(s[i+1:]) != len(s)-i-1 || strings.ContainsAny(s[:i], " \t") {
+		return false
+	}
+	return strings.ContainsAny(s[:i], `/\`) || strings.HasPrefix(s, "node:")
+}
+
+// isCaret reports whether s is the caret line Node puts under the
+// source line it quotes.
+func isCaret(s string) bool {
+	t := strings.TrimSpace(s)
+	return t != "" && strings.Trim(t, "^") == ""
+}
+
+// routineMessages are what Postgres logs at FATAL when it is started,
+// stopped or restarted, which Dock does itself (deploys, restores,
+// moves): to a client that connects meanwhile, and to the connections a
+// shutdown ends. They are no error of the app's.
+var routineMessages = [...]string{
+	"the database system is starting up",
+	"the database system is not yet accepting connections",
+	"the database system is shutting down",
+	"terminating connection due to administrator command",
+}
+
+// routine reports whether s is Postgres logging one of routineMessages.
+func routine(s string) bool {
+	_, rest, ok := strings.Cut(s, "FATAL:")
+	if !ok {
+		return false
+	}
+	rest = strings.TrimSpace(rest)
+	for _, m := range routineMessages {
+		if strings.HasPrefix(rest, m) {
+			return true
+		}
+	}
+	return false
 }
 
 // isAtFrame reports whether s is an indented "at ..." stack frame.

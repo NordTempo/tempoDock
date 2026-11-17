@@ -607,7 +607,7 @@ export const topics: Record<TopicId, Topic> = {
       },
       {
         what: "Follow a funnel",
-        cli: "dock analytics funnels add shop checkout /cart /pay /done",
+        cli: "dock analytics funnels add shop checkout page:/cart page:/pay page:/done",
       },
     ],
     watch: [

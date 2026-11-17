@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NordTempo/tempoDock/internal/analytics"
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
 )
@@ -148,12 +149,15 @@ func TestErrorResolveAndRegress(t *testing.T) {
 		t.Fatalf("audit = %+v, %v", events, err)
 	}
 
-	h.sinkError(web, "db down", time.Now())
+	// It comes back in other words (its numbers changed): the alert says
+	// those.
+	at := time.Now()
+	h.c.issues.add(h.serviceID(web), "fp-db down", pendingError{source: apitypes.ErrorFromLogs, title: "db down on shard 2", count: 1, first: at, last: at, release: 1})
 	back := h.errorsFor(ErrorFilter{}, 1).Issues[0]
 	if back.ID != issue.ID || back.State != apitypes.ErrorRegressed || back.Count != 2 || back.ResolvedAt != nil {
 		t.Fatalf("regressed = %+v", back)
 	}
-	if a := h.openAlert("errors:"+itoa(h.serviceID(web))+":regressed:"+itoa(issue.ID), true); a.Kind != string(apitypes.AlertErrorRegressed) {
+	if a := h.openAlert("errors:"+itoa(h.serviceID(web))+":regressed:"+itoa(issue.ID), true); a.Kind != string(apitypes.AlertErrorRegressed) || !strings.HasSuffix(a.Title, ": db down on shard 2") {
 		t.Fatalf("regression alert = %+v", a)
 	}
 
@@ -288,6 +292,32 @@ func TestTrafficAndFrontendErrors(t *testing.T) {
 	if _, ok := h.c.alerts.open["errors:"+itoa(h.serviceID(web))+":new:"+itoa(fe.ID)]; ok {
 		t.Fatal("a frontend issue alerted besides analytics' own new-error alert")
 	}
+}
+
+// Resolving a browser error's issue resolves the "new error" alert Dock
+// Analytics raised for its group, so a regression's alert isn't the
+// second one open for it.
+func TestResolveFrontendErrorResolvesSiteAlert(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Port: 8080})
+	h.deploy(web, "nginx:1")
+	h.domain(web, "shop.example.com", "")
+	if _, err := h.c.EnableHostnameAnalytics(h.ctx, testSystem, "shop.example.com", apitypes.EnableAnalyticsRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	r, _ := analyticsRoute(h, "shop.example.com")
+	var site, svc, rel int64
+	_, _ = fmt.Sscanf(r.Tag, "%d.%d.%d", &site, &svc, &rel)
+	h.c.newErrorAlert(h.ctx, analytics.NewError{Site: site, Group: "00000000000000ff", Type: "TypeError", Message: "x is undefined", Path: "/cart"}, time.Now())
+	key := newErrorKey + itoa(site) + ":00000000000000ff"
+	h.openAlert(key, true)
+	h.c.frontendErrors(h.c.localID, fmt.Appendf(nil, `{"t":%d,"s":%d,"sv":%d,"rl":%d,"k":4,"n":"x is undefined","p":"/cart","v":1,"er":{"ty":"TypeError","fr":"total (/assets/cart.js)","g":255}}`,
+		time.Now().UnixMilli(), site, svc, rel))
+	issue := h.errorsFor(ErrorFilter{}, 1).Issues[0]
+	if _, err := h.c.ResolveError(h.ctx, testSystem, issue.ID); err != nil {
+		t.Fatal(err)
+	}
+	h.openAlert(key, false)
 }
 
 // A flood of distinct errors is bounded: the sink keeps 50 fingerprints

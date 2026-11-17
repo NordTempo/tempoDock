@@ -205,6 +205,9 @@ type CreateAlertChannelRequest struct {
 type CreatedAlertChannel struct {
 	Channel AlertChannel `json:"channel"`
 	Secret  string       `json:"secret,omitempty"`
+	// Warning says why the channel can't send yet: an email channel
+	// while Dock's email server isn't set up.
+	Warning string `json:"warning,omitempty" doc:"Why the channel can't send yet, such as an email channel while Dock's email isn't set up"`
 }
 
 // AlertChannelTest is the outcome of sending a test notification.

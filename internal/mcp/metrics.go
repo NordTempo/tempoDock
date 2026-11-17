@@ -50,6 +50,8 @@ type metricChart struct {
 	More  int          `json:"more,omitempty"`
 	Attrs []string     `json:"attrs,omitempty"`
 	Aggs  []string     `json:"aggs,omitempty"`
+	// Error says why a pinned chart can't be read.
+	Error string `json:"error,omitempty"`
 }
 
 // addMetricTools registers the metrics tool.
@@ -96,18 +98,27 @@ func (h *handler) metricsDashboard(ctx context.Context, c *call, ref core.Servic
 	}
 	from := m.From
 	step := time.Duration(m.StepSeconds) * time.Second
-	var parts []string
+	var parts, broken []string
 	for _, ch := range m.Charts {
 		mc := chartOf(ch, from, step)
 		data.Charts = append(data.Charts, mc)
-		if len(parts) < 4 {
+		switch {
+		case mc.Error != "":
+			// Not the caller's arguments: a chart someone pinned.
+			broken = append(broken, fmt.Sprintf(" The pinned chart %s %s can't be read (%s); someone with deploy access unpins it with `dock metrics unpin %s --agg %s` or the Metrics tab's Edit.",
+				mc.Name, mc.Agg, mc.Error, mc.Name, mc.Agg))
+		case len(parts) < 4:
 			parts = append(parts, chartSummary(mc))
 		}
 	}
 	sum := fmt.Sprintf("%s, last %s: %s.", ref, m.Range, strings.Join(parts, "; "))
-	if len(parts) == 0 {
+	switch {
+	case len(parts) == 0 && len(broken) == 0:
 		sum = fmt.Sprintf("%s pins no charts.", ref)
+	case len(parts) == 0:
+		sum = fmt.Sprintf("%s, last %s:", ref, m.Range)
 	}
+	sum += strings.Join(broken, "")
 	sum += fmt.Sprintf(" %d metrics sent; name one to read it.", len(m.Metrics))
 	for _, x := range m.Metrics {
 		if x.Cut > 0 {
@@ -144,7 +155,7 @@ func chartOf(ch apitypes.AppMetricChart, from time.Time, step time.Duration) met
 	if agg == "" && len(ch.Aggs) > 0 {
 		agg = ch.Aggs[0]
 	}
-	mc := metricChart{Name: ch.Name, Agg: agg, By: ch.By, Unit: ch.Unit, Shape: ch.Shape, Lines: []metricLine{}, More: ch.More, Aggs: ch.Aggs}
+	mc := metricChart{Name: ch.Name, Agg: agg, By: ch.By, Unit: ch.Unit, Shape: ch.Shape, Lines: []metricLine{}, More: ch.More, Aggs: ch.Aggs, Error: ch.Error}
 	for _, a := range ch.Attrs {
 		mc.Attrs = append(mc.Attrs, a.Key)
 	}

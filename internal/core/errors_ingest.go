@@ -249,7 +249,9 @@ func (c *Core) writeErrors(ctx context.Context, batch map[errorKey]*pendingError
 					return err
 				}
 				if regressed {
+					// Its alert names the occurrence that came back.
 					cur.ResolvedAt, cur.ResolvedBy, cur.RegressedAt, cur.LastRelease = nil, "", upd.RegressedAt, upd.LastRelease
+					cur.Title, cur.Culprit, cur.Sample, cur.LastSeen = upd.Title, upd.Culprit, upd.Sample, upd.LastSeen
 					events = append(events, issueEvent{issue: cur, target: *t, regressed: true})
 				}
 			}
@@ -346,12 +348,31 @@ func (c *Core) expireErrorAlerts(ctx context.Context, now time.Time) {
 	}
 }
 
-// resolveIssueAlerts resolves an issue's alerts, as it is resolved.
-func (c *Core) resolveIssueAlerts(ctx context.Context, serviceID, issueID int64, now time.Time) {
-	prefix := errorAlertKey + strconv.FormatInt(serviceID, 10) + ":"
-	id := ":" + strconv.FormatInt(issueID, 10)
+// resolveIssueAlerts resolves an issue's alerts, as it is resolved: its
+// own, and for a frontend issue the "new error" alert Dock Analytics
+// raised for its group on its environment's site (newErrorAlert), whose
+// regression would otherwise alert beside it.
+func (c *Core) resolveIssueAlerts(ctx context.Context, i store.ErrorIssue, env string, now time.Time) {
+	prefix := errorAlertKey + strconv.FormatInt(i.ServiceID, 10) + ":"
+	id := ":" + strconv.FormatInt(i.ID, 10)
 	for _, kind := range []string{"new", "regressed"} {
 		c.resolveAlert(ctx, prefix+kind+id, now)
+	}
+	group, ok := strings.CutPrefix(i.Fingerprint, frontendPrefix)
+	if !ok {
+		return
+	}
+	var site []string
+	e := c.alerts
+	e.mu.Lock()
+	for k, a := range e.open {
+		if strings.HasPrefix(k, newErrorKey) && strings.HasSuffix(k, ":"+group) && a.ProjectID != nil && *a.ProjectID == i.ProjectID && a.Environment == env {
+			site = append(site, k)
+		}
+	}
+	e.mu.Unlock()
+	for _, k := range site {
+		c.resolveAlert(ctx, k, now)
 	}
 }
 

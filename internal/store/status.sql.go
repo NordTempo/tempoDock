@@ -863,7 +863,7 @@ func (q *Queries) ListStatusComponents(ctx context.Context, pageID int64) ([]Sta
 }
 
 const listStatusFeed = `-- name: ListStatusFeed :many
-SELECT i.public_id, i.title, u.state, u.body, u.at, u.edited_at
+SELECT i.public_id, i.title, u.id, u.state, u.body, u.at, u.edited_at
 FROM status_incidents AS i JOIN status_updates AS u ON u.incident_id = i.id
 WHERE i.page_id = +?1
 ORDER BY u.at DESC, u.id DESC
@@ -878,6 +878,7 @@ type ListStatusFeedParams struct {
 type ListStatusFeedRow struct {
 	PublicID string
 	Title    string
+	ID       int64
 	State    string
 	Body     string
 	At       time.Time
@@ -897,6 +898,7 @@ func (q *Queries) ListStatusFeed(ctx context.Context, arg ListStatusFeedParams) 
 		if err := rows.Scan(
 			&i.PublicID,
 			&i.Title,
+			&i.ID,
 			&i.State,
 			&i.Body,
 			&i.At,

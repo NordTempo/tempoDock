@@ -12,7 +12,7 @@ replaces or removes a container it keeps its log, up to 64 MB per
 service (compressed) and 30 days.
 
 ```sh
-dock logs -s web --follow                  # live
+dock logs -s web --follow                  # live, on to each new release
 dock logs -s web --grep timeout --since 1h # search
 dock logs -s web --release 41              # a release that no longer runs
 dock logs -s web --build                   # the newest build's log
@@ -105,7 +105,7 @@ dock analytics errors shop               # browser errors, grouped
 dock analytics vitals shop               # LCP, INP, CLS at p75
 dock analytics replays shop              # sessions, with --errors for the ones that failed
 dock analytics goals add shop signup page:/welcome
-dock analytics funnels add shop checkout /cart /pay /done
+dock analytics funnels add shop checkout page:/cart page:/pay page:/done
 dock analytics site set shop --replay on # a site's own settings
 dock analytics site set shop --consent all # nothing before consent
 ```

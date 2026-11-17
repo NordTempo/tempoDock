@@ -46,6 +46,15 @@ func TestAlertChannelCommands(t *testing.T) {
 	if code, _, stderr := exec(t, "alerts", "channel", "test", "down"); code != int(output.ExitUnreachable) || !strings.Contains(stderr, "502") {
 		t.Fatalf("failing test: exit %d %q", code, stderr)
 	}
+	// Without Dock's email set up, an email channel says so when added,
+	// and its failed test names the fix, which isn't the channel's.
+	if code, _, stderr := exec(t, "alerts", "channel", "add", "mail", "--email", "ops@example.com"); code != 0 || !strings.Contains(stderr, "Email isn't set up") {
+		t.Fatalf("email channel add: exit %d %q", code, stderr)
+	}
+	if code, _, stderr := exec(t, "alerts", "channel", "test", "mail"); code != int(output.ExitUnreachable) || !strings.Contains(stderr, "dock email set") || strings.Contains(stderr, "add it again") {
+		t.Fatalf("email channel test: exit %d %q", code, stderr)
+	}
+	exec(t, "alerts", "channel", "remove", "mail", "--yes")
 	if code, _, stderr := exec(t, "alerts", "channel", "remove", "down"); code != int(output.ExitUsage) || !strings.Contains(stderr, "--yes") {
 		t.Fatalf("remove without --yes: exit %d %q", code, stderr)
 	}

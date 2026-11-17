@@ -561,8 +561,19 @@ func (c *Core) CreateAlertChannel(ctx context.Context, a Actor, platform bool, r
 	}
 	c.audit(ctx, channelAudit(a, org), "alert.channel_add", nil, nil, "alert channel "+req.Name,
 		fmt.Sprintf("added %s alert channel %s to %s (%s and up)", req.Kind, req.Name, target, sev))
-	return apitypes.CreatedAlertChannel{Channel: toChannel(row), Secret: generated}, nil
+	out := apitypes.CreatedAlertChannel{Channel: toChannel(row), Secret: generated}
+	if req.Kind == apitypes.ChannelEmail {
+		if _, err := c.store.GetEmailSettings(ctx); store.IsNotFound(err) {
+			out.Warning = emailNotSetUpWarning
+		}
+	}
+	return out, nil
 }
+
+// emailNotSetUpWarning is what adding or testing an email channel says
+// while Dock has no email server: nothing reaches it until an operator
+// sets one up, and the channel itself needs no change.
+const emailNotSetUpWarning = "Email isn't set up on this Dock, so nothing reaches this channel yet. An operator sets it up with `dock email set` or the console's Email page; the channel then works as it is."
 
 // channelSettings validates a new channel's settings and returns what is
 // sealed, what lists show, and a generated webhook secret.

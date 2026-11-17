@@ -152,7 +152,8 @@ func TestStatusIncidents(t *testing.T) {
 		t.Errorf("history = %+v, %v", hist, err)
 	}
 	feed, err := h.c.PublicStatusFeed(h.ctx, page)
-	if err != nil || len(feed.Entries) != 3 || feed.Entries[0].Message != "Fixed." || feed.Entries[2].State != apitypes.IncidentInvestigating {
+	if err != nil || len(feed.Entries) != 3 || feed.Entries[0].Message != "Fixed." || feed.Entries[2].State != apitypes.IncidentInvestigating ||
+		feed.Entries[0].Update == 0 || feed.Entries[0].Update == feed.Entries[1].Update {
 		t.Errorf("feed = %+v, %v", feed, err)
 	}
 	b, _ := json.Marshal([]any{pub, one, hist, feed})

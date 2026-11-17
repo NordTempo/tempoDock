@@ -45,6 +45,10 @@ type AppMetricChart struct {
 	More  int             `json:"more,omitempty"`
 	// Attrs are the metric's attributes, the most values first.
 	Attrs []AppMetricAttr `json:"attrs"`
+	// Error says why the chart can't be read, though its metric has
+	// points: it was pinned with an aggregation the metric doesn't take.
+	// Unpinning it (or pinning it with one of Aggs) mends it.
+	Error string `json:"error,omitempty" doc:"Why the chart can't be read, such as an aggregation its metric doesn't take; unpin it or pin it with one of aggs"`
 }
 
 // AppMetricLine is a chart's line: its series with one value of the

@@ -145,11 +145,15 @@ func (c *Core) AppMetricChart(ctx context.Context, a Actor, ref ServiceRef, spec
 	if err != nil {
 		return apitypes.AppMetricChartResult{}, err
 	}
+	if charts[0].Error != "" {
+		return apitypes.AppMetricChartResult{}, invalid("%s", charts[0].Error)
+	}
 	return apitypes.AppMetricChartResult{Range: rng, From: from, StepSeconds: int64(step.Seconds()), Chart: charts[0]}, nil
 }
 
 // SetMetricCharts pins a service's charts, in order, replacing what was
-// pinned: a service setting, audited.
+// pinned: a service setting, audited. A new chart's aggregation must be
+// one its metric takes (checkChartAggs).
 func (c *Core) SetMetricCharts(ctx context.Context, a Actor, ref ServiceRef, req apitypes.SetMetricChartsRequest) (apitypes.MetricCharts, error) {
 	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeDeploy, "pinning charts")
 	if err != nil {
@@ -167,6 +171,9 @@ func (c *Core) SetMetricCharts(ctx context.Context, a Actor, ref ServiceRef, req
 	}
 	before, _, err := c.metricCharts(ctx, ss.svc.ID)
 	if err != nil {
+		return apitypes.MetricCharts{}, err
+	}
+	if err := c.checkChartAggs(ctx, ss, before, charts); err != nil {
 		return apitypes.MetricCharts{}, err
 	}
 	raw, err := json.Marshal(charts)
@@ -194,6 +201,39 @@ func checkChartSpecs(specs []apitypes.MetricChartSpec) error {
 		case s.Agg != "" && !slices.Contains([]analytics.MetricAgg{analytics.AggSum, analytics.AggMax, analytics.AggMin, analytics.AggAvg,
 			analytics.AggRate, analytics.AggP50, analytics.AggP95, analytics.AggP99}, analytics.MetricAgg(s.Agg)):
 			return invalid("aggregation %q: use sum, max, min, avg, rate, p50, p95 or p99", s.Agg)
+		}
+	}
+	return nil
+}
+
+// checkChartAggs refuses a chart newly pinned with an aggregation its
+// metric doesn't take, as the trace store reads the metric today: one
+// request for the new charts that name one. A metric with no points yet,
+// tracing off or a store that doesn't answer refuses nothing; such a
+// chart then says what is wrong itself (AppMetricChart.Error).
+func (c *Core) checkChartAggs(ctx context.Context, ss svcScope, before, after []apitypes.MetricChartSpec) error {
+	var specs []apitypes.MetricChartSpec
+	for _, s := range after {
+		if s.Agg != "" && !slices.Contains(before, s) {
+			specs = append(specs, s)
+		}
+	}
+	cl, _ := c.tracesClient()
+	if len(specs) == 0 || cl == nil {
+		return nil
+	}
+	from, to, step, err := appMetricsWindow(apitypes.AppMetrics1h)
+	if err != nil {
+		return err
+	}
+	charts, err := c.queryCharts(ctx, cl, ss, specs, from, to, step, traceMask{})
+	if err != nil {
+		c.log.Info("app metrics: pinned without checking the aggregation", "service", ss.svc.ID, "err", err)
+		return nil
+	}
+	for _, ch := range charts {
+		if ch.Error != "" {
+			return invalid("%s", ch.Error)
 		}
 	}
 	return nil
@@ -317,7 +357,7 @@ func (c *Core) queryCharts(ctx context.Context, cl *analytics.Client, ss svcScop
 		chart := apitypes.AppMetricChart{
 			MetricChartSpec: spec, Dock: slices.Contains(defaultCharts, spec), Unit: ch.Unit, Kind: metricKind(ch.Kind), Shape: string(ch.Shape),
 			Aggs: []string{}, Series: ch.Series, Lines: make([]apitypes.AppMetricLine, 0, len(ch.Lines)), More: ch.More,
-			Attrs: make([]apitypes.AppMetricAttr, 0, len(ch.Attrs)),
+			Attrs: make([]apitypes.AppMetricAttr, 0, len(ch.Attrs)), Error: ch.Error,
 		}
 		if ch.Shape != "" {
 			for _, a := range analytics.Aggs(ch.Shape) {
