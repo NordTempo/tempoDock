@@ -614,6 +614,17 @@ func (c *Core) restoreInPlace(ctx context.Context, a Actor, ss svcScope, snap st
 // the safety snapshot is copied back before the start, so a failure leaves
 // the service as it was.
 func (c *Core) runRestoreInPlace(ctx context.Context, ss svcScope, snap, safety store.VolumeSnapshot, safetyVols []store.Volume, mounts []node.Mount) error {
+	return c.restoreInPlaceWith(ctx, ss, safety, safetyVols, mounts, "copy the snapshot in", func(ctx context.Context) error {
+		return c.copySnapshot(ctx, ss, snap, mounts)
+	}, nil)
+}
+
+// restoreInPlaceWith is an in-place restore: stop the service, take the
+// safety snapshot, fill its volumes (what says how, in an error), run
+// beforeStart if set, and start the active release again. A failed fill
+// copies the safety snapshot back (into mounts) before the start.
+func (c *Core) restoreInPlaceWith(ctx context.Context, ss svcScope, safety store.VolumeSnapshot, safetyVols []store.Volume, mounts []node.Mount,
+	what string, fill func(context.Context) error, beforeStart func(context.Context)) error {
 	active, err := c.store.GetActiveRelease(ctx, ss.svc.ID)
 	if err != nil && !store.IsNotFound(err) {
 		return err
@@ -642,11 +653,14 @@ func (c *Core) runRestoreInPlace(ctx context.Context, ss svcScope, snap, safety 
 	if _, err := c.takeClaimed(ctx, ss, safety, safetyVols, nil); err != nil {
 		return errors.Join(fmt.Errorf("snapshot the data it replaces, so nothing was restored: %w", err), start())
 	}
-	if err := c.copySnapshot(ctx, ss, snap, mounts); err != nil {
+	if err := fill(ctx); err != nil {
 		if back := c.copySnapshot(ctx, ss, safety, mounts); back != nil {
-			return fmt.Errorf("copy the snapshot in: %w; and putting the data back from snapshot %d failed too (%w), so %s stays stopped: restore snapshot %d in place again", err, safety.ID, back, ss.svc.Name, safety.ID)
+			return fmt.Errorf("%s: %w; and putting the data back from snapshot %d failed too (%w), so %s stays stopped: restore snapshot %d in place again", what, err, safety.ID, back, ss.svc.Name, safety.ID)
 		}
-		return errors.Join(fmt.Errorf("copy the snapshot in: %w; the data was put back from snapshot %d", err, safety.ID), start())
+		return errors.Join(fmt.Errorf("%s: %w; the data was put back from snapshot %d", what, err, safety.ID), start())
+	}
+	if beforeStart != nil {
+		beforeStart(ctx)
 	}
 	return start()
 }

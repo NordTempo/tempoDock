@@ -446,6 +446,15 @@ export const topics: Record<TopicId, Topic> = {
         cli: "dock service switch-references {service} --to db-restored -e {env}",
       },
       {
+        what: "Restore a Postgres database to a moment",
+        cli: "dock backup restore -s {service} -e {env} --to-time 2026-11-17T14:01Z",
+        at: { s: "backups" },
+      },
+      {
+        what: "Turn on point-in-time restore (operators)",
+        cli: "dock backup pitr on -s {service} -e {env} --days 7",
+      },
+      {
         what: "Change the hour",
         cli: "dock backup schedule -s {service} -e {env} --hour 4",
       },
@@ -460,7 +469,8 @@ export const topics: Record<TopicId, Topic> = {
     ],
     related: ["data", "services", "servers"],
     guide: "databases#backups",
-    words: "restore snapshot restic dump pg_dump schedule",
+    words:
+      "restore snapshot restic dump pg_dump schedule pitr point in time wal",
   },
 
   logs: {

@@ -88,6 +88,8 @@ func toolArgs(schema any) map[string]any {
 			args[k] = []any{}
 		case strings.HasSuffix(k, "_path"): // tools/list leaves out patterns
 			args[k] = "/x"
+		case k == "time":
+			args[k] = "2026-11-17T14:01:00Z"
 		default:
 			args[k] = "x"
 		}

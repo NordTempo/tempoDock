@@ -89,9 +89,19 @@ func registerBackups(s *Server, a huma.API) {
 		return reply(s.core.UpdateBackupSchedule(ctx, actor, in.ref(), in.Body))
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "set-backup-pitr", Method: http.MethodPut, Path: servicePathT + "/backups/pitr",
+		Summary: "Turn a database's point-in-time restore on or off", Tags: tags,
+		Description: "Postgres template databases with backups on a storage connection (ADR 0093): continuous WAL archiving next to the backups and a daily base backup, so the database restores to any moment of the last `days` days. Turning it on or off restarts the database once. Backups are the platform's: operators only.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ServicePath
+		Body apitypes.SetPITRRequest
+	}) (*out[apitypes.ServiceBackups], error) {
+		return reply(s.core.SetPITR(ctx, actor, in.ref(), in.Body))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "restore-backup", Method: http.MethodPost, Path: servicePathT + "/backups/restore",
-		Summary: "Restore a backup into a new service", Tags: tags, DefaultStatus: http.StatusAccepted,
-		Description: "Creates a new service from the template with the snapshot's data; the live service is never touched. Answers with the new service at once; the restore finishes in the background. Scope: deploy.",
+		Summary: "Restore a backup, or a time, into a new service", Tags: tags, DefaultStatus: http.StatusAccepted,
+		Description: "Creates a new service from the template with the snapshot's data; the live service is never touched. With `to_time` instead of `snapshot`, restores a Postgres database with point-in-time restore as it was at that moment (ADR 0093): a time outside the restorable window, or one the WAL archive doesn't reach (a missing segment), is refused with the latest time it can reach. `in_place` restores the time into the database itself: it stops, a safety snapshot keeps what it holds, and it starts on the restored data. Answers with the service at once; the restore finishes in the background. Scope: deploy.",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		ServicePath
 		Body apitypes.RestoreBackupRequest

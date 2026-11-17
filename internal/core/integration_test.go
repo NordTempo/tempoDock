@@ -85,6 +85,13 @@ func dockerHarness(t *testing.T) *Core {
 // health check (ADR 0041).
 func dockerHarnessWithProbe(t *testing.T, probe string) *Core {
 	t.Helper()
+	return dockerHarnessWithTools(t, probe, "")
+}
+
+// dockerHarnessWithTools is dockerHarnessWithProbe with self (a dock
+// binary on this host) for the sidecars and jobs that run it.
+func dockerHarnessWithTools(t *testing.T, probe, self string) *Core {
+	t.Helper()
 	ctx := context.Background()
 	dir := t.TempDir()
 	st := openTestStore(t, filepath.Join(dir, "dock.db"))
@@ -108,7 +115,7 @@ func dockerHarnessWithProbe(t *testing.T, probe string) *Core {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rt.Probe = probe
+	rt.Probe, rt.Self = probe, self
 	// A container without a port is healthy once it stayed up this long;
 	// a second proves the same as production's five. Set once: parallel
 	// tests' deploys read it.

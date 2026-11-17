@@ -162,3 +162,28 @@ WHERE backup_logs.service_id = +sqlc.arg(service_id) AND backup_logs.backup_id <
 -- name: SetServiceFromTemplate :exec
 -- Records the app template (ADR 0083) a service was created from.
 UPDATE services SET from_template = ?, from_template_revision = ? WHERE id = +?;
+
+-- name: CreatePITRRestore :one
+-- A restore to a time (ADR 0093): from the base backup snapshot_id of
+-- generation wal_generation, into restored_to.
+INSERT INTO backups (service_id, operation, kind, trigger, status, repository, snapshot_id, restored_to, created_by, started_at,
+    wal_generation, restore_to_time)
+VALUES (?, 'restore', 'pitr', 'manual', 'running', ?, ?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: SetBackupBase :exec
+-- Records what a finished base backup says about itself.
+UPDATE backups SET wal_generation = ?, wal_start = ?, wal_segment_bytes = ?, consistent_at = ? WHERE id = +?;
+
+-- name: ListPITRBases :many
+-- A database's base backups that restore: succeeded, unpruned, in the
+-- order they became consistent.
+SELECT * FROM backups
+WHERE service_id = +? AND kind = 'pitr' AND operation = 'backup' AND status = 'succeeded' AND pruned = 0
+ORDER BY consistent_at;
+
+-- name: DetachBaseBackupsWAL :exec
+-- After a backup move: base backups were copied, but not the WAL they
+-- replay from, so they no longer restore to a time; retention still ages
+-- them out (ADR 0093).
+UPDATE backups SET wal_start = '' WHERE kind = 'pitr' AND operation = 'backup' AND wal_start <> '';

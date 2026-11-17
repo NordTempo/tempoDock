@@ -211,6 +211,7 @@ func (c *Core) runMove(ctx context.Context, a Actor, sources []moveSource, targe
 	}
 	c.log.Info("backups: moved", "to", target.URL, "backups", moved)
 	c.audit(ctx, System, "backup.moved", nil, nil, "backups", summary)
+	c.pitrAfterMove(ctx)
 }
 
 // move copies each source into target, checks and lists target, points

@@ -3687,6 +3687,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/backups/pitr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Turn a database's point-in-time restore on or off
+         * @description Postgres template databases with backups on a storage connection (ADR 0093): continuous WAL archiving next to the backups and a daily base backup, so the database restores to any moment of the last `days` days. Turning it on or off restarts the database once. Backups are the platform's: operators only.
+         */
+        put: operations["set-backup-pitr"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/environments/{environment}/services/{service}/backups/restore": {
         parameters: {
             query?: never;
@@ -3697,8 +3717,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Restore a backup into a new service
-         * @description Creates a new service from the template with the snapshot's data; the live service is never touched. Answers with the new service at once; the restore finishes in the background. Scope: deploy.
+         * Restore a backup, or a time, into a new service
+         * @description Creates a new service from the template with the snapshot's data; the live service is never touched. With `to_time` instead of `snapshot`, restores a Postgres database with point-in-time restore as it was at that moment (ADR 0093): a time outside the restorable window, or one the WAL archive doesn't reach (a missing segment), is refused with the latest time it can reach. `in_place` restores the time into the database itself: it stops, a safety snapshot keeps what it holds, and it starts on the restored data. Answers with the service at once; the restore finishes in the background. Scope: deploy.
          */
         post: operations["restore-backup"];
         delete?: never;
@@ -7374,6 +7394,8 @@ export interface components {
             snapshots: number;
         };
         BackupRun: {
+            /** Format: date-time */
+            consistent_at?: string;
             created_by: string;
             error?: string;
             /** Format: date-time */
@@ -7381,7 +7403,7 @@ export interface components {
             /** Format: int64 */
             id: number;
             /** @enum {string} */
-            kind: "postgres" | "redis" | "mysql" | "volume";
+            kind: "postgres" | "redis" | "mysql" | "volume" | "pitr";
             not_restorable?: string;
             off_box: boolean;
             /** @enum {string} */
@@ -7397,6 +7419,8 @@ export interface components {
             started_at: string;
             /** @enum {string} */
             status: "running" | "succeeded" | "failed";
+            /** Format: date-time */
+            to_time?: string;
             /** @enum {string} */
             trigger: "schedule" | "manual";
         };
@@ -10076,6 +10100,47 @@ export interface components {
             skipped: components["schemas"]["RolloutService"][] | null;
             started: components["schemas"]["RolloutService"][] | null;
         };
+        PITR: {
+            archiver?: components["schemas"]["PITRArchiver"];
+            /** Format: int64 */
+            base_backups: number;
+            /** Format: int64 */
+            days: number;
+            deploys: components["schemas"]["PITRDeploy"][] | null;
+            enabled: boolean;
+            /** Format: date-time */
+            from?: string;
+            /** Format: date-time */
+            through?: string;
+            unavailable?: string;
+            used_by: string[] | null;
+            /** Format: int64 */
+            wal_bytes: number;
+        };
+        PITRArchiver: {
+            /** Format: int64 */
+            disk_bytes?: number;
+            /** Format: int64 */
+            disk_free?: number;
+            healthy: boolean;
+            last_error?: string;
+            /** Format: date-time */
+            last_error_at?: string;
+            /** Format: date-time */
+            oldest_waiting?: string;
+            problem?: string;
+            /** Format: int64 */
+            waiting: number;
+            /** Format: int64 */
+            waiting_bytes: number;
+        };
+        PITRDeploy: {
+            /** Format: date-time */
+            at: string;
+            /** Format: int64 */
+            number: number;
+            service: string;
+        };
         PackageFix: {
             findings: string[] | null;
             fixed_in?: string;
@@ -10710,7 +10775,10 @@ export interface components {
         };
         RestoreBackupRequest: {
             as?: string;
-            snapshot: string;
+            in_place?: boolean;
+            snapshot?: string;
+            /** Format: date-time */
+            to_time?: string;
         };
         RestoreResult: {
             restore: components["schemas"]["BackupRun"];
@@ -11184,6 +11252,7 @@ export interface components {
             /** @enum {string} */
             kind: "postgres" | "redis" | "mysql" | "volume";
             off_box: boolean;
+            pitr?: components["schemas"]["PITR"];
             restorable: boolean;
             runs: components["schemas"]["BackupRun"][] | null;
             schedule: components["schemas"]["BackupSchedule"];
@@ -11493,6 +11562,11 @@ export interface components {
         };
         SetOrgVariableRequest: {
             value: string;
+        };
+        SetPITRRequest: {
+            /** Format: int64 */
+            days?: number;
+            enabled?: boolean;
         };
         SetPlatformRoleRequest: {
             /** @enum {string} */
@@ -34379,6 +34453,115 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BackupRun"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "set-backup-pitr": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPITRRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceBackups"];
                 };
             };
             /** @description Bad Request */

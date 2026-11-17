@@ -269,7 +269,7 @@ $R backup ` + backupFlags + ` .
 	default:
 		return "", fmt.Errorf("unknown backup kind %q", kind)
 	}
-	return prelude + initRepo + run + retention, nil
+	return prelude + initRepo + run + forget + retention, nil
 }
 
 // Restic names of the control plane's own backups (ADR 0021).
@@ -301,7 +301,8 @@ func ControlPlaneEnv(repo Repo, ret Retention) map[string]string {
 }
 
 // BackupEnv is the job environment for backing up src into repo with
-// retention ret.
+// retention ret. A caller sets DOCK_FORGET on it for base backups to
+// remove along (BaseEnv).
 func BackupEnv(src Source, repo Repo, ret Retention) map[string]string {
 	env := repo.Env()
 	env["DOCK_TAG"] = Tag(src.ServiceID)

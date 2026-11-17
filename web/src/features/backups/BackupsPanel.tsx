@@ -25,7 +25,11 @@ import type { State } from "../../ui/status";
 import { Saved } from "../create/form";
 import { backupWhat, hourLabel } from "./backups";
 import { useDeleteSnapshot, useSnapshots, useTakeSnapshot } from "./data";
+import type { PitrMode } from "./PitrDialog";
+import { PitrRow, PitrSection } from "./PitrSection";
+import { stripMarks, windowOf } from "./pitr";
 import {
+  isBaseRun,
   isEmpty,
   type PointState,
   pointName,
@@ -39,11 +43,16 @@ import {
 const RestoreDialog = lazy(() => import("./RestoreDialog"));
 const SwitchDialog = lazy(() => import("./SwitchDialog"));
 const LogDialog = lazy(() => import("./LogDialog"));
+const TimeRestoreDialog = lazy(() => import("./TimeRestoreDialog"));
+const PitrDialog = lazy(() => import("./PitrDialog"));
 
 /** What the tab has open: one dialog at a time. */
 type Open =
   | { what: "restore" | "log" | "delete"; point: RestorePoint }
-  | { what: "switch"; to: string; since?: string };
+  | { what: "switch"; to: string; since?: string }
+  /** A restore to a time, at the moment picked on the strip. */
+  | { what: "time"; at?: number }
+  | { what: "pitr"; mode: PitrMode };
 
 /** One kind of restore point in the list, under its own heading row. */
 type Group = {
@@ -68,7 +77,9 @@ const backupTitle: Record<ServiceBackups["kind"], string> = {
  * one point marked latest: the newest usable dump, else snapshot (never a
  * failed or empty one; two "latest" read as a choice), and failed runs
  * secondary. One Restore per point opens one dialog;
- * the latest restores into new services offer Use.
+ * the latest restores into new services offer Use. A Postgres database
+ * also has point in time (ADR 0093): its settings row, and its window
+ * over the table, whose "Restore to a time…" then leads instead.
  */
 export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const backups = useBackups(ref);
@@ -108,7 +119,13 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       : undefined;
   const restorable = (p: RestorePoint) =>
     p.state === "ready" &&
-    (p.kind === "snapshot" || (backups.restorable && !p.run.not_restorable));
+    (p.kind === "snapshot" ||
+      (backups.restorable && !p.run.not_restorable && !isBaseRun(p.run)));
+  // Point in time, for Postgres: drawn from the data at this render.
+  const pitr = backups.pitr;
+  const now = Date.now();
+  const window = pitr && windowOf(pitr, now);
+  const marks = pitr && stripMarks(pitr, backups.runs, snaps.snapshots, now);
   const groups = (["backup", "snapshot"] as const).map((kind): Group => {
     const of = points.filter((p) => p.kind === kind);
     return {
@@ -120,9 +137,9 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   });
   // The one latest point, and the Restore to lead with: the latest dump,
   // else the latest snapshot. It leads only into a new service, which
-  // changes nothing live.
+  // changes nothing live, and gives way to a restore to a time.
   const latest = groups.find((g) => g.latest)?.latest;
-  const lead = intoNew ? latest : undefined;
+  const lead = intoNew && !window ? latest : undefined;
   // #backup-<id> (a failed backup's alert links there): scroll to its row
   // and open its log, once per hash.
   const hash = useLocation({ select: (l) => l.hash });
@@ -205,6 +222,18 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           Volume copies on this server, the service paused while copied; keeps{" "}
           {plural(snaps.keep, "snapshot")} for {plural(snaps.keep_days, "day")}
         </dd>
+        {pitr && (
+          <>
+            <dt>Point in time</dt>
+            <dd>
+              <PitrRow
+                serviceRef={ref}
+                pitr={pitr}
+                onSettings={(mode) => setOpen({ what: "pitr", mode })}
+              />
+            </dd>
+          </>
+        )}
         <dt>Restoring</dt>
         <dd>
           {intoNew
@@ -241,6 +270,18 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           onUse={(to) =>
             setOpen({ what: "switch", to, since: records[0]?.pointAt })
           }
+        />
+      )}
+      {pitr && marks && (
+        <PitrSection
+          serviceRef={ref}
+          pitr={pitr}
+          runs={backups.runs}
+          marks={marks}
+          window={window}
+          why={why}
+          onRestore={(at) => setOpen({ what: "time", at })}
+          onSettings={(mode) => setOpen({ what: "pitr", mode })}
         />
       )}
       <Panel>
@@ -327,6 +368,27 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         )}
         {open?.what === "log" && (
           <LogDialog serviceRef={ref} point={open.point} onClose={close} />
+        )}
+        {open?.what === "time" && pitr && marks && window && (
+          <TimeRestoreDialog
+            serviceRef={ref}
+            pitr={pitr}
+            runs={backups.runs}
+            marks={marks}
+            window={window}
+            initial={open.at}
+            onClose={close}
+            onStarted={close}
+          />
+        )}
+        {open?.what === "pitr" && pitr && (
+          <PitrDialog
+            serviceRef={ref}
+            pitr={pitr}
+            hour={backups.schedule.enabled ? backups.schedule.hour : undefined}
+            mode={open.mode}
+            onClose={close}
+          />
         )}
         {open?.what === "switch" && (
           <SwitchDialog

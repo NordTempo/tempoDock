@@ -145,6 +145,67 @@ Backups of other volumes are restored by hand for now: with the repository
 password, `restic -r <repository> restore <snapshot> --target <dir>`
 (locally, the repository is the `dock_backups_*` volume on the server).
 
+## Point-in-time restore
+
+A daily dump loses up to a day. A Postgres template database (`postgres`,
+`pgvector`) with **point-in-time restore** on restores to any moment of the
+last days instead: Postgres hands each finished piece of its write-ahead
+log (WAL) to a small archiver next to the database, which stores it,
+encrypted, beside the backups; a base backup joins each daily dump. It
+needs backups on a storage connection ([Where backups go](#where-backups-go)),
+and an operator turns it on per database ([ADR 0093](../decisions/0093-point-in-time-restore.md)):
+
+```sh
+dock backup pitr on db --days 7     # restarts db once, then takes a base backup
+dock backup list db                 # the restorable window, and how archiving does
+dock backup restore db --to-time 2026-11-17T14:01Z              # into db-restored
+dock backup restore db --to-time 2026-11-17T15:01+01:00 --in-place
+dock backup pitr off db             # restarts db without archiving
+```
+
+- **The window** runs from the oldest base backup to the newest archived
+  WAL, usually under a minute behind (`archive_timeout` is 60 s). Times are
+  UTC unless they carry an offset.
+- **Into a new service** (`db-restored`, or `--as`) with the credentials
+  db had; check it, then **Use db-restored** as for any restore.
+  `--in-place` stops db, keeps what it holds in a safety snapshot
+  (restoring that one undoes it), restores, and starts it again; the
+  window starts over with a new base backup.
+- **Refusals** name what is possible: a time before the oldest base
+  backup, or past what the archive holds, or a lost WAL segment, says the
+  latest time it can reach.
+- **Storage**: base backups deduplicate from day to day, so they cost
+  about the database's size; WAL costs about the database's writes for
+  the days kept, compressed. Retention runs with the daily backup. A
+  backup move (`dock backup move`) starts the window over in the new
+  storage.
+- **Turning it off** keeps the window until it ages out with the daily
+  backups.
+
+### When archiving stalls
+
+If the storage stops answering, or its keys stop working, Postgres keeps
+every WAL file it couldn't archive, and the database's disk fills until
+archiving catches up. Before that happens, the archiver's health check
+fails and an alert opens ("Archiving of shop/production/db is behind"): a
+finished WAL file waited over 5 minutes, or the waiting WAL takes over
+1 GB or a tenth of the database's disk. The alert and `dock backup list db`
+say how much waits, how long, and the last upload error. It resolves by
+itself once archiving catches up.
+
+To recover:
+
+1. Fix the storage (`dock storage`), and the archiver uploads what waits;
+   nothing is lost meanwhile, it is only not off the server yet.
+2. If the disk is close to full and the storage can't be fixed in time,
+   `dock backup pitr off db`. db restarts without archiving, and Postgres
+   frees the waiting WAL at its next checkpoint (within 5 minutes). The archive
+   settings are on db's command line, so only that restart drops them, not
+   a reload. Turn it on again when the storage works; it starts a new
+   window with a base backup.
+3. A database whose disk already filled stops writing. Free space on the
+   server (or grow the volume), then turn point-in-time restore off as in 2.
+
 ## Snapshots
 
 A snapshot is a quick copy of a service's volumes on its own server, for
@@ -201,4 +262,5 @@ operator decides where they go and when.
 |---|---|
 | See backups, snapshots and settings | read |
 | Back up now, restore; take, restore and delete snapshots | deploy |
-| Change a service's schedule, configure retention, move the backups, reveal the repository password | operator |
+| Restore to a time (new service or in place) | deploy |
+| Change a service's schedule, turn point-in-time restore on or off, configure retention, move the backups, reveal the repository password | operator |

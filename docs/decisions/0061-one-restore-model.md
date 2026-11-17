@@ -1,7 +1,8 @@
 # 0061: One restore model: restore points, a restored service, and switching to it
 
 Status: accepted (Saile decided the model; the details below are the
-agent's)
+agent's); amended by [0093](0093-point-in-time-restore.md) (a Postgres
+database restores to a time, into a new service or, explicitly, in place)
 
 ## Context
 

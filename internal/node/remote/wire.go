@@ -474,13 +474,15 @@ type jobRequest struct {
 	Pause []string `json:"pause,omitempty"`
 	// Sync is node.JobSpec.Sync (protocol 21, MoveSyncProtocol).
 	Sync bool `json:"sync,omitempty"`
+	// Dock is node.JobSpec.Dock (protocol 33, SidecarProtocol).
+	Dock bool `json:"dock,omitempty"`
 }
 
 func toJobRequest(s node.JobSpec) jobRequest {
 	return jobRequest{
 		Name: s.Name, Image: s.Image, Labels: toWireLabels(s.Labels), Env: s.Env, Script: s.Script,
 		Network: s.Network, Mounts: toWireMounts(s.Mounts),
-		MemoryBytes: s.Resources.MemoryBytes, NanoCPUs: s.Resources.NanoCPUs, Pause: s.Pause, Sync: s.Sync,
+		MemoryBytes: s.Resources.MemoryBytes, NanoCPUs: s.Resources.NanoCPUs, Pause: s.Pause, Sync: s.Sync, Dock: s.Dock,
 	}
 }
 
@@ -488,7 +490,7 @@ func (w jobRequest) node() node.JobSpec {
 	return node.JobSpec{
 		Name: w.Name, Image: w.Image, Labels: w.Labels.node(), Env: w.Env, Script: w.Script,
 		Network: w.Network, Mounts: fromWireMounts(w.Mounts),
-		Resources: node.Resources{MemoryBytes: w.MemoryBytes, NanoCPUs: w.NanoCPUs}, Pause: w.Pause, Sync: w.Sync,
+		Resources: node.Resources{MemoryBytes: w.MemoryBytes, NanoCPUs: w.NanoCPUs}, Pause: w.Pause, Sync: w.Sync, Dock: w.Dock,
 	}
 }
 
@@ -596,14 +598,37 @@ type wireEvent struct {
 	// Request is new in protocol 22: what woke an environment, on an
 	// ActionWake event (ADR 0070).
 	Request string `json:"request,omitempty"`
+	// Role is new in protocol 33: a sidecar's event (SidecarProtocol).
+	Role string `json:"role,omitempty"`
 }
 
 func toWireEvent(e node.ContainerEvent) wireEvent {
-	return wireEvent{ContainerID: e.ContainerID, Labels: toWireLabels(e.Labels), Action: e.Action, ExitCode: e.ExitCode, Health: e.Health, Time: e.Time, Request: e.Request}
+	return wireEvent{ContainerID: e.ContainerID, Labels: toWireLabels(e.Labels), Action: e.Action, ExitCode: e.ExitCode, Health: e.Health, Time: e.Time, Request: e.Request, Role: e.Role}
 }
 
 func (w wireEvent) node() node.ContainerEvent {
-	return node.ContainerEvent{ContainerID: w.ContainerID, Labels: w.Labels.node(), Action: w.Action, ExitCode: w.ExitCode, Health: w.Health, Time: w.Time, Request: w.Request}
+	return node.ContainerEvent{ContainerID: w.ContainerID, Labels: w.Labels.node(), Action: w.Action, ExitCode: w.ExitCode, Health: w.Health, Time: w.Time, Request: w.Request, Role: w.Role}
+}
+
+// sidecarRequest is ensure-sidecar's argument (protocol 33): the sidecar
+// travels as a container spec, the fields they share.
+type sidecarRequest struct {
+	Spec wireSpec `json:"spec"`
+}
+
+func toSidecarRequest(s node.SidecarSpec) sidecarRequest {
+	return sidecarRequest{Spec: toWireSpec(node.ContainerSpec{
+		Name: s.Name, Image: s.Image, Labels: s.Labels, Env: s.Env, Args: s.Args, Network: s.Network,
+		Aliases: s.Aliases, Mounts: s.Mounts, Resources: s.Resources, Health: s.Health,
+	})}
+}
+
+func (r sidecarRequest) node() node.SidecarSpec {
+	c := r.Spec.node()
+	return node.SidecarSpec{
+		Name: c.Name, Image: c.Image, Labels: c.Labels, Env: c.Env, Args: c.Args, Network: c.Network,
+		Aliases: c.Aliases, Mounts: c.Mounts, Resources: c.Resources, Health: c.Health,
+	}
 }
 
 type wireRoute struct {

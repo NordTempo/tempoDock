@@ -31,7 +31,7 @@ server, not off-box. Restores create a new service; the live one is never
 touched.`,
 	})
 	cmd.AddCommand(newBackupListCmd(g), newBackupLogCmd(g), newBackupRunCmd(g), newBackupRestoreCmd(g),
-		newBackupScheduleCmd(g), newBackupStatusCmd(g), newBackupConfigureCmd(g), newBackupMoveCmd(g))
+		newBackupScheduleCmd(g), newBackupPITRCmd(g), newBackupStatusCmd(g), newBackupConfigureCmd(g), newBackupMoveCmd(g))
 	return cmd
 }
 
@@ -120,6 +120,7 @@ func printBackups(g *globals, b apitypes.ServiceBackups) error {
 	if !b.OffBox {
 		g.io.Warnf("Backups stay on the service's server. Add a bucket with `dock storage add`, then `dock backup move --storage <name>`.")
 	}
+	printPITR(g, b.PITR)
 	if len(b.Runs) == 0 {
 		g.io.Detail("No backups yet. Run one with `dock backup run`.")
 		return nil
@@ -163,10 +164,41 @@ func runNote(r apitypes.BackupRun) string {
 	switch {
 	case r.Error != "":
 		return r.Error
+	case r.ToTime != nil && r.RestoredTo != "":
+		return "to " + r.ToTime.UTC().Format(time.RFC3339) + " into " + r.RestoredTo
 	case r.RestoredTo != "":
 		return "into " + r.RestoredTo
+	case r.ConsistentAt != nil:
+		return "base backup, restores from " + r.ConsistentAt.UTC().Format(time.RFC3339)
 	}
 	return ""
+}
+
+// printPITR prints a database's point-in-time restore: its window and
+// how archiving does, or how to turn it on.
+func printPITR(g *globals, p *apitypes.PITR) {
+	if p == nil {
+		return
+	}
+	if !p.Enabled {
+		if p.Unavailable != "" {
+			g.io.Detail("Point-in-time restore is off: " + p.Unavailable + ".")
+		} else {
+			g.io.Detail("Point-in-time restore is off. Turn it on with `dock backup pitr on` to restore any moment of the last days.")
+		}
+		return
+	}
+	window := "nothing yet: the first base backup is on its way"
+	if p.From != nil {
+		window = "from " + p.From.UTC().Format(time.RFC3339)
+		if p.Through != nil {
+			window += " to " + p.Through.UTC().Format(time.RFC3339)
+		}
+	}
+	_ = g.io.Fields("point in time", fmt.Sprintf("on, %d days", p.Days), "restorable", window)
+	if a := p.Archiver; a != nil && !a.Healthy {
+		g.io.Warnf("Archiving is behind: %s", a.Problem)
+	}
 }
 
 func sizeText(r apitypes.BackupRun) string {
@@ -304,52 +336,147 @@ func waitRun(ctx context.Context, s *session, t target, id int64) (apitypes.Back
 
 func newBackupRestoreCmd(g *globals) *cobra.Command {
 	var f targetFlags
-	var snapshot, as string
-	var detach bool
+	var snapshot, as, toTime string
+	var detach, inPlace, yes bool
 	cmd := &cobra.Command{
-		Use:   "restore [service] --snapshot ID",
-		Short: "Restore a backup into a new service",
+		Use:   "restore [service] --snapshot ID | --to-time TIME",
+		Short: "Restore a backup, or a moment, into a new service",
 		Long: `Restore a template database's snapshot into a NEW service from the same
 template, with new credentials. The live service is never touched: when the
-new one checks out, point references at it (e.g. ${{postgres-restored.DATABASE_URL}}).`,
-		Example:           "  dock backup restore postgres --snapshot 4cf53263 --as postgres-old",
+new one checks out, point references at it (e.g. ${{postgres-restored.DATABASE_URL}}).
+
+With point-in-time restore on (dock backup pitr on), --to-time restores a
+Postgres database as it was at that moment instead, with the credentials it
+had. --in-place restores the moment into the database itself: it stops, a
+safety snapshot keeps what it holds now (restore that one to undo), and it
+starts on the restored data.`,
+		Example: `  dock backup restore postgres --snapshot 4cf53263 --as postgres-old
+  dock backup restore postgres --to-time 2026-11-17T14:01Z
+  dock backup restore postgres --to-time 2026-11-17T15:01+01:00 --in-place`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeServiceArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			serviceArg(&f, args)
-			if snapshot == "" {
-				return usageError("--snapshot is required", "Pick one from `dock backup list`.")
+			req := apitypes.RestoreBackupRequest{Snapshot: snapshot, As: as, InPlace: inPlace}
+			switch {
+			case snapshot == "" && toTime == "":
+				return usageError("--snapshot or --to-time is required", "Pick a snapshot from `dock backup list`, or a time in its restorable window.")
+			case snapshot != "" && toTime != "":
+				return usageError("pass --snapshot or --to-time, not both", "")
+			case inPlace && toTime == "":
+				return usageError("--in-place restores a time; a backup restores into a new service", "Add --to-time, or leave out --in-place.")
+			case inPlace && as != "":
+				return usageError("--as names a new service, and an in-place restore keeps the service", "Leave out --as or --in-place.")
+			}
+			if toTime != "" {
+				at, err := parseWhen("to-time", toTime)
+				if err != nil {
+					return err
+				}
+				req.ToTime = &at
 			}
 			s, t, err := g.open(f, needService)
 			if err != nil {
 				return err
 			}
-			res, err := send[apitypes.RestoreResult](cmd.Context(), s, http.MethodPost, t.servicePath()+"/backups/restore",
-				apitypes.RestoreBackupRequest{Snapshot: snapshot, As: as})
+			if inPlace && !yes {
+				q := fmt.Sprintf("Restore %s in place to %s? It stops and its data is replaced; a safety snapshot keeps what it holds now.", t, req.ToTime.Format(time.RFC3339))
+				if err := g.io.Confirm(q, "yes"); err != nil {
+					return err
+				}
+			}
+			res, err := send[apitypes.RestoreResult](cmd.Context(), s, http.MethodPost, t.servicePath()+"/backups/restore", req)
 			if err != nil {
-				return err
+				return deployInProgress(err, t)
+			}
+			what := "snapshot " + snapshotID(res.Restore.Snapshot)
+			if req.ToTime != nil {
+				what = t.Service + " as of " + req.ToTime.Format(time.RFC3339)
 			}
 			if !detach {
-				g.io.Progressf("Restoring snapshot %s into %s...", snapshotID(res.Restore.Snapshot), res.Service.Name)
+				g.io.Progressf("Restoring %s into %s...", what, res.Service.Name)
 				if res.Restore, err = waitRun(cmd.Context(), s, t, res.Restore.ID); err != nil {
 					return err
 				}
 			}
 			return g.io.Print(res, func() error {
 				if res.Restore.Status == apitypes.BackupRunning {
-					g.io.Successf("Created %s; the restore continues in the background (`dock backup list %s`)", res.Service.Name, target{t.Project, t.Environment, res.Service.Name}.flags())
+					g.io.Successf("Restoring %s into %s; it continues in the background (`dock backup list %s`)", what, res.Service.Name, t.flags())
 				} else {
-					g.io.Successf("Restored snapshot %s into %s", snapshotID(res.Restore.Snapshot), res.Service.Name)
+					g.io.Successf("Restored %s into %s", what, res.Service.Name)
 				}
-				g.io.Detail(fmt.Sprintf("%s is untouched. Check %s, then point references at it.", t.Service, res.Service.Name))
+				if inPlace {
+					g.io.Detail("A safety snapshot holds the data it replaced; `dock volume snapshot list " + t.flags() + "` shows it.")
+				} else {
+					g.io.Detail(fmt.Sprintf("%s is untouched. Check %s, then point references at it.", t.Service, res.Service.Name))
+				}
 				return nil
 			})
 		},
 	}
 	f.add(cmd, needService)
 	cmd.Flags().StringVar(&snapshot, "snapshot", "", "snapshot ID, or its first 8 or more characters")
+	cmd.Flags().StringVar(&toTime, "to-time", "", "restore the database as it was at this time (point-in-time restore): 2026-11-17T14:01Z, UTC unless it has an offset")
 	cmd.Flags().StringVar(&as, "as", "", "name of the new service (default <service>-restored)")
-	cmd.Flags().BoolVar(&detach, "detach", false, "return once the new service is created")
+	cmd.Flags().BoolVar(&inPlace, "in-place", false, "restore --to-time into the database itself, after a safety snapshot")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
+	cmd.Flags().BoolVar(&detach, "detach", false, "return once the restore started")
+	return cmd
+}
+
+// newBackupPITRCmd turns a database's point-in-time restore on or off.
+func newBackupPITRCmd(g *globals) *cobra.Command {
+	var f targetFlags
+	var days int
+	cmd := &cobra.Command{
+		Use:   "pitr on|off [service] [--days N]",
+		Short: "Turn a Postgres database's point-in-time restore on or off",
+		Long: `Point-in-time restore archives a Postgres template database's WAL next to its
+backups and takes a daily base backup, so it restores to any moment of the
+last --days days (dock backup restore --to-time). It needs backups on a
+storage connection. Turning it on or off restarts the database once.
+
+If archiving stalls (the storage is down), Postgres keeps the WAL it couldn't
+archive and its disk fills; an alert says so first. Turning it off restarts
+the database without archiving, and Postgres frees that WAL at its next
+checkpoint. Operators only.`,
+		Example: `  dock backup pitr on postgres --days 14
+  dock backup pitr off postgres`,
+		Args:              cobra.RangeArgs(1, 2),
+		ValidArgsFunction: cobra.FixedCompletions([]string{"on", "off"}, cobra.ShellCompDirectiveNoFileComp),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var req apitypes.SetPITRRequest
+			switch args[0] {
+			case "on", "off":
+				on := args[0] == "on"
+				req.Enabled = &on
+			default:
+				return usageError(fmt.Sprintf("%q is not on or off", args[0]), "dock backup pitr on|off [service]")
+			}
+			serviceArg(&f, args[1:])
+			if cmd.Flags().Changed("days") {
+				req.Days = &days
+			}
+			s, t, err := g.open(f, needService)
+			if err != nil {
+				return err
+			}
+			b, err := send[apitypes.ServiceBackups](cmd.Context(), s, http.MethodPut, t.servicePath()+"/backups/pitr", req)
+			if err != nil {
+				return deployInProgress(err, t)
+			}
+			return g.io.Print(b, func() error {
+				if *req.Enabled {
+					g.io.Successf("Point-in-time restore of %s is on, %d days; it restarts once and takes a base backup", t.Service, b.PITR.Days)
+				} else {
+					g.io.Successf("Point-in-time restore of %s is off; it restarts without archiving, and its window ages out", t.Service)
+				}
+				return nil
+			})
+		},
+	}
+	f.add(cmd, needService)
+	cmd.Flags().IntVar(&days, "days", 7, "days of the restorable window to keep, 1-35")
 	return cmd
 }
 

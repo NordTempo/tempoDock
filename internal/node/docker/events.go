@@ -24,6 +24,10 @@ var lifecycleActions = []string{
 	"pause", "unpause", "destroy", string(events.ActionHealthStatus),
 }
 
+// sidecarActions are the events of sidecars Events passes on: whether
+// one runs and how its health check does.
+var sidecarActions = map[string]bool{"start": true, "die": true, string(events.ActionHealthStatus): true}
+
 const (
 	minBackoff = 500 * time.Millisecond
 	maxBackoff = 30 * time.Second
@@ -55,7 +59,10 @@ func (r *Runtime) Events(ctx context.Context) (<-chan node.ContainerEvent, error
 					ev := toEvent(msg)
 					since, backoff = ev.Time, minBackoff
 					if !isApp(msg.Actor.Attributes) {
-						continue
+						if !isSidecar(msg.Actor.Attributes) || !sidecarActions[ev.Action] {
+							continue
+						}
+						ev.Role = node.RoleSidecar
 					}
 					select {
 					case ch <- ev:

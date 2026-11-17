@@ -94,8 +94,11 @@ const (
 	// apply-routes' certificates: the wildcard of the server's base domain
 	// (ADR 0090, WildcardProtocol). 32 adds warm-builder: builders fetch
 	// Railpack's images ahead of their first build (ADR 0089 amendment,
-	// WarmProtocol).
-	Protocol = 32
+	// WarmProtocol). 33 adds ensure-sidecar and remove-sidecar, and events
+	// of sidecars with their role: a Postgres database's WAL archiver (ADR
+	// 0093, SidecarProtocol), and run-job's dock: jobs that run the
+	// node's own dock binary.
+	Protocol = 33
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1
@@ -172,7 +175,9 @@ const (
 	opLogs          = "logs"
 	opEvents        = "events"
 	opBuild         = "build"
-	opWarmBuilder   = "warm-builder" // protocol 32
+	opWarmBuilder   = "warm-builder"   // protocol 32
+	opEnsureSidecar = "ensure-sidecar" // protocol 33
+	opRemoveSidecar = "remove-sidecar" // protocol 33
 	opApplyRoutes   = "apply-routes"
 	opCheckDomain   = "check-domain"
 	opHostStats     = "host-stats"

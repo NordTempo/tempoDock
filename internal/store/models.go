@@ -154,21 +154,26 @@ type AuditEvent struct {
 }
 
 type Backup struct {
-	ID         int64
-	ServiceID  int64
-	Operation  string
-	Kind       string
-	Trigger    string
-	Status     string
-	Repository string
-	SnapshotID string
-	SizeBytes  int64
-	Pruned     bool
-	RestoredTo *int64
-	Error      string
-	CreatedBy  string
-	StartedAt  time.Time
-	FinishedAt *time.Time
+	ID              int64
+	ServiceID       int64
+	Operation       string
+	Kind            string
+	Trigger         string
+	Status          string
+	Repository      string
+	SnapshotID      string
+	SizeBytes       int64
+	Pruned          bool
+	RestoredTo      *int64
+	Error           string
+	CreatedBy       string
+	StartedAt       time.Time
+	FinishedAt      *time.Time
+	WalGeneration   string
+	WalStart        string
+	WalSegmentBytes int64
+	ConsistentAt    *time.Time
+	RestoreToTime   *time.Time
 }
 
 type BackupLog struct {
@@ -755,6 +760,17 @@ type PasswordReset struct {
 	CreatedAt time.Time
 	ExpiresAt time.Time
 	UsedAt    *time.Time
+}
+
+type Pitr struct {
+	ServiceID  int64
+	Enabled    bool
+	Days       int64
+	Generation string
+	ServerID   *int64
+	WalBytes   int64
+	UpdatedBy  string
+	UpdatedAt  time.Time
 }
 
 type PlatformDataPolicy struct {

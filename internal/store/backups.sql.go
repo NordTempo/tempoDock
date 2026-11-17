@@ -13,7 +13,7 @@ import (
 const createBackup = `-- name: CreateBackup :one
 INSERT INTO backups (service_id, operation, kind, trigger, status, repository, snapshot_id, restored_to, created_by, started_at)
 VALUES (?, ?, ?, ?, 'running', ?, ?, ?, ?, ?)
-RETURNING id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at
+RETURNING id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time
 `
 
 type CreateBackupParams struct {
@@ -57,6 +57,11 @@ func (q *Queries) CreateBackup(ctx context.Context, arg CreateBackupParams) (Bac
 		&i.CreatedBy,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.WalGeneration,
+		&i.WalStart,
+		&i.WalSegmentBytes,
+		&i.ConsistentAt,
+		&i.RestoreToTime,
 	)
 	return i, err
 }
@@ -76,6 +81,75 @@ type CreateBackupPasswordParams struct {
 // written meanwhile.
 func (q *Queries) CreateBackupPassword(ctx context.Context, arg CreateBackupPasswordParams) error {
 	_, err := q.db.ExecContext(ctx, createBackupPassword, arg.Password, arg.UpdatedAt)
+	return err
+}
+
+const createPITRRestore = `-- name: CreatePITRRestore :one
+INSERT INTO backups (service_id, operation, kind, trigger, status, repository, snapshot_id, restored_to, created_by, started_at,
+    wal_generation, restore_to_time)
+VALUES (?, 'restore', 'pitr', 'manual', 'running', ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time
+`
+
+type CreatePITRRestoreParams struct {
+	ServiceID     int64
+	Repository    string
+	SnapshotID    string
+	RestoredTo    *int64
+	CreatedBy     string
+	StartedAt     time.Time
+	WalGeneration string
+	RestoreToTime *time.Time
+}
+
+// A restore to a time (ADR 0093): from the base backup snapshot_id of
+// generation wal_generation, into restored_to.
+func (q *Queries) CreatePITRRestore(ctx context.Context, arg CreatePITRRestoreParams) (Backup, error) {
+	row := q.db.QueryRowContext(ctx, createPITRRestore,
+		arg.ServiceID,
+		arg.Repository,
+		arg.SnapshotID,
+		arg.RestoredTo,
+		arg.CreatedBy,
+		arg.StartedAt,
+		arg.WalGeneration,
+		arg.RestoreToTime,
+	)
+	var i Backup
+	err := row.Scan(
+		&i.ID,
+		&i.ServiceID,
+		&i.Operation,
+		&i.Kind,
+		&i.Trigger,
+		&i.Status,
+		&i.Repository,
+		&i.SnapshotID,
+		&i.SizeBytes,
+		&i.Pruned,
+		&i.RestoredTo,
+		&i.Error,
+		&i.CreatedBy,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.WalGeneration,
+		&i.WalStart,
+		&i.WalSegmentBytes,
+		&i.ConsistentAt,
+		&i.RestoreToTime,
+	)
+	return i, err
+}
+
+const detachBaseBackupsWAL = `-- name: DetachBaseBackupsWAL :exec
+UPDATE backups SET wal_start = '' WHERE kind = 'pitr' AND operation = 'backup' AND wal_start <> ''
+`
+
+// After a backup move: base backups were copied, but not the WAL they
+// replay from, so they no longer restore to a time; retention still ages
+// them out (ADR 0093).
+func (q *Queries) DetachBaseBackupsWAL(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, detachBaseBackupsWAL)
 	return err
 }
 
@@ -123,7 +197,7 @@ func (q *Queries) FinishBackup(ctx context.Context, arg FinishBackupParams) erro
 }
 
 const getBackup = `-- name: GetBackup :one
-SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at FROM backups WHERE id = +?
+SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups WHERE id = +?
 `
 
 func (q *Queries) GetBackup(ctx context.Context, id int64) (Backup, error) {
@@ -145,12 +219,17 @@ func (q *Queries) GetBackup(ctx context.Context, id int64) (Backup, error) {
 		&i.CreatedBy,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.WalGeneration,
+		&i.WalStart,
+		&i.WalSegmentBytes,
+		&i.ConsistentAt,
+		&i.RestoreToTime,
 	)
 	return i, err
 }
 
 const getBackupBySnapshot = `-- name: GetBackupBySnapshot :one
-SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at FROM backups
+SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups
 WHERE service_id = +?1 AND operation = 'backup' AND status = 'succeeded'
   AND substr(snapshot_id, 1, length(?2)) = ?2
 ORDER BY id DESC
@@ -182,6 +261,11 @@ func (q *Queries) GetBackupBySnapshot(ctx context.Context, arg GetBackupBySnapsh
 		&i.CreatedBy,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.WalGeneration,
+		&i.WalStart,
+		&i.WalSegmentBytes,
+		&i.ConsistentAt,
+		&i.RestoreToTime,
 	)
 	return i, err
 }
@@ -346,7 +430,7 @@ func (q *Queries) ListBackupRepositories(ctx context.Context) ([]ListBackupRepos
 }
 
 const listLatestScheduledBackups = `-- name: ListLatestScheduledBackups :many
-SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at FROM backups WHERE id IN (
+SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups WHERE id IN (
     SELECT max(id) FROM backups WHERE operation = 'backup' AND trigger = 'schedule' GROUP BY service_id
 )
 `
@@ -377,6 +461,11 @@ func (q *Queries) ListLatestScheduledBackups(ctx context.Context) ([]Backup, err
 			&i.CreatedBy,
 			&i.StartedAt,
 			&i.FinishedAt,
+			&i.WalGeneration,
+			&i.WalStart,
+			&i.WalSegmentBytes,
+			&i.ConsistentAt,
+			&i.RestoreToTime,
 		); err != nil {
 			return nil, err
 		}
@@ -424,8 +513,60 @@ func (q *Queries) ListLocalBackupServers(ctx context.Context) ([]int64, error) {
 	return items, nil
 }
 
+const listPITRBases = `-- name: ListPITRBases :many
+SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups
+WHERE service_id = +? AND kind = 'pitr' AND operation = 'backup' AND status = 'succeeded' AND pruned = 0
+ORDER BY consistent_at
+`
+
+// A database's base backups that restore: succeeded, unpruned, in the
+// order they became consistent.
+func (q *Queries) ListPITRBases(ctx context.Context, serviceID int64) ([]Backup, error) {
+	rows, err := q.db.QueryContext(ctx, listPITRBases, serviceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Backup
+	for rows.Next() {
+		var i Backup
+		if err := rows.Scan(
+			&i.ID,
+			&i.ServiceID,
+			&i.Operation,
+			&i.Kind,
+			&i.Trigger,
+			&i.Status,
+			&i.Repository,
+			&i.SnapshotID,
+			&i.SizeBytes,
+			&i.Pruned,
+			&i.RestoredTo,
+			&i.Error,
+			&i.CreatedBy,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.WalGeneration,
+			&i.WalStart,
+			&i.WalSegmentBytes,
+			&i.ConsistentAt,
+			&i.RestoreToTime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProjectLatestBackups = `-- name: ListProjectLatestBackups :many
-SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at FROM backups WHERE id IN (
+SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups WHERE id IN (
     SELECT max(backups.id) FROM backups
     JOIN services ON services.id = backups.service_id
     JOIN environments ON environments.id = services.environment_id
@@ -460,6 +601,11 @@ func (q *Queries) ListProjectLatestBackups(ctx context.Context, projectID int64)
 			&i.CreatedBy,
 			&i.StartedAt,
 			&i.FinishedAt,
+			&i.WalGeneration,
+			&i.WalStart,
+			&i.WalSegmentBytes,
+			&i.ConsistentAt,
+			&i.RestoreToTime,
 		); err != nil {
 			return nil, err
 		}
@@ -504,7 +650,7 @@ func (q *Queries) ListRepositorySnapshots(ctx context.Context, repository string
 }
 
 const listServiceBackups = `-- name: ListServiceBackups :many
-SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at FROM backups WHERE service_id = +? ORDER BY id DESC LIMIT +?
+SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups WHERE service_id = +? ORDER BY id DESC LIMIT +?
 `
 
 type ListServiceBackupsParams struct {
@@ -537,6 +683,11 @@ func (q *Queries) ListServiceBackups(ctx context.Context, arg ListServiceBackups
 			&i.CreatedBy,
 			&i.StartedAt,
 			&i.FinishedAt,
+			&i.WalGeneration,
+			&i.WalStart,
+			&i.WalSegmentBytes,
+			&i.ConsistentAt,
+			&i.RestoreToTime,
 		); err != nil {
 			return nil, err
 		}
@@ -552,7 +703,7 @@ func (q *Queries) ListServiceBackups(ctx context.Context, arg ListServiceBackups
 }
 
 const listUnprunedBackups = `-- name: ListUnprunedBackups :many
-SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at FROM backups
+SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups
 WHERE service_id = +? AND repository = +? AND operation = 'backup' AND status = 'succeeded' AND pruned = 0
 ORDER BY id
 `
@@ -589,6 +740,11 @@ func (q *Queries) ListUnprunedBackups(ctx context.Context, arg ListUnprunedBacku
 			&i.CreatedBy,
 			&i.StartedAt,
 			&i.FinishedAt,
+			&i.WalGeneration,
+			&i.WalStart,
+			&i.WalSegmentBytes,
+			&i.ConsistentAt,
+			&i.RestoreToTime,
 		); err != nil {
 			return nil, err
 		}
@@ -680,6 +836,30 @@ type SaveBackupLogParams struct {
 // service restored from).
 func (q *Queries) SaveBackupLog(ctx context.Context, arg SaveBackupLogParams) error {
 	_, err := q.db.ExecContext(ctx, saveBackupLog, arg.BackupID, arg.ServiceID, arg.Output)
+	return err
+}
+
+const setBackupBase = `-- name: SetBackupBase :exec
+UPDATE backups SET wal_generation = ?, wal_start = ?, wal_segment_bytes = ?, consistent_at = ? WHERE id = +?
+`
+
+type SetBackupBaseParams struct {
+	WalGeneration   string
+	WalStart        string
+	WalSegmentBytes int64
+	ConsistentAt    *time.Time
+	ID              int64
+}
+
+// Records what a finished base backup says about itself.
+func (q *Queries) SetBackupBase(ctx context.Context, arg SetBackupBaseParams) error {
+	_, err := q.db.ExecContext(ctx, setBackupBase,
+		arg.WalGeneration,
+		arg.WalStart,
+		arg.WalSegmentBytes,
+		arg.ConsistentAt,
+		arg.ID,
+	)
 	return err
 }
 

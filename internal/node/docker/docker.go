@@ -54,6 +54,10 @@ type Runtime struct {
 	// (probe.InstallSync), which RunJob bind-mounts for a spec.Sync; ""
 	// fails those jobs with node.ErrNoSync.
 	Sync string
+	// Self is the host path of the running dock binary, which sidecars
+	// and jobs with spec.Dock run (ADR 0093: point-in-time restore); ""
+	// fails them with node.ErrNoDock.
+	Self string
 	// ScanNetwork is the network the vulnerability database is
 	// downloaded on (a builder's BuildKit network, which the app firewall
 	// covers); "" refuses ScanDatabase updates (ADR 0074).
@@ -632,7 +636,7 @@ func noHealthcheck() *container.HealthConfig {
 }
 
 // probePath is where dock-probe is bind-mounted in a container.
-const probePath = "/.dock-probe"
+const probePath = node.ProbePath
 
 // probeMargin is how much longer Docker waits for a probe than the probe
 // waits for the app, so the probe prints why it timed out before Docker
@@ -831,6 +835,9 @@ func (r *Runtime) MemoryOwner(ctx context.Context, id string) (node.MemoryPart, 
 	case !isManaged(labels):
 		return node.MemoryPart{Group: node.MemorySystem, Name: "other containers"}, nil
 	case role == "":
+		return node.MemoryPart{Group: node.MemoryApps, Name: name, Service: labels[node.LabelService]}, nil
+	case role == node.RoleSidecar:
+		// A database's archiver counts with the apps, under its service.
 		return node.MemoryPart{Group: node.MemoryApps, Name: name, Service: labels[node.LabelService]}, nil
 	case role == node.RoleBuildKit:
 		return node.MemoryPart{Group: node.MemoryPlatform, Name: "BuildKit"}, nil

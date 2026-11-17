@@ -38,6 +38,9 @@ const (
 	BackupRedis    BackupKind = "redis"
 	BackupMySQL    BackupKind = "mysql"
 	BackupVolume   BackupKind = "volume"
+	// BackupPITR is a Postgres database's base backup for point-in-time
+	// restore, and a restore to a time (ADR 0093).
+	BackupPITR BackupKind = "pitr"
 )
 
 // BackupStatus is where a backup or restore run is.
@@ -54,7 +57,7 @@ type BackupRun struct {
 	ID        int64        `json:"id"`
 	Service   string       `json:"service"`
 	Operation string       `json:"operation" enum:"backup,restore"`
-	Kind      BackupKind   `json:"kind" enum:"postgres,redis,mysql,volume"`
+	Kind      BackupKind   `json:"kind" enum:"postgres,redis,mysql,volume,pitr"`
 	Trigger   string       `json:"trigger" enum:"schedule,manual"`
 	Status    BackupStatus `json:"status" enum:"running,succeeded,failed"`
 	// Snapshot is the restic snapshot ID: written by a backup, read by a
@@ -70,8 +73,13 @@ type BackupRun struct {
 	// NotRestorable says why a succeeded backup of a template database
 	// can't be restored now, and what to do; empty when it can.
 	NotRestorable string `json:"not_restorable,omitempty"`
-	// RestoredTo is the service a restore created.
-	RestoredTo string     `json:"restored_to,omitempty"`
+	// RestoredTo is the service a restore created (or restored in place).
+	RestoredTo string `json:"restored_to,omitempty"`
+	// ConsistentAt is when a base backup (kind pitr) became consistent:
+	// the earliest time it restores to.
+	ConsistentAt *time.Time `json:"consistent_at,omitempty"`
+	// ToTime is the time a restore to a time restored to.
+	ToTime     *time.Time `json:"to_time,omitempty"`
 	Error      string     `json:"error,omitempty"`
 	CreatedBy  string     `json:"created_by"`
 	StartedAt  time.Time  `json:"started_at"`
@@ -110,6 +118,8 @@ type ServiceBackups struct {
 	Restorable bool           `json:"restorable"`
 	OffBox     bool           `json:"off_box"`
 	Schedule   BackupSchedule `json:"schedule"`
+	// PITR is point-in-time restore, for Postgres template databases.
+	PITR *PITR `json:"pitr,omitempty"`
 	// Runs are the latest backups and restores, newest first.
 	Runs []BackupRun `json:"runs"`
 }
@@ -122,12 +132,76 @@ type UpdateBackupScheduleRequest struct {
 	DefaultHour bool  `json:"default_hour,omitempty"`
 }
 
-// RestoreBackupRequest restores a snapshot into a new service.
+// RestoreBackupRequest restores a snapshot, or the database as it was
+// at a time, into a new service, or a time in place.
 type RestoreBackupRequest struct {
 	// Snapshot is a snapshot ID or its first 8 or more characters.
-	Snapshot string `json:"snapshot" minLength:"8"`
+	Snapshot string `json:"snapshot,omitempty"`
+	// ToTime restores the database as it was at that moment, from its
+	// point-in-time archive (ADR 0093), instead of a snapshot.
+	ToTime *time.Time `json:"to_time,omitempty"`
 	// As names the new service; empty is <service>-restored.
 	As string `json:"as,omitempty"`
+	// InPlace restores ToTime into the database itself: it stops, a
+	// safety snapshot keeps what it holds, and it starts on the restored
+	// data. Not with As.
+	InPlace bool `json:"in_place,omitempty"`
+}
+
+// PITR is a Postgres database's point-in-time restore (ADR 0093).
+type PITR struct {
+	Enabled bool `json:"enabled"`
+	// Days is how long the restorable window is kept.
+	Days int `json:"days"`
+	// Unavailable says why it can't be turned on, and what to do; empty
+	// when it can.
+	Unavailable string `json:"unavailable,omitempty"`
+	// From and Through are the restorable window: any time between them
+	// restores. Nil while nothing does yet.
+	From    *time.Time `json:"from,omitempty"`
+	Through *time.Time `json:"through,omitempty"`
+	// BaseBackups counts the base backups the window rests on.
+	BaseBackups int `json:"base_backups"`
+	// WALBytes is the archive's size when retention last measured it.
+	WALBytes int64 `json:"wal_bytes"`
+	// UsedBy are the services whose variables reference the database.
+	UsedBy []string `json:"used_by"`
+	// Deploys are their releases that went live in the window, newest
+	// first (at most 50), to find the moment before one.
+	Deploys []PITRDeploy `json:"deploys"`
+	// Archiver is how archiving does, while it is on.
+	Archiver *PITRArchiver `json:"archiver,omitempty"`
+}
+
+// PITRDeploy is a release of a service using the database that went live.
+type PITRDeploy struct {
+	Service string    `json:"service"`
+	Number  int64     `json:"number"`
+	At      time.Time `json:"at"`
+}
+
+// PITRArchiver is what a database's WAL archiver reports.
+type PITRArchiver struct {
+	Healthy bool `json:"healthy"`
+	// Problem says what is wrong when it isn't healthy.
+	Problem string `json:"problem,omitempty"`
+	// Waiting are the finished WAL files waiting to be archived, their
+	// size and when the oldest finished.
+	Waiting       int        `json:"waiting"`
+	WaitingBytes  int64      `json:"waiting_bytes"`
+	OldestWaiting *time.Time `json:"oldest_waiting,omitempty"`
+	// DiskBytes and DiskFree are the database volume's disk.
+	DiskBytes   int64      `json:"disk_bytes,omitempty"`
+	DiskFree    int64      `json:"disk_free,omitempty"`
+	LastError   string     `json:"last_error,omitempty"`
+	LastErrorAt *time.Time `json:"last_error_at,omitempty"`
+}
+
+// SetPITRRequest turns point-in-time restore on or off, or changes how
+// many days it keeps. Unset fields stay as they are.
+type SetPITRRequest struct {
+	Enabled *bool `json:"enabled,omitempty"`
+	Days    *int  `json:"days,omitempty" minimum:"1" maximum:"35"`
 }
 
 // RestoreResult is the new service a restore creates, and the restore run

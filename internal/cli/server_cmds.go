@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/NordTempo/tempoDock/internal/node/build"
+	"github.com/NordTempo/tempoDock/internal/walarchive"
 )
 
 // The full binary is the CLI, the daemon and the node runtime. Building with
@@ -24,10 +25,14 @@ func serverCommands() []*cobra.Command {
 
 // helperMain runs a subprocess the daemon starts from its own binary, and
 // reports whether args named one: the daemon re-runs itself to plan
-// Railpack builds in a capped process.
+// Railpack builds in a capped process, and runs itself in a database's
+// WAL archiver and its base backup and restore jobs (ADR 0093).
 func helperMain(args []string) (int, bool) {
 	if len(args) > 1 && args[1] == build.PlanCommand {
 		return build.PlanMain(), true
+	}
+	if len(args) > 1 && args[1] == walarchive.Command {
+		return walarchive.Main(args[2:]), true
 	}
 	return 0, false
 }

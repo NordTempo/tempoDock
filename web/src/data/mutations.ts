@@ -292,24 +292,22 @@ export const useBackupSchedule = () =>
   );
 
 /**
- * Restores a snapshot into a new service. Resolves with it at once; the
- * restore finishes in the background.
+ * Restores a snapshot into a new service, or a Postgres database as it
+ * was at `to_time` (ADR 0093) into a new service or in place. Resolves
+ * with the service at once; the restore finishes in the background.
  */
 export const useRestoreBackup = () =>
   useAction(
     ({
       ref,
-      snapshot,
-      as,
+      ...input
     }: {
       ref: ServiceRef;
-      snapshot: string;
-      as: string;
-    }) =>
+    } & components["schemas"]["RestoreBackupRequest"]) =>
       body(
         api.POST(
           "/api/v1/projects/{project}/environments/{environment}/services/{service}/backups/restore",
-          { params: { path: servicePath(ref) }, body: { snapshot, as } },
+          { params: { path: servicePath(ref) }, body: input },
         ),
       ),
     ({ ref }) => [...backupsOf(ref), keys.env(ref)],
