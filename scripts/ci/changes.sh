@@ -64,8 +64,9 @@ while IFS= read -r f; do
 	# Go tests read these: the reserved project names cover the routes
 	# (internal/core/reserved_test.go), the browser's pack matches the
 	# CLI's (internal/pack/browser_test.go), the help topics' commands run
-	# (internal/cli/help_topics_test.go, docs/guide/guide_test.go).
-	web/src/routes/* | web/src/features/deploy/pack.ts | web/src/features/help/topics.ts)
+	# (internal/cli/help_topics_test.go, docs/guide/guide_test.go), the
+	# sign-in failures have words for every code (internal/api/sso_test.go).
+	web/src/routes/* | web/src/features/deploy/pack.ts | web/src/features/help/topics.ts | web/src/features/sso/failures.ts)
 		go=true
 		web=true
 		;;

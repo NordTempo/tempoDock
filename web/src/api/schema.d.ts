@@ -713,7 +713,7 @@ export interface paths {
         };
         /**
          * Finish signing in through an identity provider
-         * @description The identity provider sends the browser here (the redirect URL to register at it). Redirects to the page the sign-in started from with the session cookie, to /login?second=1 when the user has a second factor, to /invite-only when this Dock has no account for them and they have no invite, or to /login?error=<reason>.
+         * @description The identity provider sends the browser here (the redirect URL to register at it). Redirects to the page the sign-in started from with the session cookie, to /login?second=1 when the user has a second factor, to /invite-only when this Dock has no account for them and they have no invite, or to /login?error=<reason>&provider=<name>, where the reason is a short word the page has a sentence for (cancelled, expired, unverified, ...; failed for anything else).
          */
         get: operations["sso-callback"];
         put?: never;

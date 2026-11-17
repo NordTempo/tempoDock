@@ -77,7 +77,11 @@ it, Dex or Authentik. SAML is out of scope.
    only; `/` by default) with the session cookie, to `/login?second=1`
    when the user has a Dock second factor, or to `/login?error=<reason>`.
    Reasons are short and human; what the provider answered goes to the
-   daemon log only.
+   daemon log only. (2026-11-17: the reason in the address is a word,
+   like `cancelled` or `unverified`, with `provider=<name>`; the sign-in
+   page has the sentence for each (`web/src/features/sso/failures.ts`)
+   and shows nothing for a word it doesn't know. A sentence in the
+   address would be shown to whoever opens a link someone else wrote.)
 
 Every refusal after the flow is found is audited in the provider's org
 (`org.sso_refused`), as are sign-ins (`user.login`, "with single

@@ -67,7 +67,10 @@ browser binding cookie, PKCE and `state` are as in 0058.
 4. Else, on an invite-only platform, no account: the browser lands on
    `/invite-only`, which says the person signed in with the provider but
    has no account and no invite, to ask an admin for one, with a way back
-   to the sign-in page. Audited as `user.sso_refused`.
+   to the sign-in page. Audited as `user.sso_refused`. (2026-11-17: the
+   page is given the provider's name and shows its label only when it is
+   one of this Dock's providers, and the email only when it is shaped
+   like one: anyone can write a link to the page.)
 
 Disabled accounts are refused. A new account's membership comes only
 from its invites; nothing adds it to an org by itself. A member-less
