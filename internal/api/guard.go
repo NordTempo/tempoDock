@@ -12,7 +12,7 @@ import (
 // (httpkit.Guard). Source uploads may send their tar or gzip body, and
 // the GitHub install's confirm page its form.
 func guard(next http.Handler) http.Handler {
-	return httpkit.Guard(next, rawBody)
+	return httpkit.Guard(next, rawBody, overHTTPS)
 }
 
 // rawBody allows a tar or gzip body on the source upload route and a

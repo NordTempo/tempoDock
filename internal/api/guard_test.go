@@ -101,6 +101,19 @@ func TestSecurityHeaders(t *testing.T) {
 			t.Errorf("%s headers: %v", path, h)
 		}
 	}
+	// Only a request that came over HTTPS (Caddy at the public address
+	// says so) is told to stay there; a plain HTTP address never is.
+	if sts := f.https("GET", "/login", nil).Header.Get("Strict-Transport-Security"); sts != "max-age=31536000" {
+		t.Errorf("over HTTPS: Strict-Transport-Security %q", sts)
+	}
+	plain, err := http.Get(f.srv.URL + "/login")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = plain.Body.Close()
+	if sts := plain.Header.Get("Strict-Transport-Security"); sts != "" {
+		t.Errorf("over plain HTTP: Strict-Transport-Security %q", sts)
+	}
 	resp, body := f.do("admin", "POST", "/api/v1/tokens", apitypes.CreateTokenRequest{Name: "ci", Scope: apitypes.ScopeDeploy})
 	if resp.StatusCode != 201 || resp.Header.Get("Cache-Control") != "no-store" {
 		t.Fatalf("create token: %d %q %s", resp.StatusCode, resp.Header.Get("Cache-Control"), body)

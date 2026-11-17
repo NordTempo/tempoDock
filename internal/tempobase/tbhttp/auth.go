@@ -47,14 +47,31 @@ func clientFrom(ctx context.Context) client {
 	return c
 }
 
-// clientOf works out how a request arrived.
-func (s *server) clientOf(ctx huma.Context) client {
-	ip := ctx.RemoteAddr()
+// trusted reports whether a request's peer (host:port) is a proxy whose
+// X-Forwarded-* headers count, and returns the peer's address.
+func (s *server) trusted(remoteAddr string) (ip string, ok bool) {
+	ip = remoteAddr
 	if host, _, err := net.SplitHostPort(ip); err == nil {
 		ip = host
 	}
 	addr, _ := netip.ParseAddr(ip)
-	trusted := addr.IsValid() && s.cfg.Trusted(addr)
+	return ip, addr.IsValid() && s.cfg.Trusted(addr)
+}
+
+// overHTTPS reports whether a request arrived over HTTPS, as clientOf
+// decides it: on TLS, through a trusted proxy that says so, or at an
+// https base URL.
+func (s *server) overHTTPS(r *http.Request) bool {
+	if r.TLS != nil || strings.HasPrefix(s.cfg.BaseURL, "https://") {
+		return true
+	}
+	_, trusted := s.trusted(r.RemoteAddr)
+	return trusted && r.Header.Get("X-Forwarded-Proto") == "https"
+}
+
+// clientOf works out how a request arrived.
+func (s *server) clientOf(ctx huma.Context) client {
+	ip, trusted := s.trusted(ctx.RemoteAddr())
 	c := client{ip: ip, secure: ctx.TLS() != nil}
 	if trusted {
 		// The client is the last address a trusted proxy didn't add.

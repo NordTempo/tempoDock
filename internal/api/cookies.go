@@ -34,7 +34,13 @@ func clientOf(ctx huma.Context) client {
 
 // requestClient is clientOf for the plain pages outside Huma.
 func requestClient(r *http.Request) client {
-	return newClient(r.RemoteAddr, r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https")
+	return newClient(r.RemoteAddr, overHTTPS(r))
+}
+
+// overHTTPS reports whether a request arrived over HTTPS: on TLS, or
+// through Caddy at Dock's public address, which says so.
+func overHTTPS(r *http.Request) bool {
+	return r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 }
 
 func newClient(addr string, secure bool) client {

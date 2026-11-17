@@ -50,13 +50,14 @@ func New(app *tempobase.App, opts Options) http.Handler {
 		opts.Logger = slog.Default()
 	}
 	mux := http.NewServeMux()
-	newAPI(mux, &server{app: app, cfg: app.Config(), opts: opts})
+	s := &server{app: app, cfg: app.Config(), opts: opts}
+	newAPI(mux, s)
 	// The MCP endpoint speaks JSON-RPC, not REST, so it sits next to the
 	// Huma API rather than in its OpenAPI spec.
 	mux.Handle(Prefix+"/mcp", tbmcp.Handler(app, opts.Logger))
 	dist, _ := fs.Sub(tbweb.Dist, "dist")
 	mux.Handle("/", httpkit.UIHandler(dist, placeholderPage))
-	return httpkit.Guard(mux, nil)
+	return httpkit.Guard(mux, nil, s.overHTTPS)
 }
 
 // placeholderPage is served instead of the UI when the binary was built

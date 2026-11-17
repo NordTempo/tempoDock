@@ -223,3 +223,21 @@ func TestSessionCookieOverHTTPS(t *testing.T) {
 		t.Fatalf("after logout = %d", got)
 	}
 }
+
+// A tempoBase served over HTTPS tells browsers to stay on HTTPS; one on
+// plain HTTP doesn't, whatever a client claims in X-Forwarded-Proto.
+func TestStrictTransportSecurity(t *testing.T) {
+	for baseURL, want := range map[string]string{"https://tempobase.example.com": "max-age=31536000", "": ""} {
+		srv, _, _ := testServerAt(t, baseURL)
+		req, _ := http.NewRequest(http.MethodGet, srv.URL+"/login", nil)
+		req.Header.Set("X-Forwarded-Proto", "https") // not from a trusted proxy
+		res, err := srv.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = res.Body.Close()
+		if got := res.Header.Get("Strict-Transport-Security"); got != want {
+			t.Errorf("base URL %q: Strict-Transport-Security %q, want %q", baseURL, got, want)
+		}
+	}
+}
