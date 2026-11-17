@@ -18,11 +18,17 @@
 // Every response carries a Dock-Server header with the server's marker, so
 // CheckDomain on a tunnel server can tell that a public request reached it.
 //
-// Reloads are close to, but not exactly, lossless: a request on a brand-new
-// connection that races a reload can be dropped, and an HTTP/2 connection
-// can keep using the old routes for a while. See
-// TestIntegrationSwapUnderTraffic for details. Batch route changes rather
-// than reloading in a tight loop.
+// Reloads are close to, but not exactly, lossless. A request that has
+// reached its upstream survives any number of reloads (the old server
+// waits for it, TestIntegrationHeldRequestSurvivesReload). One that races
+// a reload can be dropped: an idle keep-alive connection is closed under
+// it, a new connection's first request read after the old server's
+// Shutdown began is closed unanswered (Go's net/http; the client sees
+// EOF), and one still queued on a closing socket is reset unless
+// net.ipv4.tcp_migrate_req=1. An HTTP/2 connection can keep using the
+// old routes for a while. See TestIntegrationSwapUnderTraffic. A traffic
+// switch doesn't reload (keyed routes, ADR 0091); batch other route
+// changes rather than reloading in a tight loop.
 package caddy
 
 import (
