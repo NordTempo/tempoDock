@@ -218,7 +218,9 @@ func (c *Core) UseAppTemplate(ctx context.Context, a Actor, ref EnvRef, name str
 		}
 		out.Plan = newPlan(ref.Project)
 		addPlan(&out.Plan, ep)
-		if err := c.stageEnv(ctx, q, es, le, ep); err != nil {
+		// A template's values are the catalog's or, for the
+		// organization's own, an admin's: no author to hold them to.
+		if err := c.stageEnv(ctx, q, nil, es, le, ep); err != nil {
 			return err
 		}
 		svcs, err := q.ListServices(ctx, es.env.ID)

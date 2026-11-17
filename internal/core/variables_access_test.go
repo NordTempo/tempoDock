@@ -1,6 +1,7 @@
 package core
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -68,5 +69,35 @@ func TestAddingAnOrgReferenceNeedsTheWholeOrg(t *testing.T) {
 	}
 	if err := set(map[string]string{"SENTRY": "${{org.SENTRY_DSN}}?env=prod", "PLAIN": "1", "SELF": "${{web.PLAIN}}"}); err != nil {
 		t.Fatalf("keeping a reference the variable has, and setting others: %v", err)
+	}
+}
+
+// A project file is held to the same rule as `dock env set`: its author
+// adds a reference to an organization variable only with variables edit
+// across the whole organization.
+func TestAProjectFileAddsOrgReferencesByTheSameRule(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	if _, err := h.c.SetOrgVariable(h.ctx, testSystem, "STRIPE_KEY", "sk_live_x"); err != nil {
+		t.Fatal(err)
+	}
+	// A value that is only a reference is in the export with its value.
+	h.set(web.Env(), "web", map[string]string{"X": "x", "PAY": "${{web.X}}"}, true)
+	_, file := h.exportTOML("shop")
+	if !strings.Contains(file, "${{web.X}}") {
+		t.Fatalf("the export holds no reference to rewrite:\n%s", file)
+	}
+	file = strings.Replace(file, "${{web.X}}", "${{org.STRIPE_KEY}}", 1)
+
+	limited := h.token(testSystem, apitypes.CreateTokenRequest{Name: "ci", Scope: apitypes.ScopeDeploy, Project: "shop"})
+	if _, err := h.c.ApplyProject(h.ctx, limited, "shop", apitypes.ApplyRequest{File: file}); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("a token limited to one project applying a file with a new organization reference: %v", err)
+	}
+	if _, err := h.c.ApplyProject(h.ctx, testSystem, "shop", apitypes.ApplyRequest{File: file}); err != nil {
+		t.Fatalf("someone who edits variables everywhere applying it: %v", err)
+	}
+	// Once the reference is there, the limited token's file may keep it.
+	if _, err := h.c.ApplyProject(h.ctx, limited, "shop", apitypes.ApplyRequest{File: file}); err != nil {
+		t.Fatalf("the limited token applying the file again: %v", err)
 	}
 }
