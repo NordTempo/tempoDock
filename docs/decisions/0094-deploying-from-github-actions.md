@@ -28,7 +28,7 @@ script, no Node, no build step, nothing to keep patched. It is
 developed in `contrib/github-action/` and published as
 [NordTempo/deploy-action](https://github.com/NordTempo/deploy-action),
 since GitHub's Marketplace needs `action.yml` at a repository's root.
-Workflows use `NordTempo/deploy-action@v1`.
+Workflows use `NordTempo/deploy-action@v0`.
 
 - **Inputs**: `server`, `token`, `project`, `environment`, `service`,
   `mode` (`source`, `image`, `apply`), `path`, `image`, `wait`,
@@ -68,9 +68,12 @@ the flag gets `--json` from the action, without progress, with a warning.
 **Publishing.** The release workflow's last step runs
 `scripts/release/sync-action.sh`: the directory as committed becomes the
 repository's root (with the LICENSE), and when that changed it commits,
-tags the next minor (`v1.1.0`, ...) and moves `v1` there, so `@v1` gets
-fixes and rotated release keys. Not for pre-releases. A breaking change
-of inputs is a `v2.0.0` tagged by hand. It pushes with
+tags the next minor (`v0.2.0`, ...) and moves `v0` there, so `@v0` gets
+fixes and rotated release keys. Not for pre-releases. The action's major
+follows Dock's: v0 while Dock is 0.x (Saile, 2026-11-17: no 1.0.0 action
+before Dock's own), with its inputs kept compatible; when Dock reaches
+1.0, `v1.0.0` is tagged by hand once and the syncs follow it, as they
+would a later breaking change's `v2.0.0`. It pushes with
 `DEPLOY_ACTION_TOKEN`, a fine-grained token with Contents and Workflows
 write on that repository only (the directory carries the repository's own
 test workflow, `.github/workflows/test.yml`, which GitHub doesn't run
@@ -140,7 +143,7 @@ repository deploys with no stored secret.
   fails the job with the reason.
 - The action carries Dock's release keys: a rotation (0088's steps)
   reaches it through the copy, which the test keeps equal, and the next
-  release's sync moves `v1` to it. A workflow pinned to an older tag or
+  release's sync moves `v0` to it. A workflow pinned to an older tag or
   SHA keeps trusting only the keys it was pinned with.
 - `--json-file` is one more global flag, useful to any CI.
 - Until part 2 ships, every repository that deploys holds a token; the
