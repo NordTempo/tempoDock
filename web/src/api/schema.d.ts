@@ -867,7 +867,7 @@ export interface paths {
         put?: never;
         /**
          * Add a redirect
-         * @description The hostname must be in a zone of the level's own connections (a platform zone shared with organizations keeps its redirects on the platform). Dock makes a proxied placeholder record and a Single Redirect rule in the background; the token needs Zone › Single Redirect › Edit. 409 (hostname_taken) when a domain or a record Dock didn't make holds the name. Organization admins; operators for the platform's.
+         * @description The hostname must be in a zone of the level's own connections (a platform zone shared with organizations keeps its redirects on the platform). Dock makes a proxied placeholder record and a Single Redirect rule in the background; the token needs Zone › Dynamic URL Redirects › Edit. 409 (hostname_taken) when a domain or a record Dock didn't make holds the name. Organization admins; operators for the platform's.
          */
         post: operations["create-cloudflare-redirect"];
         delete?: never;
@@ -7590,6 +7590,7 @@ export interface components {
             /** @example instagram.tempo.run */
             hostname: string;
             keep_path: boolean;
+            note?: string;
             reason?: string;
             /** @enum {string} */
             status: "pending" | "live" | "error" | "deleting";

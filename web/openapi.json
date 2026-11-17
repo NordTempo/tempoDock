@@ -2606,6 +2606,9 @@
           "keep_path": {
             "type": "boolean"
           },
+          "note": {
+            "type": "string"
+          },
           "reason": {
             "type": "string"
           },
@@ -26437,7 +26440,7 @@
         ]
       },
       "post": {
-        "description": "The hostname must be in a zone of the level's own connections (a platform zone shared with organizations keeps its redirects on the platform). Dock makes a proxied placeholder record and a Single Redirect rule in the background; the token needs Zone › Single Redirect › Edit. 409 (hostname_taken) when a domain or a record Dock didn't make holds the name. Organization admins; operators for the platform's.",
+        "description": "The hostname must be in a zone of the level's own connections (a platform zone shared with organizations keeps its redirects on the platform). Dock makes a proxied placeholder record and a Single Redirect rule in the background; the token needs Zone › Dynamic URL Redirects › Edit. 409 (hostname_taken) when a domain or a record Dock didn't make holds the name. Organization admins; operators for the platform's.",
         "operationId": "create-cloudflare-redirect",
         "parameters": [
           {

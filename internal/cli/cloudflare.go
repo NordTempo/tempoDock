@@ -23,7 +23,7 @@ the account's API Tokens for one owned by the account) with:
   Account › Cloudflare Tunnel › Edit
   Zone › DNS › Edit    on the zones domains may be added from
   Zone › Zone › Read   on the same zones
-  Zone › Single Redirect › Edit   on zones with redirects (optional)
+  Zone › Dynamic URL Redirects › Edit   on zones with redirects (optional)
 Dock only edits records it made (comment dock:<install ID>), never
 overwrites one it didn't, and never points DNS at an IP: domains go
 through tunnels.`

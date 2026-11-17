@@ -196,6 +196,7 @@ function Row({
       <td className="py-2 whitespace-normal">
         <StateText state={states[r.status]} />
         {r.reason && <span className="text-mut"> {r.reason}</span>}
+        {r.note && <div className="text-mut">{r.note}</div>}
       </td>
       <td className="py-2 text-mut">
         {ago(r.updated_at)} · {r.updated_by}
