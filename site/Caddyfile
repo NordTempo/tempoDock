@@ -17,6 +17,17 @@
 		file_server
 	}
 
+	# The docs: a page is a file (docs.html, docs/install.html) served
+	# without its extension. A page that doesn't exist is a 404 here, not
+	# a trip to the console.
+	@docs path /docs /docs/*
+	handle @docs {
+		@slash path_regexp slash ^(.+)/$
+		redir @slash {re.slash.1} 308
+		try_files {path}.html {path}
+		file_server
+	}
+
 	# The one-line installs (README, install.sh, the console): the latest
 	# release's scripts, which check everything they download against the
 	# release's signed SHA256SUMS. 302, so a new release takes over at once.

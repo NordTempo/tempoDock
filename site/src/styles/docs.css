@@ -1,0 +1,104 @@
+@reference "./global.css";
+
+/*
+ * A guide page's Markdown (layouts/Docs.astro): the docs' reading styles.
+ * Colours and fonts are the theme's (global.css).
+ */
+.guide {
+  color: #c8c8c8;
+  font-size: 15px;
+  line-height: 1.6;
+
+  h1 {
+    @apply mb-4 text-[34px] leading-[1.1] font-[650] tracking-[-0.035em] text-white;
+  }
+  h2 {
+    @apply mt-10 mb-3 border-t border-line pt-6 text-[21px] font-semibold tracking-[-0.02em] text-white;
+  }
+  h3 {
+    @apply mt-8 mb-2 text-[17px] font-semibold text-white;
+  }
+  h4,
+  h5 {
+    @apply mt-6 mb-2 text-[15px] font-semibold text-white;
+  }
+  /* A heading linked to from elsewhere stops below the window's top. */
+  :is(h1, h2, h3, h4, h5) {
+    scroll-margin-top: 1rem;
+  }
+  p,
+  ul,
+  ol {
+    @apply my-3;
+  }
+  ul {
+    @apply list-disc pl-5;
+  }
+  ol {
+    @apply list-decimal pl-5;
+  }
+  li {
+    @apply my-1;
+  }
+  a {
+    @apply text-white underline decoration-dim underline-offset-[3px] hover:decoration-white;
+  }
+  strong {
+    @apply font-semibold text-white;
+  }
+  :not(pre) > code {
+    @apply bg-neutral-900 px-1 py-px font-mono text-[0.86em] text-white;
+  }
+
+  /* Flags stay two hyphens: the mono font would join them into a dash. */
+  code {
+    font-variant-ligatures: none;
+  }
+
+  /* Code blocks: the home page's command panel. The highlighter's theme sets the black. */
+  pre {
+    @apply my-4 overflow-x-auto border border-edge px-4 py-3.5 font-mono text-[12.5px] leading-[1.65];
+  }
+
+  /*
+   * A shell block as commands (markdown.ts): a click selects one whole
+   * command, and the prompt sign isn't part of the selection.
+   */
+  .commands {
+    @apply my-4 border border-edge px-4 py-2.5;
+
+    p {
+      @apply mt-2.5 mb-0.5 text-[13px] leading-normal text-body first:mt-0.5;
+    }
+    pre {
+      @apply relative my-0 border-0 py-1 pr-0 pl-5 text-white;
+    }
+    pre::before {
+      @apply absolute left-0 text-meta select-none;
+      content: "$";
+    }
+    pre code {
+      @apply select-all;
+    }
+  }
+
+  /* Tables scroll in their own box instead of widening the page. */
+  table {
+    @apply my-4 block w-full overflow-x-auto text-sm;
+  }
+  th {
+    @apply border-b border-edge py-2 pr-4 text-left font-semibold whitespace-nowrap text-white;
+  }
+  td {
+    @apply border-b border-line py-2 pr-4 align-top text-body;
+  }
+  td:first-child {
+    @apply text-white;
+  }
+  blockquote {
+    @apply my-4 border-l-2 border-edge pl-4 text-body;
+  }
+  hr {
+    @apply my-8 border-line;
+  }
+}

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Checks changes.sh's classification. Run by `make lint` and CI's lint job.
 #
-# First a few paths and the go/web each must set. Then every file Go
+# First a few paths and the go/web/site each must set. Then every file Go
 # reads that isn't Go itself must count as Go, so a change to it runs the
 # Go jobs: what //go:embed embeds, and what tests read by a relative path
 # ("../../web/src/routes", or filepath.Join("..", "..", "web", ...)). A
@@ -12,7 +12,7 @@ root=$(cd "$dir/../.." && pwd)
 cd "$root"
 fail=0
 classify() {
-	printf '%s\n' "$1" | CHANGES_FILES=- GITHUB_OUTPUT=/dev/stdout "$dir/changes.sh" | grep -v '^site=' | tr '\n' ' '
+	printf '%s\n' "$1" | CHANGES_FILES=- GITHUB_OUTPUT=/dev/stdout "$dir/changes.sh" | tr '\n' ' '
 }
 while read -r file want; do
 	got=$(classify "$file")
@@ -21,15 +21,16 @@ while read -r file want; do
 		fail=1
 	fi
 done <<EOF2
-internal/core/core.go go=true web=false
-web/src/features/service/tabs.ts go=false web=true
-web/src/routes/_app.\$org.inbox.tsx go=true web=true
-web/src/features/deploy/pack.ts go=true web=true
-web/src/features/help/topics.ts go=true web=true
-internal/api/api.go go=true web=true
-docs/guide/agents.md go=true web=false
-docs/guide/guide_test.go go=true web=false
-docs/decisions/0001-one-binary.md go=false web=false
+internal/core/core.go go=true web=false site=false
+web/src/features/service/tabs.ts go=false web=true site=false
+web/src/routes/_app.\$org.inbox.tsx go=true web=true site=false
+web/src/features/deploy/pack.ts go=true web=true site=false
+web/src/features/help/topics.ts go=true web=true site=false
+internal/api/api.go go=true web=true site=false
+docs/guide/agents.md go=true web=false site=true
+docs/guide/guide_test.go go=true web=false site=false
+docs/decisions/0001-one-binary.md go=false web=false site=false
+site/src/pages/index.astro go=false web=false site=true
 EOF2
 
 # read lists the tracked files Go reads: embedded ones, and test reads by

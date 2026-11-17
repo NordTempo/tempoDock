@@ -1,0 +1,31 @@
+---
+import { loadDocs } from "../docs";
+
+/** The docs' pages by section, with the open one marked. */
+interface Props {
+  current: string;
+}
+
+const { current } = Astro.props;
+const { groups } = await loadDocs();
+---
+
+{groups.map((group) => (
+  <div class="mt-5 first:mt-0">
+    <p class="mb-1 text-[13px] font-semibold text-white">{group.name}</p>
+    {group.guides.map((guide) => (
+      <a
+        href={guide.href}
+        aria-current={guide.slug === current ? "page" : undefined}
+        class:list={[
+          "-ml-px block border-l py-[3px] pl-4 text-sm",
+          guide.slug === current
+            ? "border-white text-white"
+            : "border-transparent text-body hover:text-white",
+        ]}
+      >
+        {guide.title}
+      </a>
+    ))}
+  </div>
+))}

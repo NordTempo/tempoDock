@@ -1,0 +1,19 @@
+---
+import { render } from "astro:content";
+import { loadDocs } from "../../docs";
+import Docs from "../../layouts/Docs.astro";
+
+/** The docs' front page: docs/guide/README.md as it is. */
+const { front } = await loadDocs();
+const { Content, headings } = await render(front);
+---
+
+<Docs
+  slug="readme"
+  title="Guide"
+  description="How to install, use and automate Tempo Dock: every guide, the words it uses and its commands at a glance."
+  headings={headings}
+  file="README.md"
+>
+  <Content />
+</Docs>
