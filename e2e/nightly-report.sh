@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Reports a nightly run (e2e/nightly.sh) to GitHub and the coordinator:
+# Reports a nightly run (e2e/nightly.sh) to GitHub and the coordinator
+# (with issues turned off in the repository, the webhook alone):
 #
 #   e2e/nightly-report.sh fail RUN_DIR   # open the `nightly` issue, or comment
 #                                        # on the open one; POST the webhook
@@ -75,13 +76,17 @@ _Posted by e2e/nightly.sh. The first passing night closes this issue._
 EOF
 )
 
-if ! gh label list -R "$REPO" --search "$LABEL" --json name -q '.[].name' | grep -qx "$LABEL"; then
-	gh label create "$LABEL" -R "$REPO" --color 5319e7 --description "Nightly e2e run failures (e2e/nightly.sh)" >/dev/null
-fi
-if [[ -n $issue ]]; then
-	gh issue comment -R "$REPO" "$issue" --body "$body" >/dev/null && say "commented on $issue"
+if [[ $(gh api "repos/$REPO" -q .has_issues 2>/dev/null) != true ]]; then
+	say "issues are off in $REPO; only the webhook reports this night"
 else
-	issue=$(gh issue create -R "$REPO" -l "$LABEL" --title "Nightly e2e run is failing" --body "$body") && say "opened $issue"
+	if ! gh label list -R "$REPO" --search "$LABEL" --json name -q '.[].name' | grep -qx "$LABEL"; then
+		gh label create "$LABEL" -R "$REPO" --color 5319e7 --description "Nightly e2e run failures (e2e/nightly.sh)" >/dev/null
+	fi
+	if [[ -n $issue ]]; then
+		gh issue comment -R "$REPO" "$issue" --body "$body" >/dev/null && say "commented on $issue"
+	else
+		issue=$(gh issue create -R "$REPO" -l "$LABEL" --title "Nightly e2e run is failing" --body "$body") && say "opened $issue"
+	fi
 fi
 
 if [[ -s $WEBHOOK_FILE ]]; then

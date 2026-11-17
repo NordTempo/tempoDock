@@ -75,7 +75,7 @@ scenario (`run-apps.log`, `features-lock.log`, ...), `results.tsv`, and
 `soak-<server>.out` from the update's hammers. Each night adds one line to
 `~/.cache/dock-nightly/history.log`. A failure opens one issue labelled
 `nightly` (or comments on the open one) with the failed scenarios and
-their last log lines, redacted, and POSTs a summary to the webhook in
+their last log lines, redacted (when the repository has issues turned on), and POSTs a summary to the webhook in
 `~/.config/dock-nightly/webhook-url`, which tells the coordinator thread.
 The first night that passes closes the issue.
 
