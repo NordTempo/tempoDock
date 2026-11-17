@@ -121,6 +121,7 @@ inner() {
 
 	export TMPDIR=$HOME_DIR/tmp GOTMPDIR=$HOME_DIR/tmp
 	mkdir -p "$TMPDIR"
+	nightly_key || die "can't make the nightly signing key"
 	step build build_release "$nv" || return 1
 	step down e2e/vm/down.sh
 	step up env E2E_RELEASE="$latest" e2e/vm/up.sh "$NODES" || return 1
@@ -168,7 +169,29 @@ build_release() {
 	tar --sort=name --owner=0 --group=0 --numeric-owner -C "$stage" -czf "$out/dock-install-$v.tar.gz" deploy
 	rm -rf "$stage"
 	(cd "$out" && sha256sum -- * >SHA256SUMS)
+	# Signed with the nightly key, which the servers trust through
+	# [updates] trusted_keys (ADR 0088's amendment).
+	RELEASE_SIGNING_KEY=$(cat "$CONF/release-key.pem") TRUSTED_KEYS=$(nightly_pub) go run ./scripts/release/sign "$out" "$v" || return 1
 	ls -l "$out"
+}
+
+# nightly_key makes the VM-local key the nightly signs its builds with,
+# once: ~/.config/dock-nightly/release-key.pem, mode 600.
+nightly_key() {
+	[[ -s $CONF/release-key.pem ]] && return
+	mkdir -p "$CONF"
+	(umask 077 && openssl genpkey -algorithm ed25519 -out "$CONF/release-key.pem")
+}
+
+# nightly_pub prints the nightly key's public half, base64 as in
+# [updates] trusted_keys.
+nightly_pub() { openssl pkey -in "$CONF/release-key.pem" -pubout -outform DER | tail -c 32 | base64; }
+
+# set_updates CONTAINER LINES replaces the server's [updates] section.
+set_updates() {
+	docker exec -i "$1" bash -c 'f=/etc/dock/config.toml
+		sed -i "/^\[updates\]/,/^\[/{/^\[updates\]/d;/^\[/!d}" $f
+		{ printf "\n[updates]\n"; cat; } >>$f' <<<"$2"
 }
 
 # update_with_soak VERSION deploys go-lab on each server, points the control
@@ -183,10 +206,13 @@ update_with_soak() {
 	go build -o "$hammer" ./e2e/hammer || return 1
 	docker exec "$E2E_SLOT-cp" mkdir -p /srv/dock-releases
 	docker cp "$RUN_DIR/release/$v" "$E2E_SLOT-cp:/srv/dock-releases/$v"
-	docker exec "$E2E_SLOT-cp" bash -c 'sed -i "/^\[updates\]/,/^\[/{/^source/d}" /etc/dock/config.toml
-		grep -q "^\[updates\]" /etc/dock/config.toml && sed -i "s|^\[updates\]|[updates]\nsource = \"/srv/dock-releases\"|" /etc/dock/config.toml ||
-			printf "\n[updates]\nsource = \"/srv/dock-releases\"\n" >>/etc/dock/config.toml
-		systemctl restart dock'
+	# The control plane takes releases from the build's directory; every
+	# server trusts the nightly key that signed it.
+	local keys="trusted_keys = [\"$(nightly_pub)\"]"
+	set_updates "$E2E_SLOT-cp" "source = \"/srv/dock-releases\"
+$keys" || return 1
+	for i in $(seq "$NODES"); do set_updates "$E2E_SLOT-node$i" "$keys" || return 1; done
+	docker exec "$E2E_SLOT-cp" systemctl restart dock
 	wait_for 60 curl -fsS -o /dev/null "$DOCK_URL/api/v1/health" || { echo "API down after setting the release source"; return 1; }
 	# One app per server: placement spreads new projects over the servers,
 	# so make projects until every server has one (at most 6 tries).
@@ -288,6 +314,7 @@ outer() {
 		git -C "$SRC" fetch -q origin main && git -C "$SRC" checkout -q --detach "$sha" && git -C "$SRC" clean -qfdx -e node_modules -e bin ||
 			skip "can't check out $sha"
 		CODE=$SRC
+		[[ -x $CODE/e2e/nightly.sh ]] || skip "main's newest green commit ${sha:0:9} predates e2e/nightly.sh"
 	fi
 	say "nightly run in $RUN_DIR (code $(git -C "$CODE" rev-parse --short HEAD))"
 
@@ -320,7 +347,7 @@ outer() {
 		exit 0
 	fi
 	[[ -n $failed ]] || failed="the run itself (exit $rc)"
-	history "FAIL ${commit:0:9} over $from: $(tr '\n' ' ' <<<"$failed")(${RUN_DIR/#$HOME/~})"
+	history "FAIL ${commit:0:9} over $from: $(tr '\n' ' ' <<<"$failed")(${RUN_DIR/#$HOME/\~})"
 	say "failed: $(tr '\n' ' ' <<<"$failed")"
 	$REPORT && "$CODE/e2e/nightly-report.sh" fail "$RUN_DIR"
 	exit 1

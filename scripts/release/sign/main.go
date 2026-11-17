@@ -10,11 +10,16 @@
 // checkout's internal/update: a signing key dock doesn't trust fails here,
 // before anything is published. Nothing about the keys is printed but
 // their ids.
+//
+// For a release you sign yourself (ADR 0088's amendment; e2e/nightly.sh),
+// TRUSTED_KEYS holds the public keys your servers' [updates] trusted_keys
+// list, base64, separated by spaces or newlines: the check counts them too.
 package main
 
 import (
 	"crypto/ed25519"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -41,6 +46,15 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
+	var extra []ed25519.PublicKey
+	for _, k := range strings.Fields(os.Getenv("TRUSTED_KEYS")) {
+		b, err := base64.StdEncoding.DecodeString(k)
+		if err != nil || len(b) != ed25519.PublicKeySize {
+			return fmt.Errorf("TRUSTED_KEYS: %q isn't a base64 Ed25519 public key", k)
+		}
+		extra = append(extra, b)
+	}
+	update.TrustExtra(extra)
 	sums, err := os.ReadFile(filepath.Join(dir, update.SumsAsset))
 	if err != nil {
 		return err
@@ -50,7 +64,7 @@ func run(args []string) error {
 		sig.WriteString(update.Sign(k, sums))
 	}
 	if signed, err := update.VerifySums(version, sums, []byte(sig.String())); err != nil || !signed {
-		return fmt.Errorf("the signature doesn't verify with the keys in internal/update (is the signing key one of them?): %w", err)
+		return fmt.Errorf("the signature doesn't verify with the keys in internal/update and TRUSTED_KEYS (is the signing key one of them?): %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, update.SigAsset), []byte(sig.String()), 0o644); err != nil {
 		return err

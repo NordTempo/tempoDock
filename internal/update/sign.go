@@ -38,10 +38,12 @@ var releaseKeys = []string{
 	"8uQjZq1kO37ezVv7EzN8eyrqOYXRGK2nsCRL/d3RSdU=", // bc6c45a08a65c136, 2026-11-17
 }
 
-// testKeys are keys TrustForTest added.
+// testKeys are keys TrustForTest added; extraKeys the server's
+// [updates] trusted_keys, set by TrustExtra.
 var (
 	testKeysMu sync.Mutex
 	testKeys   []ed25519.PublicKey
+	extraKeys  []ed25519.PublicKey
 )
 
 // Errors of VerifySums, for errors.Is.
@@ -121,7 +123,17 @@ func signedByTrusted(sums, sig []byte) bool {
 	return false
 }
 
-// trusted decodes releaseKeys, plus any test keys. Decoded per check,
+// TrustExtra makes signatures by keys count as Dock's, on top of
+// releaseKeys, for this process: `dock serve` and `dock admin update` call
+// it once at start-up with [updates] trusted_keys (config.Updates.Extra,
+// ADR 0088's amendment). It replaces the keys an earlier call set.
+func TrustExtra(keys []ed25519.PublicKey) {
+	testKeysMu.Lock()
+	defer testKeysMu.Unlock()
+	extraKeys = slices.Clone(keys)
+}
+
+// trusted decodes releaseKeys, plus the extra and test keys. Decoded per check,
 // which is rare, so nothing runs at start-up.
 func trusted() []ed25519.PublicKey {
 	out := make([]ed25519.PublicKey, 0, len(releaseKeys))
@@ -134,6 +146,7 @@ func trusted() []ed25519.PublicKey {
 	}
 	testKeysMu.Lock()
 	defer testKeysMu.Unlock()
+	out = append(out, extraKeys...)
 	return append(out, testKeys...)
 }
 

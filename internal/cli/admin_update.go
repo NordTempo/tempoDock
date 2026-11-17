@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -55,6 +56,9 @@ Logs: journalctl -u dock-update`,
 				return err
 			}
 			node := updater.IsNode(unitDir)
+			if msg := trustUpdateKeys(cfg, node); msg != "" {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), msg)
+			}
 			res, ok, err := updater.Run(cmd.Context(), updater.Options{
 				DataDir: cfg.DataDir, StateDir: updaterStateDir, BinPath: installedBinary,
 				UnitDir: unitDir, CaddyJSON: caddyBootstrap, Node: node,
@@ -76,4 +80,28 @@ Logs: journalctl -u dock-update`,
 	}
 	cmd.Flags().StringVar(&configPath, "config", configPath, "path to the daemon config file")
 	return cmd
+}
+
+// trustUpdateKeys hands [updates] trusted_keys to update.TrustExtra when
+// they apply (config.Updates.Extra) and returns the line to log about it,
+// empty without any: `dock serve`, `dock node` and `dock admin update`
+// call it at start-up.
+func trustUpdateKeys(cfg config.Config, node bool) string {
+	keys, ignored := cfg.Updates.Extra(node)
+	update.TrustExtra(keys)
+	switch {
+	case ignored:
+		return "ignoring [updates] trusted_keys: they apply only with a directory [updates] source"
+	case len(keys) == 0:
+		return ""
+	}
+	ids := make([]string, len(keys))
+	for i, k := range keys {
+		ids[i] = update.KeyID(k)
+	}
+	noun := "key"
+	if len(keys) > 1 {
+		noun = "keys"
+	}
+	return fmt.Sprintf("trusting %d extra update %s: %s", len(keys), noun, strings.Join(ids, ", "))
 }

@@ -72,6 +72,9 @@ func openState(ctx context.Context, cfg config.Config) (*store.Store, *secrets.B
 // 0021). configPath is archived by the control plane's own backups.
 func serve(ctx context.Context, cfg config.Config, configPath string) error {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	if msg := trustUpdateKeys(cfg, false); msg != "" {
+		log.Warn(msg)
+	}
 	if err := checkLoopback("internal_listen", cfg.InternalListen); err != nil {
 		return err
 	}
