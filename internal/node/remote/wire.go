@@ -635,6 +635,10 @@ type wireRoute struct {
 	// Trace is new with edge traces (ADR 0075); nodes before them ignore
 	// it and serve the route untraced, so it needs no protocol version.
 	Trace string `json:"trace,omitempty"`
+	// Key is new with switches without reloads (ADR 0091); nodes before
+	// it ignore it and reload Caddy on a switch, as they did, so it
+	// needs no protocol version.
+	Key string `json:"key,omitempty"`
 }
 
 // wireAnalyticsHosts is node.AnalyticsHosts.
@@ -655,7 +659,7 @@ func toWireRoutes(rs []node.Route) []wireRoute {
 	out := make([]wireRoute, len(rs))
 	for i, r := range rs {
 		out[i] = wireRoute{Hostnames: r.Hostnames, Upstream: r.Upstream, RedirectTo: r.RedirectTo, PathPrefix: r.PathPrefix, Traffic: r.Traffic, TunnelOnly: r.TunnelOnly, Stopped: r.Stopped, Hold: r.Hold,
-			Wake: r.Wake, QuietProbes: r.QuietProbes, Trace: r.Trace}
+			Wake: r.Wake, QuietProbes: r.QuietProbes, Trace: r.Trace, Key: r.Key}
 		if a := r.Access; a != nil {
 			out[i].Access = &wireAccess{Username: a.Username, PasswordHash: a.PasswordHash, Key: a.Key, LoginURL: a.LoginURL}
 		}
@@ -689,7 +693,7 @@ func fromWireRoutes(ws []wireRoute) []node.Route {
 	out := make([]node.Route, len(ws))
 	for i, w := range ws {
 		out[i] = node.Route{Hostnames: w.Hostnames, Upstream: w.Upstream, RedirectTo: w.RedirectTo, PathPrefix: w.PathPrefix, Traffic: w.Traffic, TunnelOnly: w.TunnelOnly, Stopped: w.Stopped, Hold: w.Hold,
-			Wake: w.Wake, QuietProbes: w.QuietProbes, Trace: w.Trace}
+			Wake: w.Wake, QuietProbes: w.QuietProbes, Trace: w.Trace, Key: w.Key}
 		if a := w.Access; a != nil {
 			out[i].Access = &node.Access{Username: a.Username, PasswordHash: a.PasswordHash, Key: a.Key, LoginURL: a.LoginURL}
 		}

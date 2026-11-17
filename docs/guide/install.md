@@ -229,6 +229,7 @@ the others also change an existing config, touching only their own keys.
 | Daemon data | `/var/lib/dock` (0700): `dock.db`, `secret.key`, `link.key` (what nodes trust), `registry.key`, `builds/`, `uploads/`, `update/` (staged releases) |
 | Updater data | `/var/lib/dock-update` (root, 0700): the release being applied, the binary and units it replaced, and the backup taken before the last update |
 | Caddy data | `/var/lib/dock-caddy`: certificates and the last loaded config |
+| Upstream files | `/var/lib/dock-upstreams` (dock:dock-caddy, 2750): one file per service with its container's address, which Caddy reads per request ([ADR 0091](../decisions/0091-switches-without-reloads.md)); dock writes it again on start |
 | Caddy admin socket | `/run/dock-caddy/admin.sock` (dock-caddy:dock-caddy, 0660: only the daemon can change routing) |
 | Kernel setting | `/etc/sysctl.d/90-dock.conf`: `net.ipv4.tcp_migrate_req = 1`, so Caddy reloads hand queued connections over instead of resetting them |
 | BuildKit image | `moby/buildkit:v0.34.1`, pinned by digest, pulled now; the `dock-buildkit` container is created before the first build |
@@ -278,6 +279,7 @@ running).
 | `[caddy] disable_tls` | `false` | Serve every route over plain HTTP |
 | `[caddy] tunnel_port` | `7075` | Where a direct server's Caddy also serves its Cloudflare tunnel, on `127.0.0.1`, when Dock runs one next to the public IP ([Tunnels managed by Dock](#tunnels-managed-by-dock)). Only domains added from Cloudflare go that way, and Caddy listens there only while there are some. `0` turns it off. Changing it after a tunnel exists also needs the tunnel's route in Cloudflare changed |
 | `[caddy] traffic_listen` | `127.0.0.1:7074` | Loopback UDP address where Caddy sends the access log of service domains, counted for [traffic statistics](../decisions/0033-traffic-statistics.md). Must be a loopback IP; empty turns counting off |
+| `[caddy] upstreams_dir` | `/var/lib/dock-upstreams` | Where Dock keeps each service's container address for Caddy, which reads it per request, so switching a service to a new release reloads no config and drops no connection ([ADR 0091](../decisions/0091-switches-without-reloads.md)). install.sh makes it, writable by `dock` and readable by Caddy. Empty, or a directory Dock can't write, puts the addresses in Caddy's config, and every switch reloads it |
 | `[buildkit] enabled` | `true` | This server builds images. `false`: source deploys fail; deploy images instead |
 | `[buildkit] image` | `moby/buildkit:v0.34.1@sha256:9936…` | BuildKit image, pinned by digest |
 | `[buildkit] memory_mb` | `2048` | Hard memory cap for builds (no swap). Builds over it fail; apps are unaffected |

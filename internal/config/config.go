@@ -324,6 +324,12 @@ type Caddy struct {
 	// counts Caddy's access log on, for traffic statistics (ADR 0033).
 	// Empty turns them off.
 	TrafficListen string `toml:"traffic_listen"`
+	// UpstreamsDir holds a file per service with its container's address,
+	// which Caddy reads per request, so a traffic switch rewrites a file
+	// instead of reloading Caddy (ADR 0091). install.sh makes it, owned
+	// by dock and readable by Caddy's group. Missing, or empty here, puts
+	// upstreams in Caddy's config, and every switch reloads it.
+	UpstreamsDir string `toml:"upstreams_dir"`
 }
 
 // BuildKit configures the capped build container.
@@ -481,6 +487,7 @@ func Default() Config {
 			HTTPSPort:     443,
 			TrafficListen: "127.0.0.1:7074",
 			TunnelPort:    7075,
+			UpstreamsDir:  "/var/lib/dock-upstreams",
 		},
 		Analytics: Analytics{
 			IngestListen:  "127.0.0.1:7077",

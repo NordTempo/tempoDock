@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -239,6 +240,12 @@ func TestMoveEnvironmentRollsBack(t *testing.T) {
 		}
 		return nil
 	})
+	var heldPort int
+	p.c.moves.hook = func(_ int64, s apitypes.MoveStep) {
+		if s == apitypes.MoveCopy {
+			heldPort = upstreamPort(t, lab.Routes(), "shop.example.com")
+		}
+	}
 	if _, err := p.c.MoveEnvironment(p.ctx, testSystem, staging, apitypes.MoveEnvironmentRequest{To: p.ids2name("cp")}); err != nil {
 		t.Fatal(err)
 	}
@@ -248,9 +255,16 @@ func TestMoveEnvironmentRollsBack(t *testing.T) {
 	}
 	p.rt.FailHealthCheck(nil)
 	assertStayed(t, p, lab, db, data)
-	// web's port, which the hold listened on, is its container's again.
-	if port := p.hostPort(web); lab.ForwardAddr(port) != "" {
-		t.Errorf("homelab still listens on web's port %d after the rollback", port)
+	// web's route points at its container again, and the hold's port
+	// closed after that.
+	port := p.hostPort(web)
+	if got := upstreamPort(t, lab.Routes(), "shop.example.com"); got != port {
+		t.Errorf("after the rollback homelab routes web to port %d, want its container's %d", got, port)
+	}
+	for _, held := range []int{port, heldPort} {
+		if lab.ForwardAddr(held) != "" {
+			t.Errorf("homelab still listens on port %d after the rollback", held)
+		}
 	}
 	// The move reads as failed just before its audit event is written.
 	eventually(t, "the move_failed audit event", func() bool {
@@ -424,9 +438,14 @@ func TestMoveWithoutDowntime(t *testing.T) {
 		t.Errorf("the deploy made during the move: %s, on cp: %v", r.Status, p.rt.Running())
 	}
 
-	// A connection that still reaches homelab's old port reaches web on cp.
+	// A connection that still reaches homelab's route reaches web on cp,
+	// through the hold's port, which isn't the release's.
+	fwd := upstreamPort(t, lab.Routes(), "shop.example.com")
+	if fwd == int(old.HostPort) {
+		t.Errorf("homelab forwards web's release port %d, want the hold's own", fwd)
+	}
 	var addr string
-	eventually(t, "homelab to forward web's old port", func() bool { addr = lab.ForwardAddr(int(old.HostPort)); return addr != "" })
+	eventually(t, "homelab to forward web's route", func() bool { addr = lab.ForwardAddr(fwd); return addr != "" })
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		t.Fatal(err)
@@ -507,12 +526,28 @@ func readsBack(t *testing.T, conn net.Conn, what string) {
 	}
 }
 
-// TestMoveHoldsConnections: in the hold the source listens on a stopped
-// service's port and its connections wait for the switch, then reach
-// the target, so a reload of Caddy (which ends Caddy's own retries)
-// can't fail them. Moving back to a server that forwards the service,
-// its forward's connections wait the same way and reach the new
-// container there, not the one the forward pointed at, now stopped.
+// upstreamPort is the port of the route serving host.
+func upstreamPort(t *testing.T, routes []node.Route, host string) int {
+	t.Helper()
+	i := slices.IndexFunc(routes, func(r node.Route) bool { return slices.Contains(r.Hostnames, host) })
+	if i < 0 {
+		t.Fatalf("no route for %s in %+v", host, routes)
+	}
+	_, port, _ := net.SplitHostPort(routes[i].Upstream)
+	n, err := strconv.Atoi(port)
+	if err != nil {
+		t.Fatalf("route for %s: upstream %q", host, routes[i].Upstream)
+	}
+	return n
+}
+
+// TestMoveHoldsConnections: in the hold the source's route points at a
+// fresh port the source listens on, before the service stops, so no
+// request meets the stopping container (ADR 0091). Its connections wait
+// for the switch, then reach the target. Moving back to a server that
+// forwards the service, its forward's connections wait the same way and
+// reach the new container there, not the one the forward pointed at, now
+// stopped.
 func TestMoveHoldsConnections(t *testing.T) {
 	p, lab, _, web, _ := movePool(t)
 	echo, _ := echoServer(t)
@@ -520,9 +555,11 @@ func TestMoveHoldsConnections(t *testing.T) {
 	lab.DialTo(echo)
 	labPort := p.hostPort(web)
 	var conn net.Conn
+	var heldPort int
 	p.c.moves.hook = func(_ int64, s apitypes.MoveStep) {
 		if s == apitypes.MoveCopy { // in the hold, web stopped on the source
-			conn = heldConn(t, lab.ForwardAddr(labPort))
+			heldPort = upstreamPort(t, lab.Routes(), "shop.example.com")
+			conn = heldConn(t, lab.ForwardAddr(heldPort))
 		}
 	}
 	staging := EnvRef{"shop", "staging"}
@@ -533,13 +570,15 @@ func TestMoveHoldsConnections(t *testing.T) {
 		t.Fatalf("move = %+v", m)
 	}
 	readsBack(t, conn, "a connection held on homelab")
+	if heldPort == labPort {
+		t.Errorf("homelab held web on its release's port %d, want a fresh one", labPort)
+	}
 
-	cpPort := p.hostPort(web)
 	var back, forwarded net.Conn
 	p.c.moves.hook = func(_ int64, s apitypes.MoveStep) {
 		if s == apitypes.MoveCopy {
-			back = heldConn(t, p.rt.ForwardAddr(cpPort))
-			forwarded = heldConn(t, lab.ForwardAddr(labPort))
+			back = heldConn(t, p.rt.ForwardAddr(upstreamPort(t, p.rt.Routes(), "shop.example.com")))
+			forwarded = heldConn(t, lab.ForwardAddr(heldPort))
 		}
 	}
 	if _, err := p.c.MoveEnvironment(p.ctx, testSystem, staging, apitypes.MoveEnvironmentRequest{To: "homelab"}); err != nil {

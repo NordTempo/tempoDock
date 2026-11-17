@@ -498,7 +498,7 @@ uninstall() {
   systemctl daemon-reload
   rm -f /usr/local/bin/dock /usr/local/bin/caddy /usr/local/bin/cloudflared /etc/sysctl.d/90-dock.conf
   if [[ "$purge" == true ]]; then
-    rm -rf /etc/dock /var/lib/dock /var/lib/dock-caddy /var/lib/dock-registry /var/lib/dock-update
+    rm -rf /etc/dock /var/lib/dock /var/lib/dock-caddy /var/lib/dock-upstreams /var/lib/dock-registry /var/lib/dock-update
     for unit in dock dock-caddy dock-registry; do
       ! id "$unit" > /dev/null 2>&1 || userdel "$unit" 2> /dev/null || true
     done
@@ -799,6 +799,10 @@ main() {
   if [[ -d /var/lib/dock-caddy ]]; then
     chown -R dock-caddy:dock-caddy /var/lib/dock-caddy
   fi
+  # Each service's container address, which dock writes and Caddy reads per
+  # request, so a traffic switch reloads no config (ADR 0091). setgid: the
+  # files dock writes get Caddy's group.
+  install -d -m 2750 -o dock -g dock-caddy /var/lib/dock-upstreams
 
   say "==> dock binary"
   install -m 0755 "$DOCK_BINARY" /usr/local/bin/dock.new

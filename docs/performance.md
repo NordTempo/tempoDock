@@ -201,6 +201,26 @@ counts are one list, NULL for gauges and sums. As a hash and 20
 columns every row paid for, a point took 32 bytes. Seeding writes
 530k points a second.
 
+### Traffic switches
+
+A switch to a new release rewrites the service's upstream file and loads
+an unchanged config, which Caddy answers without a reload ([ADR
+0091](decisions/0091-switches-without-reloads.md)). Caddy reads that
+file on every request. That cost is Caddy's, fixed by its version and
+the one file read per request, so it has no budget: measure it again
+when Caddy is upgraded, or when anything else would read a file per
+request. Dock's own part is benchmarked: `BenchmarkRender` with
+`keyed` (one more allocation per route than a static upstream) and
+`BenchmarkApplyRoutesSwitch` (a cutover on a server with 450 services:
+one synced file write and an unchanged load, about 4,200 allocations;
+its time is the disk's fsync).
+
+| What | Measured |
+|---|---|
+| Requests dropped by switches | 0 of 154,527 over 50 swaps under 32 clients, where reloads dropped 22 of 188,591 (`TestIntegrationSwapUnderTraffic`, keyed and reload) |
+| Caddy CPU per proxied request | 18.3 µs with the file, 16.3 µs with the address in the config: a trivial backend, 16 clients, 200k requests, Caddy 2.11.7 on the dev VM (2026-11-17) |
+| Request latency | p50 0.4 ms either way; saturated throughput 7-13% lower with the file |
+
 ## Running it
 
 ```sh
@@ -380,6 +400,7 @@ end) are not listed.
 | Job scheduler | `internal/core/jobs_schedule.go` | once, at the next due job of any service (ADR 0054); 1 min after its own query failed | an enabled job exists: with none there is no goroutine or timer (one pass at start, then it exits until a job is set) | one goroutine and one timer for every job; a pass is one query and a cron step per job (`BenchmarkJobPass`), then one job container per due job |
 | Email sender | `internal/core/email_send.go` | once, at the earliest queued retry (30 s to 2 h) or the next free slot of the 60-a-minute limit; 1 min after its own query failed | mail is queued (ADR 0079): with none there is no goroutine or timer; an insert or a settings change kicks it, and start kicks it once | one goroutine and one timer; a pass is one indexed query, one SMTP connection for up to 20 mails and one update per mail |
 | Environment move retry | `internal/core/env_move.go` (startMove) | 5 s doubling to 5 min | only while a move's rollback or clean-up keeps failing (ADR 0053) | one goroutine per such move, ended by success, a server it waits for, or shutdown |
+| Move hold drain | `internal/core/env_move.go` (moveStop) | once, 1 s | a move's hold pointed its services' routes at fresh ports (ADR 0091) | one timer per move; requests sent to the source's containers before that finish |
 | Move hold waits for commands | `internal/core/env_move.go` (moveStop) | 1 s, up to 5 min | a move's hold starts while a command runs in the environment (ADR 0063) | one map read under a lock |
 | Held connection wait | `internal/core/forwards.go` (waitHold) | once, up to 60 s per connection | a connection reaches a port a move's hold listens on, or a forward of a held service (ADR 0063) | one timer and a channel wait per connection; the hold's end wakes them all |
 | Drain busy wait | `internal/core/server_drains.go` | once, 15 s | a drain's next move is kept from starting by a deploy, backup or snapshot (ADR 0063) | one move pre-flight |

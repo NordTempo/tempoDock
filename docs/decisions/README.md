@@ -17,7 +17,7 @@ line means a later record added to it without changing what it decided.
 | [0001](0001-go-for-daemon-and-cli.md) | Go for the daemon and CLI | accepted |
 | [0002](0002-single-binary-embedded-ui.md) | Single binary with embedded UI | accepted |
 | [0003](0003-sqlite-for-platform-state.md) | SQLite for platform state | accepted |
-| [0004](0004-caddy-as-separate-proxy.md) | Caddy as a separate proxy process | accepted |
+| [0004](0004-caddy-as-separate-proxy.md) | Caddy as a separate proxy process | accepted; amended by [0091](0091-switches-without-reloads.md) (upstreams in files) |
 | [0005](0005-openapi-api-with-generated-clients.md) | OpenAPI API with generated clients | accepted |
 | [0006](0006-every-way-to-build.md) | Every way to build and deploy | accepted; amended by [0089](0089-faster-builds.md) |
 | [0007](0007-config-db-plus-repo-file.md) | Config in the platform DB plus an optional repo file | accepted |
@@ -76,7 +76,7 @@ line means a later record added to it without changing what it decided.
 | [0060](0060-invite-links-signed-out.md) | Invite links work signed out, with a sign-up step | accepted; amended by [0065](0065-sign-in-is-the-platforms.md), [0079](0079-dock-sends-its-own-email.md) |
 | [0061](0061-one-restore-model.md) | One restore model: restore points, a restored service, and switching to it | accepted |
 | [0062](0062-org-alerts-and-operators.md) | Alerts belong to the org, operators run the platform | superseded in part by [0065](0065-sign-in-is-the-platforms.md), [0066](0066-github-apps-for-many-orgs.md), [0080](0080-permissions-roles-groups-and-agents.md) |
-| [0063](0063-moves-without-downtime-and-server-drains.md) | Moves without downtime, and draining a server | accepted |
+| [0063](0063-moves-without-downtime-and-server-drains.md) | Moves without downtime, and draining a server | accepted; amended by [0091](0091-switches-without-reloads.md) (the hold's fresh port) |
 | [0064](0064-changing-an-org-slug.md) | Changing an organization's slug | accepted |
 | [0065](0065-sign-in-is-the-platforms.md) | Sign-in is the platform's | accepted; amended by [0081](0081-named-identity-providers.md) (named providers) |
 | [0066](0066-github-apps-for-many-orgs.md) | GitHub Apps for many orgs | accepted |
@@ -104,6 +104,7 @@ line means a later record added to it without changing what it decided.
 | [0088](0088-signed-releases.md) | Signed releases: Ed25519 over `SHA256SUMS`, keys built into dock, checked on every download path from v0.56.0; build-provenance attestations | accepted |
 | [0089](0089-faster-builds.md) | Faster builds: half the server's cores (at least two) by default, zstd layers, Railpack images pinned, a hint for Dockerfiles without `.next/cache`, previews keep cold cache mounts; amended: BuildKit pushes through a relay, builders fetch Railpack's images ahead | accepted |
 | [0090](0090-wildcard-certificates.md) | Wildcard certificates for generated hostnames: `*.<base>` over ACME DNS-01 through Cloudflare, sent to servers with their routes, no CT log entries or TLS oracle | accepted |
+| [0091](0091-switches-without-reloads.md) | Traffic switches without Caddy reloads: each service's upstream in a file Caddy reads per request, and a move's hold on a fresh port | accepted |
 
 ## Template
 

@@ -52,6 +52,7 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 		return err
 	}
 	held := c.heldServices()
+	holdPorts := c.holdPorts(serverID)
 	for _, f := range fwd {
 		held[f.ServiceID] = true
 		rows = append(rows, store.ListRoutableDomainsRow(f))
@@ -110,7 +111,12 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 				}
 				i = len(routes)
 				bySvc[key] = i
-				routes = append(routes, node.Route{Upstream: fmt.Sprintf("127.0.0.1:%d", port), Access: acc, Traffic: true, TunnelOnly: tunnelOnly, Hold: held[d.ServiceID], QuietProbes: d.Sleepable})
+				if p, ok := holdPorts[d.ServiceID]; ok && held[d.ServiceID] {
+					// A move's hold: the source waits for the switch
+					// on a port of its own (forwards.go).
+					port = p
+				}
+				routes = append(routes, node.Route{Upstream: fmt.Sprintf("127.0.0.1:%d", port), Key: routeKey(d.ServiceID), Access: acc, Traffic: true, TunnelOnly: tunnelOnly, Hold: held[d.ServiceID], QuietProbes: d.Sleepable})
 				routes[i].Trace = traced[d.ServiceID]
 				switch {
 				case stopped:
@@ -133,6 +139,11 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 	}
 	return c.runtime(serverID).ApplyRoutes(ctx, c.withControlRoutes(serverID, routes), certs)
 }
+
+// routeKey names a service's routes across its releases (node.Route.Key),
+// so a switch to a new release repoints the route without reloading
+// Caddy (ADR 0091).
+func routeKey(serviceID int64) string { return "s" + strconv.FormatInt(serviceID, 10) }
 
 // tunnelOnlyHosts are the hostnames a direct server serves to its
 // Cloudflare tunnel only: the domains Dock routes through it (ADR 0036).

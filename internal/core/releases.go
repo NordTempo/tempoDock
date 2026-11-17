@@ -511,7 +511,9 @@ func servicePort(s store.Service) int {
 }
 
 // allocateHostPort picks the lowest free port in the configured range among
-// releases that are deploying or serving on the server.
+// releases that are deploying or serving on the server, moves, forwards
+// and holds. Callers run it in a write transaction, which keeps two
+// allocations from picking the same port.
 func (c *Core) allocateHostPort(ctx context.Context, q *store.Queries, serverID int64) (int64, error) {
 	used, err := q.ListUsedHostPorts(ctx, serverID)
 	if err != nil {
@@ -519,6 +521,10 @@ func (c *Core) allocateHostPort(ctx context.Context, q *store.Queries, serverID 
 	}
 	taken := map[int64]bool{}
 	for _, p := range used {
+		taken[p] = true
+	}
+	// A move's hold port has no row until the switch (holdFreshPort).
+	for _, p := range c.heldPortsOn(serverID) {
 		taken[p] = true
 	}
 	for p := int64(c.cfg.HostPorts.Min); p <= int64(c.cfg.HostPorts.Max); p++ {

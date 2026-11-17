@@ -90,6 +90,13 @@ func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog
 			counter, lines = c, c
 		}
 	}
+	if opts.UpstreamsDir != "" {
+		// Apps are served either way; switches reload Caddy without it.
+		if err := caddy.CheckUpstreamsDir(opts.UpstreamsDir); err != nil {
+			log.Warn("traffic switches reload Caddy: the upstreams directory can't be used", "upstreams_dir", opts.UpstreamsDir, "err", err)
+			opts.UpstreamsDir = ""
+		}
+	}
 	proxy, err := caddy.New(opts)
 	if err != nil {
 		return nil, nil, ingests{}, err
@@ -281,6 +288,7 @@ func caddyOptions(cfg config.Config, marker string) caddy.Options {
 		AnalyticsAddr:  cfg.Analytics.IngestListen,
 		// Traced apps' exports reach the trace ingest through Caddy.
 		TraceIngestAddr: cfg.Traces.IngestListen,
+		UpstreamsDir:    cfg.Caddy.UpstreamsDir,
 	}
 }
 

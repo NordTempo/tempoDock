@@ -2,6 +2,9 @@
 
 Status: accepted (decided by the agent, on Saile's direction, 2026-11-07).
 Amends [0053](0053-moving-environments.md).
+Amended by [0091](0091-switches-without-reloads.md): the hold listens on
+a fresh port before the containers stop, and that port becomes the
+forward.
 
 ## Context
 

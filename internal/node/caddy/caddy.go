@@ -125,6 +125,12 @@ type Options struct {
 	// <tunnel-id>.cfargotunnel.com. Optional; tunnel-mode CheckDomain names
 	// it in its instructions.
 	TunnelHostname string
+	// UpstreamsDir, when set, keeps keyed routes' upstreams (Route.Key)
+	// out of the config, in files there that Caddy reads per request
+	// (ADR 0091, upstreams.go), so a switch changes a file and no config.
+	// Caddy must be able to read it; the daemon checks dock can write it
+	// (CheckUpstreamsDir). Empty puts every upstream in the config.
+	UpstreamsDir string
 
 	// accessCheck is AccessURL taken apart, wakeCheck WakeURL; set by
 	// validate.
@@ -183,6 +189,8 @@ func (o *Options) validate() error {
 		return fmt.Errorf("caddy: analytics address %q must be a loopback host:port like 127.0.0.1:7077", o.AnalyticsAddr)
 	case o.ServerMarker != "" && !validMarker(o.ServerMarker):
 		return fmt.Errorf("caddy: server marker %q may only use letters, digits, '.', '_' and '-' (at most 128)", o.ServerMarker)
+	case o.UpstreamsDir != "" && !validUpstreamsDir(o.UpstreamsDir):
+		return fmt.Errorf("caddy: upstreams directory %q must be an absolute path of letters, digits, '/', '.', '_' and '-'", o.UpstreamsDir)
 	case o.tunnel() && o.ServerMarker == "":
 		return errors.New("caddy: a server marker is required in cloudflare_tunnel mode")
 	case o.tunnel():
@@ -238,6 +246,17 @@ type Proxy struct {
 	// their trace tokens (TraceToken).
 	traced atomic.Pointer[map[string]string]
 
+	// applyMu makes route applies one at a time: each orders its writes
+	// to the upstreams directory around its load (upstreams.go).
+	applyMu sync.Mutex
+	// files is what the upstreams directory holds; nil until the first
+	// apply, which also sweeps files no route reads.
+	files upstreamFiles
+	// dials maps the upstream addresses of the last applied keyed routes
+	// to their dial placeholders, which is what Caddy's upstream list
+	// shows for them (OpenRequests).
+	dials atomic.Pointer[map[string]string]
+
 	// Overridable in tests.
 	lookupIP   func(ctx context.Context, host string) ([]net.IPAddr, error)
 	rootCAs    *x509.CertPool // nil means the system roots
@@ -277,6 +296,11 @@ func New(opts Options) (*Proxy, error) {
 // ApplyRoutes renders the full config for routes and certs and loads it
 // into Caddy. If Caddy rejects it, the previous config stays in effect.
 // Certificates are left out where Caddy serves plain HTTP.
+//
+// Keyed routes' upstream files (ADR 0091) are written around the load: new
+// ones before it, changed ones after it, so a switch that only changes a
+// file loads the running config again, which Caddy answers without a
+// reload, and then moves traffic with the rename.
 func (p *Proxy) ApplyRoutes(ctx context.Context, routes []node.Route, certs []node.Certificate) error {
 	if p.opts.plainHTTP() {
 		certs = nil
@@ -285,9 +309,32 @@ func (p *Proxy) ApplyRoutes(ctx context.Context, routes []node.Route, certs []no
 	if err != nil {
 		return err
 	}
+	files, err := keyedFiles(p.opts, routes)
+	if err != nil {
+		return err
+	}
+	p.applyMu.Lock()
+	defer p.applyMu.Unlock()
+	sweep := p.files == nil
+	if sweep {
+		p.files = upstreamFiles{}
+	}
+	if err := p.files.before(files); err != nil {
+		return err
+	}
 	if err := p.load(ctx, cfg); err != nil {
 		return err
 	}
+	// The config runs either way: a file that couldn't change keeps its
+	// old upstream until the next apply, which tries again.
+	filesErr := p.files.after(p.opts.UpstreamsDir, files, sweep)
+	dials := map[string]string{}
+	for _, r := range routes {
+		if keyed(p.opts, r) {
+			dials[r.Upstream] = keyedDial(p.opts.UpstreamsDir, r.Key)
+		}
+	}
+	p.dials.Store(&dials)
 	p.hosts.Store(&askSet{hosts: *routeHosts(routes), covered: certNames(certs)})
 	p.setWakeKeys(routes)
 	traced := map[string]string{}
@@ -299,7 +346,7 @@ func (p *Proxy) ApplyRoutes(ctx context.Context, routes []node.Route, certs []no
 		}
 	}
 	p.traced.Store(&traced)
-	return nil
+	return filesErr
 }
 
 // TraceToken is the trace token of the traced route serving host, or ""
@@ -378,7 +425,9 @@ func (p *Proxy) admin(ctx context.Context, method, path string, body []byte) (*h
 // OpenRequests implements node.Proxy: the requests Caddy proxies to
 // upstreams right now, from its admin API's upstream list
 // (num_requests counts a websocket or a stream until it closes). An
-// upstream no route names has no entry and counts 0.
+// upstream no route names has no entry and counts 0. A keyed route's
+// address counts all its route's requests, whatever its file held when
+// they were sent (ADR 0091).
 func (p *Proxy) OpenRequests(ctx context.Context, upstreams []string) (int, error) {
 	resp, err := p.admin(ctx, http.MethodGet, "/reverse_proxy/upstreams", nil)
 	if err != nil {
@@ -394,6 +443,15 @@ func (p *Proxy) OpenRequests(ctx context.Context, upstreams []string) (int, erro
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&list); err != nil {
 		return 0, fmt.Errorf("caddy: read upstreams: %w", err)
+	}
+	// A keyed route's requests are listed under its dial placeholder.
+	if d := p.dials.Load(); d != nil {
+		upstreams = slices.Clone(upstreams)
+		for _, u := range upstreams {
+			if dial, ok := (*d)[u]; ok {
+				upstreams = append(upstreams, dial)
+			}
+		}
 	}
 	n := 0
 	for _, u := range list {
