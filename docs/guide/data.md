@@ -407,7 +407,11 @@ dock connect db -e production --confirm production
 - Production needs `--confirm <environment>`.
 - You log in with the database's own credentials. `--show-url` prints the
   connection URL with its password, pointed at the local port, and is
-  audited (`data.reveal`). Without it the password isn't shown.
+  audited (`data.reveal`). Without it the password isn't shown. For a
+  service that isn't one of Dock's databases the URL is one of its
+  variables (`DATABASE_URL`, `REDIS_URL` or the one its database
+  settings name), so `--show-url` there also needs the permission to
+  reveal variables.
 - Each connection is audited when it opens (`data.connect`, with your
   address) and closes (`data.disconnect`, with its duration and bytes),
   never its traffic. Access is checked per connection; open ones stay open
