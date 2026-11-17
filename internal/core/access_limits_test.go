@@ -1,6 +1,7 @@
 package core
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -108,5 +109,19 @@ func TestChangesSomewhere(t *testing.T) {
 	viewer := grantedPerson(h, admin, "vic@example.com", apitypes.GrantRequest{Role: "deploy:view"})
 	if viewer.ChangesSomewhere() {
 		t.Error("deploy:view changes something")
+	}
+}
+
+// Under enforce an org token refused for lack of a grant is told how a
+// token gets one, not to put a person in a group.
+func TestTokenRefusalNamesATokensFix(t *testing.T) {
+	h := newHarness(t)
+	h.enforce()
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	ci := h.token(testSystem, apitypes.CreateTokenRequest{Name: "ci", Scope: apitypes.ScopeDeploy, Project: "shop"})
+	_, err := h.c.ListVariables(h.ctx, ci, web.Env(), "", true)
+	r := refusalOf(t, err)
+	if !strings.Contains(r.Fix, "dock token grant ci") || strings.Contains(r.Fix, "<email>") {
+		t.Errorf("refusal = %+v", r)
 	}
 }
