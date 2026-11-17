@@ -144,6 +144,16 @@ WHERE org_members.org_id = +sqlc.arg(org_id)
   AND (org_members.expires_at IS NULL OR org_members.expires_at > unixepoch())
 ORDER BY org_members.user_id;
 
+-- name: GetOrgMember :one
+-- One member as ListOrgMembers lists them.
+SELECT sqlc.embed(users), org_members.role, org_members.expires_at,
+    CAST((SELECT count(*) FROM sessions WHERE sessions.user_id = users.id AND sessions.expires_at > +sqlc.arg(now) AND NOT sessions.pending) AS INTEGER) AS sessions,
+    CAST((SELECT count(*) FROM tokens WHERE tokens.user_id = users.id AND tokens.revoked_at IS NULL
+        AND (tokens.expires_at IS NULL OR tokens.expires_at > +sqlc.arg(now))) AS INTEGER) AS tokens,
+    EXISTS (SELECT 1 FROM user_factors WHERE user_factors.user_id = users.id) AS two_factor
+FROM org_members JOIN users ON users.id = org_members.user_id
+WHERE org_members.org_id = +sqlc.arg(org_id) AND org_members.user_id = +sqlc.arg(user_id);
+
 -- GetOrgTokenByName is an org's active manual token by name, the newest
 -- when several share it.
 -- name: GetOrgTokenByName :one

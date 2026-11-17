@@ -206,6 +206,56 @@ func (q *Queries) DeleteUserSessions(ctx context.Context, userID int64) error {
 	return err
 }
 
+const getOrgMember = `-- name: GetOrgMember :one
+SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.factor_failures, users.factor_failed_at, users.email_requests, users.platform_role, users.email_proven, org_members.role, org_members.expires_at,
+    CAST((SELECT count(*) FROM sessions WHERE sessions.user_id = users.id AND sessions.expires_at > +?1 AND NOT sessions.pending) AS INTEGER) AS sessions,
+    CAST((SELECT count(*) FROM tokens WHERE tokens.user_id = users.id AND tokens.revoked_at IS NULL
+        AND (tokens.expires_at IS NULL OR tokens.expires_at > +?1)) AS INTEGER) AS tokens,
+    EXISTS (SELECT 1 FROM user_factors WHERE user_factors.user_id = users.id) AS two_factor
+FROM org_members JOIN users ON users.id = org_members.user_id
+WHERE org_members.org_id = +?2 AND org_members.user_id = +?3
+`
+
+type GetOrgMemberParams struct {
+	Now    time.Time
+	OrgID  int64
+	UserID int64
+}
+
+type GetOrgMemberRow struct {
+	User      User
+	Role      string
+	ExpiresAt *int64
+	Sessions  int64
+	Tokens    int64
+	TwoFactor bool
+}
+
+// One member as ListOrgMembers lists them.
+func (q *Queries) GetOrgMember(ctx context.Context, arg GetOrgMemberParams) (GetOrgMemberRow, error) {
+	row := q.db.QueryRowContext(ctx, getOrgMember, arg.Now, arg.OrgID, arg.UserID)
+	var i GetOrgMemberRow
+	err := row.Scan(
+		&i.User.ID,
+		&i.User.Email,
+		&i.User.Name,
+		&i.User.PasswordHash,
+		&i.User.CreatedAt,
+		&i.User.DisabledAt,
+		&i.User.FactorFailures,
+		&i.User.FactorFailedAt,
+		&i.User.EmailRequests,
+		&i.User.PlatformRole,
+		&i.User.EmailProven,
+		&i.Role,
+		&i.ExpiresAt,
+		&i.Sessions,
+		&i.Tokens,
+		&i.TwoFactor,
+	)
+	return i, err
+}
+
 const getOrgTokenByName = `-- name: GetOrgTokenByName :one
 SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor, platform, granted, own_grants, rules_bypass FROM tokens WHERE org_id = +?1 AND name = ?2 AND revoked_at IS NULL AND origin = 'manual'
 ORDER BY id DESC LIMIT 1

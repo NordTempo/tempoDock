@@ -749,14 +749,26 @@ func (c *Core) ListUsers(ctx context.Context, a Actor) ([]apitypes.User, error) 
 	}
 	out := make([]apitypes.User, 0, len(rows))
 	for _, r := range rows {
-		u := toUser(r.User, r.Role)
-		u.Sessions, u.Tokens, u.TwoFactor = int(r.Sessions), int(r.Tokens), r.TwoFactor
-		if r.ExpiresAt != nil {
-			u.ExpiresAt = ptr(time.Unix(*r.ExpiresAt, 0).UTC())
-		}
-		out = append(out, u)
+		out = append(out, toMember(store.GetOrgMemberRow(r)))
 	}
 	return out, nil
+}
+
+// memberView is one of an org's members as ListUsers shows them, for the
+// answer to a change of their membership.
+func (c *Core) memberView(ctx context.Context, orgID, userID int64) (apitypes.User, error) {
+	r, err := c.store.GetOrgMember(ctx, store.GetOrgMemberParams{Now: now(), OrgID: orgID, UserID: userID})
+	return toMember(r), err
+}
+
+// toMember converts a member row with their counts.
+func toMember(r store.GetOrgMemberRow) apitypes.User {
+	u := toUser(r.User, r.Role)
+	u.Sessions, u.Tokens, u.TwoFactor = int(r.Sessions), int(r.Tokens), r.TwoFactor
+	if r.ExpiresAt != nil {
+		u.ExpiresAt = ptr(time.Unix(*r.ExpiresAt, 0).UTC())
+	}
+	return u
 }
 
 // ResetPassword sets another user's password, generating one when the
