@@ -368,3 +368,21 @@ func TestPreviewVolumesRemovedAfterRestartMidTeardown(t *testing.T) {
 		return err == nil && len(left) == 0
 	})
 }
+
+// A project whose preview was closed archives: the closed preview's
+// archived environment and services are skipped, not looked up.
+func TestArchiveProjectAfterAClosedPreview(t *testing.T) {
+	h, _, _, appHook := previewHarness(t)
+	h.openPreview(appHook, 7)
+	h.previewLive("pr-7")
+	id := h.envID("pr-7")
+	vols := h.previewVolumes(id)
+	if _, err := h.c.ClosePreview(h.ctx, testSystem, EnvRef{"shop", "pr-7"}); err != nil {
+		t.Fatal(err)
+	}
+	h.waitArchived(id, vols)
+	p, err := h.c.ArchiveProject(h.ctx, testSystem, "shop")
+	if err != nil || p.ArchivedAt == nil {
+		t.Fatalf("archive shop = %+v, %v", p, err)
+	}
+}

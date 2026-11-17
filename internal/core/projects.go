@@ -192,6 +192,9 @@ func (c *Core) ArchiveProject(ctx context.Context, a Actor, name string) (apityp
 		}
 		for _, s := range svcs {
 			i := slices.IndexFunc(envs, func(e store.Environment) bool { return e.ID == s.EnvironmentID })
+			if i < 0 {
+				continue // a closed preview's: archived with its environment
+			}
 			as, ok, err := archiveTx(ctx, q, svcScope{envScope{p, envs[i]}, s})
 			if err != nil {
 				return err
