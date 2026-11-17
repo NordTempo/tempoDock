@@ -611,7 +611,7 @@ func renderStatusFeed(f apitypes.PublicStatusFeed, base string) ([]byte, error) 
 		link := base + "/incidents/" + e.Incident
 		at := e.At.UTC().Format(time.RFC3339)
 		out.Entries = append(out.Entries, atomEntry{Title: e.Title + ": " + incidentStateLabels[e.State],
-			ID: link + "#" + strconv.FormatInt(e.At.Unix(), 10), Link: atomLink{Href: link}, Published: at, Updated: at,
+			ID: link + "#u" + strconv.FormatInt(e.Update, 10), Link: atomLink{Href: link}, Published: at, Updated: at,
 			Content: atomContent{Type: "text", Text: e.Message}})
 	}
 	b, err := xml.Marshal(out)

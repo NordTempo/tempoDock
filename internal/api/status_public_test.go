@@ -319,6 +319,20 @@ func TestStatusIncidentPages(t *testing.T) {
 		!strings.HasPrefix(w.Header().Get("Content-Type"), "application/atom+xml") {
 		t.Errorf("feed: %v %+v", err, feed)
 	}
+	// Updates posted in one second (a window's Scheduled and In
+	// progress) are two entries to a reader, by their own IDs.
+	at := time.Date(2026, 11, 13, 2, 0, 0, 0, time.UTC)
+	b, err := renderStatusFeed(apitypes.PublicStatusFeed{Title: "Acme", Updated: at, Entries: []apitypes.PublicFeedEntry{
+		{Incident: "m2kqz7mnab", Title: "Window", Update: 8, PublicUpdate: apitypes.PublicUpdate{State: apitypes.MaintenanceInProgress, At: at}},
+		{Incident: "m2kqz7mnab", Title: "Window", Update: 7, PublicUpdate: apitypes.PublicUpdate{State: apitypes.MaintenanceScheduled, At: at}},
+	}}, "https://"+host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var same atomFeed
+	if err := xml.Unmarshal(b, &same); err != nil || len(same.Entries) != 2 || same.Entries[0].ID != "https://"+host+"/incidents/m2kqz7mnab#u8" || same.Entries[1].ID == same.Entries[0].ID {
+		t.Errorf("same-second feed: %v %+v", err, same.Entries)
+	}
 
 	var js statusJSONPage
 	if err := json.Unmarshal(statusGet(h, host, "/status.json", true).Body.Bytes(), &js); err != nil || len(js.Incidents) != 1 ||

@@ -252,7 +252,7 @@ LIMIT +sqlc.arg(max);
 
 -- name: ListStatusFeed :many
 -- A page's newest posted updates, for its Atom feed.
-SELECT i.public_id, i.title, u.state, u.body, u.at, u.edited_at
+SELECT i.public_id, i.title, u.id, u.state, u.body, u.at, u.edited_at
 FROM status_incidents AS i JOIN status_updates AS u ON u.incident_id = i.id
 WHERE i.page_id = +sqlc.arg(page_id)
 ORDER BY u.at DESC, u.id DESC

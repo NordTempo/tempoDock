@@ -999,7 +999,7 @@ func (c *Core) PublicStatusFeed(ctx context.Context, page int64) (apitypes.Publi
 	}
 	out := apitypes.PublicStatusFeed{Title: p.Title, Updated: p.CreatedAt}
 	for _, r := range rows {
-		e := apitypes.PublicFeedEntry{Incident: r.PublicID, Title: r.Title,
+		e := apitypes.PublicFeedEntry{Incident: r.PublicID, Title: r.Title, Update: r.ID,
 			PublicUpdate: apitypes.PublicUpdate{State: apitypes.IncidentState(r.State), Message: r.Body, At: r.At, Edited: r.EditedAt != nil}}
 		out.Entries = append(out.Entries, e)
 		updated := r.At
