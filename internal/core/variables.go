@@ -108,9 +108,12 @@ func (c *Core) SetVariables(ctx context.Context, a Actor, ref EnvRef, req apityp
 			return apitypes.ChangeResult{}, invalid("%s is both set and unset", k)
 		}
 	}
+	// Someone who may not reveal values here isn't told whether the value
+	// they set is the live one (stageSetAs).
+	blind := !a.revealsIn(es)
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		for k, v := range req.Set {
-			if err := c.stageSet(ctx, q, es.env.ID, serviceID, k, v); err != nil {
+			if err := c.stageSetAs(ctx, q, es.env.ID, serviceID, k, v, blind); err != nil {
 				return err
 			}
 		}
@@ -133,7 +136,17 @@ func (c *Core) SetVariables(ctx context.Context, a Actor, ref EnvRef, req apityp
 	return c.changeResult(ctx, a, es, req.Apply)
 }
 
+// stageSet stages value for a variable, or un-stages the variable when
+// value is what is live already.
 func (c *Core) stageSet(ctx context.Context, q *store.Queries, envID int64, serviceID *int64, key, value string) error {
+	return c.stageSetAs(ctx, q, envID, serviceID, key, value, false)
+}
+
+// stageSetAs is stageSet for a caller who may not reveal values (blind):
+// their value is staged whatever is live. Un-staging a value equal to
+// the live one would tell them, through the count of staged changes,
+// whether a guess at a secret was right.
+func (c *Core) stageSetAs(ctx context.Context, q *store.Queries, envID int64, serviceID *int64, key, value string, blind bool) error {
 	aad := variableAAD(envID, serviceID, key)
 	sealed, err := c.box.Seal([]byte(value), aad)
 	if err != nil {
@@ -147,7 +160,7 @@ func (c *Core) stageSet(ctx context.Context, q *store.Queries, envID int64, serv
 		return err
 	}
 	// Setting a variable back to its live value un-stages it.
-	if live, err := c.openValue(cur.Value, aad, key); err == nil && live != nil && *live == value {
+	if live, err := c.openValue(cur.Value, aad, key); !blind && err == nil && live != nil && *live == value {
 		return q.SetVariablePending(ctx, store.SetVariablePendingParams{Pending: "", PendingValue: nil, UpdatedAt: now(), ID: cur.ID})
 	}
 	return q.SetVariablePending(ctx, store.SetVariablePendingParams{Pending: "set", PendingValue: sealed, UpdatedAt: now(), ID: cur.ID})
