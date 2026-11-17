@@ -17129,7 +17129,7 @@
             "type": "array"
           },
           "mask_all_text": {
-            "description": "Mask all text in replays; inputs are always masked",
+            "description": "Mask all text in replays; field values are always masked",
             "type": "boolean"
           },
           "public": {

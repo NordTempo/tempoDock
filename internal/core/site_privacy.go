@@ -41,7 +41,7 @@ func sitePrivacy(set apitypes.SiteSettings) apitypes.SitePrivacy {
 	replay := *set.Replay
 	if replay {
 		f := apitypes.PrivacyFeature{Name: "Session replay, " + strconv.Itoa(*set.ReplaySampleRate) + "%",
-			Consent: apitypes.PrivacyAfterConsent, Why: "Recording a visit needs consent everywhere. Inputs are masked."}
+			Consent: apitypes.PrivacyAfterConsent, Why: "Recording a visit needs consent everywhere. Field values are masked."}
 		if *set.MaskAllText {
 			f.Why = "Recording a visit needs consent everywhere. All text is masked."
 		}

@@ -121,7 +121,7 @@ Measured as above (CI, 2026-11-10); a timed row shows its slowest range.
 | What | Budget | Measured |
 |---|---|---|
 | Browser script `/_dock/a/s.js`, gzipped | core ≤ 2 KB; errors and Web Vitals ≤ 2 KB more | 1.0 KB; 1.0 KB more |
-| Session recorder `/_dock/a/r.js` (sampled page loads of sites that record), gzipped | ≤ 50 KB | 22.5 KB |
+| Session recorder `/_dock/a/r.js` (sampled page loads of sites that record), gzipped | ≤ 50 KB | 22.9 KB |
 | Idle memory, after start | ≤ 60 MB anonymous RSS | 46.2 MB |
 | Idle CPU, wake-ups | ≤ 1 tick in 30 s, ≤ 0.1/s | 0, 0.03/s |
 | Dashboard p95, 1M events, every range | ≤ 100 ms | 42 ms (a year) |

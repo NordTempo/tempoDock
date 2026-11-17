@@ -22,7 +22,9 @@ src/recorder/   Dock Analytics' session recorder (ADR 0037), not part of
                 the UI: `pnpm build:recorder` writes it to
                 internal/analytics/ingest/recorder/r.js, which is committed
 tests/          dev-only browser fixtures (`*.html`, with `*.test.ts(x)`
-                under src/); open them under `pnpm dev`, see tests/README.md
+                under src/); open them under `pnpm dev`, see tests/README.md.
+                Pure functions are tested in `*.unit.test.ts` next to them
+                instead (node:test, imports with `.ts`): `pnpm check` runs those
 ```
 
 - Types come from `src/api/schema.d.ts` (`components["schemas"][...]`)

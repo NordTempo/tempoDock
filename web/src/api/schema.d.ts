@@ -11846,7 +11846,7 @@ export interface components {
             excluded_paths?: string[];
             /** @description Addresses or CIDR ranges whose visits aren't counted */
             ignored_ips?: string[];
-            /** @description Mask all text in replays; inputs are always masked */
+            /** @description Mask all text in replays; field values are always masked */
             mask_all_text?: boolean;
             /** @description A public, read-only dashboard (phase A4): at stats-<site>-<random>.<base domain> and public_domain */
             public?: boolean;

@@ -137,7 +137,7 @@ type SiteSettings struct {
 	Consent             *string   `json:"consent,omitempty" enum:"none,replay,all" doc:"What waits for the visitor's consent (dock.consent(true) in the page): replay (the default), all, or none for sites that load the script only after consent"`
 	Replay              *bool     `json:"replay,omitempty" doc:"Record sessions (phase A3); off by default"`
 	ReplaySampleRate    *int      `json:"replay_sample_rate,omitempty" minimum:"1" maximum:"100" doc:"Percent of page loads recorded"`
-	MaskAllText         *bool     `json:"mask_all_text,omitempty" doc:"Mask all text in replays; inputs are always masked"`
+	MaskAllText         *bool     `json:"mask_all_text,omitempty" doc:"Mask all text in replays; field values are always masked"`
 	ErrorsAndVitals     *bool     `json:"errors_and_vitals,omitempty" doc:"Collect errors and Web Vitals (phase A2)"`
 	EventRetentionDays  *int      `json:"event_retention_days,omitempty" minimum:"1" maximum:"3650" doc:"Days raw events are kept; daily totals stay"`
 	ReplayRetentionDays *int      `json:"replay_retention_days,omitempty" minimum:"1" maximum:"3650"`

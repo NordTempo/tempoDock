@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tempobase",
     "lint": "biome check .",
     "format": "biome check --write .",
-    "check": "pnpm typecheck && pnpm lint && pnpm check:api && pnpm check:recorder",
+    "check": "pnpm typecheck && pnpm lint && pnpm check:unit && pnpm check:api && pnpm check:recorder",
+    "check:unit": "node --test \"src/**/*.unit.test.ts\"",
     "check:api": "openapi-typescript openapi.json --check -o src/api/schema.d.ts && openapi-typescript tempobase/openapi.json --check -o tempobase/src/api/schema.d.ts",
     "build:recorder": "vite build --config vite.recorder.config.ts",
     "check:recorder": "RECORDER_OUT=node_modules/.recorder-check vite build --config vite.recorder.config.ts --logLevel error && cmp node_modules/.recorder-check/r.js ../internal/analytics/ingest/recorder/r.js"
