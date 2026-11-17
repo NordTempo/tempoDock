@@ -83,13 +83,16 @@ func newCLILogins() *cliLogins {
 
 // watch returns a channel closed when login id is decided, and a func to
 // call when done waiting.
-func (w *cliLogins) watch(id int64) (<-chan struct{}, func()) {
+func (w *cliLogins) watch(id int64) (decided <-chan struct{}, done func(), ok bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	cw := w.waiters[id]
 	if cw == nil {
 		cw = &cliWaiter{ch: make(chan struct{})}
 		w.waiters[id] = cw
+	}
+	if cw.n >= maxCLIWaiters {
+		return nil, nil, false
 	}
 	cw.n++
 	return cw.ch, func() {
@@ -98,8 +101,14 @@ func (w *cliLogins) watch(id int64) (<-chan struct{}, func()) {
 		if cw.n--; cw.n == 0 && w.waiters[id] == cw {
 			delete(w.waiters, id)
 		}
-	}
+	}, true
 }
+
+// maxCLIWaiters is how many requests may wait on one login at once. A
+// CLI waits with one; waiting needs no sign-in, only the login's device
+// code, so without a bound whoever started a login could park any number
+// of requests on it, each held for cliWait.
+const maxCLIWaiters = 3
 
 // notify wakes everyone waiting on login id.
 func (w *cliLogins) notify(id int64) {
@@ -173,7 +182,10 @@ func (c *Core) WaitCLILogin(ctx context.Context, deviceCode string) (apitypes.CL
 	if err != nil {
 		return apitypes.CLILoginWait{}, err
 	}
-	decided, done := c.cliLogins.watch(l.ID)
+	decided, done, ok := c.cliLogins.watch(l.ID)
+	if !ok {
+		return apitypes.CLILoginWait{}, errf(apitypes.CodeRateLimited, "%d requests already wait on this login; one is enough", maxCLIWaiters)
+	}
 	defer done()
 	timer := time.NewTimer(min(c.cliLogins.wait, max(0, time.Until(l.ExpiresAt))))
 	defer timer.Stop()

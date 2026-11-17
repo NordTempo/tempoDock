@@ -551,6 +551,14 @@ end) are not listed.
   today is two small maps in the store; a write past a budget costs a
   map lookup per event, and the size check is a checkpoint and two
   queries every 100 writes.
+- A held connection is memory for as long as its client likes, so each
+  kind has a bound: a person or a token follows 32 live event streams
+  and the server 4,096 (429 past either); 3 requests wait on one CLI
+  login; a source upload that sends nothing for a minute is cut, the
+  server takes 4 at once and one organization 2 of them; a webhook's
+  deliveries are read one at a time, 4 in all, and cut after 3 s
+  without a byte. The read deadlines are the connections' own: no timer
+  of Dock's.
 - Error issues ([ADR 0062](decisions/0062-org-alerts-and-operators.md#one-place-for-errors)):
   a follower keeps at most one error being assembled (50 lines, 8 KB)
   and a reference to its last line; the sink between two ticks holds at

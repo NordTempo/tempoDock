@@ -206,6 +206,8 @@ type Core struct {
 	issues errorSink
 	// cliLogins wakes CLIs waiting on browser logins (cli_login.go).
 	cliLogins *cliLogins
+	// streams counts the event streams open (streams.go).
+	streams streamCounts
 	// ceremonies are the passkey challenges and authenticator app setups
 	// in flight; operators2FA is the platform's requirement of a second
 	// factor of operators (twofactor.go, passkeys.go). Second factors
