@@ -1,4 +1,4 @@
-import type { Domain, ServiceRef } from "../../data/types";
+import type { Domain, Environment, ServiceRef } from "../../data/types";
 
 /**
  * How well a zone's name fits a project's or service's: 0 when its label
@@ -55,4 +55,30 @@ export function defaultZone(
     }))
     .sort((a, b) => a.rank - b.rank || a.zone.localeCompare(b.zone));
   return ranked[0]?.zone ?? "";
+}
+
+/**
+ * The name "From Cloudflare" starts with before the zone: the
+ * environment's (staging.klipit.no), or none in a production one, whose
+ * hostname is the zone itself.
+ */
+export const defaultName = (
+  environment: Pick<Environment, "name" | "kind"> | undefined,
+) =>
+  !environment || environment.kind === "production" ? "" : environment.name;
+
+/**
+ * What to say when a hostname about to be added is one of `domains`
+ * already, undefined when it is free as far as they tell. The server
+ * decides for hostnames outside them.
+ */
+export function takenBy(
+  hostname: string,
+  domains: readonly Pick<Domain, "hostname" | "environment" | "service">[],
+) {
+  const host = hostname.toLowerCase().replace(/\.$/, "");
+  const d = host && domains.find((x) => x.hostname === host);
+  return d
+    ? `${d.hostname} is already a domain of ${d.service} (${d.environment}).`
+    : undefined;
 }

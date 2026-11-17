@@ -1,8 +1,8 @@
-// The zone "From Cloudflare" starts on in the add-domain dialog.
+// The hostname "From Cloudflare" starts on in the add-domain dialog.
 // Run by `pnpm check:unit` (node --test): pure functions, no browser.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { defaultZone } from "./defaultZone.ts";
+import { defaultName, defaultZone, takenBy } from "./defaultZone.ts";
 
 const zones = ["detoo.no", "enhet14.no", "klipit.no", "klipit.se", "saile.dev"];
 const ref = (project: string, service = "web", environment = "staging") => ({
@@ -62,4 +62,24 @@ test("a shared part of a name counts from 3 characters", () => {
 test("nothing in common leaves the first zone by name", () => {
   assert.equal(defaultZone(zones, ref("shop"), []), "detoo.no");
   assert.equal(defaultZone([], ref("shop"), []), "");
+});
+
+test("the name starts as the environment's, except in production", () => {
+  assert.equal(
+    defaultName({ name: "staging", kind: "non_production" }),
+    "staging",
+  );
+  // Production's hostname is the zone itself, whatever it is called.
+  assert.equal(defaultName({ name: "live", kind: "production" }), "");
+  assert.equal(defaultName(undefined), "");
+});
+
+test("a hostname the project already has says whose it is", () => {
+  const domains = [domain("klipit.no", "production", "web")];
+  assert.equal(
+    takenBy("Klipit.no.", domains),
+    "klipit.no is already a domain of web (production).",
+  );
+  assert.equal(takenBy("staging.klipit.no", domains), undefined);
+  assert.equal(takenBy("", domains), undefined);
 });

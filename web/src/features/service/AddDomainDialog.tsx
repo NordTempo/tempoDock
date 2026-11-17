@@ -7,7 +7,7 @@ import { Dialog } from "../../ui/Dialog";
 import { Check } from "../../ui/kit";
 import { useCloudflareZones } from "../cloudflare/data";
 import { Footer, invalid, useValidation } from "../create/form";
-import { defaultZone } from "./defaultZone";
+import { defaultName, defaultZone, takenBy } from "./defaultZone";
 
 /**
  * Adds a hostname: your own (you create its DNS record), or from a zone
@@ -29,17 +29,25 @@ export default function AddDomainDialog({
   const [mode, setMode] = useState<"own" | "cloudflare">("own");
   const [hostname, setHostname] = useState("");
   const [redirect, setRedirect] = useState("");
-  const [name, setName] = useState("");
+  // The project's hostnames and this environment, from the overview the
+  // service's page is on.
+  const { domains, environment } = useSuspenseQuery({
+    ...queries.overview(ref.project),
+    select: (o) => ({
+      domains: o.environments.flatMap((e) =>
+        e.services.flatMap((s) => s.domains),
+      ),
+      environment: o.environments.find(
+        (e) => e.environment.name === ref.environment,
+      )?.environment,
+    }),
+  }).data;
+  // Starts as the environment's name (defaultName); what is typed stays.
+  const [name, setName] = useState(() => defaultName(environment));
   const [zone, setZone] = useState("");
   // A hostname that collected analytics before carries its site's history
   // here unless this is set (ADR 0037).
   const [newSite, setNewSite] = useState(false);
-  // The project's hostnames, from the overview the service's page is on.
-  const domains = useSuspenseQuery({
-    ...queries.overview(ref.project),
-    select: (o) =>
-      o.environments.flatMap((e) => e.services.flatMap((s) => s.domains)),
-  }).data;
   // Until one is chosen, the zone that fits the project (defaultZone).
   const picked =
     zone ||
@@ -63,7 +71,10 @@ export default function AddDomainDialog({
   const flags = `-s ${ref.service} -e ${ref.environment}`;
   // A missing hostname marks its field on submit (the one validation pattern).
   const v = useValidation();
-  const hostError = v.required(!host, "Enter a hostname.");
+  // A hostname the project already has is said as typed; the server
+  // answers for the ones outside it.
+  const hostError =
+    takenBy(host, domains) ?? v.required(!host, "Enter a hostname.");
   const option = (on: boolean, off = false) =>
     `flex gap-2.5 rounded-ctl border p-2.5 ${on ? "border-edge bg-sel" : "border-line"} ${off ? "text-mut" : ""}`;
   return (
@@ -73,7 +84,7 @@ export default function AddDomainDialog({
         className="flex flex-col gap-3"
         onSubmit={(e) => {
           e.preventDefault();
-          if (!v.check(!!host)) return;
+          if (!v.check(!!host && !hostError)) return;
           add.mutate(
             {
               ref,
@@ -162,11 +173,12 @@ export default function AddDomainDialog({
                 <span className="flex flex-wrap items-center gap-2">
                   <input
                     aria-label="Name"
+                    aria-invalid={!!hostError}
                     data-autofocus
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="shop, or empty for the zone"
-                    className="field min-w-0 flex-[1_1_180px] font-mono"
+                    className={`field min-w-0 flex-[1_1_180px] font-mono ${invalid(hostError)}`}
                   />
                   <span className="text-mut">.</span>
                   <select
@@ -181,6 +193,11 @@ export default function AddDomainDialog({
                       </option>
                     ))}
                   </select>
+                  {hostError && (
+                    <span role="alert" className="basis-full text-xs text-fail">
+                      {hostError}
+                    </span>
+                  )}
                 </span>
                 <span className="text-mut">
                   {zones.length} connected{" "}
@@ -218,7 +235,7 @@ export default function AddDomainDialog({
               : `Add ${host || "domain"}`
           }
           pending={add.isPending}
-          problem={v.problem([!host && "a hostname"])}
+          problem={v.problem([!host && "a hostname"], !!hostError)}
           error={add.error}
           cli={[
             `dock domain add ${host || "<host>"}${target ? ` --redirect-to ${target}` : ""}${fromCloudflare ? " --cloudflare" : ""}${newSite && !target ? " --analytics new" : ""} ${flags}`,
