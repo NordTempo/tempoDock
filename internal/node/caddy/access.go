@@ -11,7 +11,7 @@ import (
 )
 
 // accessCookie holds a visitor's session on a login-protected hostname.
-const accessCookie = "dock_access"
+const accessCookie = access.CookieName
 
 // AccessHandler is the access check for routes that need a Dock login
 // (ADR 0030). The server mounts it on its loopback-only internal listener
@@ -20,6 +20,8 @@ const accessCookie = "dock_access"
 // So it keeps no state, and works on a node whose control plane is away.
 //
 //   - A valid session cookie: 204 with the visitor in access.UserHeader.
+//     Dock's uptime probes carry a one-minute one naming
+//     access.ProbeUser (access.ProbeCookie).
 //   - access.CallbackPath with a valid grant: sets the cookie and
 //     redirects to the page the visitor asked for.
 //   - Otherwise a browser page load is redirected to Dock's /access page

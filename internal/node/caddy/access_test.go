@@ -100,3 +100,29 @@ func TestAccessHandler(t *testing.T) {
 		t.Errorf("no key: %d", w.Code)
 	}
 }
+
+// An uptime probe's session (access.ProbeCookie) passes the check on its
+// own hostname for a minute, naming the probe, and nowhere else.
+func TestAccessHandlerLetsAProbeThrough(t *testing.T) {
+	key := access.NewKey()
+	serve := func(r *http.Request) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		AccessHandler().ServeHTTP(w, r)
+		return w
+	}
+	cookie := func(host string, at time.Time) http.Header {
+		return http.Header{"Cookie": {access.ProbeCookie(key, host, at)}, "User-Agent": {"dock-uptime/1.0"}}
+	}
+	w := serve(checkRequest(key, "GET", "/", cookie("app.example.com", time.Now())))
+	if w.Code != http.StatusNoContent || w.Header().Get(access.UserHeader) != access.ProbeUser {
+		t.Fatalf("probe: %d %q", w.Code, w.Header().Get(access.UserHeader))
+	}
+	for name, h := range map[string]http.Header{
+		"another hostname's": cookie("other.example.com", time.Now()),
+		"an expired":         cookie("app.example.com", time.Now().Add(-access.ProbeTTL)),
+	} {
+		if w := serve(checkRequest(key, "GET", "/", h)); w.Code != http.StatusUnauthorized {
+			t.Errorf("%s session: %d, want 401", name, w.Code)
+		}
+	}
+}

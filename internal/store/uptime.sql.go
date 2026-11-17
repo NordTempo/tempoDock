@@ -140,6 +140,46 @@ func (q *Queries) LastUptimeDay(ctx context.Context) (int64, error) {
 	return column_1, err
 }
 
+const listLoginDomains = `-- name: ListLoginDomains :many
+SELECT domains.hostname, domains.service_id, service_access.key
+FROM service_access
+CROSS JOIN domains ON domains.service_id = service_access.service_id
+WHERE service_access.mode = 'login' AND domains.verified_at IS NOT NULL AND domains.redirect_to = ''
+`
+
+type ListLoginDomainsRow struct {
+	Hostname  string
+	ServiceID int64
+	Key       []byte
+}
+
+// The verified, serving domains of services behind a Dock login, with the
+// service's sealed access key: where the scheduler's probes carry a
+// session (ADR 0030). service_access holds protected services only, so
+// it leads (CROSS JOIN keeps the order) and domains are read by service.
+func (q *Queries) ListLoginDomains(ctx context.Context) ([]ListLoginDomainsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listLoginDomains)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListLoginDomainsRow
+	for rows.Next() {
+		var i ListLoginDomainsRow
+		if err := rows.Scan(&i.Hostname, &i.ServiceID, &i.Key); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listServiceUptimeChecks = `-- name: ListServiceUptimeChecks :many
 SELECT id, service_id, url, expect_status, interval_s, timeout_ms, created_at, created_by, auto FROM uptime_checks WHERE service_id = +? ORDER BY id
 `

@@ -13,8 +13,8 @@ import (
 type fakeProbes struct {
 	mu      sync.Mutex
 	results map[string]node.ProbeResult
-	// asked lists the URLs probed, in order.
-	asked []string
+	// asked lists the probes asked for, in order.
+	asked []node.ProbeRequest
 	// gate, when set, holds every probe until it is closed.
 	gate chan struct{}
 }
@@ -36,7 +36,19 @@ func (r *Runtime) Probed() []string {
 	p := &r.probes
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return append([]string(nil), p.asked...)
+	urls := make([]string, len(p.asked))
+	for i, a := range p.asked {
+		urls[i] = a.URL
+	}
+	return urls
+}
+
+// ProbeRequests returns the probes asked for so far, in order.
+func (r *Runtime) ProbeRequests() []node.ProbeRequest {
+	p := &r.probes
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]node.ProbeRequest(nil), p.asked...)
 }
 
 // HoldProbes blocks probes until the returned func is called, for tests
@@ -63,7 +75,7 @@ func (r *Runtime) HoldProbes() (release func()) {
 func (r *Runtime) Probe(ctx context.Context, req node.ProbeRequest) (node.ProbeResult, error) {
 	p := &r.probes
 	p.mu.Lock()
-	p.asked = append(p.asked, req.URL)
+	p.asked = append(p.asked, req)
 	res, ok := p.results[req.URL]
 	gate := p.gate
 	p.mu.Unlock()

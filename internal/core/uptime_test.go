@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NordTempo/tempoDock/internal/access"
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/node/remote"
@@ -497,5 +498,97 @@ func TestAutoUptimeChecks(t *testing.T) {
 	}
 	if again, err := h.c.CheckDomains(h.ctx, testSystem, web); err != nil || len(again) != 2 {
 		t.Fatalf("CheckDomains again = %d checks, %v", len(again), err)
+	}
+}
+
+// A check of a domain behind a Dock login is probed with a one-minute
+// session for that hostname, signed with its service's key (ADR 0030),
+// so it is up instead of answering the login's 401. A check whose host
+// isn't a login domain of its own service never carries one.
+func TestUptimeProbePassesItsServicesLogin(t *testing.T) {
+	h := newHarness(t)
+	h.fastUptime()
+	web := h.uptimeService()
+	api := h.service("api", apitypes.CreateServiceRequest{Port: 3000})
+	if _, err := h.c.AddDomain(h.ctx, testSystem, api, apitypes.AddDomainRequest{Hostname: "api.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	const shop, open = "https://shop.example.com/", "https://api.example.com/"
+	for ref, u := range map[ServiceRef]string{web: shop, api: open} {
+		if _, err := h.c.AddUptimeCheck(h.ctx, testSystem, ref, apitypes.AddUptimeCheckRequest{URL: u, IntervalSeconds: 30}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A row the API would refuse: api's check of web's protected domain.
+	apiSvc, err := h.c.loadService(h.ctx, 1, api)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const foreign = "https://shop.example.com/foreign"
+	if _, err := h.c.store.CreateUptimeCheck(h.ctx, store.CreateUptimeCheckParams{
+		ServiceID: apiSvc.svc.ID, Url: foreign, ExpectStatus: 200, IntervalS: 30, TimeoutMs: 10000, CreatedAt: now(), CreatedBy: "test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.SetServiceAccess(h.ctx, testSystem, web, apitypes.SetAccessRequest{Mode: apitypes.AccessLogin}); err != nil {
+		t.Fatal(err)
+	}
+	webSvc, err := h.c.loadService(h.ctx, 1, web)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, err := h.c.store.GetServiceAccess(h.ctx, webSvc.svc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := h.c.box.Open(row.Key, accessKeyAAD(webSvc.svc.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Probes from before the login was on have no session; wait for one
+	// of each URL from after.
+	from := len(h.rt.ProbeRequests())
+	seen := map[string]bool{}
+	deadline := time.Now().Add(5 * time.Second)
+	for len(seen) < 3 {
+		if time.Now().After(deadline) {
+			t.Fatalf("probed only %v", seen)
+		}
+		time.Sleep(5 * time.Millisecond)
+		reqs := h.rt.ProbeRequests()
+		for _, r := range reqs[min(from, len(reqs)):] {
+			token, found := strings.CutPrefix(r.Cookie, access.CookieName+"=")
+			switch r.URL {
+			case shop:
+				if !found {
+					continue // started before the reload
+				}
+				if user, ok := access.Verify(key, token, access.Session, "shop.example.com", time.Now()); !ok || user != access.ProbeUser {
+					t.Fatalf("session of %s: user %q, valid %v", r.URL, user, ok)
+				}
+				if _, ok := access.Verify(key, token, access.Session, "shop.example.com", time.Now().Add(access.ProbeTTL+time.Second)); ok {
+					t.Fatal("the session outlives a minute")
+				}
+			default:
+				if r.Cookie != "" {
+					t.Fatalf("%s was probed with a session", r.URL)
+				}
+			}
+			seen[r.URL] = true
+		}
+	}
+
+	// Public again: no session any more.
+	if _, err := h.c.SetServiceAccess(h.ctx, testSystem, web, apitypes.SetAccessRequest{Mode: apitypes.AccessPublic}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	from = len(h.rt.ProbeRequests())
+	time.Sleep(100 * time.Millisecond)
+	for _, r := range h.rt.ProbeRequests()[from:] {
+		if r.Cookie != "" {
+			t.Fatalf("%s was probed with a session after its service went public", r.URL)
+		}
 	}
 }

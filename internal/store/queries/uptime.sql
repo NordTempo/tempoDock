@@ -34,6 +34,16 @@ JOIN environments ON environments.id = services.environment_id
 JOIN projects ON projects.id = environments.project_id
 WHERE services.archived_at IS NULL AND projects.archived_at IS NULL;
 
+-- name: ListLoginDomains :many
+-- The verified, serving domains of services behind a Dock login, with the
+-- service's sealed access key: where the scheduler's probes carry a
+-- session (ADR 0030). service_access holds protected services only, so
+-- it leads (CROSS JOIN keeps the order) and domains are read by service.
+SELECT domains.hostname, domains.service_id, service_access.key
+FROM service_access
+CROSS JOIN domains ON domains.service_id = service_access.service_id
+WHERE service_access.mode = 'login' AND domains.verified_at IS NOT NULL AND domains.redirect_to = '';
+
 -- name: AddUptimeProbe :exec
 -- Adds one probe to its check's minute row.
 INSERT INTO uptime_stats (check_id, res, at, up, total, latency_ms_sum) VALUES (?, 60, ?, ?, 1, ?)

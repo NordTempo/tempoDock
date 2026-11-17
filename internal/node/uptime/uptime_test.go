@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -90,5 +91,26 @@ func TestProbeStatus(t *testing.T) {
 func TestProbeRejectsOtherSchemes(t *testing.T) {
 	if _, err := New(true).Probe(context.Background(), node.ProbeRequest{URL: "ftp://example.com/"}); err == nil {
 		t.Fatal("an ftp URL was probed")
+	}
+}
+
+// A probe's cookie goes to the probed URL and no further: the redirect
+// it answers with isn't followed.
+func TestProbeCookieStaysOnItsHost(t *testing.T) {
+	var elsewhere atomic.Int32
+	other := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { elsewhere.Add(1) }))
+	defer other.Close()
+	var got atomic.Value
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got.Store(r.Header.Get("Cookie"))
+		http.Redirect(w, r, other.URL, http.StatusFound)
+	}))
+	defer srv.Close()
+	res, err := New(true).Probe(context.Background(), node.ProbeRequest{URL: srv.URL + "/", Timeout: time.Second, Cookie: "dock_access=token"})
+	if err != nil || res.Status != http.StatusFound {
+		t.Fatalf("probe = %+v, %v", res, err)
+	}
+	if got.Load() != "dock_access=token" || elsewhere.Load() != 0 {
+		t.Fatalf("cookie sent %q, %d requests followed the redirect", got.Load(), elsewhere.Load())
 	}
 }
