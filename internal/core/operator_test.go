@@ -251,3 +251,53 @@ func TestOperatorActsWithoutTheirOwnOrgsGrants(t *testing.T) {
 		t.Fatalf("an operator who views their own org changing a role in another: %+v, %v", u, err)
 	}
 }
+
+// What an operator does to an org's people and to the org itself is as
+// sensitive as the org's own member changes (ADR 0057): joining it,
+// adding a member, suspending and deleting it need a session that proved
+// who it is within the last minutes. And a token adds no member while an
+// environment of the org is locked, as the org's own tokens don't.
+func TestOperatorOrgChangesNeedARecentSignIn(t *testing.T) {
+	h := newHarness(t)
+	h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	h.member("ada@x", map[string]apitypes.Scope{"acme": apitypes.ScopeAdmin})
+	h.member("bob@x", nil)
+	stale := h.operator("op@x")
+	stale.SessionID, stale.VerifiedAt = 99, now().Add(-2*ReauthWindow)
+	fresh := stale
+	fresh.VerifiedAt = now()
+	for name, do := range map[string]func(Actor) error{
+		"joining": func(a Actor) error {
+			_, err := h.c.JoinOrgAsOperator(h.ctx, a, "acme", apitypes.JoinOrgRequest{})
+			return err
+		},
+		"adding a member": func(a Actor) error {
+			_, err := h.c.OperatorAddMember(h.ctx, a, "acme", apitypes.OperatorMemberRequest{Email: "bob@x", Role: apitypes.ScopeAdmin})
+			return err
+		},
+		"suspending": func(a Actor) error { _, err := h.c.SuspendOrg(h.ctx, a, "acme", true); return err },
+		"deleting":   func(a Actor) error { return h.c.OperatorDeleteOrg(h.ctx, a, "acme", "acme") },
+	} {
+		wantCode(t, name+" with a stale session", do(stale), apitypes.CodeReauthRequired)
+	}
+	if _, err := h.c.JoinOrgAsOperator(h.ctx, fresh, "acme", apitypes.JoinOrgRequest{}); err != nil {
+		t.Fatalf("joining, just signed in: %v", err)
+	}
+
+	h.lock("production")
+	pt, err := h.c.CreatePlatformToken(h.ctx, System, apitypes.CreatePlatformTokenRequest{Name: "ops", Role: apitypes.PlatformOperator})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, err := h.c.AuthenticateToken(h.ctx, pt.Secret, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	add := apitypes.OperatorMemberRequest{Email: "bob@x", Role: apitypes.ScopeAdmin}
+	if _, err := h.c.OperatorAddMember(h.ctx, tok, "test", add); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("a platform token adding an admin to an org with a locked environment: %v", err)
+	}
+	if _, err := h.c.OperatorAddMember(h.ctx, tok, "acme", add); err != nil {
+		t.Fatalf("a platform token adding a member to an org with no lock: %v", err)
+	}
+}
