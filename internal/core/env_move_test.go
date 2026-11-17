@@ -53,6 +53,20 @@ func (p *pool) volume(ref ServiceRef, name string) string {
 	return volumeName(ss, name)
 }
 
+// hostPort is the host port of ref's active release.
+func (p *pool) hostPort(ref ServiceRef) int {
+	p.t.Helper()
+	ss, err := p.c.serviceFor(p.ctx, testSystem, ref, apitypes.ScopeRead, "testing")
+	if err != nil {
+		p.t.Fatal(err)
+	}
+	rel, err := p.store.GetActiveRelease(p.ctx, ss.svc.ID)
+	if err != nil || rel.HostPort == 0 {
+		p.t.Fatalf("%s's release: %+v, %v", ref.Service, rel, err)
+	}
+	return int(rel.HostPort)
+}
+
 // waitMove waits for env's move to end.
 func (h *harness) waitMove(env EnvRef) apitypes.EnvironmentMove {
 	h.t.Helper()
@@ -215,7 +229,7 @@ func TestMoveEnvironmentRefused(t *testing.T) {
 }
 
 func TestMoveEnvironmentRollsBack(t *testing.T) {
-	p, lab, db, _, data := movePool(t)
+	p, lab, db, web, data := movePool(t)
 	staging := EnvRef{"shop", "staging"}
 	p.rt.FailHealthCheck(func(spec node.ContainerSpec) error {
 		if strings.HasPrefix(spec.Name, p.envPrefix(db)) {
@@ -232,6 +246,10 @@ func TestMoveEnvironmentRollsBack(t *testing.T) {
 	}
 	p.rt.FailHealthCheck(nil)
 	assertStayed(t, p, lab, db, data)
+	// web's port, which the hold listened on, is its container's again.
+	if port := p.hostPort(web); lab.ForwardAddr(port) != "" {
+		t.Errorf("homelab still listens on web's port %d after the rollback", port)
+	}
 	// The move reads as failed just before its audit event is written.
 	eventually(t, "the move_failed audit event", func() bool {
 		evs, err := p.c.ListAudit(p.ctx, testSystem, AuditFilter{Action: "environment.move_failed"})
@@ -457,6 +475,79 @@ func TestMoveSwitchKeepsTheSourcesRoutes(t *testing.T) {
 	if fmt.Sprint(inHold) != fmt.Sprint(after) {
 		t.Errorf("homelab's routes changed at the switch:\nin the hold %+v\nafter       %+v", inHold, after)
 	}
+}
+
+// heldConn connects to a port a server listens on for a move and sends
+// a request, the way Caddy does for a held route.
+func heldConn(t *testing.T, addr string) net.Conn {
+	t.Helper()
+	if addr == "" {
+		t.Fatal("nothing listens on the held port")
+	}
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	if _, err := conn.Write([]byte("GET /")); err != nil {
+		t.Fatal(err)
+	}
+	return conn
+}
+
+// readsBack checks that a held connection reached the echo server.
+func readsBack(t *testing.T, conn net.Conn, what string) {
+	t.Helper()
+	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	buf := make([]byte, 5)
+	if _, err := io.ReadFull(conn, buf); err != nil || string(buf) != "GET /" {
+		t.Errorf("%s: %q, %v", what, buf, err)
+	}
+}
+
+// TestMoveHoldsConnections: in the hold the source listens on a stopped
+// service's port and its connections wait for the switch, then reach
+// the target, so a reload of Caddy (which ends Caddy's own retries)
+// can't fail them. Moving back to a server that forwards the service,
+// its forward's connections wait the same way and reach the new
+// container there, not the one the forward pointed at, now stopped.
+func TestMoveHoldsConnections(t *testing.T) {
+	p, lab, _, web, _ := movePool(t)
+	echo, _ := echoServer(t)
+	p.rt.DialTo(echo)
+	lab.DialTo(echo)
+	labPort := p.hostPort(web)
+	var conn net.Conn
+	p.c.moves.hook = func(_ int64, s apitypes.MoveStep) {
+		if s == apitypes.MoveCopy { // in the hold, web stopped on the source
+			conn = heldConn(t, lab.ForwardAddr(labPort))
+		}
+	}
+	staging := EnvRef{"shop", "staging"}
+	if _, err := p.c.MoveEnvironment(p.ctx, testSystem, staging, apitypes.MoveEnvironmentRequest{To: p.ids2name("cp")}); err != nil {
+		t.Fatal(err)
+	}
+	if m := p.waitMove(staging); m.Status != apitypes.MoveSucceeded {
+		t.Fatalf("move = %+v", m)
+	}
+	readsBack(t, conn, "a connection held on homelab")
+
+	cpPort := p.hostPort(web)
+	var back, forwarded net.Conn
+	p.c.moves.hook = func(_ int64, s apitypes.MoveStep) {
+		if s == apitypes.MoveCopy {
+			back = heldConn(t, p.rt.ForwardAddr(cpPort))
+			forwarded = heldConn(t, lab.ForwardAddr(labPort))
+		}
+	}
+	if _, err := p.c.MoveEnvironment(p.ctx, testSystem, staging, apitypes.MoveEnvironmentRequest{To: "homelab"}); err != nil {
+		t.Fatal(err)
+	}
+	if m := p.waitMove(staging); m.Status != apitypes.MoveSucceeded {
+		t.Fatalf("move back = %+v", m)
+	}
+	readsBack(t, back, "a connection held on cp")
+	readsBack(t, forwarded, "a connection to homelab's forward")
 }
 
 // TestMoveRefusesALongHold: data that keeps changing faster than the

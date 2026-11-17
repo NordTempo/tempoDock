@@ -279,6 +279,12 @@ queued → building → starting → health_checking → active
 4. The old container keeps running for 12 s to drain connections still on it,
    then gets 30 s to stop gracefully.
 
+A service's process runs under Docker's init, so the stop's SIGTERM reaches
+it even when it would be PID 1 (a Node app, a start command run by a
+shell), unless the image brings its own init (s6-overlay's `/init`, tini,
+dumb-init, systemd). A container started before Dock did this gets it on
+its next release.
+
 **Stateful services** (any volume) are recreated, because two processes must
 never share a volume: stop the old container, start the new one, health
 check. Expect a short pause. If the new one fails, the old release is started

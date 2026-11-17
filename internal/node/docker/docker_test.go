@@ -81,6 +81,28 @@ func TestCreateOptionsArgs(t *testing.T) {
 	}
 }
 
+// App containers run under Docker's init unless PID 1 is an init of the
+// image's own.
+func TestOwnInit(t *testing.T) {
+	for _, c := range []struct {
+		entrypoint, cmd, imageCmd []string
+		want                      bool
+	}{
+		{nil, nil, []string{"node", "server.js"}, false},
+		{[]string{"docker-entrypoint.sh"}, nil, []string{"node"}, false},
+		{nil, []string{"sh", "-c", "npm start"}, []string{"/init"}, false}, // Dock's command runs, not the image's
+		{[]string{"/init"}, nil, nil, true},                                // s6-overlay must be PID 1
+		{nil, nil, []string{"/sbin/init"}, true},
+		{[]string{"/sbin/tini", "--"}, nil, []string{"app"}, true},
+		{[]string{"/usr/bin/dumb-init", "--"}, nil, nil, true},
+		{nil, nil, nil, false},
+	} {
+		if got := ownInit(c.entrypoint, c.cmd, c.imageCmd); got != c.want {
+			t.Errorf("ownInit(%q, %q, %q) = %v, want %v", c.entrypoint, c.cmd, c.imageCmd, got, c.want)
+		}
+	}
+}
+
 // A spec with Health gets Docker's healthcheck running the bind-mounted
 // probe, which times out a second before Docker would kill it. Without an
 // installed probe, or without Health, the image's own check is turned off.

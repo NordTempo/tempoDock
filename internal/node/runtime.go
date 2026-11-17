@@ -1022,10 +1022,12 @@ type Route struct {
 	// for nodes that predate it. Redirect routes ignore it.
 	Stopped string
 	// Hold makes Caddy wait for the upstream, trying it again for up to
-	// HoldFor, instead of answering 502 when it refuses connections: a
-	// moving environment's services are stopped on one server and not
-	// yet started on the other for a few seconds (ADR 0063), and a
-	// forwarded route's listener only accepts once the target serves.
+	// HoldFor, instead of answering 502 when it refuses connections: in
+	// a move's hold (ADR 0063) a service's port is closed from its
+	// container's stop until the control plane listens on it, which holds
+	// the connections itself (a reload of Caddy ends its retries, not a
+	// connection it made), and a forwarded route's listener only accepts
+	// once the target serves.
 	Hold bool
 	// Wake, when set, is the key of the asleep environment the route
 	// belongs to: before proxying, after its access check, Caddy asks

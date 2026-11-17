@@ -424,6 +424,44 @@ func TestIntegrationSwapUnderTraffic(t *testing.T) {
 	}
 }
 
+// TestIntegrationHeldRequestSurvivesReload: a held route's request that
+// the upstream accepted and keeps waiting (a move's hold, where the
+// control plane listens on the port) survives reloads, past the grace
+// period too. Caddy's own retries would end at the first reload.
+func TestIntegrationHeldRequestSurvivesReload(t *testing.T) {
+	tc := startCaddy(t, "", true)
+	ctx := context.Background()
+	held := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(testGracePeriod + 2*time.Second)
+		_, _ = io.WriteString(w, "held")
+	}))
+	t.Cleanup(held.Close)
+	route := node.Route{Hostnames: []string{"held.test"}, Upstream: strings.TrimPrefix(held.URL, "http://"), Hold: true}
+	if err := tc.proxy.ApplyRoutes(ctx, []node.Route{route}, nil); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan string, 1)
+	go func() {
+		resp, err := tc.client.Get(tc.url("http", "held.test", "/"))
+		if err != nil {
+			done <- err.Error()
+			return
+		}
+		b, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		done <- fmt.Sprintf("%d %s", resp.StatusCode, b)
+	}()
+	time.Sleep(300 * time.Millisecond)
+	for _, host := range []string{"a.test", "b.test"} {
+		if err := tc.proxy.ApplyRoutes(ctx, []node.Route{route, {Hostnames: []string{host}, Upstream: backend(t, host)}}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := <-done; got != "200 held" {
+		t.Errorf("held request across two reloads: %q, want 200 held", got)
+	}
+}
+
 // TestIntegrationInFlightRequestSurvivesReload checks that a slow request
 // finishes on the old config and how long the reload waits for it.
 func TestIntegrationInFlightRequestSurvivesReload(t *testing.T) {
