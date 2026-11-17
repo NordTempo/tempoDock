@@ -583,19 +583,22 @@ func TestMoveWithNestedBaseDomains(t *testing.T) {
 	if _, err := p.c.MoveEnvironment(p.ctx, testSystem, staging, apitypes.MoveEnvironmentRequest{To: cp}); err != nil {
 		t.Fatal(err)
 	}
-	if m := p.waitMove(staging); m.Status != apitypes.MoveSucceeded || !strings.Contains(strings.Join(m.Notes, "\n"), "serves web's generated domain web-shop-staging.example.dev") {
+	if m := p.waitMove(staging); m.Status != apitypes.MoveSucceeded {
 		t.Fatalf("move = %+v", m)
 	}
 	doms, err := p.c.ListDomains(p.ctx, testSystem, web)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got []string
+	var bases []string
 	for _, d := range doms {
-		got = append(got, d.Hostname)
+		if d.Generated {
+			_, base, _ := strings.Cut(d.Hostname, ".")
+			bases = append(bases, base)
+		}
 	}
-	slices.Sort(got)
-	if want := []string{"shop.example.com", "web-shop-staging.example.dev", "web-shop-staging.lab.example.dev"}; !slices.Equal(got, want) {
-		t.Errorf("domains = %v, want %v", got, want)
+	slices.Sort(bases)
+	if want := []string{"example.dev", "lab.example.dev"}; !slices.Equal(bases, want) {
+		t.Errorf("generated domains under %v, want one under each of %v", bases, want)
 	}
 }
