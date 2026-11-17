@@ -92,7 +92,7 @@ export function Sidebar({ mode }: { mode: ShellMode }) {
   return (
     <nav
       aria-label={mode === "console" ? "Platform" : "Organization"}
-      className={`flex flex-col gap-0.5 border-b border-line bg-side px-2 py-2.5 lg:sticky ${mode === "app" && !tree ? "lg:w-[60px]" : "lg:w-[248px]"} lg:flex-none lg:overflow-y-auto lg:border-r lg:border-b-0 lg:top-(--shell-top) lg:h-[calc(100vh-var(--shell-top))]`}
+      className={columnClass(mode === "console" || tree)}
     >
       <button
         type="button"
@@ -116,6 +116,14 @@ export function Sidebar({ mode }: { mode: ShellMode }) {
     </nav>
   );
 }
+
+/**
+ * The left column's box: the tree's 248px or the rail's 60px on wide
+ * screens, a strip above the page on narrow ones. The shell's loading
+ * frame (ShellPending) uses it too, so the column doesn't move on load.
+ */
+export const columnClass = (wide: boolean) =>
+  `flex flex-col gap-0.5 border-b border-line bg-side px-2 py-2.5 lg:sticky ${wide ? "lg:w-[248px]" : "lg:w-[60px]"} lg:flex-none lg:overflow-y-auto lg:border-r lg:border-b-0 lg:top-(--shell-top) lg:h-[calc(100vh-var(--shell-top))]`;
 
 /** A sidebar link with an icon; current when its route (or a child) is. */
 function NavLink({
@@ -144,7 +152,7 @@ const groupLabel = "px-2.5 pt-3 pb-1 text-2xs font-medium text-faint";
  * `staticData.ownMenu`): an analytics site's views, Organization
  * settings' sections. The project column is the rail beside it.
  */
-const useOwnMenu = () =>
+export const useOwnMenu = () =>
   useMatches({ select: (ms) => ms.some((m) => m.staticData.ownMenu) });
 
 /**
@@ -277,7 +285,7 @@ export function TopBar() {
   return (
     // Sticky over every page in the shell's top stack; its height is
     // --shell-top (index.css).
-    <header className="app-shell flex h-[52px] items-center gap-1 border-b border-line bg-side px-3 whitespace-nowrap">
+    <header className={topBarClass}>
       <OrgSwitcher />
       <nav
         aria-label="Organization views"
@@ -314,8 +322,17 @@ export function TopBar() {
   );
 }
 
+/**
+ * The top bar's box and its links' look, shared with the shell's loading
+ * frame (ShellPending) so the bar doesn't move when the shell arrives.
+ */
+export const topBarClass =
+  "app-shell flex h-[52px] items-center gap-1 border-b border-line bg-side px-3 whitespace-nowrap";
+export const topLinkClass =
+  "flex min-h-[28px] items-center gap-1.5 rounded-ctl px-2.5 text-mut hover:text-fg aria-[current=page]:bg-sel aria-[current=page]:text-fg";
+
 /** The org's views, in the top bar's order. */
-const orgViews = [
+export const orgViews = [
   ["/$org", "Overview"],
   ["/$org/errors", "Errors"],
   ["/$org/analytics", "Analytics"],
@@ -377,7 +394,7 @@ function TopLink({
       to={to}
       params={{ org }}
       activeOptions={{ exact: to === "/$org" }}
-      className="flex min-h-[28px] items-center gap-1.5 rounded-ctl px-2.5 text-mut hover:text-fg aria-[current=page]:bg-sel aria-[current=page]:text-fg"
+      className={topLinkClass}
     >
       {children}
     </Link>
@@ -404,8 +421,11 @@ function HelpButton() {
 // Badge colours tell organizations apart in the switcher.
 const badgeColours = ["bg-fg", "bg-info", "bg-ok", "bg-warn"];
 
-/** An organization's badge: its initial, in a colour of its own. */
-function OrgBadge({ org }: { org: Org }) {
+/**
+ * An organization's badge: its initial, in a colour of its own. Only the
+ * slug and name are read, so the loading frame draws it from the address.
+ */
+export function OrgBadge({ org }: { org: Pick<Org, "slug" | "name"> }) {
   let h = 0;
   for (const c of org.slug) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return (

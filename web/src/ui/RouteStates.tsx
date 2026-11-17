@@ -9,9 +9,11 @@ import {
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { Fragment, useEffect } from "react";
 import { liveStatus, reconnectLive } from "../data/liveStatus";
+import { serviceTabs } from "../features/service/tabs";
 import { ErrorBlock } from "./ErrorBlock";
+import { Icon } from "./icons";
 
 // Words after /<org>/ that are pages of the organization, not projects.
 const orgPages: Record<string, string> = {
@@ -98,30 +100,136 @@ function Bar({ title }: { title: string }) {
 }
 
 /**
- * A page's frame while it loads, still (no shimmer): PageBar's two lines
- * and a table's rows under a hairline, as most pages are, so the page
- * doesn't jump when it arrives.
+ * A still bar standing in for text not loaded yet: the dash token at
+ * 1.9:1 on black, visible but quieter than any text. No shimmer.
+ */
+const Stub = ({ w, h = "h-[10px]" }: { w: string; h?: string }) => (
+  <span aria-hidden className={`block rounded-tag bg-dash ${h} ${w}`} />
+);
+
+/** Project words that are pages of the project, not environments. */
+const projectPages: Record<string, string> = {
+  compare: "Compare",
+  settings: "Settings",
+};
+
+/**
+ * What a loading page's header will show, read from the address alone
+ * (on a cold start nothing is loaded yet): the way up and the title where
+ * the address names them, and for a service the names its tabs' links
+ * need. What it can't know stays a bar.
+ */
+function shapeOf(path: string): {
+  parent?: string;
+  title?: string;
+  service?: {
+    org: string;
+    project: string;
+    environment: string;
+    service: string;
+  };
+} {
+  const [org, second, third, fourth] = path.split("/").filter(Boolean);
+  if (!org || org === "console" || org === "account") return {};
+  if (!second) return { title: "Overview" };
+  const area = orgPages[second];
+  // Organization settings keeps its title over every section.
+  if (area) return !third || second === "settings" ? { title: area } : {};
+  if (!third) return { title: second };
+  const page = projectPages[third];
+  if (page) return { parent: second, title: page };
+  if (!fourth) return { parent: second, title: third };
+  return {
+    parent: second,
+    title: fourth,
+    service: { org, project: second, environment: third, service: fourth },
+  };
+}
+
+// The tabs every service has (tabsFor adds Data, Errors and Requests
+// only where they apply, which the address can't tell).
+const pendingTabs = serviceTabs.filter(
+  (t) => t.label !== "Data" && t.label !== "Errors" && t.label !== "Requests",
+);
+
+/**
+ * A page's frame while it loads, still (no shimmer), shaped by its
+ * address so nothing jumps when it arrives: PageBar's two lines with the
+ * names the address gives, a service's tab row under it, then a table's
+ * rows and a plain "Loading…". The shell's loading frame (ShellPending)
+ * and a slow page inside the shell (RoutePending) both show it.
  */
 export function PagePending() {
-  const bar = (w: string, h = "h-[10px]") => (
-    <span className={`block rounded-tag bg-dash ${h} ${w}`} />
-  );
+  const path = useRouterState({ select: (s) => s.location.pathname });
+  const { parent, title, service } = shapeOf(path);
   return (
     <div aria-busy="true" className="flex flex-1 flex-col">
-      <div className="flex min-h-[64px] flex-col justify-center gap-2 border-b border-line px-4 py-2.5 sm:px-7">
-        {bar("w-20", "h-[8px]")}
-        {bar("w-48", "h-[16px]")}
+      <div className="sticky top-(--shell-top) z-10 bg-page">
+        <div className="flex min-h-[64px] flex-wrap items-center gap-x-2.5 border-b border-line px-4 py-2.5 sm:px-7">
+          <div className="flex min-w-0 flex-col">
+            <span className="flex h-[18px] items-center text-xs text-mut">
+              {parent}
+            </span>
+            <div className="flex flex-wrap items-center gap-x-2.5">
+              {title ? (
+                <span className="text-2xl leading-7 font-semibold tracking-[-0.01em]">
+                  {title}
+                </span>
+              ) : (
+                <span className="flex h-7 items-center">
+                  <Stub w="w-48" h="h-[16px]" />
+                </span>
+              )}
+              {service && (
+                // EnvSwitch's look, without its menu.
+                <span className="flex items-center gap-[7px] rounded-ctl border border-edge px-[9px] py-1 text-xs">
+                  {service.environment}
+                  <Icon name="chevronDown" size={11} className="text-mut" />
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+        {service && (
+          // ServiceTabs' strip, its links already working: the address
+          // names everything they need.
+          <nav
+            aria-label="Service"
+            className="tabs flex gap-0.5 overflow-x-auto border-b border-line px-4 py-2 whitespace-nowrap [scrollbar-width:thin]"
+          >
+            {pendingTabs.map((t, i) => (
+              <Fragment key={t.label}>
+                {i > 0 && pendingTabs[i - 1]?.group !== t.group && (
+                  <span
+                    aria-hidden
+                    className="mx-1.5 my-1 w-px flex-none bg-edge"
+                  />
+                )}
+                <Link
+                  to={t.to}
+                  params={service}
+                  activeOptions={{
+                    exact: t.label === "Overview",
+                    includeSearch: false,
+                  }}
+                >
+                  {t.label}
+                </Link>
+              </Fragment>
+            ))}
+          </nav>
+        )}
       </div>
       <div className="flex w-full max-w-[1400px] flex-col gap-3 px-4 pt-6 sm:px-7">
-        <p role="status" className="sr-only">
+        <p role="status" className="text-xs text-mut">
           Loading…
         </p>
         <div className="flex flex-col border-t border-line">
           {[0, 1, 2, 3].map((i) => (
             <div key={i} className="flex gap-6 border-b border-line py-3">
-              {bar("w-28")}
-              {bar("w-20")}
-              {bar("w-48")}
+              <Stub w="w-28" />
+              <Stub w="w-20" />
+              <Stub w="w-48" />
             </div>
           ))}
         </div>
@@ -275,29 +383,5 @@ export function RouteError({ error, reset }: ErrorComponentProps) {
         />
       </div>
     </>
-  );
-}
-
-/**
- * The shell's frame while its first data loads (a cold start): the top
- * bar, the project rail with still tiles, and a page's frame
- * (PagePending). Static on purpose (no shimmer).
- */
-export function ShellPending() {
-  return (
-    <div className="flex min-h-screen flex-col">
-      <div className="h-[52px] flex-none border-b border-line" />
-      <div className="flex flex-1">
-        <div className="hidden w-[60px] flex-none flex-col items-center gap-2 border-r border-line py-2.5 lg:flex">
-          {[0, 1, 2].map((i) => (
-            <span
-              key={i}
-              className="block size-[30px] rounded-ctl border border-line"
-            />
-          ))}
-        </div>
-        <PagePending />
-      </div>
-    </div>
   );
 }

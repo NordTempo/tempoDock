@@ -1,4 +1,4 @@
-import { Link, Outlet } from "@tanstack/react-router";
+import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useLiveUpdates } from "../data/live";
 import { useLogout } from "../data/mutations";
 import { useSession } from "../data/queries";
@@ -7,9 +7,21 @@ import { DrainStrip } from "../features/servers/DrainStrip";
 import { Icon } from "../ui/icons";
 import { Notices } from "../ui/notice";
 import { PagePending } from "../ui/RouteStates";
+import { modKey } from "./keys";
 import { NotLive } from "./NotLive";
 import { PaletteProvider } from "./palette";
-import { Sidebar, TopBar, useShellMode } from "./Sidebar";
+import {
+  columnClass,
+  OrgBadge,
+  orgViews,
+  Sidebar,
+  TopBar,
+  topBarClass,
+  topLinkClass,
+  useOwnMenu,
+  useShellMode,
+  useTreeOpen,
+} from "./Sidebar";
 
 /**
  * Everything behind login: the sidebar and the page (which brings its own
@@ -63,10 +75,139 @@ function OrgShell() {
 
 /**
  * A page still loading, inside the shell: the navigation stays and the
- * page shows its still frame (PagePending). The org and console routes
- * use it, so a slow page never blanks the navigation.
+ * page shows its still frame (PagePending), shaped like the page by its
+ * address. The org and console routes use it, so a slow page never
+ * blanks the navigation.
  */
 export const RoutePending = PagePending;
+
+/**
+ * The shell as it will look, while its first data loads (a cold start,
+ * _app's pendingComponent): the top bar's fixed parts (or the console's
+ * bar), the left column at the width it will have (the saved tree or
+ * rail choice; the rail beside a page with its own menu) and the page's
+ * frame. Nothing here reads a query; the org is the address's slug.
+ */
+export function ShellPending() {
+  const path = useRouterState({ select: (s) => s.location.pathname });
+  const inConsole = path === "/console" || path.startsWith("/console/");
+  const [saved] = useTreeOpen();
+  const ownMenu = useOwnMenu();
+  const wide = inConsole || (saved && !ownMenu);
+  return (
+    <>
+      <div className="sticky top-0 z-30">
+        {inConsole ? <ConsoleBar /> : <TopBarFrame path={path} />}
+      </div>
+      <div className="flex min-h-screen flex-col lg:flex-row">
+        <div className={columnClass(wide)}>
+          <span className="nav-row text-mut lg:hidden">
+            <Icon name="list" />
+            Navigation
+          </span>
+          <div className="hidden flex-col gap-0.5 lg:flex">
+            {wide ? (
+              <>
+                {/* ConsoleNav's heading, or AppNav's row over the tree. */}
+                {inConsole ? (
+                  <span className="px-2.5 pt-1 pb-2 font-semibold">
+                    Platform
+                  </span>
+                ) : (
+                  <span className="nav-row text-2xs font-medium text-faint">
+                    Projects
+                  </span>
+                )}
+                {["w-24", "w-20", "w-28"].map((w) => (
+                  <span key={w} className="nav-row">
+                    <span
+                      className={`block h-[10px] rounded-tag bg-dash ${w}`}
+                    />
+                  </span>
+                ))}
+              </>
+            ) : (
+              <>
+                <span className="nav-row justify-center px-0 text-mut">
+                  <Icon name="chevronRight" size={14} />
+                </span>
+                <span className="flex flex-col items-center gap-1">
+                  {[0, 1, 2].map((i) => (
+                    <span
+                      key={i}
+                      className="block size-9 rounded-ctl border border-edge"
+                    />
+                  ))}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+        <main id="main" className="flex min-w-0 flex-1 flex-col">
+          <PagePending />
+        </main>
+      </div>
+    </>
+  );
+}
+
+/**
+ * TopBar's fixed parts in their places, for ShellPending: the org's
+ * badge and slug (its name isn't loaded yet), its views as links, Search,
+ * Inbox, Organization settings, ? and the account's circle.
+ */
+function TopBarFrame({ path }: { path: string }) {
+  const [org = "", area] = path.split("/").filter(Boolean);
+  // The view the address is in, from the path alone: the router's own
+  // active state isn't settled while the first load is pending.
+  const here = area ? `/$org/${area}` : "/$org";
+  return (
+    <header className={topBarClass}>
+      <span className="flex items-center gap-2 p-1.5">
+        <OrgBadge org={{ slug: org, name: org }} />
+        <span className="font-semibold">{org}</span>
+        <Icon name="chevronDown" size={12} className="text-mut" />
+      </span>
+      <nav
+        aria-label="Organization views"
+        className="hidden items-center gap-0.5 md:flex"
+      >
+        {orgViews.map(([to, label]) => (
+          <Link
+            key={to}
+            to={to}
+            params={{ org }}
+            // Current by `here`; exact keeps the router from marking a parent too.
+            activeOptions={{ exact: true }}
+            aria-current={to === here ? "page" : undefined}
+            className={topLinkClass}
+          >
+            {label}
+          </Link>
+        ))}
+      </nav>
+      <span className="flex-1" />
+      <span className="flex min-h-[28px] items-center gap-2 rounded-ctl border border-line px-2.5 text-mut">
+        <Icon name="search" />
+        <span className="sr-only sm:not-sr-only">Search</span>
+        <kbd className="hidden sm:inline">{modKey.trim()}K</kbd>
+      </span>
+      <Link to="/$org/inbox" params={{ org }} className={topLinkClass}>
+        Inbox
+      </Link>
+      <Link to="/$org/settings" params={{ org }} className={topLinkClass}>
+        Organization settings
+      </Link>
+      <span
+        aria-hidden
+        className="flex min-h-[28px] items-center px-2.5 text-mut"
+      >
+        ?
+      </span>
+      <span aria-hidden className="size-7 rounded-full bg-edge" />
+    </header>
+  );
+}
 
 /**
  * The console's reminder that changes here reach every project. One line
