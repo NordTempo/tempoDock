@@ -1,6 +1,5 @@
 # Serves the built site on :8080 for Dock, which terminates TLS in front.
-# Paths the site doesn't have go to the console with a 308, so links to the
-# console's old address (invites, deep links) keep working after the move.
+# A path the site doesn't have gets its 404 page.
 {
 	admin off
 	auto_https off
@@ -9,24 +8,8 @@
 :8080 {
 	root * /srv
 	encode zstd gzip
-
-	@site path / /index.html /_astro/* /fonts/* /favicon.svg /robots.txt
-	handle @site {
-		header /_astro/* Cache-Control "public, max-age=31536000, immutable"
-		header /fonts/* Cache-Control "public, max-age=604800"
-		file_server
-	}
-
-	# The docs: a page is a file (docs.html, docs/install.html) served
-	# without its extension. A page that doesn't exist is a 404 here, not
-	# a trip to the console.
-	@docs path /docs /docs/*
-	handle @docs {
-		@slash path_regexp slash ^(.+)/$
-		redir @slash {re.slash.1} 308
-		try_files {path}.html {path}
-		file_server
-	}
+	header /_astro/* Cache-Control "public, max-age=31536000, immutable"
+	header /fonts/* Cache-Control "public, max-age=604800"
 
 	# The one-line installs (README, install.sh, the console): the latest
 	# release's scripts, which check everything they download against the
@@ -38,7 +21,17 @@
 		redir https://github.com/NordTempo/tempoDock/releases/latest/download/install-cli.sh 302
 	}
 
+	# A page is a file (docs.html, docs/install.html) served without its
+	# extension, and without a trailing slash.
 	handle {
-		redir {$CONSOLE_URL:https://console.nordtempo.com}{uri} 308
+		@slash path_regexp slash ^(.+)/$
+		redir @slash {re.slash.1} 308
+		try_files {path}.html {path}
+		file_server
+	}
+
+	handle_errors {
+		rewrite * /404.html
+		file_server
 	}
 }
