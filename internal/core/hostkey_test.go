@@ -7,11 +7,17 @@ import (
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
 
-// Random parts are distinct, DNS-safe and spread over the whole alphabet
-// at every position: nothing about one predicts another (ADR 0087).
+// Random parts are DNS-safe, spread over the whole alphabet at every
+// position and as good as distinct: nothing about one predicts another
+// (ADR 0087).
+//
+// 32^7 keys leave 20000 draws a pair alike once in 170 runs, by chance
+// alone, so one repeat is no pattern (and failed CI when no repeat was
+// allowed); three are, at one run in 30 million.
 func TestHostKeysHaveNoPattern(t *testing.T) {
 	const n = 20000
 	seen := make(map[string]bool, n)
+	repeats := 0
 	var at [hostKeyLen]map[rune]int
 	for i := range at {
 		at[i] = map[rune]int{}
@@ -22,7 +28,9 @@ func TestHostKeysHaveNoPattern(t *testing.T) {
 			t.Fatalf("key %q isn't %d base32 characters", k, hostKeyLen)
 		}
 		if seen[k] {
-			t.Fatalf("key %q came twice in %d", k, n)
+			if repeats++; repeats > 2 {
+				t.Fatalf("%d keys came again in %d, the last %q", repeats, n, k)
+			}
 		}
 		seen[k] = true
 		for i, r := range k {

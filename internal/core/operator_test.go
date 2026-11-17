@@ -152,15 +152,18 @@ func TestJoinAsOperatorExpires(t *testing.T) {
 	if err := h.store.DB.QueryRowContext(h.ctx, `SELECT count(*) FROM org_members WHERE user_id = ?`, op.UserID).Scan(&left); err != nil || left != 0 {
 		t.Fatalf("memberships left = %d, %v", left, err)
 	}
-	evs, _ := h.c.ListAudit(h.ctx, testSystem, AuditFilter{})
-	var joined, ended bool
-	for _, e := range evs {
-		joined = joined || e.Action == "org.operator_join"
-		ended = ended || e.Action == "org.operator_leave"
-	}
-	if !joined || !ended {
-		t.Fatal("the org's log doesn't show the operator joining and leaving")
-	}
+	// A retention pass the harness's first stats tick started may have
+	// removed the membership first and not have recorded it yet: the pass
+	// above found nothing to do then.
+	eventually(t, "the org's log to show the operator joining and leaving", func() bool {
+		evs, _ := h.c.ListAudit(h.ctx, testSystem, AuditFilter{})
+		var joined, ended bool
+		for _, e := range evs {
+			joined = joined || e.Action == "org.operator_join"
+			ended = ended || e.Action == "org.operator_leave"
+		}
+		return joined && ended
+	})
 }
 
 // Deleting an org with projects needs its slug typed, archives the

@@ -471,6 +471,10 @@ func TestBuildRailpackSymlinkLoop(t *testing.T) {
 	}
 }
 
+// A step that eats the builder's memory fails the build and says so. The
+// kernel's OOM killer picks the step or, now and then, buildkitd itself:
+// the user reads about memory either way (TestBuildKitKilledMidBuild has
+// the second message to itself).
 func TestBuildOutOfMemory(t *testing.T) {
 	b := newBuilder(t, dockerClient(t), 256)
 	_, _, err := build(t, b, node.BuildRequest{
@@ -480,7 +484,7 @@ RUN node -e 'const a = []; for (;;) a.push(Buffer.alloc(16 << 20, 1))'
 		Tag: "dock-test/hello:oom",
 	})
 	t.Logf("error users see: %v", err)
-	if err == nil || !strings.Contains(err.Error(), "ran out of memory") {
+	if err == nil || !strings.Contains(err.Error(), "ran out of memory") && !strings.Contains(err.Error(), "most likely out of memory") {
 		t.Fatalf("err = %v", err)
 	}
 }

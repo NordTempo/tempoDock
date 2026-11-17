@@ -87,6 +87,13 @@ func (c *Core) DoThing(ctx context.Context, a Actor, req apitypes.DoThingRequest
   index), persisted as a state machine so recovery can fail it cleanly
   after a crash. Read `releases.go` and `deploy.go` before changing the
   flow.
+  A deploy's context ends when its goroutine returns (`deployRuns`):
+  work it starts that goes on afterwards (a retry, a first backup) runs
+  under `c.ctx`, or it stops silently right there.
+- Background work decides from the store as it is when it gets to run,
+  under whatever hold serializes it with the request that can undo it
+  (`keepArchiver`), never from a row it read before: the setting may
+  have been turned off, and what it starts then is left behind.
 
 ## Tests
 
@@ -94,3 +101,18 @@ Use the harness in `core_test.go`: `newHarness(t)` gives a Core on the
 fake runtime and a temp SQLite with org 1, `testSystem` acts in it, and
 `restart` / `crash` simulate daemon restarts. Test behaviour through
 exported methods, including the permission denials for each scope.
+
+A test passes on a slow, loaded runner too. What has made tests fail
+there for no fault of the code:
+
+- The harness's own background passes (the first stats tick's retention
+  pass, a harness deploy) may do what the test is about to do. Wait for
+  the outcome (`eventually`, `h.settled`), don't assert right after your
+  own call.
+- A test that counts calls gives every deadline on the way a length that
+  can't fire: a retry after a short test timeout is one more call.
+- A check on random values allows what chance allows. Work out how
+  often the assertion fails by chance, and keep that under one run in
+  millions.
+- Against real Docker, a container is "started" before its process
+  runs: wait for its first output before signalling it.

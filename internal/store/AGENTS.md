@@ -50,6 +50,12 @@ After changing either directory: `go generate ./internal/store` and commit
 the generated files. Never edit `*.sql.go`, `models.go` or `db.go` by
 hand.
 
+`Store.Close` returns with no connection in use or being opened by the
+store itself: a goroutine the store starts (the background prepare in
+`stmts.go`) is cancelled and waited for there. `sql.DB.Close` waits for
+nothing, and a connection opened after it makes SQLite's `-wal` and
+`-shm` files again.
+
 Tests open a migrated database with `storetest.Open(t, path)`: it
 migrates once per test binary and copies the result, which is far faster
 than `store.Open` on an empty file (seconds under `-race`).

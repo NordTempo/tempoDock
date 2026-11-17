@@ -139,6 +139,14 @@ func TestPITROnOff(t *testing.T) {
 	if spec, _ := h.rt.Spec(h.ctr(db, 3)); strings.Contains(spec.Cmd, "archive") {
 		t.Fatalf("archiving after off: %s", spec.Cmd)
 	}
+	// What follows an earlier release going active may get here only now:
+	// it starts no archiver again.
+	if _, on, err := h.c.keepArchiver(h.ctx, ss); on || err != nil {
+		t.Fatalf("keeping the archiver after off: %v, %v", on, err)
+	}
+	if _, ok := h.rt.Sidecars()[archiverName(ss)]; ok {
+		t.Fatal("a late start brought the archiver back")
+	}
 }
 
 // TestStalledArchiverAlerts: an archiver whose health check fails opens

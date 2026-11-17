@@ -263,6 +263,11 @@ func (c *Core) deployTemplate(ctx context.Context, a Actor, ss svcScope, done fu
 // extension when the start command loads it and it doesn't exist yet
 // (ADR 0069): one owner connection per activation, nothing when it
 // exists.
+//
+// ctx is the deploy's, which ends when the deploy returns (deployRuns),
+// so only the first attempt runs under it: the retries have the daemon's
+// context. Under the deploy's they never ran, and a database that missed
+// its first attempt stayed without data access.
 func (c *Core) afterActive(ctx context.Context, ss svcScope) {
 	t, ok := templateOf(ss.svc)
 	if !ok || t.database == "" {
@@ -279,7 +284,7 @@ func (c *Core) afterActive(ctx context.Context, ss svcScope) {
 	}
 	ref := ServiceRef{ss.project.Name, ss.env.Name, ss.svc.Name}
 	sys := System.InOrg(ss.project.OrgID)
-	setup := func() error {
+	setup := func(ctx context.Context) error {
 		if needSetup {
 			if _, err := c.SetupData(ctx, sys, ref); err != nil {
 				return err
@@ -292,13 +297,12 @@ func (c *Core) afterActive(ctx context.Context, ss svcScope) {
 		}
 		return nil
 	}
-	if setup() == nil || ctx.Err() != nil {
+	if setup(ctx) == nil || ctx.Err() != nil {
 		return
 	}
 	// The retries run in the background: the deploy is done.
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
+	c.wg.Go(func() {
+		ctx := c.ctx
 		delay := setupRetryDelay
 		for attempt := 2; ; attempt++ {
 			select {
@@ -306,7 +310,7 @@ func (c *Core) afterActive(ctx context.Context, ss svcScope) {
 			case <-ctx.Done():
 				return
 			}
-			err := setup()
+			err := setup(ctx)
 			if err == nil || ctx.Err() != nil {
 				return
 			}
@@ -316,17 +320,17 @@ func (c *Core) afterActive(ctx context.Context, ss svcScope) {
 			}
 			delay *= 2
 		}
-	}()
+	})
 }
 
 // Setting up a new template database is retried: Postgres accepts TCP
 // (which passes the health check) a moment before it accepts logins, and
 // on a busy server that moment is long enough to miss. The waits (1, 2,
 // 4 and 8 s) run only after a failed attempt, never while idle.
-const (
-	setupAttempts   = 5
-	setupRetryDelay = time.Second
-)
+const setupAttempts = 5
+
+// setupRetryDelay is the wait before the second attempt; tests shorten it.
+var setupRetryDelay = time.Second
 
 // templateNames lists the database templates' names for an error.
 func templateNames() string {
