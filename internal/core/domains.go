@@ -488,7 +488,7 @@ func (c *Core) toDomain(ss svcScope, d store.Domain, siblings []store.Domain, in
 		out.CheckedAt, out.ResolvedIPs = &check.at, check.resolved
 	}
 	c.checksMu.Unlock()
-	if d.Generated && ing.baseDomain != "" && strings.HasSuffix(d.Hostname, "."+ing.baseDomain) {
+	if d.Generated && underBase(d.Hostname, ing.baseDomain) {
 		return out // covered by the wildcard record for the base domain
 	}
 	if ing.mode == apitypes.IngressCloudflareTunnel {
@@ -510,6 +510,20 @@ func (c *Core) toDomain(ss svcScope, d store.Domain, siblings []store.Domain, in
 		}
 	}
 	return out
+}
+
+// wildcardRecords is the wildcard DNS record a server's generated domains
+// need, as text: "*.apps.example.com A 203.0.113.10", one per public IP.
+func wildcardRecords(ing serverIngress) string {
+	name := "*." + ing.baseDomain
+	if len(ing.publicIPs) == 0 {
+		return name + " pointing at this server"
+	}
+	recs := make([]string, len(ing.publicIPs))
+	for i, ip := range ing.publicIPs {
+		recs[i] = name + " " + ipRecordType(ip) + " " + ip
+	}
+	return strings.Join(recs, " and ")
 }
 
 func (c *Core) kickDomains() {
@@ -712,6 +726,10 @@ func (c *Core) checkDomain(ctx context.Context, d store.Domain, dnsOK *time.Time
 			// The node's advice is for records to its IP; this one goes
 			// through the tunnel.
 			reason = fmt.Sprintf("%s doesn't reach this server through its Cloudflare tunnel yet; DNS can take a minute, else check that dock-cloudflared runs on it", d.Hostname)
+		case len(check.ResolvedIPs) == 0 && underBase(d.Hostname, ing.baseDomain):
+			// The node's advice is a record per hostname; under the base
+			// domain one wildcard serves them all.
+			reason = fmt.Sprintf("%s has no DNS records yet; add the wildcard record %s, which covers every generated domain on this server", d.Hostname, wildcardRecords(ing))
 		case reason == "":
 			reason = fmt.Sprintf("%s resolves to %v; expected %v", d.Hostname, check.ResolvedIPs, check.ExpectedIPs)
 		}

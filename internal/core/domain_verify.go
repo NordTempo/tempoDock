@@ -48,7 +48,7 @@ func verifyRecord(d store.Domain) apitypes.DNSRecord {
 // too (ADR 0080 keeps platform power off org logins, but this is trust in
 // the person, not running the platform).
 func needsProof(a Actor, host string, generated bool, zone *store.CloudflareZone, ing serverIngress) bool {
-	platform := ing.baseDomain != "" && strings.HasSuffix(host, "."+ing.baseDomain)
+	platform := underBase(host, ing.baseDomain)
 	operator := a.Operator || a.userPlatform == apitypes.PlatformOperator
 	return !generated && zone == nil && !operator && !platform
 }
