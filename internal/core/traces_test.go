@@ -95,9 +95,10 @@ func TestTraceStoreFollowsTheAnalyticsServer(t *testing.T) {
 	}
 	waitTraceStore(t, p.c, "homelab")
 	eventually(t, "the old trace store removed", func() bool { return cp.TraceStoreSpec() == nil })
-	if lab.TraceStoreSpec() == nil || lab.AnalyticsStoreSpec() == nil {
-		t.Errorf("homelab runs trace store %+v, analytics store %+v", lab.TraceStoreSpec(), lab.AnalyticsStoreSpec())
-	}
+	// Analytics starts there on its own: wait for it, never check at once.
+	eventually(t, "homelab runs the trace and analytics stores", func() bool {
+		return lab.TraceStoreSpec() != nil && lab.AnalyticsStoreSpec() != nil
+	})
 
 	// A move of the analytics store takes the trace store along.
 	waitStoreStarted(t, p.c, "homelab")
