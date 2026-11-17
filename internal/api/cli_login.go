@@ -85,8 +85,8 @@ func registerCLILogin(s *Server, a huma.API) {
 		Summary: "Wait for a browser login to be approved",
 		Description: "Long poll: answers as soon as the login is decided, or after about 30 seconds with 202 and status " +
 			"pending (ask again). Once approved, returns the new API token exactly once. 403 `denied` if denied, " +
-			"410 `expired` if expired or already collected.",
-		Tags: tags, Errors: []int{http.StatusBadRequest, http.StatusForbidden, http.StatusGone},
+			"410 `expired` if expired or already collected. 429 when more requests wait on one login than a CLI needs.",
+		Tags: tags, Errors: []int{http.StatusBadRequest, http.StatusForbidden, http.StatusGone, http.StatusTooManyRequests},
 	}, func(ctx context.Context, in *struct{ Body apitypes.CLILoginWaitRequest }) (*cliWaitOutput, error) {
 		res, err := s.core.WaitCLILogin(ctx, in.Body.DeviceCode)
 		if err != nil {

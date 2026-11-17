@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -243,5 +244,43 @@ func TestResetLinkTakesAnUnprovenAccount(t *testing.T) {
 	resetWithLink(t, h, srv, "vic@example.com", "the owner's next password")
 	if in, err := h.c.Login(h.ctx, "vic@example.com", "the owner's next password", testClient); err != nil || !in.Pending {
 		t.Fatalf("a proven account's second factor after a reset: pending %v, %v", in.Pending, err)
+	}
+}
+
+// Testing an email channel mails its recipients at once, past the outbox
+// and its limits: an organization does it once a minute, each test is in
+// the audit log, and a channel takes no more recipients than the API's
+// schema says.
+func TestEmailChannelTestsAreLimited(t *testing.T) {
+	h, srv, _ := emailHarness(t)
+	h.channel(apitypes.CreateAlertChannelRequest{Name: "mail", Kind: apitypes.ChannelEmail, To: []string{"ops@example.com"}})
+	if res, err := h.c.TestAlertChannel(h.ctx, testSystem, false, "mail"); err != nil || !res.OK {
+		t.Fatalf("the first test: %+v, %v", res, err)
+	}
+	for range 5 {
+		if _, err := h.c.TestAlertChannel(h.ctx, testSystem, false, "mail"); CodeOf(err) != apitypes.CodeRateLimited {
+			t.Fatalf("a test right after: %v", err)
+		}
+	}
+	if n := len(srv.Messages()); n != 1 {
+		t.Fatalf("%d mails left for 6 tests", n)
+	}
+	// A minute on, the next test goes out.
+	h.c.alerts.mu.Lock()
+	h.c.alerts.mailTested[testSystem.OrgID] = now().Add(-emailTestEvery - time.Second)
+	h.c.alerts.mu.Unlock()
+	if res, err := h.c.TestAlertChannel(h.ctx, testSystem, false, "mail"); err != nil || !res.OK {
+		t.Fatalf("a test a minute later: %+v, %v", res, err)
+	}
+	if n := h.audited("alert.channel_test"); n != 2 {
+		t.Fatalf("audited tests: %d", n)
+	}
+
+	var many []string
+	for i := range maxChannelRecipients + 1 {
+		many = append(many, fmt.Sprintf("p%d@example.com", i))
+	}
+	if _, err := h.c.CreateAlertChannel(h.ctx, testSystem, false, apitypes.CreateAlertChannelRequest{Name: "crowd", Kind: apitypes.ChannelEmail, To: many}); CodeOf(err) != apitypes.CodeValidation {
+		t.Fatalf("a channel with %d recipients: %v", len(many), err)
 	}
 }

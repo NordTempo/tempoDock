@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -63,9 +64,33 @@ const maxHookBody = 4 << 20
 // delivery after 10 seconds.
 const hookReadTimeout = 15 * time.Second
 
+// hookReadIdle is how long a delivery's body may send nothing before its
+// read ends: GitHub sends a body at once, and a sender that trickles one
+// holds a read slot. A variable so tests can shorten it.
+var hookReadIdle = 3 * time.Second
+
 // maxHookReads bounds deliveries being read at once, so concurrent large
 // bodies can't add up to more than maxHookReads × maxHookBody of memory.
-const maxHookReads = 2
+// One webhook's deliveries are read one at a time (hookTurn), so the
+// slots a single webhook's senders can hold is one.
+const maxHookReads = 4
+
+// hookBody reads a delivery's body with the connection's read deadline
+// hookReadIdle past each read, and never past end.
+type hookBody struct {
+	io.ReadCloser
+	rc  *http.ResponseController
+	end time.Time
+}
+
+func (b *hookBody) Read(p []byte) (int, error) {
+	next := time.Now().Add(hookReadIdle)
+	if next.After(b.end) {
+		next = b.end
+	}
+	_ = b.rc.SetReadDeadline(next)
+	return b.ReadCloser.Read(p)
+}
 
 // hooksPath is the prefix of every webhook URL.
 const hooksPath = "/hooks/github/"
@@ -82,9 +107,16 @@ const hooksPath = "/hooks/github/"
 // webhook must exist, and the body fit, before a read slot is taken: the
 // listener is public, and slots held by strangers would stall deliveries.
 // A slot is held for at most hookReadTimeout, also on the public listener,
-// which has no read timeout of its own.
+// which has no read timeout of its own, and for no longer than
+// hookReadIdle without a byte. A webhook's deliveries take turns before
+// they take a slot, so whoever knows one webhook's address (its
+// organization does) can slow that webhook's deliveries and nobody
+// else's.
 func Hooks(c *core.Core, log *slog.Logger) http.Handler {
 	sem := make(chan struct{}, maxHookReads)
+	// turns holds a one-place channel per webhook that had a delivery:
+	// as many as there are webhooks, which exist before they get one.
+	var turns sync.Map
 	mux := http.NewServeMux()
 	fail := func(w http.ResponseWriter, err error) {
 		var ce *core.Error
@@ -106,14 +138,20 @@ func Hooks(c *core.Core, log *slog.Logger) http.Handler {
 			http.Error(w, "payload larger than 4 MB", http.StatusRequestEntityTooLarge)
 			return
 		}
-		_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(hookReadTimeout))
-		select {
-		case sem <- struct{}{}:
-			defer func() { <-sem }()
-		case <-r.Context().Done():
-			return
+		turn, ok := turns.Load(r.PathValue("id"))
+		if !ok {
+			turn, _ = turns.LoadOrStore(r.PathValue("id"), make(chan struct{}, 1))
 		}
-		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxHookBody))
+		for _, wait := range []chan struct{}{turn.(chan struct{}), sem} {
+			select {
+			case wait <- struct{}{}:
+				defer func() { <-wait }()
+			case <-r.Context().Done():
+				return
+			}
+		}
+		in := &hookBody{ReadCloser: r.Body, rc: http.NewResponseController(w), end: time.Now().Add(hookReadTimeout)}
+		body, err := io.ReadAll(http.MaxBytesReader(w, in, maxHookBody))
 		if err != nil {
 			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 				http.Error(w, "payload larger than 4 MB", http.StatusRequestEntityTooLarge)

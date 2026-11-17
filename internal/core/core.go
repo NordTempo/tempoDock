@@ -206,6 +206,8 @@ type Core struct {
 	issues errorSink
 	// cliLogins wakes CLIs waiting on browser logins (cli_login.go).
 	cliLogins *cliLogins
+	// streams counts the event streams open (streams.go).
+	streams streamCounts
 	// ceremonies are the passkey challenges and authenticator app setups
 	// in flight; operators2FA is the platform's requirement of a second
 	// factor of operators (twofactor.go, passkeys.go). Second factors
@@ -260,9 +262,10 @@ type Core struct {
 	// drains are the server drains being driven (ADR 0063).
 	drains serverDrainState
 
-	// uploads holds the services with a source upload streaming to disk.
+	// uploads holds the services with a source upload streaming to disk,
+	// each with its organization.
 	uploadsMu sync.Mutex
-	uploads   map[int64]bool
+	uploads   map[int64]int64
 
 	// git is GitHub push-to-deploy's state (git.go).
 	git gitState
@@ -358,7 +361,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		status:     map[int64]storedStatus{},
 		removing:   map[string]chan struct{}{},
 		health:     newHealthWatch(),
-		uploads:    map[int64]bool{},
+		uploads:    map[int64]int64{},
 		loginLimit: httpkit.NewLoginLimiter(),
 		bcryptSem:  make(chan struct{}, 2),
 		cliLogins:  newCLILogins(),

@@ -72,8 +72,11 @@ func TestDeployRacingArchiveIsRefused(t *testing.T) {
 	}
 }
 
-// Uploads are claimed before they stream to disk: one per service, and a
-// small cap per server, so parallel uploads can't fill the disk.
+// Uploads are claimed before they stream to disk: one per service, a few
+// per organization, and a small cap per server, so parallel uploads
+// can't fill the disk and one organization's never hold every place:
+// while its uploads wait on their clients, another organization's goes
+// through.
 func TestConcurrentUploadsAreLimited(t *testing.T) {
 	h := newHarness(t)
 	refs := []ServiceRef{h.service("a", apitypes.CreateServiceRequest{}), h.service("b", apitypes.CreateServiceRequest{}), h.service("c", apitypes.CreateServiceRequest{})}
@@ -82,9 +85,9 @@ func TestConcurrentUploadsAreLimited(t *testing.T) {
 		defer h.c.uploadsMu.Unlock()
 		return len(h.c.uploads)
 	}
-	errs := make(chan error, maxConcurrentUploads)
+	errs := make(chan error, maxOrgUploads)
 	var clients []*io.PipeWriter
-	for _, ref := range refs[:maxConcurrentUploads] {
+	for _, ref := range refs[:maxOrgUploads] {
 		pr, pw := io.Pipe()
 		clients = append(clients, pw)
 		go func() {
@@ -93,7 +96,7 @@ func TestConcurrentUploadsAreLimited(t *testing.T) {
 		}()
 	}
 	deadline := time.Now().Add(5 * time.Second)
-	for uploading() < maxConcurrentUploads {
+	for uploading() < maxOrgUploads {
 		if time.Now().After(deadline) {
 			t.Fatal("uploads never started")
 		}
@@ -103,9 +106,31 @@ func TestConcurrentUploadsAreLimited(t *testing.T) {
 	if _, err := h.c.DeploySource(h.ctx, testSystem, refs[0], strings.NewReader("x"), 1<<20); CodeOf(err) != apitypes.CodeDeployInProgress {
 		t.Fatalf("second upload to one service: %v", err)
 	}
-	if _, err := h.c.DeploySource(h.ctx, testSystem, refs[2], strings.NewReader("x"), 1<<20); CodeOf(err) != apitypes.CodeConflict {
-		t.Fatalf("upload over the server cap: %v", err)
+	if _, err := h.c.DeploySource(h.ctx, testSystem, refs[2], strings.NewReader("x"), 1<<20); CodeOf(err) != apitypes.CodeConflict || !strings.Contains(err.Error(), "of this organization") {
+		t.Fatalf("upload over the organization's share: %v", err)
 	}
+	// Another organization still has a place: its upload is read (and
+	// refused for what it is, not for want of a place).
+	other, err := h.store.CreateOrg(h.ctx, store.CreateOrgParams{Slug: "other", Name: "Other"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	them := System.InOrg(other.ID)
+	if _, err := h.c.CreateProject(h.ctx, them, apitypes.CreateProjectRequest{Name: "theirs"}); err != nil {
+		t.Fatal(err)
+	}
+	theirs := ServiceRef{"theirs", "production", "web"}
+	if _, err := h.c.CreateService(h.ctx, them, theirs.Env(), apitypes.CreateServiceRequest{Name: "web"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.DeploySource(h.ctx, them, theirs, strings.NewReader("not a tar"), 1<<20); err == nil || CodeOf(err) == apitypes.CodeConflict || CodeOf(err) == apitypes.CodeDeployInProgress {
+		t.Fatalf("another organization's upload while the first's wait: %v", err)
+	}
+	// The server's cap is above one organization's share, so it holds.
+	if maxConcurrentUploads <= maxOrgUploads {
+		t.Fatalf("the server takes %d uploads and one organization %d of them", maxConcurrentUploads, maxOrgUploads)
+	}
+
 	for _, pw := range clients {
 		_ = pw.CloseWithError(errors.New("client went away"))
 	}

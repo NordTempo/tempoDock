@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"slices"
 	"testing"
@@ -104,5 +105,49 @@ func TestGrepMatch(t *testing.T) {
 		if got := grepMatch(tc.text, tc.pat); got != tc.want {
 			t.Errorf("grepMatch(%q, %q) = %v, want %v", tc.text, tc.pat, got, tc.want)
 		}
+	}
+}
+
+// A person or a token follows maxActorStreams live streams at once and no
+// more: the next is refused, a closed one gives its place back, and
+// someone else's are their own.
+func TestEventStreamsAreBounded(t *testing.T) {
+	h := newHarness(t)
+	h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	tok := h.token(testSystem, apitypes.CreateTokenRequest{Name: "watcher", Scope: apitypes.ScopeRead})
+	var streams []Stream[LiveEvent]
+	for i := range maxActorStreams {
+		s, err := h.c.Events(h.ctx, tok, EventFilter{})
+		if err != nil {
+			t.Fatalf("stream %d: %v", i+1, err)
+		}
+		streams = append(streams, s)
+	}
+	if _, err := h.c.Events(h.ctx, tok, EventFilter{}); CodeOf(err) != apitypes.CodeRateLimited {
+		t.Fatalf("one stream more than the bound: %v", err)
+	}
+	other := h.token(testSystem, apitypes.CreateTokenRequest{Name: "other", Scope: apitypes.ScopeRead})
+	theirs, err := h.c.Events(h.ctx, other, EventFilter{})
+	if err != nil {
+		t.Fatalf("another token's stream: %v", err)
+	}
+	// A stream that ends gives its place back.
+	ended, cancel := context.WithCancel(h.ctx)
+	cancel()
+	for _, s := range []Stream[LiveEvent]{streams[0], theirs} {
+		if err := s(ended, func() {}, func(...LiveEvent) error { return nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	next, err := h.c.Events(h.ctx, tok, EventFilter{})
+	if err != nil {
+		t.Fatalf("a stream after one ended: %v", err)
+	}
+	for _, s := range streams[1:] {
+		_ = s(ended, func() {}, func(...LiveEvent) error { return nil })
+	}
+	_ = next(ended, func() {}, func(...LiveEvent) error { return nil })
+	if h.c.streams.total != 0 || len(h.c.streams.by) != 0 {
+		t.Fatalf("streams still counted after all ended: %d, %v", h.c.streams.total, h.c.streams.by)
 	}
 }

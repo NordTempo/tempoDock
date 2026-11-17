@@ -405,3 +405,28 @@ func TestRefusesOtherKeys(t *testing.T) {
 		t.Fatalf("a wrongly signed request = %v, want refused", err)
 	}
 }
+
+// An upload id names a directory in the spool, so aborting acts only on
+// an id of the shape the gateway gives them: any other leaves the disk
+// as it is.
+func TestAbortTakesOnlyAnUploadID(t *testing.T) {
+	h := newHarness(t)
+	keep := filepath.Join(h.g.sp.dir, "keep")
+	if err := os.MkdirAll(keep, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"../keep", "..", "", "ABCDEF0123456789abcdef0123456789", "0123456789abcdef0123456789abcde/"} {
+		if uploadID(id) {
+			t.Errorf("%q passes as an upload id", id)
+		}
+		if err := h.g.abortUpload(httptest.NewRecorder(), id); err != nil {
+			t.Errorf("aborting %q: %v", id, err)
+		}
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Fatalf("an abort removed a directory beside the uploads: %v", err)
+	}
+	if !uploadID("0123456789abcdef0123456789abcdef") {
+		t.Error("an id as the gateway makes them is refused")
+	}
+}

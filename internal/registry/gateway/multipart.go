@@ -358,9 +358,13 @@ func (g *Gateway) completeUpload(w http.ResponseWriter, r *http.Request, key, id
 	}{Bucket: "dock", Key: key, ETag: etag})
 }
 
-// abortUpload answers AbortMultipartUpload.
+// abortUpload answers AbortMultipartUpload. The id names a directory, so
+// only one this gateway could have made is acted on (uploadID); any other
+// has nothing to abort.
 func (g *Gateway) abortUpload(w http.ResponseWriter, id string) error {
-	g.dropUpload(id)
+	if uploadID(id) {
+		g.dropUpload(id)
+	}
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
@@ -376,4 +380,18 @@ func (g *Gateway) dropUpload(id string) {
 	}
 	g.mu.Unlock()
 	_ = os.RemoveAll(filepath.Join(g.sp.dir, "mp", id))
+}
+
+// uploadID reports whether id has the shape createUpload gives upload
+// ids: 32 lower-case hex digits, nothing a path could be made of.
+func uploadID(id string) bool {
+	if len(id) != 32 {
+		return false
+	}
+	for _, c := range []byte(id) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }

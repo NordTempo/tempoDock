@@ -68,6 +68,9 @@ type alertEngine struct {
 	// write there would hold every other alert path behind SQLite's
 	// write lock, and its busy wait.
 	mu sync.Mutex
+	// mailTested is when each organization (0: the platform) last tested
+	// an email channel (TestAlertChannel): an entry per organization.
+	mailTested map[int64]time.Time
 	// busy holds, by key, the raise or resolve writing an alert now,
 	// closed when it is done (hold): one write per alert at a time.
 	busy map[string]chan struct{}

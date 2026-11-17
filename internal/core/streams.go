@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -92,7 +93,12 @@ func (c *Core) Events(ctx context.Context, a Actor, f EventFilter) (Stream[LiveE
 	}
 	// Secret values in an event are revealed per its environment.
 	reveal := func(e busEvent) bool { return a.revealsAt(e.projectID, e.envID, e.envKind) }
+	closed, err := c.streams.open(a)
+	if err != nil {
+		return nil, err
+	}
 	return func(ctx context.Context, ready func(), send func(...LiveEvent) error) error {
+		defer closed()
 		sub := c.bus.subscribeAs(reveal, match)
 		defer sub.close()
 		ready()
@@ -527,3 +533,49 @@ func sendLogs(lines <-chan node.LogLine, red *redactor, q LogQuery, send func(..
 
 // logSendBatch is the most service log lines sent in one write.
 const logSendBatch = 256
+
+// Event streams are held open, each with a subscription and its buffer,
+// and every published event walks them all: a person or a token has
+// maxActorStreams at once (a tab or a `dock logs -f` each), and the
+// server maxStreams.
+const (
+	maxActorStreams = 32
+	maxStreams      = 4096
+)
+
+// streamCounts counts the event streams open, by who opened them.
+type streamCounts struct {
+	mu    sync.Mutex
+	by    map[[2]int64]int // {user, token}: a token's streams are its own
+	total int
+}
+
+// open counts a stream for a, or refuses it past a bound; closed gives
+// its place back, once.
+func (s *streamCounts) open(a Actor) (closed func(), err error) {
+	key := [2]int64{a.UserID, a.TokenID}
+	if a.TokenID != 0 {
+		key[0] = 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch {
+	case key != [2]int64{} && s.by[key] >= maxActorStreams:
+		return nil, errf(apitypes.CodeRateLimited, "%s already follows %d live streams, the most at once; close a tab or a command that follows one", a, maxActorStreams)
+	case s.total >= maxStreams:
+		return nil, errf(apitypes.CodeRateLimited, "the server already serves %d live streams, the most at once; try again in a moment", maxStreams)
+	}
+	if s.by == nil {
+		s.by = map[[2]int64]int{}
+	}
+	s.by[key]++
+	s.total++
+	return sync.OnceFunc(func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.total--
+		if s.by[key]--; s.by[key] <= 0 {
+			delete(s.by, key)
+		}
+	}), nil
+}

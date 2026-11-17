@@ -1,6 +1,8 @@
 package core
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -326,5 +328,48 @@ func TestTokensCantManageAccounts(t *testing.T) {
 	}
 	if _, err := h.c.ResetPassword(h.ctx, testSystem, other.UserID, apitypes.ResetPasswordRequest{}); err != nil {
 		t.Fatalf("system ResetPassword: %v", err)
+	}
+}
+
+// A login is waited on by a few requests at once and no more: waiting
+// needs only its device code, so a request past the bound is refused
+// instead of held, and the ones waiting are woken as before.
+func TestCLILoginWaitersAreBounded(t *testing.T) {
+	h := newHarness(t)
+	h.c.cliLogins.wait = time.Minute
+	s, err := h.c.StartCLILogin(h.ctx, apitypes.CLILoginStartRequest{ClientName: "dock CLI"}, "198.51.100.7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(h.ctx)
+	ended := make(chan error, maxCLIWaiters)
+	for range maxCLIWaiters {
+		go func() {
+			_, err := h.c.WaitCLILogin(ctx, s.DeviceCode)
+			ended <- err
+		}()
+	}
+	eventually(t, "the waiters to wait", func() bool {
+		h.c.cliLogins.mu.Lock()
+		defer h.c.cliLogins.mu.Unlock()
+		for _, w := range h.c.cliLogins.waiters {
+			return w.n == maxCLIWaiters
+		}
+		return false
+	})
+	if _, err := h.c.WaitCLILogin(h.ctx, s.DeviceCode); CodeOf(err) != apitypes.CodeRateLimited {
+		t.Fatalf("one waiter more than the bound: %v", err)
+	}
+	cancel()
+	for range maxCLIWaiters {
+		if err := <-ended; !errors.Is(err, context.Canceled) {
+			t.Fatalf("a waiter ended with %v", err)
+		}
+	}
+	// With nobody waiting, the next request waits again.
+	short, stop := context.WithTimeout(h.ctx, 50*time.Millisecond)
+	defer stop()
+	if _, err := h.c.WaitCLILogin(short, s.DeviceCode); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a waiter after the others left: %v", err)
 	}
 }

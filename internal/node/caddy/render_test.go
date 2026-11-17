@@ -300,6 +300,11 @@ func TestRenderAccess(t *testing.T) {
 	if got := pw[1].Request.Set["X-Dock-User"]; len(got) != 1 || got[0] != "{http.auth.user.id}" {
 		t.Errorf("user header = %v", got)
 	}
+	// The spelling some app servers read as the same header never
+	// arrives from the client.
+	if !slices.Contains(pw[1].Request.Delete, "X_Dock_User") {
+		t.Errorf("the password route keeps a client's X_Dock_User: %v", pw[1].Request.Delete)
+	}
 
 	login := routes[1].Handle
 	if len(login) != 3 || login[0].Handler != "headers" || login[1].Handler != "reverse_proxy" || login[2].Upstreams[0].Dial != "127.0.0.1:9002" {
@@ -314,7 +319,7 @@ func TestRenderAccess(t *testing.T) {
 	}
 	ok := check.HandleResponse[0]
 	clean := ok.Routes[0].Handle[0].Request
-	if ok.Match.StatusCode[0] != 2 || len(clean.Delete) != 4 || clean.Set["X-Dock-User"][0] != "{http.reverse_proxy.header.X-Dock-User}" {
+	if ok.Match.StatusCode[0] != 2 || len(clean.Delete) != 5 || !slices.Contains(clean.Delete, "X_Dock_User") || clean.Set["X-Dock-User"][0] != "{http.reverse_proxy.header.X-Dock-User}" {
 		t.Errorf("2xx handling = %+v %+v", ok.Match, clean)
 	}
 
