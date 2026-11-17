@@ -48,6 +48,28 @@ type pitrState struct {
 	// first holds the databases whose first base backup of a generation
 	// is being taken, so two releases going active take one.
 	first map[int64]bool
+	// archivers holds one lock per database for starting and removing
+	// its archiver (holdArchiver).
+	archivers map[int64]*sync.Mutex
+}
+
+// holdArchiver serializes starting and removing one database's archiver,
+// across the node calls too: a start that follows a release going active
+// runs after the request that made the release has returned, and without
+// this it could start the archiver again after a turn-off removed it.
+func (c *Core) holdArchiver(serviceID int64) (release func()) {
+	c.pitr.mu.Lock()
+	if c.pitr.archivers == nil {
+		c.pitr.archivers = map[int64]*sync.Mutex{}
+	}
+	mu := c.pitr.archivers[serviceID]
+	if mu == nil {
+		mu = &sync.Mutex{}
+		c.pitr.archivers[serviceID] = mu
+	}
+	c.pitr.mu.Unlock()
+	mu.Lock()
+	return mu.Unlock
 }
 
 // holdFirstBase marks a database's first base backup as being taken;
@@ -235,9 +257,31 @@ func (c *Core) archiverSpec(ctx context.Context, ss svcScope, row store.Pitr) (n
 	}, nil
 }
 
-// ensureArchiver runs a database's archiver on its server, and removes
-// the one it left on another server (an environment that moved).
+// ensureArchiver runs a database's archiver on its server as row says,
+// and removes the one it left on another server (an environment that
+// moved). For the request that turns archiving on, whose row isn't stored
+// yet; everything after it uses keepArchiver.
 func (c *Core) ensureArchiver(ctx context.Context, ss svcScope, row store.Pitr) error {
+	defer c.holdArchiver(ss.svc.ID)()
+	return c.startArchiver(ctx, ss, row)
+}
+
+// keepArchiver runs a database's archiver as its stored row says now, and
+// returns that row; on is false, and nothing starts, when archiving is
+// off. Work that follows a release, a restore or a move calls this, never
+// ensureArchiver with a row it read earlier: archiving may have been
+// turned off since, and its archiver removed.
+func (c *Core) keepArchiver(ctx context.Context, ss svcScope) (row store.Pitr, on bool, err error) {
+	defer c.holdArchiver(ss.svc.ID)()
+	row, err = c.store.GetPITR(ctx, ss.svc.ID)
+	if err != nil || !row.Enabled {
+		return row, false, nil
+	}
+	return row, true, c.startArchiver(ctx, ss, row)
+}
+
+// startArchiver is ensureArchiver with the database's archiver held.
+func (c *Core) startArchiver(ctx context.Context, ss svcScope, row store.Pitr) error {
 	rt, err := c.runtimeFor(ss.env.ServerID)
 	if err != nil {
 		return err
@@ -279,6 +323,7 @@ func (c *Core) removeArchiverFrom(ctx context.Context, ss svcScope, serverID int
 // removeArchiver removes a database's archiver wherever it runs and
 // records it gone.
 func (c *Core) removeArchiver(ctx context.Context, ss svcScope) {
+	defer c.holdArchiver(ss.svc.ID)()
 	row, err := c.store.GetPITR(ctx, ss.svc.ID)
 	if err != nil || row.ServerID == nil {
 		return
@@ -404,13 +449,13 @@ func (c *Core) pitrAfterActive(ctx context.Context, ss svcScope) {
 	if !c.pitrOn(ss.svc.ID) {
 		return
 	}
-	row, err := c.store.GetPITR(ctx, ss.svc.ID)
-	if err != nil || !row.Enabled {
-		return
-	}
-	if err := c.ensureArchiver(ctx, ss, row); err != nil {
+	row, on, err := c.keepArchiver(ctx, ss)
+	if err != nil {
 		c.log.Warn("start the WAL archiver", "service", ss.String(), "err", err)
 		c.signalAlert(ctx, pitrAlert(ss, "its archiver couldn't start: "+err.Error()))
+		return
+	}
+	if !on {
 		return
 	}
 	if !c.holdFirstBase(ss.svc.ID) {
@@ -484,7 +529,7 @@ func (c *Core) loadPITR(ctx context.Context) error {
 			case !r.Enabled || ss.svc.ArchivedAt != nil:
 				c.removeArchiver(c.ctx, ss)
 			case c.online(ss.env.ServerID):
-				if err := c.ensureArchiver(c.ctx, ss, r); err != nil {
+				if _, _, err := c.keepArchiver(c.ctx, ss); err != nil {
 					c.log.Warn("start the WAL archiver", "service", ss.String(), "err", err)
 				}
 			}

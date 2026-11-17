@@ -869,10 +869,25 @@ func TestRemoveNetwork(t *testing.T) {
 // An app that is PID 1 gets no default signal handling, so `sleep` as a
 // container's command ignores SIGTERM: under Docker's init it gets the
 // signal and stops at once instead of after the whole timeout.
+//
+// The stop waits for the app's first line: Docker calls a container
+// started before its init runs, and a SIGTERM that gets there first is
+// dropped by the kernel like any signal PID 1 has no handler for yet (a
+// stop right after a start waits its whole timeout, under any init).
 func TestStopReachesTheApp(t *testing.T) {
 	e := newEnv(t)
 	ctx := ctxTimeout(t, time.Minute)
-	c := e.start(node.ContainerSpec{Name: e.name("pid1"), Image: shellImage, Args: []string{"sleep", "600"}})
+	c := e.start(node.ContainerSpec{Name: e.name("pid1"), Image: shellImage, Cmd: "echo up; exec sleep 600"})
+	logs, cancel := context.WithCancel(ctx)
+	defer cancel()
+	lines, err := e.Logs(logs, c.ID, node.LogOptions{Follow: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l, ok := <-lines; !ok || l.Text != "up" {
+		t.Fatalf("the app's first line = %q, %v", l.Text, ok)
+	}
+	cancel()
 	began := time.Now()
 	if err := e.Stop(ctx, c.ID, 20*time.Second); err != nil {
 		t.Fatal(err)

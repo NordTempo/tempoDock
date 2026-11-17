@@ -276,10 +276,8 @@ func (c *Core) pitrNewGeneration(ctx context.Context, ss svcScope) {
 		c.log.Warn("start a new WAL archive generation", "service", ss.String(), "err", err)
 		return
 	}
-	if row, err := c.store.GetPITR(ctx, ss.svc.ID); err == nil {
-		if err := c.ensureArchiver(ctx, ss, row); err != nil {
-			c.log.Warn("move the WAL archiver to a new generation", "service", ss.String(), "err", err)
-		}
+	if _, _, err := c.keepArchiver(ctx, ss); err != nil {
+		c.log.Warn("move the WAL archiver to a new generation", "service", ss.String(), "err", err)
 	}
 }
 

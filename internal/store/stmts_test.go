@@ -2,7 +2,11 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -79,5 +83,34 @@ func TestFirstUseInATransactionNeedsNoSecondConnection(t *testing.T) {
 	wg.Wait()
 	if took := time.Since(start); took > 3*time.Second {
 		t.Errorf("the transactions took %s", took)
+	}
+}
+
+// Close waits for the prepare a transaction left running in the
+// background: nothing opens a connection after it, which would make
+// SQLite's -wal and -shm files again beside a database that is closed
+// (a test's directory then failed to be removed, "directory not empty").
+func TestCloseWaitsForBackgroundPrepares(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dock.db")
+	st, err := Open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Tx(t.Context(), func(q *Queries) error {
+		_, err := q.ListOrgMembers(t.Context(), ListOrgMembersParams{OrgID: 1})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if n := st.DB.Stats().OpenConnections; n != 0 {
+		t.Errorf("%d connections open after Close", n)
+	}
+	for _, suffix := range []string{"-wal", "-shm"} {
+		if _, err := os.Stat(path + suffix); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("%s after Close: %v", filepath.Base(path)+suffix, err)
+		}
 	}
 }

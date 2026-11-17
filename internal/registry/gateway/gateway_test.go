@@ -297,8 +297,12 @@ func TestUploadsResumeAfterRestart(t *testing.T) {
 
 // Large objects upload in parts; a failing part retries alone and the
 // upload resumes after the parts the bucket has.
+//
+// The test counts part requests, so no stall deadline may cut one short
+// and have it sent again: the harness's 300 ms did on a slow runner (a
+// part is megabytes through two HTTP servers), and the count was 7.
 func TestLargeObjectsResume(t *testing.T) {
-	h := newHarness(t)
+	h := newHarness(t, func(o *Options) { o.Timing.Stall = time.Minute })
 	body := bytes.Repeat([]byte("x"), multipartFrom+partSize/2)
 	var parts int
 	var mu sync.Mutex
