@@ -1,5 +1,4 @@
 import {
-  useMutation,
   useQuery,
   useQueryClient,
   useSuspenseQuery,
@@ -8,7 +7,7 @@ import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { type ComponentProps, type ReactNode, useState } from "react";
 import { ApiError, api, done, setOrg } from "../../api/client";
 import type { components } from "../../api/schema";
-import { signedOut } from "../../data/mutations";
+import { signedOut, useAction } from "../../data/mutations";
 import { keys, queries, useSession } from "../../data/queries";
 import { day } from "../../ui/format";
 import { Act, Button, ErrorText } from "../../ui/kit";
@@ -47,10 +46,13 @@ function Frame({ title, children }: { title: string; children: ReactNode }) {
 function SwitchAccount() {
   const queryClient = useQueryClient();
   const router = useRouter();
-  const out = useMutation({
-    mutationFn: () => done(api.POST("/api/v1/auth/logout")),
-    onSuccess: () => signedOut(queryClient, router, window.location.pathname),
-  });
+  const out = useAction(
+    async () => {
+      await done(api.POST("/api/v1/auth/logout"));
+      await signedOut(queryClient, router, window.location.pathname);
+    },
+    () => [],
+  );
   return (
     <Button disabled={out.isPending} onClick={() => out.mutate()}>
       Sign out and switch account

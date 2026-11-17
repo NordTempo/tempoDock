@@ -1,11 +1,11 @@
 import {
   queryOptions,
-  useMutation,
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query";
 import { api, body } from "../../api/client";
 import type { components } from "../../api/schema";
+import { useAction } from "../../data/action";
 
 // The install's backup settings and the control plane's own backup
 // (ADR 0019, ADR 0021), for the console's Backups page. backup.* audit
@@ -29,34 +29,34 @@ export const useBackupSettings = () =>
 /** Saves the fields set; the answer replaces the cached settings. */
 export function useConfigureBackups() {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (input: ConfigureBackup) =>
-      body(api.PUT("/api/v1/backup", { body: input })),
-    onSuccess: (settings) =>
-      queryClient.setQueryData(backupSettingsKey, settings),
-  });
+  return useAction(
+    async (input: ConfigureBackup) => {
+      const answer = await body(api.PUT("/api/v1/backup", { body: input }));
+      queryClient.setQueryData(backupSettingsKey, answer);
+      return answer;
+    },
+    () => [],
+  );
 }
 
 /** Starts a control plane backup; its audit events refetch the settings. */
-export function useRunControlPlaneBackup() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => body(api.POST("/api/v1/backup/control-plane")),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: backupSettingsKey }),
-  });
-}
+export const useRunControlPlaneBackup = () =>
+  useAction(
+    () => body(api.POST("/api/v1/backup/control-plane")),
+    () => [backupSettingsKey, ["audit"]],
+  );
 
 /** Fetches the repository password once; it is never cached. */
 export const useRevealBackupPassword = () =>
-  useMutation({
-    mutationFn: async () =>
+  useAction(
+    async () =>
       (
         await body(
           api.GET("/api/v1/backup", { params: { query: { reveal: true } } }),
         )
       ).password ?? "",
-  });
+    () => [["audit"]],
+  );
 
 export type MoveBackups = Schemas["MoveBackupsRequest"];
 
@@ -67,10 +67,14 @@ export type MoveBackups = Schemas["MoveBackupsRequest"];
  */
 export function useMoveBackups() {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (input: MoveBackups) =>
-      body(api.POST("/api/v1/backup/move", { body: input })),
-    onSuccess: (settings) =>
-      queryClient.setQueryData(backupSettingsKey, settings),
-  });
+  return useAction(
+    async (input: MoveBackups) => {
+      const answer = await body(
+        api.POST("/api/v1/backup/move", { body: input }),
+      );
+      queryClient.setQueryData(backupSettingsKey, answer);
+      return answer;
+    },
+    () => [],
+  );
 }

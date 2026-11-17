@@ -1,7 +1,8 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { api, body, done } from "../api/client";
+import { useAction } from "../data/action";
 import { ErrorText } from "../ui/kit";
 
 // A password reset link from the sign-in page's mail (ADR 0079), outside
@@ -24,15 +25,16 @@ function ResetPassword() {
     queryFn: () => body(api.GET("/api/v1/auth/password-reset/{code}", path)),
     retry: false,
   });
-  const set = useMutation({
-    mutationFn: (password: string) =>
+  const set = useAction(
+    (password: string) =>
       done(
         api.POST("/api/v1/auth/password-reset/{code}", {
           ...path,
           body: { password },
         }),
       ),
-  });
+    () => [],
+  );
   const [password, setPassword] = useState("");
   const [again, setAgain] = useState("");
   const [tried, setTried] = useState(false);

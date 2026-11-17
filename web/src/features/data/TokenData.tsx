@@ -1,5 +1,5 @@
-import { useMutation } from "@tanstack/react-query";
 import { useId, useState } from "react";
+import { useAction } from "../../data/action";
 import { Button, ErrorText } from "../../ui/kit";
 import { levels, sensitivities } from "./policy";
 import type { DataTokenAccess } from "./types";
@@ -128,7 +128,13 @@ export function TokenDataEditor({
   cli?: (data: DataTokenAccess) => string;
 }) {
   const [value, setValue] = useState<DataTokenAccess>(data ?? null);
-  const save = useMutation({ mutationFn: onSave, onSuccess: onDone });
+  const save = useAction(
+    async (access: DataTokenAccess) => {
+      await onSave(access);
+      onDone();
+    },
+    () => [],
+  );
   return (
     <div className="flex flex-col gap-3 py-2">
       <TokenDataFields value={value} onChange={setValue} cap={cap} />

@@ -1,5 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, body } from "../../api/client";
+import { useAction } from "../../data/action";
 import { keys } from "../../data/queries";
 import type {
   DataEnvironmentKind,
@@ -82,18 +83,18 @@ export const usePolicy = (scope: PolicyScope) => useQuery(policyQuery(scope));
  */
 export function useSavePolicy(scope: PolicyScope) {
   const client = useQueryClient();
-  return useMutation({
-    mutationFn: (rules: DataPolicyRule[]) => putPolicy(scope, rules),
-    onSuccess: (policy) => client.setQueryData(policyKey(scope), policy),
-    onSettled: () =>
-      Promise.all([
-        client.invalidateQueries({ queryKey: keys.dataPolicy }),
-        client.invalidateQueries({
-          queryKey: ["data"],
-          predicate: (q) => q.queryKey[4] === "info",
-        }),
-      ]),
-  });
+  return useAction(
+    async (rules: DataPolicyRule[]) => {
+      const policy = await putPolicy(scope, rules);
+      // Every open panel's access (its info); live.ts marks the same.
+      void client.invalidateQueries({
+        queryKey: ["data"],
+        predicate: (q) => q.queryKey[4] === "info",
+      });
+      return policy;
+    },
+    () => [keys.dataPolicy, ["audit"]],
+  );
 }
 
 /**
@@ -101,19 +102,17 @@ export function useSavePolicy(scope: PolicyScope) {
  * the policy's tokens rule again. For TokenDataEditor's onSave.
  */
 export function useSaveTokenData() {
-  const client = useQueryClient();
-  return async (id: number, data: DataTokenAccess) => {
-    try {
-      return await body(
+  const save = useAction(
+    ({ id, data }: { id: number; data: DataTokenAccess }) =>
+      body(
         api.PATCH("/api/v1/tokens/{id}", {
           params: { path: { id } },
           body: { data },
         }),
-      );
-    } finally {
-      await client.invalidateQueries({ queryKey: keys.tokens });
-    }
-  };
+      ),
+    () => [keys.tokens, ["audit"]],
+  );
+  return (id: number, data: DataTokenAccess) => save.mutateAsync({ id, data });
 }
 
 export const subjectNames: Record<DataSubject, string> = {

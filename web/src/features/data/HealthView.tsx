@@ -1,4 +1,3 @@
-import { useMutation } from "@tanstack/react-query";
 import {
   type ReactNode,
   useEffect,
@@ -6,6 +5,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useAction } from "../../data/action";
 import { useShortcuts } from "../../shell/keys";
 import { clockSec, elapsed } from "../../ui/format";
 import { useCli, useDataSource, useInsights } from "./api";
@@ -1354,10 +1354,14 @@ function QueryStatsOff({
 /** POST /data/insights/queries/enable, then read again. */
 function useEnableQueryStats(onDone: () => void) {
   const source = useDataSource();
-  return useMutation({
-    mutationFn: () => source.enableQueryStats(),
-    onSuccess: onDone,
-  });
+  return useAction(
+    async () => {
+      const result = await source.enableQueryStats();
+      onDone();
+      return result;
+    },
+    () => [],
+  );
 }
 
 /** Reset query stats (admins), asking first in place. */
@@ -1365,13 +1369,14 @@ function ResetStats({ onDone }: { onDone: () => void }) {
   const source = useDataSource();
   const cli = useCli();
   const [asking, setAsking] = useState(false);
-  const reset = useMutation({
-    mutationFn: () => source.resetQueryStats(),
-    onSuccess: () => {
+  const reset = useAction(
+    async () => {
+      await source.resetQueryStats();
       setAsking(false);
       onDone();
     },
-  });
+    () => [],
+  );
   if (!asking)
     return (
       <Btn small onClick={() => setAsking(true)}>
@@ -1419,15 +1424,18 @@ function SessionActions({
   const cli = useCli();
   const [ending, setEnding] = useState(false);
   const [confirm, setConfirm] = useState("");
-  const act = useMutation({
-    mutationFn: (terminate: boolean) =>
-      source.cancelSession(session.id, {
+  const act = useAction(
+    async (terminate: boolean) => {
+      const result = await source.cancelSession(session.id, {
         terminate,
         query_started_at: terminate ? undefined : session.query_at,
         confirm: terminate && access.confirm_commit ? confirm : undefined,
-      }),
-    onSuccess: onDone,
-  });
+      });
+      onDone();
+      return result;
+    },
+    () => [],
+  );
   if (access.level !== "write")
     return (
       <p className="text-2xs text-(--g-mut)">

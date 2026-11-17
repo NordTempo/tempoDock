@@ -1,8 +1,4 @@
-import {
-  type QueryClient,
-  useMutation,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   type FormEvent,
@@ -13,8 +9,8 @@ import {
 } from "react";
 import { api, body } from "../../api/client";
 import { useBuildLog } from "../../data/live";
+import { serviceWide, useAction } from "../../data/mutations";
 import {
-  keys,
   servicePath,
   useDeployBlock,
   useReleases,
@@ -137,14 +133,6 @@ export default function DeployDialog({
  */
 const autofocus = (el: HTMLElement | null) => el?.setAttribute("autofocus", "");
 
-/** What a service's deploy changes: its view, the overview and the audit log. */
-const touched = (client: QueryClient, ref: ServiceRef) =>
-  Promise.all(
-    [keys.service(ref), keys.overview(ref.project), ["audit"]].map((queryKey) =>
-      client.invalidateQueries({ queryKey }),
-    ),
-  );
-
 type Source = { folder: Folder } | { file: File };
 
 type Phase =
@@ -222,6 +210,16 @@ function FolderDeploy({
 }) {
   const client = useQueryClient();
   const { service } = useService(ref);
+  // A deploy changes the service's view, the overview and the audit log.
+  const upload = useAction(
+    (u: {
+      archive: Blob;
+      type: string;
+      onSent: (sent: Sent) => void;
+      signal: AbortSignal;
+    }) => uploadSource(ref, u.archive, u.type, u.onSent, u.signal),
+    () => serviceWide(ref),
+  );
   const [phase, setPhase] = useState<Phase>({ step: "choose" });
   const folderInput = useRef<HTMLInputElement | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -290,14 +288,12 @@ function FolderDeploy({
       }
       const sent = { loaded: 0, total: archive.size };
       show({ step: "uploading", name, summary, sent });
-      const release = await uploadSource(
-        ref,
+      const release = await upload.mutateAsync({
         archive,
         type,
-        (s) => setPhase({ step: "uploading", name, summary, sent: s }),
-        ac.signal,
-      );
-      await touched(client, ref);
+        onSent: (s) => setPhase({ step: "uploading", name, summary, sent: s }),
+        signal: ac.signal,
+      });
       onStarted(release.number);
     } catch (e) {
       if (ac.signal.aborted) return;
@@ -450,7 +446,6 @@ function ImageDeploy({
   onStarted: (release: number) => void;
   onClose: () => void;
 }) {
-  const client = useQueryClient();
   const { service, latest_release } = useService(ref);
   const releases = useReleases(ref);
   const setting = imageSetting(service, releases);
@@ -479,22 +474,22 @@ function ImageDeploy({
         },
       ]
     : [];
-  const deploy = useMutation({
-    mutationFn: (img: string) =>
+  const deploy = useAction(
+    (img: string) =>
       body(
         api.POST(
           "/api/v1/projects/{project}/environments/{environment}/services/{service}/releases",
           { params: { path: servicePath(ref) }, body: { image: img } },
         ),
       ),
-    onSuccess: async (release) => {
-      await touched(client, ref);
-      onStarted(release.number);
-    },
-  });
+    () => serviceWide(ref),
+  );
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (wanted) deploy.mutate(wanted);
+    if (wanted)
+      deploy.mutate(wanted, {
+        onSuccess: (release) => onStarted(release.number),
+      });
   };
   return (
     <form className="flex flex-col gap-3" onSubmit={submit}>

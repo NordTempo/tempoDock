@@ -1,7 +1,8 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { api, body, done } from "../api/client";
+import { useAction } from "../data/action";
 import { queries, useSession } from "../data/queries";
 import { ago, clock } from "../ui/format";
 import { ErrorText, Prop } from "../ui/kit";
@@ -48,14 +49,8 @@ function CliLogin() {
     // Wrong codes count towards a lockout; never retry one.
     retry: false,
   });
-  const decide = useMutation({
-    mutationFn: async ({
-      code,
-      approve,
-    }: {
-      code: string;
-      approve: boolean;
-    }) => {
+  const decide = useAction(
+    async ({ code, approve }: { code: string; approve: boolean }) => {
       const decision = { body: { user_code: code } };
       await done(
         approve
@@ -64,7 +59,8 @@ function CliLogin() {
       );
       return approve;
     },
-  });
+    () => [],
+  );
   // Only a login found by the code typed right now can be decided.
   const l = code !== null ? request.data : undefined;
 

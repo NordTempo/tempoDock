@@ -2,7 +2,6 @@ import {
   keepPreviousData,
   type QueryKey,
   queryOptions,
-  useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -695,14 +694,16 @@ export const siteTrackingQuery = (project: string, site: string) =>
  */
 export function useCheckSite(project: string, site: string) {
   const client = useQueryClient();
-  return useMutation({
-    mutationFn: () =>
-      body(
+  return useAction(
+    async () => {
+      const tracking = await body(
         api.POST("/api/v1/projects/{project}/sites/{site}/check", {
           params: { path: { project, site } },
         }),
-      ),
-    onSuccess: (t) =>
-      client.setQueryData(siteTrackingQuery(project, site).queryKey, t),
-  });
+      );
+      client.setQueryData(siteTrackingQuery(project, site).queryKey, tracking);
+      return tracking;
+    },
+    () => [],
+  );
 }

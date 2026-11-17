@@ -1,4 +1,3 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { api, body } from "../../api/client";
@@ -683,9 +682,8 @@ function DatabaseSettings({
 }) {
   const scope = useSession()?.scope;
   const canEdit = scope === "deploy" || scope === "admin";
-  const client = useQueryClient();
-  const save = useMutation({
-    mutationFn: (req: UpdateDatabaseSettings) =>
+  const save = useAction(
+    (req: UpdateDatabaseSettings) =>
       body(
         api.PUT(
           "/api/v1/projects/{project}/environments/{environment}/services/{service}/database-settings",
@@ -693,12 +691,8 @@ function DatabaseSettings({
         ),
       ),
     // The overview carries the service (and whether it has a Data tab).
-    onSuccess: () =>
-      Promise.all([
-        client.invalidateQueries({ queryKey: keys.overview(ref.project) }),
-        client.invalidateQueries({ queryKey: keys.data(ref) }),
-      ]),
-  });
+    () => [keys.overview(ref.project), keys.data(ref), ["audit"]],
+  );
   const [draft, setDraft] = useState<string | null>(null);
   const urlVariable = service.database_url_variable;
   const cli = [

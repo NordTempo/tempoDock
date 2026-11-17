@@ -1,9 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useId, useRef, useState } from "react";
 import { ApiError, api, body, done } from "../api/client";
 import type { components } from "../api/schema";
-import { useLogin, useLoginVerify } from "../data/mutations";
+import { useAction, useLogin, useLoginVerify } from "../data/mutations";
 import { currentMe, keys, queries } from "../data/queries";
 import { useSignInMethods, useStartSSO } from "../features/sso/data";
 import { ProviderMark } from "../features/sso/ProviderMark";
@@ -144,13 +144,14 @@ async function askPasskey(purpose: "login" | "second") {
 /** Signs in with a passkey alone (no password): it is both factors. */
 function usePasskeyLogin() {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async () => {
+  return useAction(
+    async () => {
       const passkey = await askPasskey("login");
       await body(api.POST("/api/v1/auth/passkey", { body: passkey }));
       queryClient.setQueryData(keys.session, await currentMe());
     },
-  });
+    () => [],
+  );
 }
 
 /**
@@ -432,7 +433,10 @@ function SecondStep({
 }) {
   const verify = useLoginVerify();
   // The browser's part of a passkey; verify sends its answer.
-  const passkey = useMutation({ mutationFn: () => askPasskey("second") });
+  const passkey = useAction(
+    () => askPasskey("second"),
+    () => [],
+  );
   const [mode, setMode] = useState<SecondFactor>(
     factors.find((f) => f !== "passkey" || passkeys) ?? "recovery",
   );
@@ -560,12 +564,13 @@ function SecondStep({
  */
 function Forgot({ email, canEmail }: { email: string; canEmail: boolean }) {
   const [open, setOpen] = useState(false);
-  const ask = useMutation({
-    mutationFn: (address: string) =>
+  const ask = useAction(
+    (address: string) =>
       done(
         api.POST("/api/v1/auth/password-reset", { body: { email: address } }),
       ),
-  });
+    () => [],
+  );
   const address = email.trim();
   if (!open) {
     return (

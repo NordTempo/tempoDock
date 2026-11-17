@@ -1,7 +1,6 @@
 import {
   type QueryClient,
   queryOptions,
-  useMutation,
   useQuery,
   useQueryClient,
   useSuspenseQuery,
@@ -37,11 +36,16 @@ export const useUpdateNote = () => useQuery(updateQuery()).data;
 /** Checks the release source now instead of reusing the last check. */
 export function useCheckNow() {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () =>
-      body(api.GET("/api/v1/update", { params: { query: { refresh: true } } })),
-    onSuccess: (st) => queryClient.setQueryData(updateKey, st),
-  });
+  return useAction(
+    async () => {
+      const status = await body(
+        api.GET("/api/v1/update", { params: { query: { refresh: true } } }),
+      );
+      queryClient.setQueryData(updateKey, status);
+      return status;
+    },
+    () => [],
+  );
 }
 
 /** Starts an update to version (the newest release when left out). */

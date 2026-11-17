@@ -1,11 +1,11 @@
 import {
   queryOptions,
-  useMutation,
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query";
 import { api, body } from "../../api/client";
 import type { components } from "../../api/schema";
+import { useAction } from "../../data/action";
 
 // The platform registry for the console's Registry page. registry.* audit
 // events refetch it (data/live.ts), so a prune's end shows without polling.
@@ -25,10 +25,14 @@ export const useRegistry = () => useSuspenseQuery(registryQuery()).data;
 /** Starts a prune; the answer (pruning) replaces the cached registry. */
 export function usePruneRegistry() {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => body(api.POST("/api/v1/registry/prune")),
-    onSuccess: (registry) => queryClient.setQueryData(registryKey, registry),
-  });
+  return useAction(
+    async () => {
+      const answer = await body(api.POST("/api/v1/registry/prune"));
+      queryClient.setQueryData(registryKey, answer);
+      return answer;
+    },
+    () => [],
+  );
 }
 
 export type MigrateRegistry = components["schemas"]["MigrateRegistryRequest"];
@@ -40,9 +44,14 @@ export type MigrateRegistry = components["schemas"]["MigrateRegistryRequest"];
  */
 export function useMigrateRegistry() {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (input: MigrateRegistry) =>
-      body(api.POST("/api/v1/registry/migrate", { body: input })),
-    onSuccess: (registry) => queryClient.setQueryData(registryKey, registry),
-  });
+  return useAction(
+    async (input: MigrateRegistry) => {
+      const answer = await body(
+        api.POST("/api/v1/registry/migrate", { body: input }),
+      );
+      queryClient.setQueryData(registryKey, answer);
+      return answer;
+    },
+    () => [],
+  );
 }

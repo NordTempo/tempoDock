@@ -1,13 +1,12 @@
 import {
   type QueryClient,
   queryOptions,
-  useMutation,
   useQuery,
-  useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query";
 import { api, body, done, list } from "../../api/client";
 import type { components } from "../../api/schema";
+import { useAction } from "../../data/action";
 import { useSeesPlatform } from "../../data/queries";
 
 // Alerts and alert channels (ADR 0020). An org's alerts (its projects and
@@ -131,18 +130,9 @@ export function applyAlertEvent(queryClient: QueryClient, alert: Alert) {
   );
 }
 
-function useAlertAction<Vars, Data>(mutationFn: (vars: Vars) => Promise<Data>) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn,
-    onSettled: () =>
-      Promise.all(
-        [["alerts"], ["audit"]].map((queryKey) =>
-          queryClient.invalidateQueries({ queryKey }),
-        ),
-      ),
-  });
-}
+const useAlertAction = <Vars, Data>(
+  mutationFn: (vars: Vars) => Promise<Data>,
+) => useAction(mutationFn, () => [["alerts"], ["audit"]]);
 
 export const useVulnAlerts = () =>
   useSuspenseQuery(alertQueries.vulns()).data.alert;
