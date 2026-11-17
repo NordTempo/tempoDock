@@ -24,12 +24,18 @@ func (a Actor) covers(perms Perms, project, env int64, kinds uint8) bool {
 	if !a.hasGrants {
 		return a.limitCovers(project, env) && (rank(a.Scope) >= rank(apitypes.ScopeAdmin) || perms&^seededPerms(a.Scope) == 0)
 	}
+	return entriesCover(a.grants, perms, project, env, kinds)
+}
+
+// entriesCover reports whether grants hold every permission in perms on a
+// place as wide as (project, env, kinds); see covers.
+func entriesCover(grants []grantEntry, perms Perms, project, env int64, kinds uint8) bool {
 	for p := range permCount {
 		if !perms.has(p) {
 			continue
 		}
 		held := false
-		for _, g := range a.grants {
+		for _, g := range grants {
 			if g.perms.has(p) && (g.project == 0 || project != 0 && g.project == project) &&
 				(g.env == 0 || env != 0 && g.env == env) && g.kinds&kinds == kinds {
 				held = true

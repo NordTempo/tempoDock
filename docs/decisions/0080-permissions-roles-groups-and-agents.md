@@ -267,3 +267,10 @@ Settled after reviewing phases 6 and 7 as a whole:
   and Projects areas. The other areas refuse `ask` (lower the level
   instead) rather than keep a setting nothing reads; the role list says
   which ask (`asks`).
+- **A token's own grants decide its scope.** Phase 6b kept a token's
+  scope for what still speaks in scopes (the data policy's subject, whose
+  access requests it lists). Once an admin changes a token's grants or
+  groups, its scope is what they amount to at its limit's place: the
+  highest of admin and deploy whose seeded roles it still holds there,
+  read otherwise. A token narrowed to viewing has a reader's Data panel
+  access; one given Full access an admin's.
