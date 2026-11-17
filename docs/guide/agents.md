@@ -63,11 +63,18 @@ changes somewhere wait for an approver:
 ```sh
 dock agent rule data=propose --kinds production        # no agent writes production data
 dock agent rule deploy=all --kinds production --ask    # agents' production deploys wait for an approver
-dock token bypass ci on                                # but this CI token
 ```
 
 The rules cap tokens too, so a token only tightens them: loosening a rule
-is for a person in the browser, and no token exempts itself.
+and exempting a trusted token (a CI token, in Settings › Agent rules) are
+for a person in the browser, and the CLI, which acts with a token, does
+neither. `dock token bypass ci off` ends an exemption.
+
+Asking first is for changes inside an environment (the Deploy, Variables,
+Logs, Domains, Analytics and Projects areas); for the others, lower the
+level. An agent that asks first before it uses something can't hand it
+on either: it makes no token, grant, invite or role with it. A person
+does.
 
 ## 2. Give it to the agent
 

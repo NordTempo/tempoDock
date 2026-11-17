@@ -1613,6 +1613,9 @@
       "AreaRole": {
         "additionalProperties": false,
         "properties": {
+          "asks": {
+            "type": "boolean"
+          },
           "key": {
             "examples": [
               "deploy"
@@ -1638,7 +1641,8 @@
         "required": [
           "key",
           "name",
-          "levels"
+          "levels",
+          "asks"
         ],
         "type": "object"
       },

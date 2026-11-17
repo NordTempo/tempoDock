@@ -255,3 +255,15 @@ Settled after reviewing phases 6 and 7 as a whole:
   else: a lock set, or an agent rule made, while the request waited stops
   its run as it would a new call, and the request ends failed, saying so.
   An approver's decision lifts the lock, the agent rules and the asking.
+- **What an agent asks first for isn't its to give.** "Nobody gives more
+  than they hold" counts asking: an agent that asks first before it uses
+  a permission somewhere (its person's agent setting, the org's agent
+  rules) makes no token, grant, group membership, invite, role change or
+  custom role with it there, since what it gave wouldn't ask. A person
+  does. Exempting a token from the agent rules is a person's too, whoever
+  the token is (`dock token bypass NAME off` still ends one).
+- **Asking first is for changes inside an environment**, which
+  `checkEnv` decides: the Deploy, Variables, Logs, Domains, Analytics
+  and Projects areas. The other areas refuse `ask` (lower the level
+  instead) rather than keep a setting nothing reads; the role list says
+  which ask (`asks`).

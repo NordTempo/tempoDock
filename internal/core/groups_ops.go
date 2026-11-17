@@ -22,7 +22,7 @@ import (
 func AreaRoles() []apitypes.AreaRole {
 	out := make([]apitypes.AreaRole, 0, len(areaRoles))
 	for _, r := range areaRoles {
-		ar := apitypes.AreaRole{Key: r.key, Name: r.name}
+		ar := apitypes.AreaRole{Key: r.key, Name: r.name, Asks: askAreas[r.key]}
 		var held Perms
 		for _, l := range r.levels {
 			held |= l.adds

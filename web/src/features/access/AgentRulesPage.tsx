@@ -93,7 +93,11 @@ function Bypass() {
                 {/* The label is the hit area: at least 24 px square. */}
                 <label
                   className="inline-flex min-h-[24px] min-w-[24px] cursor-pointer items-center justify-center"
-                  title={`dock token bypass ${t.name} ${t.rules_bypass ? "off" : "on"}`}
+                  title={
+                    t.rules_bypass
+                      ? `dock token bypass ${t.name} off`
+                      : "Exempting a token is done here, signed in: the CLI acts with a token, which the rules cap"
+                  }
                 >
                   <input
                     type="checkbox"

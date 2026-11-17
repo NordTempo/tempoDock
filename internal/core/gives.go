@@ -43,9 +43,41 @@ func (a Actor) covers(perms Perms, project, env int64, kinds uint8) bool {
 	return true
 }
 
+// mustAsk is what of perms an agent asks first for (its person's agent
+// setting, the org's agent rules) in any of the environment kinds a place
+// covers; none for everyone else.
+func (a Actor) mustAsk(perms Perms, kinds uint8) Perms {
+	if a.agent == nil || !a.hasGrants {
+		return 0
+	}
+	var out Perms
+	for i, k := range agentKinds {
+		if kinds&k != 0 {
+			out |= perms & (a.agent.ask[i] | a.agent.ruleAsk[i])
+		}
+	}
+	return out
+}
+
 // mayGive refuses giving perms on a place the caller doesn't hold them
-// on (covers); what names what is given, place where.
+// on (covers), or holds them only after asking (mustAsk); what names
+// what is given, place where.
 func (a Actor) mayGive(perms Perms, project, env int64, kinds uint8, what, place string) error {
+	if asks := a.mustAsk(perms, kinds); asks != 0 {
+		// What an agent uses only after asking isn't its own to hand on:
+		// whoever got it wouldn't ask.
+		var names []string
+		for p := range permCount {
+			if asks.has(p) {
+				names = append(names, p.String())
+			}
+		}
+		return a.refuse(apitypes.Refusal{
+			DecidedBy: apitypes.RefusedPerson, Action: "giving " + what, Need: "person", Place: place,
+			Reason: fmt.Sprintf("%s can't give %s on %s: it asks first before it uses %s there, and what it gave wouldn't ask", a, what, place, strings.Join(names, ", ")),
+			Fix:    "a person gives it from a signed-in session in the web UI",
+		})
+	}
 	if a.covers(perms, project, env, kinds) {
 		return nil
 	}

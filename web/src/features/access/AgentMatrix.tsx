@@ -12,8 +12,9 @@ const kinds = ["production", "other", "previews"] as const;
 
 /**
  * The editable matrix: an area role per row, an environment kind per
- * column, each a level (off, its own, all) and ask. Save sends the
- * changed cells; cli is each one's command.
+ * column, each a level (off, its own, all) and, for areas whose changes
+ * can ask first (the role's asks), ask. Save sends the changed cells;
+ * cli is each one's command.
  */
 export function AgentMatrix({
   saved,
@@ -42,6 +43,7 @@ export function AgentMatrix({
   const update = (i: number, patch: Partial<Setting>) =>
     setCells(cells.map((c, j) => (j === i ? { ...c, ...patch } : c)));
   const areas = [...new Set(cells.map((c) => c.area))];
+  const asks = (area: string) => !!roles.find((r) => r.key === area)?.asks;
   return (
     <>
       <table>
@@ -82,15 +84,19 @@ export function AgentMatrix({
                         ))}
                         <option value="all">all</option>
                       </select>
-                      <label className="flex items-center gap-1 text-mut">
-                        <input
-                          type="checkbox"
-                          className="accent-fg"
-                          checked={!!c.ask}
-                          onChange={(e) => update(i, { ask: e.target.checked })}
-                        />
-                        ask
-                      </label>
+                      {asks(area) && (
+                        <label className="flex items-center gap-1 text-mut">
+                          <input
+                            type="checkbox"
+                            className="accent-fg"
+                            checked={!!c.ask}
+                            onChange={(e) =>
+                              update(i, { ask: e.target.checked })
+                            }
+                          />
+                          ask
+                        </label>
+                      )}
                     </span>
                   </td>
                 );

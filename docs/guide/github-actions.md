@@ -42,8 +42,8 @@ approves each production deploy on GitHub. If the organization's
 [agent rules](agents.md#the-organizations-agent-rules) make agents'
 production deploys wait for an approver, the token's deploy files an
 access request and the job fails with exit 5 (`environment_locked`); an
-admin exempts a trusted CI token with `dock token bypass
-github-shop-production on`.
+admin exempts a trusted CI token in Settings › Agent rules, signed in to
+the web UI.
 
 ## 2. The workflow
 

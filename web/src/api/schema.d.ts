@@ -7323,6 +7323,7 @@ export interface components {
             unchanged?: string[] | null;
         };
         AreaRole: {
+            asks: boolean;
             /** @example deploy */
             key: string;
             levels: components["schemas"]["RoleLevel"][] | null;
