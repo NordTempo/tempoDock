@@ -223,9 +223,10 @@ type Proxy struct {
 	opts   Options
 	client *http.Client
 
-	// hosts are the hostnames of the last applied routes, for AskHandler.
-	// nil until the first ApplyRoutes or read of Caddy's running config.
-	hosts  atomic.Pointer[hostSet]
+	// hosts are the hostnames of the last applied routes and the names
+	// its loaded certificates cover, for AskHandler. nil until the first
+	// ApplyRoutes or read of Caddy's running config.
+	hosts  atomic.Pointer[askSet]
 	seedMu sync.Mutex // one read of Caddy's running config at a time
 	// tunnel is the tunnel hostname the control plane runs cloudflared
 	// with (SetTunnelHostname); it wins over Options.TunnelHostname.
@@ -273,17 +274,21 @@ func New(opts Options) (*Proxy, error) {
 	}, nil
 }
 
-// ApplyRoutes renders the full config for routes and loads it into Caddy.
-// If Caddy rejects it, the previous config stays in effect.
-func (p *Proxy) ApplyRoutes(ctx context.Context, routes []node.Route) error {
-	cfg, err := Render(p.opts, routes)
+// ApplyRoutes renders the full config for routes and certs and loads it
+// into Caddy. If Caddy rejects it, the previous config stays in effect.
+// Certificates are left out where Caddy serves plain HTTP.
+func (p *Proxy) ApplyRoutes(ctx context.Context, routes []node.Route, certs []node.Certificate) error {
+	if p.opts.plainHTTP() {
+		certs = nil
+	}
+	cfg, err := Render(p.opts, routes, certs)
 	if err != nil {
 		return err
 	}
 	if err := p.load(ctx, cfg); err != nil {
 		return err
 	}
-	p.hosts.Store(routeHosts(routes))
+	p.hosts.Store(&askSet{hosts: *routeHosts(routes), covered: certNames(certs)})
 	p.setWakeKeys(routes)
 	traced := map[string]string{}
 	for _, r := range routes {

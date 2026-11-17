@@ -85,7 +85,7 @@ func TestAskHandler(t *testing.T) {
 	}
 
 	// Applied routes replace what was read from Caddy.
-	if err := p.ApplyRoutes(context.Background(), []node.Route{{Hostnames: []string{"b.test"}, Upstream: "127.0.0.1:1"}}); err != nil {
+	if err := p.ApplyRoutes(context.Background(), []node.Route{{Hostnames: []string{"b.test"}, Upstream: "127.0.0.1:1"}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	running.Store(nil) // never read again

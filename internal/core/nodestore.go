@@ -265,9 +265,13 @@ func (c *Core) NodeStatus(s remote.State) {
 	var err error
 	switch s.Status {
 	case remote.StatusOnline, remote.StatusIncompatible:
-		_, err = c.store.SetServerHello(ctx, helloParams(s.ServerID, s.Hello, t))
+		var srv store.Server
+		srv, err = c.store.SetServerHello(ctx, helloParams(s.ServerID, s.Hello, t))
 		if store.IsNotFound(err) {
 			return // removed meanwhile
+		}
+		if err == nil {
+			c.wantWildcard(srv)
 		}
 	default:
 		err = c.store.SetServerDisconnected(ctx, store.SetServerDisconnectedParams{Now: &t, Reason: "connection lost", ID: s.ServerID})

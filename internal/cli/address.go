@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -110,5 +111,25 @@ func printAddress(g *globals, a apitypes.Address) error {
 			_, _ = fmt.Fprintf(g.io.Out, "%s  %s  %s  →  %s\n", label, r.Type, r.Name, r.Value)
 		}
 	}
+	for _, w := range a.Wildcards {
+		if err := g.io.Fields("wildcard", "*."+w.BaseDomain+"  "+wildcardWords(w)); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// wildcardWords says where a base domain's wildcard certificate is (ADR
+// 0090), and what its generated hostnames get without one.
+func wildcardWords(w apitypes.Wildcard) string {
+	day := func(t *time.Time) string { return t.UTC().Format(time.DateOnly) }
+	switch {
+	case w.Status == apitypes.WildcardActive && w.Reason != "":
+		return fmt.Sprintf("active until %s, renewal failing: %s", day(w.NotAfter), w.Reason)
+	case w.Status == apitypes.WildcardActive:
+		return fmt.Sprintf("active until %s, renews %s", day(w.NotAfter), day(w.RenewAt))
+	case w.Status == apitypes.WildcardIssuing:
+		return "issuing"
+	}
+	return string(w.Status) + ", a certificate per hostname: " + w.Reason
 }

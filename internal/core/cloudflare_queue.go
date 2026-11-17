@@ -691,6 +691,11 @@ func (c *Core) RetryCloudflare(ctx context.Context, a Actor) (apitypes.Cloudflar
 	if err != nil {
 		return apitypes.CloudflareRetried{}, err
 	}
+	wildcards, err := c.store.RetryFailedWildcards(ctx, &t)
+	if err != nil {
+		return apitypes.CloudflareRetried{}, err
+	}
 	c.kickCloudflare()
-	return apitypes.CloudflareRetried{Retried: int(records + tunnels + redirects)}, nil
+	c.kickWildcards()
+	return apitypes.CloudflareRetried{Retried: int(records + tunnels + redirects + wildcards)}, nil
 }

@@ -259,6 +259,41 @@ History is kept per minute for a day and per hour for 30 days.
 - `[caddy] disable_tls = true` serves everything over plain HTTP (LAN,
   Tailscale, or behind a Cloudflare Tunnel; see [install](install.md#network-access)).
 
+### Wildcard certificates for generated hostnames
+
+A certificate for each generated hostname would publish every one of them
+in [certificate-transparency logs](https://crt.sh), where anyone can list
+them. So when a direct server's base domain is in a zone of one of the
+platform's Cloudflare connections (Console › Cloudflare), Dock gets one
+certificate for `*.<base domain>` and `<base domain>` instead
+([ADR 0090](../decisions/0090-wildcard-certificates.md)):
+
+- It asks Let's Encrypt over ACME DNS-01: Dock adds two TXT records at
+  `_acme-challenge.<base domain>`, marked as its own, and deletes them
+  once the CA has checked them. The connection's token needs
+  Zone › DNS › Edit on the zone.
+- Every server with that base domain serves it for every name one label
+  under the base, deployed or not: an address that isn't deployed gets the
+  same 404 page as any other, so the TLS handshake doesn't tell you
+  whether a service exists. Custom domains keep a certificate each, as
+  above.
+- Dock renews it a third of its lifetime before it expires (30 days for
+  Let's Encrypt's 90-day certificates). A failed attempt is tried again
+  after 5 minutes, doubling to 6 hours; after three failures, or at once
+  when the token lacks the permission, the platform gets a
+  `certificate_failed` alert. `dock cloudflare retry` tries again now.
+- Without such a zone, or until the first certificate is issued, generated
+  hostnames get a certificate each, as before. A certificate that expires
+  without a renewal stops being served, and its names go back to that.
+- Console › Address and `dock address` show each base domain's
+  certificate: active (until when, and when it renews), issuing, failing
+  with the reason, or unavailable and why.
+- `[caddy] acme_directory` points it at another ACME CA (Let's Encrypt's
+  staging, for instance); empty is Let's Encrypt.
+
+Remote servers get the certificate with their routes; one older than
+protocol 31 keeps a certificate per hostname until it is upgraded.
+
 ## Rules
 
 - A hostname belongs to at most one service. Adding a taken one fails with

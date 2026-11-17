@@ -201,6 +201,15 @@ type (
 	}
 	routesRequest struct {
 		Routes []wireRoute `json:"routes"`
+		// Certificates are the server's loaded certificates (protocol
+		// 31, ADR 0090), sent only to nodes that know them.
+		Certificates []wireCertificate `json:"certificates,omitempty"`
+	}
+	// wireCertificate is a node.Certificate: PEM travels as text.
+	wireCertificate struct {
+		Names []string `json:"names"`
+		Chain string   `json:"chain"`
+		Key   string   `json:"key"`
 	}
 	domainRequest struct {
 		Hostname string `json:"hostname"`
@@ -653,6 +662,25 @@ func toWireRoutes(rs []node.Route) []wireRoute {
 		for _, a := range r.Analytics {
 			out[i].Analytics = append(out[i].Analytics, wireAnalyticsHosts(a))
 		}
+	}
+	return out
+}
+
+func toWireCertificates(cs []node.Certificate) []wireCertificate {
+	out := make([]wireCertificate, 0, len(cs))
+	for _, c := range cs {
+		out = append(out, wireCertificate{Names: c.Names, Chain: string(c.ChainPEM), Key: string(c.KeyPEM)})
+	}
+	return out
+}
+
+func fromWireCertificates(ws []wireCertificate) []node.Certificate {
+	if len(ws) == 0 {
+		return nil
+	}
+	out := make([]node.Certificate, 0, len(ws))
+	for _, w := range ws {
+		out = append(out, node.Certificate{Names: w.Names, ChainPEM: []byte(w.Chain), KeyPEM: []byte(w.Key)})
 	}
 	return out
 }

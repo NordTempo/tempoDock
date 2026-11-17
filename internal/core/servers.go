@@ -257,6 +257,16 @@ func (c *Core) UpdateServer(ctx context.Context, a Actor, name string, req apity
 			c.audit(ctx, a.platform(), "server.update", nil, nil, "server "+srv.Name, fmt.Sprintf("server %s %s", srv.Name, strings.Join(changes, ", ")))
 		}
 		c.publishServer(ctx, srv.ID)
+		if settings.BaseDomain != srv.BaseDomain && c.online(srv.ID) {
+			// Its routes carry the new base domain's wildcard, if it has
+			// one, and no longer the old one's (ADR 0090).
+			if err := c.applyRoutes(ctx, srv.ID); err != nil {
+				c.log.Warn("apply routes for a new base domain", "server", srv.Name, "err", err)
+			}
+		}
+		if settings.BaseDomain != srv.BaseDomain {
+			c.kickWildcards() // and the worker gets a wildcard for it
+		}
 		if srv.Local && settings.BaseDomain != srv.BaseDomain {
 			c.publicSitesChanged(ctx) // stats-<site>.<base domain> moved
 			c.statusPagesChanged(ctx) // and status pages' addresses
@@ -590,6 +600,7 @@ func (c *Core) RemoveServer(ctx context.Context, a Actor, name string) error {
 		}
 	}
 	c.kickCloudflare()
+	c.kickWildcards() // its base domain's may be unused now
 	if c.nodes != nil {
 		c.nodes.Disconnect(srv.ID)
 	}

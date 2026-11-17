@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -23,6 +24,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/sync/singleflight"
 
+	"github.com/NordTempo/tempoDock/internal/acmedns"
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/config"
 	"github.com/NordTempo/tempoDock/internal/data"
@@ -92,6 +94,13 @@ type Options struct {
 	// the updater is installed. Tests set both.
 	Updates     update.Source
 	UpdaterUnit string
+	// ObtainCertificate gets a base domain's wildcard certificate (ADR
+	// 0090) and WaitTXT waits for its challenge records to be visible;
+	// nil uses acmedns. ACMEClient talks to the CA; nil is
+	// http.DefaultClient. Tests stand in for the CA.
+	ObtainCertificate func(context.Context, acmedns.Request) (acmedns.Certificate, error)
+	WaitTXT           func(ctx context.Context, zone, name string, values []string) error
+	ACMEClient        *http.Client
 	// LookupTXT looks up a name's TXT records, for custom domain
 	// verification (ADR 0042); nil uses the system resolver. Tests answer
 	// from a map.
@@ -269,6 +278,13 @@ type Core struct {
 	address atomic.Pointer[string]
 	// cf is the Cloudflare integration (cloudflare.go).
 	cf cfState
+	// wild is the base domains' wildcard certificates (wildcards.go).
+	wild wildState
+	// obtain gets a wildcard certificate, waitTXT waits for its
+	// challenge records and acmeHTTP talks to the CA: Options'.
+	obtain   func(context.Context, acmedns.Request) (acmedns.Certificate, error)
+	waitTXT  func(ctx context.Context, zone, name string, values []string) error
+	acmeHTTP *http.Client
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -336,6 +352,16 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		tracking:   newSiteChecks(o.Config.Network.AllowPrivate),
 		updates:    newUpdates(o),
 		cf:         newCFState(o.CloudflareAPI),
+		wild:       newWildState(),
+		obtain:     o.ObtainCertificate,
+		waitTXT:    o.WaitTXT,
+		acmeHTTP:   o.ACMEClient,
+	}
+	if c.obtain == nil {
+		c.obtain = acmedns.Obtain
+	}
+	if c.waitTXT == nil {
+		c.waitTXT = acmedns.WaitTXT
 	}
 	if c.data == nil {
 		c.data = []data.Engine{pg.New(pg.Options{}), mysql.New(mysql.Options{}), redis.New(redis.Options{})}
@@ -383,6 +409,9 @@ func New(ctx context.Context, o Options) (*Core, error) {
 	}
 	if err := c.loadCloudflare(ctx); err != nil {
 		return nil, fmt.Errorf("load Cloudflare state: %w", err)
+	}
+	if err := c.loadWildcards(ctx); err != nil {
+		return nil, err
 	}
 	// Held deploys run again through core itself (held.go).
 	c.SetReplayer("source", c.replaySource)
@@ -518,7 +547,7 @@ func (c *Core) Start(ctx context.Context) error {
 			c.log.Error("apply routes with edge traces on start", "err", err)
 		}
 	}
-	c.wg.Add(7)
+	c.wg.Add(8)
 	go c.watchRuntime(events)
 	go c.checkDomains()
 	go c.collectStats()
@@ -534,6 +563,7 @@ func (c *Core) Start(ctx context.Context) error {
 	c.email.mu.Unlock()
 	c.kickEmail()
 	go c.runCloudflare()
+	go c.runWildcards()
 	// In the background: running the tunnel may pull an image.
 	go func() {
 		defer c.wg.Done()

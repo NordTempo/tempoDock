@@ -95,9 +95,10 @@ type server struct {
 	Listen []string `json:"listen"`
 	Routes []route  `json:"routes"`
 	// TLSConnectionPolicies turns on TLS for the server. One empty policy
-	// means "any SNI, certificates from the tls app".
-	TLSConnectionPolicies []struct{}     `json:"tls_connection_policies,omitempty"`
-	AutomaticHTTPS        automaticHTTPS `json:"automatic_https"`
+	// means "any SNI, certificates from the tls app"; a loaded
+	// certificate's policy goes ahead of it (connectionPolicies).
+	TLSConnectionPolicies []connectionPolicy `json:"tls_connection_policies,omitempty"`
+	AutomaticHTTPS        automaticHTTPS     `json:"automatic_https"`
 	// TrustedProxies are the peers whose X-Forwarded-* headers Caddy keeps
 	// and extends instead of replacing.
 	TrustedProxies *ipRanges `json:"trusted_proxies,omitempty"`
@@ -238,7 +239,38 @@ type headerOps struct {
 }
 
 type tlsApp struct {
-	Automation automation `json:"automation"`
+	Certificates *tlsCertificates `json:"certificates,omitempty"`
+	Automation   automation       `json:"automation"`
+}
+
+// tlsCertificates are certificates Caddy loads instead of managing them:
+// the wildcards of base domains (ADR 0090).
+type tlsCertificates struct {
+	LoadPEM []loadedPEM `json:"load_pem"`
+}
+
+type loadedPEM struct {
+	Certificate string   `json:"certificate"`
+	Key         string   `json:"key"`
+	Tags        []string `json:"tags"`
+}
+
+// connectionPolicy is a TLS connection policy of the https server. A
+// loaded certificate's matches its names and selects it by tag, so a
+// handshake under the base domain gets the wildcard even where Caddy
+// still holds an on-demand certificate for the exact name from before.
+type connectionPolicy struct {
+	Match                *handshakeMatch `json:"match,omitempty"`
+	CertificateSelection *certSelection  `json:"certificate_selection,omitempty"`
+}
+
+type handshakeMatch struct {
+	// SNI matches the server name, with wildcards (*.example.com).
+	SNI []string `json:"sni"`
+}
+
+type certSelection struct {
+	AnyTag []string `json:"any_tag"`
 }
 
 type automation struct {
@@ -328,7 +360,7 @@ body{display:flex;align-items:center;justify-content:center}
 // BootstrapConfig is the config the install script writes before the daemon
 // has ever run: admin on the Unix socket and the 404 page for every host.
 func BootstrapConfig(opts Options) ([]byte, error) {
-	return Render(opts, nil)
+	return Render(opts, nil, nil)
 }
 
 // Render builds the complete Caddy JSON config for routes. It is a pure
@@ -343,13 +375,19 @@ func BootstrapConfig(opts Options) ([]byte, error) {
 // header (when there is one) and ends with a catch-all 404 page, but
 // direct mode's "http", whose catch-all is the redirect.
 //
+// certs are loaded on the "https" server, each served for its names
+// (ADR 0090); they are left out where Caddy serves plain HTTP.
+//
 // Hostnames must be lower-case ASCII (punycode for IDNs) and unique across
 // routes.
-func Render(opts Options, routes []node.Route) ([]byte, error) {
+func Render(opts Options, routes []node.Route, certs []node.Certificate) ([]byte, error) {
 	if err := opts.validate(); err != nil {
 		return nil, err
 	}
 	if err := validateRoutes(opts, routes); err != nil {
+		return nil, err
+	}
+	if err := validateCerts(certs); err != nil {
 		return nil, err
 	}
 
@@ -533,7 +571,7 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 		"https": {
 			Listen:                []string{listenAddr(opts.HTTPSPort)},
 			Routes:                main,
-			TLSConnectionPolicies: []struct{}{{}},
+			TLSConnectionPolicies: connectionPolicies(certs),
 			AutomaticHTTPS:        automaticHTTPS{Disable: true},
 			Logs:                  logs,
 		},
@@ -555,7 +593,61 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 		Policies: []automationPolicy{{Issuers: []issuer{iss}, OnDemand: true}},
 		OnDemand: onDemand{Permission: permission{Module: "http", Endpoint: opts.AskURL}},
 	}}
+	if len(certs) > 0 {
+		cfg.Apps.TLS.Certificates = &tlsCertificates{}
+		for _, c := range certs {
+			cfg.Apps.TLS.Certificates.LoadPEM = append(cfg.Apps.TLS.Certificates.LoadPEM,
+				loadedPEM{Certificate: string(c.ChainPEM), Key: string(c.KeyPEM), Tags: []string{certTag(c)}})
+		}
+	}
 	return json.Marshal(cfg)
+}
+
+// connectionPolicies are the https server's TLS connection policies: one
+// per loaded certificate, matching its names and selecting it, then the
+// catch-all whose certificates are issued on demand.
+func connectionPolicies(certs []node.Certificate) []connectionPolicy {
+	ps := make([]connectionPolicy, 0, len(certs)+1)
+	for _, c := range certs {
+		ps = append(ps, connectionPolicy{Match: &handshakeMatch{SNI: c.Names}, CertificateSelection: &certSelection{AnyTag: []string{certTag(c)}}})
+	}
+	return append(ps, connectionPolicy{})
+}
+
+// certTag tags a loaded certificate in Caddy's cache, for its connection
+// policy to select it.
+func certTag(c node.Certificate) string { return "dock:" + c.Names[0] }
+
+// validateCerts checks loaded certificates' names (which go into
+// connection policies) and that they have a chain and a key. Whether those
+// parse is the control plane's check, before it hands them out.
+func validateCerts(certs []node.Certificate) error {
+	seen := map[string]bool{}
+	for i, c := range certs {
+		if len(c.Names) == 0 || len(c.ChainPEM) == 0 || len(c.KeyPEM) == 0 {
+			return fmt.Errorf("certificate %d needs names, a chain and a key", i)
+		}
+		for _, n := range c.Names {
+			if !validHostname(strings.TrimPrefix(n, "*.")) {
+				return fmt.Errorf("certificate name %q is not a valid hostname or *.<hostname>", n)
+			}
+			if seen[n] {
+				return fmt.Errorf("%s is covered by more than one certificate", n)
+			}
+			seen[n] = true
+		}
+	}
+	return nil
+}
+
+// covers reports whether a certificate name (a hostname, or *.<hostname>
+// for one label under it) covers host.
+func covers(name, host string) bool {
+	if base, ok := strings.CutPrefix(name, "*."); ok {
+		label, rest, found := strings.Cut(host, ".")
+		return found && label != "" && rest == base
+	}
+	return name == host
 }
 
 // tunnelServer names a direct server's tunnel listener in Caddy's config.

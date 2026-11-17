@@ -39,6 +39,8 @@ var (
 	sealedStorageKeys                  = secrets.Column{Table: "storage_connections", Name: "credentials", Key: []string{"name"}}
 	sealedCloudflareToken              = secrets.Column{Table: "cloudflare_connections", Name: "token", Key: []string{"ifnull(org_id || '/', '') || name"}} // as a channel's (cloudflareAAD)
 	sealedTunnelToken                  = secrets.Column{Table: "cloudflare_tunnels", Name: "token", Key: []string{"tunnel_id"}}                             // the tunnel's, wherever its row points
+	sealedWildcardKey                  = secrets.Column{Table: "wildcard_certificates", Name: "key", Key: []string{"base_domain"}}                          // ADR 0090
+	sealedACMEKey                      = secrets.Column{Table: "acme_accounts", Name: "key", Key: []string{"directory"}}
 	sealedAnalyticsSalt                = secrets.Column{Table: "analytics_salts", Name: "salt", Key: []string{"day"}}
 	sealedBackupKeys                   = secrets.Column{Table: "backup_settings", Name: "credentials"}
 	sealedBackupPassword               = secrets.Column{Table: "backup_settings", Name: "password"}
@@ -63,7 +65,7 @@ var (
 		sealedCloudflareToken, sealedTunnelToken, sealedAnalyticsSalt, sealedBackupKeys,
 		sealedBackupPassword, sealedAnalyticsToken, sealedAppKey, sealedAppWebhookSecret, sealedAppClientSecret,
 		sealedDataReader, sealedDataWriter, sealedRequestArgs, sealedLogDrain, sealedRegistrySecret, sealedUserFactor,
-		sealedSSOSecret, sealedStatusHook, sealedEmailPassword, sealedEmailBody,
+		sealedSSOSecret, sealedStatusHook, sealedEmailPassword, sealedEmailBody, sealedWildcardKey, sealedACMEKey,
 	}
 )
 

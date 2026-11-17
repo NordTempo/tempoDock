@@ -1,6 +1,6 @@
 # 0009: Dynamic domains and automatic TLS
 
-Status: accepted; superseded in part by [0042](0042-domain-verification.md) (a hostname is unique per verified claim); amended by [0036](0036-cloudflare-api.md) (domains from Cloudflare) and [0087](0087-unguessable-generated-hostnames.md) (generated hostnames carry a random part; plain HTTP redirects every host)
+Status: accepted; superseded in part by [0042](0042-domain-verification.md) (a hostname is unique per verified claim); amended by [0036](0036-cloudflare-api.md) (domains from Cloudflare), [0087](0087-unguessable-generated-hostnames.md) (generated hostnames carry a random part; plain HTTP redirects every host) and [0090](0090-wildcard-certificates.md) (one wildcard per base domain)
 
 ## Context
 
@@ -82,3 +82,12 @@ work: Dock routes it through the server's tunnel and creates its proxied
 CNAME, and deletes both with the domain. Dock never creates records
 pointing at an IP, and never changes one it didn't make. Other domains
 still show the record to create.
+
+## Amendment (2026-11-17): one wildcard per base domain
+
+Generated subdomains no longer get a certificate each where the base
+domain is in a zone of the platform's Cloudflare connections:
+Dock obtains `*.<base>` over DNS-01 itself and loads it into Caddy with
+the routes ([0090](0090-wildcard-certificates.md)), so they stay out of
+certificate-transparency logs. Elsewhere they are issued on demand as
+above.

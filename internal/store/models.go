@@ -38,6 +38,12 @@ type AccessRequest struct {
 	UserID        *int64
 }
 
+type AcmeAccount struct {
+	Directory string
+	Key       []byte
+	CreatedAt time.Time
+}
+
 type AgentRule struct {
 	OrgID int64
 	Area  string
@@ -1436,4 +1442,16 @@ type VulnIgnore struct {
 	ExpiresAt *int64
 	CreatedBy string
 	CreatedAt int64
+}
+
+type WildcardCertificate struct {
+	BaseDomain string
+	Chain      string
+	Key        []byte
+	NotBefore  *time.Time
+	NotAfter   *time.Time
+	Error      string
+	Attempts   int64
+	RetryAt    *time.Time
+	UpdatedAt  time.Time
 }

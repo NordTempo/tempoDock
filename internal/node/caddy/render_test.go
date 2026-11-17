@@ -21,7 +21,7 @@ func testOptions() Options {
 
 func render(t *testing.T, opts Options, routes []node.Route) caddyConfig {
 	t.Helper()
-	b, err := Render(opts, routes)
+	b, err := Render(opts, routes, nil)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestRenderRejectsBadInput(t *testing.T) {
 			if tc.opts != nil {
 				tc.opts(&opts)
 			}
-			if _, err := Render(opts, tc.routes); err == nil {
+			if _, err := Render(opts, tc.routes, nil); err == nil {
 				t.Error("Render succeeded, want an error")
 			}
 		})
@@ -261,7 +261,7 @@ func TestRenderPathPrefix(t *testing.T) {
 	}
 	assertNotFound(t, cfg.Apps.HTTP.Servers["https"].Routes[1])
 	for _, bad := range []string{"/hooks/{uri}/", "hooks/", "/hooks", "/a//b/", "/*/"} {
-		if _, err := Render(testOptions(), []node.Route{{Hostnames: []string{"a.com"}, Upstream: "127.0.0.1:1", PathPrefix: bad}}); err == nil {
+		if _, err := Render(testOptions(), []node.Route{{Hostnames: []string{"a.com"}, Upstream: "127.0.0.1:1", PathPrefix: bad}}, nil); err == nil {
 			t.Errorf("path prefix %q: Render succeeded, want an error", bad)
 		}
 	}
@@ -331,12 +331,12 @@ func TestRenderAccess(t *testing.T) {
 		"no login URL":    {Key: []byte{1}},
 		"brace login URL": {Key: []byte{1}, LoginURL: "https://{host}/access"},
 	} {
-		if _, err := Render(opts, []node.Route{{Hostnames: []string{"a.com"}, Upstream: "127.0.0.1:1", Access: a}}); err == nil {
+		if _, err := Render(opts, []node.Route{{Hostnames: []string{"a.com"}, Upstream: "127.0.0.1:1", Access: a}}, nil); err == nil {
 			t.Errorf("%s: Render succeeded, want an error", name)
 		}
 	}
 	login1 := []node.Route{{Hostnames: []string{"a.com"}, Upstream: "127.0.0.1:1", Access: &node.Access{Key: []byte{1}, LoginURL: "https://d/access"}}}
-	if _, err := Render(testOptions(), login1); err == nil {
+	if _, err := Render(testOptions(), login1, nil); err == nil {
 		t.Error("login access without an access URL rendered")
 	}
 }
@@ -378,7 +378,7 @@ func TestRenderWake(t *testing.T) {
 		if name != "no wake URL" {
 			o.WakeURL = opts.WakeURL
 		}
-		if _, err := Render(o, []node.Route{r}); err == nil {
+		if _, err := Render(o, []node.Route{r}, nil); err == nil {
 			t.Errorf("%s: Render succeeded, want an error", name)
 		}
 	}
@@ -507,7 +507,7 @@ func TestRenderAnalytics(t *testing.T) {
 		"a hostname of another route": {Hostnames: []string{"evil.example.com"}, Tag: "3.40.981"},
 	} {
 		bad := []node.Route{{Hostnames: []string{"shop.example.com"}, Upstream: "127.0.0.1:20001", Analytics: []node.AnalyticsHosts{a}}}
-		if _, err := Render(opts, bad); err == nil {
+		if _, err := Render(opts, bad, nil); err == nil {
 			t.Errorf("%s: rendered", name)
 		}
 	}
@@ -516,7 +516,7 @@ func TestRenderAnalytics(t *testing.T) {
 func TestRenderRefusesARouteWithoutHostnames(t *testing.T) {
 	// Not a panic: the access check reads the first hostname for its
 	// message.
-	_, err := Render(testOptions(), []node.Route{{Upstream: "127.0.0.1:1", Access: &node.Access{Username: "x"}}})
+	_, err := Render(testOptions(), []node.Route{{Upstream: "127.0.0.1:1", Access: &node.Access{Username: "x"}}}, nil)
 	if err == nil {
 		t.Error("rendered a route without hostnames")
 	}
@@ -558,7 +558,7 @@ func TestRenderTraceIngest(t *testing.T) {
 	}
 	opts = testOptions()
 	opts.TraceIngestAddr = "0.0.0.0:4318"
-	if _, err := Render(opts, routes); err == nil {
+	if _, err := Render(opts, routes, nil); err == nil {
 		t.Error("a trace ingest that isn't on loopback was rendered")
 	}
 }
@@ -586,6 +586,59 @@ func TestRenderEdgeTrace(t *testing.T) {
 			if x.Handler == "tracing" {
 				t.Errorf("%v is traced: %+v", r.Match, r.Handle)
 			}
+		}
+	}
+}
+
+// TestRenderCertificates: a loaded certificate (ADR 0090) is in the tls
+// app with a tag, and the https server's policy for its names selects it
+// ahead of the catch-all; bad names are refused.
+func TestRenderCertificates(t *testing.T) {
+	wild := node.Certificate{Names: []string{"*.apps.example.com", "apps.example.com"}, ChainPEM: []byte("CHAIN"), KeyPEM: []byte("KEY")}
+	b, err := Render(testOptions(), nil, []node.Certificate{wild})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg caddyConfig
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	loaded := cfg.Apps.TLS.Certificates.LoadPEM
+	if len(loaded) != 1 || loaded[0].Certificate != "CHAIN" || loaded[0].Key != "KEY" || !slices.Equal(loaded[0].Tags, []string{"dock:*.apps.example.com"}) {
+		t.Errorf("load_pem = %+v", loaded)
+	}
+	ps := cfg.Apps.HTTP.Servers["https"].TLSConnectionPolicies
+	if len(ps) != 2 || !slices.Equal(ps[0].Match.SNI, wild.Names) || !slices.Equal(ps[0].CertificateSelection.AnyTag, loaded[0].Tags) || ps[1].Match != nil {
+		t.Errorf("connection policies = %+v", ps)
+	}
+
+	for _, bad := range []node.Certificate{
+		{Names: []string{"*.{http.request.host}"}, ChainPEM: []byte("C"), KeyPEM: []byte("K")},
+		{Names: []string{"a.test"}, ChainPEM: []byte("C")},
+	} {
+		if _, err := Render(testOptions(), nil, []node.Certificate{bad}); err == nil {
+			t.Errorf("Render accepted %+v", bad.Names)
+		}
+	}
+	if _, err := Render(testOptions(), nil, []node.Certificate{wild, wild}); err == nil {
+		t.Error("Render accepted two certificates for the same names")
+	}
+}
+
+func TestCovers(t *testing.T) {
+	for _, c := range []struct {
+		name, host string
+		want       bool
+	}{
+		{"*.apps.test", "web.apps.test", true},
+		{"*.apps.test", "apps.test", false},
+		{"*.apps.test", "a.web.apps.test", false},
+		{"*.apps.test", "webapps.test", false},
+		{"apps.test", "apps.test", true},
+		{"apps.test", "web.apps.test", false},
+	} {
+		if got := covers(c.name, c.host); got != c.want {
+			t.Errorf("covers(%q, %q) = %v", c.name, c.host, got)
 		}
 	}
 }

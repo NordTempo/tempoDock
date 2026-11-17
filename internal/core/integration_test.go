@@ -32,7 +32,7 @@ import (
 
 type noProxy struct{}
 
-func (noProxy) ApplyRoutes(context.Context, []node.Route) error { return nil }
+func (noProxy) ApplyRoutes(context.Context, []node.Route, []node.Certificate) error { return nil }
 func (noProxy) CheckDomain(context.Context, string) (node.DomainCheck, error) {
 	return node.DomainCheck{}, nil
 }

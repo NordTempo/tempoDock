@@ -460,9 +460,12 @@ type PruneResult struct {
 
 // Proxy owns the server's public HTTP(S) routing.
 type Proxy interface {
-	// ApplyRoutes replaces the full routing table atomically. If the new
-	// config is rejected, the previous one stays in effect.
-	ApplyRoutes(ctx context.Context, routes []Route) error
+	// ApplyRoutes replaces the full routing table atomically, with the
+	// certificates Caddy serves for the names they cover instead of
+	// issuing its own (the base domain's wildcard, ADR 0090; nil for
+	// none). If the new config is rejected, the previous one stays in
+	// effect.
+	ApplyRoutes(ctx context.Context, routes []Route, certs []Certificate) error
 	// OpenRequests returns how many requests Caddy is proxying to
 	// upstreams (host:port) right now, websockets and streams included:
 	// core asks it before an environment sleeps, since the access log
@@ -969,6 +972,18 @@ type PushTarget struct {
 	// Token is a bearer token with push access to Ref's repository,
 	// minted by the control plane for this build (registry.PushTokenTTL).
 	Token string
+}
+
+// Certificate is a certificate the proxy loads instead of issuing its own
+// for the names it covers: the wildcard of a server's base domain (ADR
+// 0090), which keeps generated hostnames out of certificate-transparency
+// logs. Caddy serves it for every hostname matching Names, routed or not,
+// and issues no on-demand certificate for them.
+type Certificate struct {
+	// Names are the certificate's names: *.<base> and <base>.
+	Names []string
+	// ChainPEM is the leaf and its intermediates, KeyPEM its private key.
+	ChainPEM, KeyPEM []byte
 }
 
 // Route sends traffic for Hostnames to Upstream (host:port).

@@ -3,7 +3,7 @@
 Status: accepted (planned with Saile, 2026-10-30; narrowed the same day
 to tunnels only). Amends [0013](0013-homelab-ingress-cloudflare-tunnel.md),
 [0009](0009-dynamic-domains-and-tls.md) and [0014](0014-node-protocol.md).
-Superseded in part by [0062](0062-org-alerts-and-operators.md) (connections per org, zones on several connections, failure alerts), [0068](0068-redirects-on-cloudflare-zones.md) (redirect placeholders are IP records).
+Superseded in part by [0062](0062-org-alerts-and-operators.md) (connections per org, zones on several connections, failure alerts), [0068](0068-redirects-on-cloudflare-zones.md) (redirect placeholders are IP records). Amended by [0090](0090-wildcard-certificates.md) (DNS-01 TXT records).
 
 ## Context
 
@@ -127,3 +127,12 @@ server.
   that can take a tunnel; generated domains on a direct server stay on
   its IP.
 
+
+## Amendment (2026-11-17): TXT records for DNS-01
+
+For a direct server's base domain in a platform zone, Dock writes the
+ACME DNS-01 challenge records (`TXT _acme-challenge.<base>`, with its
+`dock:<install id>` comment) while it obtains the base's wildcard
+certificate, and deletes them once the CA has checked them
+([0090](0090-wildcard-certificates.md)). They point nothing anywhere;
+records others made at that name are left alone.

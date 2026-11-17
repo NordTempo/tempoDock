@@ -362,7 +362,9 @@ func (o offlineRuntime) RunJob(context.Context, node.JobSpec) (node.JobResult, e
 func (o offlineRuntime) Build(context.Context, node.BuildRequest) (node.Built, error) {
 	return node.Built{}, o.err
 }
-func (o offlineRuntime) ApplyRoutes(context.Context, []node.Route) error { return o.err }
+func (o offlineRuntime) ApplyRoutes(context.Context, []node.Route, []node.Certificate) error {
+	return o.err
+}
 func (o offlineRuntime) CheckDomain(context.Context, string) (node.DomainCheck, error) {
 	return node.DomainCheck{}, o.err
 }

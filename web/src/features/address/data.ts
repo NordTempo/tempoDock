@@ -12,6 +12,7 @@ import type { components } from "../../api/schema";
 // "Check again" is a refetch; nothing polls.
 
 export type Address = components["schemas"]["Address"];
+export type Wildcard = components["schemas"]["Wildcard"];
 
 export const addressKey = ["address"] as const;
 
@@ -39,5 +40,18 @@ export function useRemoveAddress() {
   return useMutation({
     mutationFn: () => body(api.DELETE("/api/v1/address")),
     onSuccess: (a) => queryClient.setQueryData(addressKey, a),
+  });
+}
+
+/**
+ * Tries failing wildcard certificates again (ADR 0090), with every other
+ * failed Cloudflare change: `dock cloudflare retry`. The worker runs in
+ * the background, so the address is read again once it was asked.
+ */
+export function useRetryWildcards() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => body(api.POST("/api/v1/cloudflare/retry")),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: addressKey }),
   });
 }
