@@ -160,6 +160,24 @@ jobs:
           flags=()
           [[ "$GITHUB_REF_NAME" != *-* ]] || flags+=(--prerelease)
           gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes --title "$GITHUB_REF_NAME" "${flags[@]}"
+      # `brew install nordtempo/tap/dock`: the tap's formula points at this
+      # release's dock-cli builds, with their SHA-256 from the SHA256SUMS
+      # signed above. Not for pre-releases. HOMEBREW_TAP_TOKEN can write to
+      # NordTempo/homebrew-tap only; until it is set, the tap keeps its
+      # formula and this step says so.
+      - name: Update the Homebrew tap
+        if: github.ref_type == 'tag' && !contains(github.ref_name, '-')
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::notice::HOMEBREW_TAP_TOKEN isn't set; NordTempo/homebrew-tap keeps its formula"
+            exit 0
+          fi
+          scripts/release/brew-formula.sh "$VERSION" dist/SHA256SUMS > "$RUNNER_TEMP/dock.rb"
+          path=repos/NordTempo/homebrew-tap/contents/Formula/dock.rb
+          sha="$(gh api "$path" --jq .sha 2>/dev/null || true)"
+          gh api -X PUT "$path" -f message="feat: dock $VERSION" -f content="$(base64 -w0 < "$RUNNER_TEMP/dock.rb")" ${sha:+-f sha="$sha"} > /dev/null
       - name: Keep the dry run's dist
         if: github.ref_type != 'tag'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

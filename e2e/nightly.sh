@@ -9,7 +9,8 @@
 #      them, as a user would;
 #   3. updates them to that build with `dock update apply` while a hammer
 #      sends requests to an app on each server: zero may fail;
-#   4. runs the e2e scenarios (SUITE below), each on its own, without retries;
+#   4. runs the e2e scenarios (SUITE below), each on its own, without retries,
+#      then e2e/fresh-install.sh on bare servers of its own;
 #   5. tears the servers down.
 #
 # A failure opens (or comments on) one GitHub issue labelled `nightly` and
@@ -131,6 +132,10 @@ inner() {
 	source e2e/lib.sh
 	step update update_with_soak "$nv" || return 1
 	scenarios
+	# The build installed fresh on bare Debian and Ubuntu servers of their
+	# own (slot e2e-nightly-fresh), piped as the README says.
+	step fresh-install env E2E_RELEASE_DIR="$RUN_DIR/release/$nv" DOCK_TRUSTED_KEYS="$(nightly_pub)" \
+		E2E_FRESH_SLOT=e2e-nightly-fresh E2E_FRESH_SUBNET=10.250.252.0/24 timeout 45m e2e/fresh-install.sh
 }
 
 # step NAME CMD... runs CMD with its output in NAME.log and a row in results.tsv.

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -112,6 +113,9 @@ This updates the CLI only; ` + "`dock update`" + ` updates the platform.`,
 				return err
 			}
 			if v.From != v.To {
+				if err := notHomebrew(exe, v.To); err != nil {
+					return err
+				}
 				if err := writableDir(exe, v.To); err != nil {
 					return err
 				}
@@ -224,6 +228,19 @@ func writableDir(exe, version string) error {
 	}
 	_ = f.Close()
 	return os.Remove(f.Name())
+}
+
+// notHomebrew refuses to replace a binary Homebrew installed (it lives in
+// a Cellar): Homebrew would no longer know which version it has.
+func notHomebrew(exe, version string) error {
+	if !strings.Contains(filepath.ToSlash(exe), "/Cellar/dock/") {
+		return nil
+	}
+	return &output.Error{
+		Exit:    output.ExitError,
+		Message: "this dock was installed with Homebrew, which updates it",
+		Hint:    fmt.Sprintf("Run `brew upgrade dock` for the latest release. For %s exactly: `brew uninstall dock`, then `curl -fsSL https://dock.nordtempo.com/cli.sh | DOCK_VERSION=%s sh`.", version, version),
+	}
 }
 
 // unwritable is the error for a binary in a directory this user can't

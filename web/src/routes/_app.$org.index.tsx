@@ -16,6 +16,7 @@ import { openCreate } from "../features/create/open";
 import { errorsQuery } from "../features/errors/data";
 import { publishState, statusQueries } from "../features/status/data";
 import { useOrg } from "../shell/location";
+import { cliInstallLine } from "../ui/cliInstall";
 import { ago, plural } from "../ui/format";
 import { Icon } from "../ui/icons";
 import {
@@ -280,7 +281,10 @@ function NoProjects() {
   const server = useServersIfOperator().find((s) => s.local)?.name;
   const canCreate = canCreateProject(useSession());
   const steps = [
-    [`dock login ${window.location.origin}`, "Sign in from your terminal."],
+    [
+      cliInstallLine(window.location.origin),
+      "Installs the dock CLI (macOS, Linux or WSL) and signs you in. Have it already: dock login.",
+    ],
     [
       "dock project create my-app",
       "Creates the project with a production environment.",

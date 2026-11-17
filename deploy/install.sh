@@ -4,10 +4,18 @@
 # control plane (API, UI, SQLite; the default) or a node that joins one
 # (--node, ADR 0014).
 #
+#   curl -fsSL https://dock.nordtempo.com/install.sh | sudo bash
+#   curl -fsSL https://dock.nordtempo.com/install.sh | sudo bash -s -- --yes --uninstall
 #   sudo DOCK_BINARY=./dock-linux-amd64 ./deploy/install.sh
 #   sudo DOCK_BINARY=./dock-linux-amd64 NODE_JOIN_TOKEN=dockjoin1_... ./deploy/install.sh --node
 #   sudo ./deploy/install.sh                               # downloads the release's binary
 #   sudo DOCK_BINARY=./dock-linux-amd64 ./deploy/install.sh --restore /root/dock-backup.tar.gz
+#
+# Piped, with no deploy/ directory beside it, the script downloads the
+# release's install tarball and binary, checks them against its signed
+# SHA256SUMS (ADR 0088) and runs that release's install.sh. Docker Engine
+# and iptables are installed when missing, on Debian and Ubuntu, once you
+# agree (or --yes).
 #
 # Re-running is safe: data is kept, binaries and units are replaced (that is
 # also how you upgrade; a node is upgraded as a node). config.toml is written
@@ -16,6 +24,12 @@
 # apply`: dock-update.service runs this script from the new release (ADR 0028).
 #
 # Options:
+#   --yes         install missing prerequisites (Docker Engine, iptables) without asking,
+#                 and don't ask for the admin's email or the apps' domain
+#   --uninstall   remove Dock: its services, binaries, containers and the apps'
+#                 containers. Its data (/var/lib/dock, /etc/dock, volumes) stays,
+#                 so installing again brings the projects back; then redeploy
+#   --purge       with --uninstall: remove the data too. Nothing of Dock is left
 #   --node        install as a node: `dock node` instead of `dock serve`. On a
 #                 control plane retired by `dock admin backup --move`, this turns
 #                 it into a node (with NODE_JOIN_TOKEN): its old data is moved aside
@@ -31,11 +45,21 @@
 #   DOCK_VERSION  without DOCK_BINARY: the release to download, checked against its
 #                 signed SHA256SUMS (default: this release tarball's version, else the latest)
 #   DOCK_REQUIRE_SIGNATURE  "1" fails that download when its signature can't be
-#                 checked here (it needs OpenSSL 3: Debian 12, Ubuntu 22.04 and later)
+#                 checked here (it needs OpenSSL 3: Debian 12, Ubuntu 22.04 and later).
+#                 Piped, it defaults to 1; "0" accepts SHA256SUMS alone
+#   DOCK_ADMIN_EMAIL  the first admin's email, the console login (asked on a fresh
+#                 install with a terminal; default admin@localhost)
+#   DOCK_YES      "1" is --yes
 #   GITHUB_TOKEN  for that download from a private repository: a token that can read its releases
+#   DOCK_RELEASE_DIR  take the release from this directory instead of GitHub: its
+#                 dock-install-<version>.tar.gz, dock-linux-<arch>, SHA256SUMS and
+#                 SHA256SUMS.sig, as `make release-local` or e2e/nightly.sh build them
+#   DOCK_TRUSTED_KEYS  more release keys to trust (base64 Ed25519, space separated),
+#                 as [updates] trusted_keys: for builds signed with your own key
 #   CADDY_VERSION     Caddy release to install (default below)
 #   PUBLIC_IP         address users point DNS at (default: auto-detect; empty on tunnel servers)
-#   BASE_DOMAIN       base for generated hostnames, needs wildcard DNS (optional)
+#   BASE_DOMAIN       base for generated hostnames, needs wildcard DNS (optional; asked
+#                     on a fresh install with a terminal)
 #   DISABLE_TLS       "true" serves plain HTTP only: private LAN/Tailscale setups
 #   CLOUDFLARE_TUNNEL_TOKEN  run a Cloudflare Tunnel (ADR 0013): installs cloudflared
 #                     and dock-cloudflared.service, sets [ingress] mode = "cloudflare_tunnel"
@@ -71,9 +95,19 @@ CLOUDFLARED_VERSION="${CLOUDFLARED_VERSION:-2026.10.3}"
 # Pinned by digest; the tag is for humans.
 BUILDKIT_IMAGE="moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c"
 REGISTRY_IMAGE="registry:3.1.2@sha256:be9a7062dd7e3316e5c0368e42740dc991a9ceb5d382317675a8738db0112af0"
-SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The release's deploy/ directory, with systemd/ beside this script. Piped
+# (curl | bash), there is none: bootstrap fetches it.
+SRC_DIR=""
+[[ ! -f "${BASH_SOURCE[0]:-}" ]] || SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Releases (.github/workflows/release.yml) are downloaded from here.
 RELEASE_REPO=NordTempo/tempoDock
+# The one-line installs: this script and install-cli.sh from the latest
+# release, through the site's redirects (site/Caddyfile).
+INSTALL_URL=https://dock.nordtempo.com/install.sh
+# The release whose asset this is: scripts/release/build.sh sets it in the
+# release's install.sh, so a piped install of it installs that release.
+RELEASE_VERSION=""
+CLI_URL=https://dock.nordtempo.com/cli.sh
 # Dock's release signing keys (ADR 0088), as in internal/update/sign.go:
 # "<key id> <raw Ed25519 public key, base64>" per line. Releases from
 # FIRST_SIGNED on are signed.
@@ -102,7 +136,8 @@ warn() { printf 'warning: %s\n' "$*" >&2; }
 # Temporary files, removed on exit.
 staged=""
 download_dir=""
-cleanup() { rm -rf ${staged:+"$staged"} ${download_dir:+"$download_dir"} ${old_config:+"$old_config"} ${merged:+"$merged"}; }
+bootstrap_err=""
+cleanup() { rm -rf ${staged:+"$staged"} ${download_dir:+"$download_dir"} ${old_config:+"$old_config"} ${merged:+"$merged"} ${bootstrap_err:+"$bootstrap_err"}; }
 trap cleanup EXIT
 
 # github CURL-ARGS... runs curl against the GitHub API, with GITHUB_TOKEN if set.
@@ -128,7 +163,7 @@ signature_required() {
 # verify_sums DIR VERSION checks DIR/SHA256SUMS against DIR/SHA256SUMS.sig
 # (missing when the release has none) with openssl, as dock does.
 verify_sums() {
-  local dir=$1 version=$2 id key line
+  local dir=$1 version=$2 id key line keys
   if [[ ! -s "$dir/SHA256SUMS.sig" ]]; then
     ! signature_required "$version" \
       || die "release $version has no SHA256SUMS.sig; releases from $FIRST_SIGNED on are signed, so don't install this one: it may have been tampered with"
@@ -141,6 +176,11 @@ verify_sums() {
     warn "can't check the release's signature without OpenSSL 3; checked against its SHA256SUMS only. To check where it was built: gh attestation verify dock-linux-$ARCH --repo $RELEASE_REPO"
     return 0
   fi
+  keys="$RELEASE_KEYS"
+  for key in ${DOCK_TRUSTED_KEYS:-}; do
+    id="$(printf '%s' "$key" | openssl base64 -d -A | sha256sum | cut -c1-16)"
+    keys+=$'\n'"$id $key"
+  done
   while read -r id key; do
     line="$(grep "^$id " "$dir/SHA256SUMS.sig")" || continue
     printf '%s' "${line#* }" | openssl base64 -d -A > "$dir/sig.bin" || continue
@@ -148,23 +188,46 @@ verify_sums() {
     if openssl pkeyutl -verify -pubin -inkey "$dir/key.pem" -rawin -in "$dir/SHA256SUMS" -sigfile "$dir/sig.bin" > /dev/null 2>&1; then
       return 0
     fi
-  done <<< "$RELEASE_KEYS"
+  done <<< "$keys"
   die "release $version's SHA256SUMS isn't signed by a Dock release key; don't install it: it may have been tampered with"
 }
 
-# download_dock VERSION DIR downloads release VERSION's (or the latest
-# release's) dock-linux-$ARCH into DIR and checks it against SHA256SUMS
-# and its signature. Through the API, because release download links
-# don't take a token.
-download_dock() {
-  local version=$1 dir=$2 path name url
+# release_info VERSION DIR reads release VERSION ("latest" for the newest)
+# from GitHub's API into DIR/release.json and prints its tag. Through the
+# API, because release download links don't take a token.
+release_info() {
+  local version=$1 dir=$2 path
+  if [[ -n "${DOCK_RELEASE_DIR:-}" ]]; then
+    if [[ "$version" == latest ]]; then
+      path="$(cd "$DOCK_RELEASE_DIR" && ls dock-install-*.tar.gz 2> /dev/null | head -n1)"
+      version="${path#dock-install-}" version="${version%.tar.gz}"
+    fi
+    [[ -n "$version" && -f "$DOCK_RELEASE_DIR/dock-install-$version.tar.gz" ]] \
+      || die "$DOCK_RELEASE_DIR has no dock-install-<version>.tar.gz${DOCK_VERSION:+ for $DOCK_VERSION}"
+    printf '%s\n' "$version"
+    return
+  fi
   path="releases/tags/$version"
   [[ "$version" != latest ]] || path=releases/latest
   github "https://api.github.com/repos/$RELEASE_REPO/$path" > "$dir/release.json" \
     || die "could not read release $version of $RELEASE_REPO; set GITHUB_TOKEN to a token that can read it (sudo --preserve-env=GITHUB_TOKEN), or download it yourself and set DOCK_BINARY"
   version="$(grep -o '"tag_name": *"[^"]*"' "$dir/release.json" | head -n1 | sed 's/.*"\([^"]*\)"$/\1/')"
   [[ -n "$version" ]] || die "GitHub's answer for the release names no version"
-  for name in "dock-linux-$ARCH" SHA256SUMS SHA256SUMS.sig; do
+  printf '%s\n' "$version"
+}
+
+# download_assets DIR VERSION NAME... downloads the NAMEd assets of the
+# release in DIR/release.json (release_info) into DIR, and checks each
+# against the release's SHA256SUMS and that file's signature.
+download_assets() {
+  local dir=$1 version=$2 name url
+  shift 2
+  for name in "$@" SHA256SUMS SHA256SUMS.sig; do
+    if [[ -n "${DOCK_RELEASE_DIR:-}" ]]; then
+      [[ -f "$DOCK_RELEASE_DIR/$name" || "$name" == SHA256SUMS.sig ]] || die "$DOCK_RELEASE_DIR has no $name"
+      [[ ! -f "$DOCK_RELEASE_DIR/$name" ]] || cp "$DOCK_RELEASE_DIR/$name" "$dir/$name"
+      continue
+    fi
     # An asset's "url" comes just before its "name" in GitHub's JSON.
     # shellcheck disable=SC2020 # one newline per character, on purpose
     url="$(tr ',{}[]' '\n\n\n\n\n' < "$dir/release.json" | awk -v name="$name" '
@@ -175,9 +238,10 @@ download_dock() {
     [[ -z "$url" ]] || github -H "Accept: application/octet-stream" -o "$dir/$name" "$url" || die "could not download $name"
   done
   verify_sums "$dir" "$version"
-  (cd "$dir" && grep -E "  dock-linux-$ARCH\$" SHA256SUMS | sha256sum --check --quiet --strict) \
-    || die "dock-linux-$ARCH does not match the release's SHA256SUMS"
-  chmod 0755 "$dir/dock-linux-$ARCH"
+  for name in "$@"; do
+    (cd "$dir" && awk -v n="$name" '$2 == n' SHA256SUMS | sha256sum --check --quiet --strict) \
+      || die "$name does not match the release's SHA256SUMS"
+  done
 }
 
 # toml_get_raw FILE SECTION KEY prints KEY's value in [SECTION] ("" is the
@@ -242,430 +306,211 @@ tunnel_id() {
   printf '%s\n' "${BASH_REMATCH[1]}"
 }
 
-node_mode=false
-restore=""
-old_server_node=false
-while (( $# )); do
-  case "$1" in
-    --node) node_mode=true ;;
-    --restore)
-      [[ -n "${2:-}" ]] || die "--restore needs the archive from \`dock admin backup\`"
-      restore="$(realpath "$2")"; shift ;;
-    --old-server-becomes-node) old_server_node=true ;;
-    -h|--help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 0 ;;
-    *) die "unknown option $1 (see --help)" ;;
-  esac
-  shift
-done
-[[ -n "${NODE_JOIN_TOKEN:-}" ]] && node_mode=true
+# tty_open opens the terminal on fd 3 for questions; false when there is
+# none (piped into ssh, the updater, CI). Piped installs read the script
+# from stdin, so questions always go to /dev/tty.
+tty_open() { { exec 3</dev/tty; } 2>/dev/null; }
 
-[[ $EUID -eq 0 ]] || die "run as root (sudo)"
-[[ "$(uname -s)" == Linux ]] || die "Linux only"
-case "$(uname -m)" in
-  x86_64) ARCH=amd64 ;;
-  aarch64|arm64) ARCH=arm64 ;;
-  *) die "unsupported architecture $(uname -m)" ;;
-esac
+# confirm QUESTION is true with --yes, else asks on the terminal (Enter is
+# yes). Without a terminal it is false.
+confirm() {
+  local answer=""
+  [[ "$assume_yes" == false ]] || return 0
+  tty_open || return 1
+  read -r -u 3 -p "$1 [Y/n] " answer || true
+  exec 3<&-
+  [[ "${answer:-y}" == [Yy]* ]]
+}
 
-# A server is one or the other; re-runs keep what it is. The exception is
-# a control plane that moved away (`dock admin backup --move` left its
-# marker): it may become a node of the new one, keeping its apps.
-[[ -f /etc/systemd/system/dock-node.service ]] && node_mode=true
-convert=false
-if [[ "$node_mode" == true && -f /etc/systemd/system/dock.service ]]; then
-  [[ -f "$MOVED" ]] \
-    || die "this server runs the control plane (dock.service); a node must be a separate server, or move the control plane away first (docs/guide/install.md#moving-the-control-plane)"
-  [[ -n "${NODE_JOIN_TOKEN:-}" ]] \
-    || die "set NODE_JOIN_TOKEN to turn this retired control plane into a node: run \`dock server add <name>\` against the new control plane"
-  convert=true
-fi
-if [[ -n "$restore" ]]; then
-  [[ "$node_mode" == false ]] || die "--restore installs a control plane; leave out --node and NODE_JOIN_TOKEN"
-  [[ -r "$restore" ]] || die "can't read $restore"
-  [[ ! -f /var/lib/dock/dock.db ]] \
-    || die "this server already has a control plane database (/var/lib/dock/dock.db); --restore is for a fresh server"
-elif [[ "$old_server_node" == true ]]; then
-  die "--old-server-becomes-node goes with --restore"
-fi
-if [[ "$node_mode" == true ]]; then
-  [[ -n "${NODE_JOIN_TOKEN:-}" || -f "$NODE_STATE" ]] \
-    || die "set NODE_JOIN_TOKEN to a join token: run \`dock server add <name>\` against the control plane"
-  for v in LISTEN NODE_LISTEN REGISTRY REGISTRY_NAME REGISTRY_LISTEN REGISTRY_STORAGE; do
-    [[ -z "${!v:-}" ]] || die "$v is for the control plane; this is a node install"
-  done
-fi
+# ask QUESTION DEFAULT prints the answer typed on the terminal, or DEFAULT
+# with --yes, without a terminal or when nothing is typed.
+ask() {
+  local answer=""
+  if [[ "$assume_yes" == false ]] && tty_open; then
+    read -r -u 3 -p "$1 " answer || true
+    exec 3<&-
+  fi
+  printf '%s\n' "${answer:-$2}"
+}
 
-# tunnel: the server is in tunnel mode. tunnel_unit: this script runs its
-# cloudflared (dock-cloudflared.service); without it, Dock does (ADR 0036).
-tunnel=false
-tunnel_unit=false
-tunnel_hostname=""
-if [[ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]]; then
-  tunnel=true tunnel_unit=true
-  tid="$(tunnel_id "$CLOUDFLARE_TUNNEL_TOKEN")" \
-    || die "CLOUDFLARE_TUNNEL_TOKEN is not a tunnel token; copy it from the tunnel's install command in the Cloudflare dashboard"
-  tunnel_hostname="$tid.cfargotunnel.com"
-elif [[ -f "$TUNNEL_ENV" ]]; then
-  tunnel=true tunnel_unit=true
-fi
-case "${INGRESS:-}" in
-  "" | direct) ;;
-  cloudflare_tunnel) tunnel=true ;;
-  *) die "INGRESS must be direct or cloudflare_tunnel" ;;
-esac
-if [[ -f "$CONF" && -z "$restore" && "$(toml_get "$CONF" ingress mode)" == cloudflare_tunnel ]]; then
-  [[ "${INGRESS:-}" != direct ]] \
-    || die "this server is in tunnel mode; install.sh doesn't switch it to direct: set [ingress] mode = \"direct\" and public_ip in $CONF, then restart dock"
-  tunnel=true
-fi
-
-case "$CLOUDFLARED_VERSION/$ARCH" in
-  2026.10.3/amd64) cloudflared_sha256=053b80b0a23031a038fdbf3c073f59f82b8f1f152aa67971d7383ffafc0dbab0 ;;
-  2026.10.3/arm64) cloudflared_sha256=89297ebfb9e8c99c0dc013a1140601453cf3798d8306c5591651f4a3f5210be8 ;;
-  *) cloudflared_sha256="${CLOUDFLARED_SHA256:-}" ;;
-esac
-if [[ "$tunnel_unit" == true && -z "$cloudflared_sha256" ]]; then
-  die "set CLOUDFLARED_SHA256 to the SHA-256 of cloudflared-linux-$ARCH from the $CLOUDFLARED_VERSION release notes"
-fi
-
-command -v docker >/dev/null || die "Docker is not installed. Install Docker Engine first: https://docs.docker.com/engine/install/"
-docker info >/dev/null 2>&1 || die "Docker is installed but not running: systemctl enable --now docker"
-command -v systemctl >/dev/null || die "systemd is required"
-command -v iptables >/dev/null || die "iptables is required for the app firewall: apt install iptables"
-
-# Dock runs the tunnel in its dock-cloudflared container once it adopted it
-# (ADR 0036): this script's cloudflared is then a second connector of the
-# same tunnel, and goes.
-if [[ "$tunnel_unit" == true && -z "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]] \
-  && [[ -n "$(docker ps -q --filter name=^dock-cloudflared\$ --filter label=dock.role=cloudflared)" ]]; then
-  say "==> cloudflare tunnel: Dock runs it now; removing dock-cloudflared.service"
-  systemctl disable --now dock-cloudflared.service 2>/dev/null || true
-  rm -f /etc/systemd/system/dock-cloudflared.service "$TUNNEL_ENV" /usr/local/bin/cloudflared
-  systemctl daemon-reload
-  tunnel_unit=false
-fi
-
-if [[ -z "${DOCK_BINARY:-}" ]]; then
-  dock_version="${DOCK_VERSION:-$(cat "$SRC_DIR/VERSION" 2>/dev/null || echo latest)}"
-  say "==> download dock $dock_version"
+# bootstrap is `curl | sudo bash`: this script came without its release.
+# It downloads the release's install tarball and server binary, checks
+# both against the signed SHA256SUMS (required here, unless
+# DOCK_REQUIRE_SIGNATURE=0) and runs that release's install.sh with the
+# same arguments.
+bootstrap() {
+  local version dir rc=0
   download_dir="$(mktemp -d)"
-  download_dock "$dock_version" "$download_dir"
-  DOCK_BINARY="$download_dir/dock-linux-$ARCH"
-fi
-[[ -x "$DOCK_BINARY" ]] || die "$DOCK_BINARY is not an executable file"
+  dir=$download_dir
+  version="$(release_info "${DOCK_VERSION:-${RELEASE_VERSION:-latest}}" "$dir")"
+  say "==> download dock $version"
+  DOCK_REQUIRE_SIGNATURE="${DOCK_REQUIRE_SIGNATURE:-1}" \
+    download_assets "$dir" "$version" "dock-install-$version.tar.gz" "dock-linux-$ARCH"
+  tar -xzf "$dir/dock-install-$version.tar.gz" -C "$dir"
+  chmod 0755 "$dir/dock-linux-$ARCH"
+  DOCK_BINARY="$dir/dock-linux-$ARCH" DOCK_VERSION="$version" \
+    bash "$dir/deploy/install.sh" "$@" < /dev/null || rc=$?
+  exit "$rc"
+}
 
-docker_version="$(docker version --format '{{.Server.Version}}' 2>/dev/null || true)"
-if [[ "${docker_version%%.*}" =~ ^[0-9]+$ ]] && (( ${docker_version%%.*} < 28 )); then
-  say "warning: Docker $docker_version is older than 28. Before 28, ports published on"
-  say "         127.0.0.1 are reachable from the LAN. Upgrade Docker."
-fi
-
-say "==> users"
-# dock runs the daemon; its unit adds the docker group to that process
-# only. dock-caddy runs Caddy, with no Docker access at all.
-id dock >/dev/null 2>&1 || useradd --system --home-dir /var/lib/dock --shell /usr/sbin/nologin dock
-id dock-caddy >/dev/null 2>&1 || useradd --system --home-dir /var/lib/dock-caddy --shell /usr/sbin/nologin dock-caddy
-# Older installs put dock in the docker group and ran Caddy as dock.
-if id -nG dock | tr ' ' '\n' | grep -qx docker; then
-  gpasswd -d dock docker >/dev/null
-fi
-if [[ -d /var/lib/dock-caddy ]]; then
-  chown -R dock-caddy:dock-caddy /var/lib/dock-caddy
-fi
-
-say "==> dock binary"
-install -m 0755 "$DOCK_BINARY" /usr/local/bin/dock.new
-mv /usr/local/bin/dock.new /usr/local/bin/dock
-
-say "==> caddy $CADDY_VERSION"
-if ! /usr/local/bin/caddy version 2>/dev/null | grep -q "v$CADDY_VERSION"; then
-  tmp="$(mktemp -d)"
-  base="https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}"
-  tarball="caddy_${CADDY_VERSION}_linux_${ARCH}.tar.gz"
-  curl -fsSLo "$tmp/$tarball" "$base/$tarball"
-  curl -fsSLo "$tmp/checksums.txt" "$base/caddy_${CADDY_VERSION}_checksums.txt"
-  (cd "$tmp" && grep -E "  ${tarball}\$" checksums.txt | sha512sum --check --quiet --strict) \
-    || die "$tarball does not match Caddy's published checksum"
-  tar -xzf "$tmp/$tarball" -C "$tmp" caddy
-  install -m 0755 "$tmp/caddy" /usr/local/bin/caddy.new
-  mv /usr/local/bin/caddy.new /usr/local/bin/caddy
-  rm -rf "$tmp"
-fi
-
-tunnel_changed=false
-if [[ "$tunnel_unit" == true ]]; then
-  say "==> cloudflared $CLOUDFLARED_VERSION"
-  if ! /usr/local/bin/cloudflared --version 2>/dev/null | grep -q "version $CLOUDFLARED_VERSION "; then
-    tmp="$(mktemp -d)"
-    curl -fsSLo "$tmp/cloudflared" \
-      "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-${ARCH}"
-    # Cloudflare publishes checksums only in the release notes, so the
-    # default version's are pinned above.
-    printf '%s  %s\n' "$cloudflared_sha256" "$tmp/cloudflared" | sha256sum --check --quiet --strict \
-      || die "cloudflared-linux-$ARCH does not match the expected SHA-256"
-    install -m 0755 "$tmp/cloudflared" /usr/local/bin/cloudflared.new
-    mv /usr/local/bin/cloudflared.new /usr/local/bin/cloudflared
-    rm -rf "$tmp"
-    tunnel_changed=true
-  fi
-  if [[ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]]; then
-    env_new="TUNNEL_TOKEN=$CLOUDFLARE_TUNNEL_TOKEN"
-    if [[ ! -f "$TUNNEL_ENV" ]] || [[ "$(cat "$TUNNEL_ENV")" != "$env_new" ]]; then
-      install -d -m 0751 -o root -g dock /etc/dock
-      (umask 077 && printf '%s\n' "$env_new" > "$TUNNEL_ENV")
-      tunnel_changed=true
+# ensure_prereqs makes sure Docker runs and iptables is there. Missing
+# ones are installed with apt on Debian and Ubuntu (Docker Engine from
+# Docker's own repository, as docs.docker.com does it) once the user
+# agrees; elsewhere it says what to install.
+ensure_prereqs() {
+  local missing=() id="" like="" codename=""
+  command -v systemctl > /dev/null || die "systemd is required"
+  command -v docker > /dev/null || missing+=("Docker Engine")
+  command -v iptables > /dev/null || missing+=(iptables)
+  if (( ${#missing[@]} )); then
+    local need="${missing[0]}"
+    (( ${#missing[@]} == 1 )) || need+=" and ${missing[1]}"
+    if [[ -r /etc/os-release ]]; then
+      # shellcheck disable=SC1091
+      id="$(. /etc/os-release && printf '%s' "${ID:-}")"
+      like="$(. /etc/os-release && printf '%s' "${ID_LIKE:-}")"
+      codename="$(. /etc/os-release && printf '%s' "${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}")"
     fi
+    [[ "$id" == ubuntu || "$like" == *ubuntu* ]] && id=ubuntu
+    [[ "$id" == debian || "$id" == ubuntu ]] && [[ -n "$codename" ]] \
+      || die "this server needs $need: install Docker Engine 28 or newer (https://docs.docker.com/engine/install/) and iptables, then run this again"
+    confirm "This server needs $need. Install with apt (Docker Engine from download.docker.com)?" \
+      || die "this server needs $need; run again with --yes to install it (curl ... | sudo bash -s -- --yes), or install Docker Engine yourself: https://docs.docker.com/engine/install/"
+    install_prereqs "$id" "$codename"
   fi
-fi
-
-# A registry this run turns on is new: install.sh may ask where it keeps
-# its images (ask_registry_storage).
-registry_was_enabled=false
-if [[ -f "$CONF" && "$(toml_get "$CONF" registry enabled)" == true ]]; then
-  registry_was_enabled=true
-fi
-case "${REGISTRY_STORAGE:-}" in
-  ""|local|s3) ;;
-  *) die "REGISTRY_STORAGE must be local or s3" ;;
-esac
-[[ -z "$restore" || -z "${REGISTRY_STORAGE:-}" ]] \
-  || die "a restored control plane keeps its registry storage from the backup; leave out REGISTRY_STORAGE (dock registry migrate moves the images later)"
-
-say "==> config"
-# 0751: Caddy (dock-caddy) reads caddy.json in here; config.toml stays 0640.
-install -d -m 0751 -o root -g dock /etc/dock
-# Changes go to a staged copy first and only replace config.toml once the
-# new binary accepts it.
-staged="$(mktemp /etc/dock/.config.toml.XXXXXX)"
-if [[ -f "$CONF" && -z "$restore" ]]; then
-  cat "$CONF" > "$staged"
-else
-  public_ip=""
-  if [[ "$tunnel" == false ]]; then
-    public_ip="${PUBLIC_IP:-$(curl -fsS4 --max-time 5 https://api.ipify.org || true)}"
+  if ! docker info > /dev/null 2>&1; then
+    say "==> start docker"
+    systemctl enable --now docker.service > /dev/null 2>&1 || true
+    for _ in $(seq 30); do docker info > /dev/null 2>&1 && break; sleep 1; done
+    docker info > /dev/null 2>&1 || die "Docker is installed but doesn't start; see: journalctl -u docker"
   fi
-  if [[ "$node_mode" == true ]]; then
-    cat > "$staged" <<CONF
-# Tempo Dock node config (dock node). Every field has a default; see
-# internal/config. The link to the control plane is in $NODE_STATE.
-data_dir = "/var/lib/dock"
-internal_listen = "127.0.0.1:7071"
-public_ip = "$public_ip"
-# Reported to the control plane when this server joins; after that,
-# \`dock server update\` there decides.
-base_domain = "${BASE_DOMAIN:-}"
-CONF
+}
+
+# install_prereqs ID CODENAME installs iptables and, when missing, Docker
+# Engine from https://download.docker.com/linux/ID (debian or ubuntu).
+install_prereqs() {
+  local id=$1 codename=$2 log=/var/log/dock-install-apt.log
+  say "==> apt: iptables$(command -v docker > /dev/null || echo ', docker-ce') (log: $log)"
+  export DEBIAN_FRONTEND=noninteractive
+  { apt-get update -q && apt-get install -y -q ca-certificates curl iptables; } < /dev/null >> "$log" 2>&1 \
+    || { tail -n 15 "$log" >&2; die "apt failed (above; all of it in $log)"; }
+  if ! command -v docker > /dev/null; then
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL "https://download.docker.com/linux/$id/gpg" -o /etc/apt/keyrings/docker.asc
+    chmod a+r /etc/apt/keyrings/docker.asc
+    printf 'deb [arch=%s signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/%s %s stable\n' \
+      "$(dpkg --print-architecture)" "$id" "$codename" > /etc/apt/sources.list.d/docker.list
+    apt-get update -q < /dev/null >> "$log" 2>&1 \
+      || die "apt can't read Docker's repository for $id $codename (see $log); install Docker Engine yourself: https://docs.docker.com/engine/install/"
+    apt-get install -y -q docker-ce docker-ce-cli containerd.io < /dev/null >> "$log" 2>&1 \
+      || { tail -n 15 "$log" >&2; die "installing Docker Engine failed (above; all of it in $log)"; }
+  fi
+}
+
+# ask_base_domain PUBLIC_IP asks a fresh install's operator for the base
+# of generated app hostnames and prints it, lower case; empty skips it
+# (BASE_DOMAIN sets it without asking; `dock server update --base-domain`
+# later).
+ask_base_domain() {
+  local domain target=${1:-this server}
+  [[ "$assume_yes" == false ]] && tty_open || return 0
+  exec 3<&-
+  say "" >&2
+  say "Apps can get generated hostnames, <app>-<random>.<domain>, under a domain whose" >&2
+  say "wildcard DNS record points here: *.apps.example.com  A  $target" >&2
+  domain="$(ask "Domain for apps (Enter to skip, set it later):" "")"
+  domain="${domain#\*.}"
+  printf '%s\n' "${domain,,}"
+}
+
+# summary prints how to reach a control plane: the console (with the SSH
+# tunnel to open first when the API listens on loopback only), the first
+# admin's login and token when this run created them, the one line that
+# installs and signs in the CLI on a laptop, and where apps get hostnames.
+summary() {
+  local listen host port console ssh_line public base
+  listen="$(toml_get "$CONF" "" listen)"
+  host="${listen%:*}" port="${listen##*:}"
+  console="http://$listen"
+  public="$(toml_get "$CONF" "" public_ip)"
+  if [[ "$host" == 127.* || "$host" == localhost ]]; then
+    console="http://localhost:$port"
+    ssh_line="ssh -L $port:127.0.0.1:$port ${SUDO_USER:-root}@${public:-$(hostname -I 2> /dev/null | awk '{ print $1 }')}"
+  fi
+  say "Tempo Dock $("/usr/local/bin/dock" --version 2> /dev/null | awk '{ print $NF }') is installed."
+  say ""
+  say "  Console   $console"
+  if [[ -n "${ssh_line:-}" ]]; then
+    say "            The console listens on this server only. On your laptop, open a tunnel first:"
+    say "            $ssh_line"
+  fi
+  if [[ -n "$token" ]]; then
+    say "  Sign in   $admin_email with password ${admin_password:-(see above)} (shown once)"
   else
-    listen="${LISTEN:-}"
-    if [[ -z "$listen" ]]; then
-      ts_ip="$(tailscale ip -4 2>/dev/null | head -1 || true)"
-      listen="${ts_ip:-127.0.0.1}:7070"
+    say "  Sign in   with the admin account from the first install"
+  fi
+  say "  CLI       curl -fsSL $CLI_URL | sh -s -- $console"
+  say "            installs dock on your laptop (macOS, Linux or WSL) and signs it in"
+  base="$(toml_get "$CONF" "" base_domain)"
+  if [[ -n "$base" ]]; then
+    say "  Apps      get hostnames under $base; it needs DNS: *.$base  A  ${public:-<this server>}"
+  else
+    say "  Apps      get hostnames once you set a domain with wildcard DNS to ${public:-this server}:"
+    say "            dock server update $(hostname) --base-domain apps.example.com"
+  fi
+  say "  Updates   the console's Updates page, or dock update"
+  if [[ -n "$token" ]]; then
+    say ""
+    say "  For scripts and CI, an operator token (shown once; store it now):"
+    say "  admin token: $token"
+  fi
+}
+
+# uninstall removes Dock from this server: its units, binaries, kernel
+# setting, the app firewall and every container Dock made (apps included:
+# nothing routes to them once Caddy is gone). With purge it also removes
+# Dock's data, volumes, networks and system users; without, a new install
+# picks the data up again. Docker itself stays.
+uninstall() {
+  local purge=$1 unit
+  say "==> stop dock"
+  for unit in dock.service dock-node.service dock-update.path dock-update.service \
+    dock-cloudflared.service dock-caddy.service; do
+    systemctl disable --now "$unit" 2> /dev/null || true
+  done
+  if command -v docker > /dev/null && docker info > /dev/null 2>&1; then
+    say "==> containers"
+    docker ps -aq --filter label=dock.managed | xargs -r docker rm -f > /dev/null
+    docker rm -f dock-registry dock-buildkit dock-cloudflared > /dev/null 2>&1 || true
+    if [[ "$purge" == true ]]; then
+      docker volume ls -q --filter label=dock.managed | xargs -r docker volume rm -f > /dev/null
+      docker network ls -q --filter label=dock.managed | xargs -r docker network rm > /dev/null
     fi
-    cat > "$staged" <<CONF
-# Tempo Dock daemon config. Every field has a default; see internal/config.
-data_dir = "/var/lib/dock"
-listen = "$listen"
-internal_listen = "127.0.0.1:7071"
-public_ip = "$public_ip"
-base_domain = "${BASE_DOMAIN:-}"
-CONF
   fi
-  cat >> "$staged" <<CONF
-
-[caddy]
-admin_socket = "/run/dock-caddy/admin.sock"
-http_port = 80
-https_port = 443
-disable_tls = ${DISABLE_TLS:-false}
-
-[buildkit]
-enabled = true
-image = "$BUILDKIT_IMAGE"
-memory_mb = 2048
-# 0: half this server's cores, at least two. Builds run at a quarter of
-# the CPU weight of apps, so apps win any contention either way.
-cpus = 0
-
-[network]
-# App networks get a /24 each from this range.
-pool = "10.213.0.0/16"
-# Apps and builds can't reach private addresses (LAN, tailnet) or this
-# server, except these CIDRs. Then: sudo systemctl restart dock-firewall
-allow_private = []
-
-[ingress]
-# direct: public IP, Caddy issues certificates. cloudflare_tunnel: public
-# traffic arrives through cloudflared (ADR 0013).
-mode = "direct"
-tunnel_hostname = ""
-CONF
-  if [[ "$node_mode" == false ]]; then
-    cat >> "$staged" <<CONF
-
-[node]
-# Where other servers connect when they join as nodes, e.g. the Tailscale
-# IP and port 7443. Empty: this server runs everything alone.
-listen = ""
-
-[registry]
-# Image registry for builds and deploys across servers (dock-registry).
-enabled = false
-listen = "127.0.0.1:5000"
-# Its images, unless they are in a bucket (dock registry migrate).
-storage_dir = "/var/lib/dock-registry"
-config_dir = "/etc/dock/registry"
-# The registry's name: the audience of its tokens.
-public_name = ""
-CONF
-  fi
-fi
-
-# A restore keeps the old control plane's config, with the machine's own
-# keys from the new install written above (ADR 0021). The base domain and
-# plain HTTP go with the server's role, so they are kept only when this
-# server takes the old one's place, unless given.
-old_config=""
-if [[ -n "$restore" ]]; then
-  old_config="$(mktemp)"
-  /usr/local/bin/dock admin restore --print-config "$restore" > "$old_config" \
-    || die "$restore is not a backup this dock can restore (see above)"
-  if [[ -s "$old_config" ]]; then
-    keys=("${MACHINE_KEYS[@]}")
-    [[ "$old_server_node" == false && -z "${BASE_DOMAIN+x}" ]] || keys+=(:base_domain)
-    [[ "$old_server_node" == false && -z "${DISABLE_TLS:-}" ]] || keys+=(caddy:disable_tls)
-    merged="$(mktemp /etc/dock/.config.toml.XXXXXX)"
-    cat "$old_config" > "$merged"
-    for k in "${keys[@]}"; do
-      v="$(toml_get_raw "$staged" "${k%%:*}" "${k#*:}")"
-      [[ -z "$v" ]] || toml_set "$merged" "${k%%:*}" "${k#*:}" "$v"
+  say "==> firewall"
+  [[ ! -x /usr/local/bin/dock ]] || /usr/local/bin/dock admin firewall remove > /dev/null 2>&1 || true
+  systemctl disable --now dock-firewall.service 2> /dev/null || true
+  say "==> files"
+  for unit in dock.service dock-node.service dock-caddy.service dock-firewall.service \
+    dock-update.path dock-update.service dock-cloudflared.service; do
+    rm -f "/etc/systemd/system/$unit"
+  done
+  systemctl daemon-reload
+  rm -f /usr/local/bin/dock /usr/local/bin/caddy /usr/local/bin/cloudflared /etc/sysctl.d/90-dock.conf
+  if [[ "$purge" == true ]]; then
+    rm -rf /etc/dock /var/lib/dock /var/lib/dock-caddy /var/lib/dock-registry /var/lib/dock-update
+    for unit in dock dock-caddy dock-registry; do
+      ! id "$unit" > /dev/null 2>&1 || userdel "$unit" 2> /dev/null || true
     done
-    # Nodes need an address here; the old one is on the old server.
-    old_node_listen="$(toml_get "$old_config" node listen)"
-    if [[ -z "${NODE_LISTEN:-}" ]]; then
-      if [[ -n "$old_node_listen" ]]; then
-        ts_ip="$(tailscale ip -4 2>/dev/null | head -1 || true)"
-        [[ -n "$ts_ip" ]] || die "the old control plane took nodes on $old_node_listen; set NODE_LISTEN to this server's address for them, e.g. 100.64.0.20:7443"
-        NODE_LISTEN="$ts_ip:${old_node_listen##*:}"
-      fi
-      toml_set "$merged" node listen "\"${NODE_LISTEN:-}\""
-    fi
-    if [[ "$(toml_get "$old_config" ingress mode)" == cloudflare_tunnel && "$tunnel" == false ]]; then
-      say "warning: the old control plane served apps through a Cloudflare Tunnel and this one serves them directly."
-      say "         Point their DNS at this server, or re-run with CLOUDFLARE_TUNNEL_TOKEN (the same tunnel keeps DNS as it is)."
-    fi
-    mv "$merged" "$staged"
-  fi
-  if [[ "$old_server_node" == true && -z "${NODE_LISTEN:-}" ]]; then
-    die "--old-server-becomes-node needs nodes to reach this server: set NODE_LISTEN, e.g. \"\$(tailscale ip -4):7443\""
-  fi
-fi
-if [[ "$convert" == true ]]; then
-  # A node serves the registry on [registry] listen itself, and takes no nodes.
-  toml_set "$staged" registry enabled false
-  toml_set "$staged" node listen '""'
-fi
-
-if [[ "$tunnel" == true ]]; then
-  toml_set "$staged" ingress mode '"cloudflare_tunnel"'
-  [[ -z "$tunnel_hostname" ]] || toml_set "$staged" ingress tunnel_hostname "\"$tunnel_hostname\""
-  # Caddy is plain HTTP on 127.0.0.1 in this mode regardless; this keeps
-  # app URLs https://, as Cloudflare's edge serves them.
-  toml_set "$staged" caddy disable_tls false
-  # The home IP never goes into DNS or the control plane.
-  toml_set "$staged" "" public_ip '""'
-fi
-[[ -z "${NODE_LISTEN:-}" ]] || toml_set "$staged" node listen "\"$NODE_LISTEN\""
-if [[ "${REGISTRY:-}" == 1 ]]; then
-  toml_set "$staged" registry enabled true
-  # The name only has to be set; this one is as good as any.
-  if [[ -z "${REGISTRY_NAME:-}" && -z "$(toml_get "$staged" registry public_name)" ]]; then
-    REGISTRY_NAME=dock-registry
-  fi
-fi
-[[ -z "${REGISTRY_NAME:-}" ]] || toml_set "$staged" registry public_name "\"$REGISTRY_NAME\""
-[[ -z "${REGISTRY_LISTEN:-}" ]] || toml_set "$staged" registry listen "\"$REGISTRY_LISTEN\""
-
-/usr/local/bin/dock admin caddy-config --config "$staged" > /etc/dock/caddy.json.new \
-  || die "the config above was not accepted; nothing in $CONF was changed"
-if ! cmp -s "$staged" "$CONF"; then
-  chmod 0640 "$staged"
-  chgrp dock "$staged"
-  mv "$staged" "$CONF"
-fi
-# The initial Caddy config only puts the admin API on the Unix socket and
-# serves the 404 page. The daemon loads the real config on start.
-chmod 0644 /etc/dock/caddy.json.new
-mv /etc/dock/caddy.json.new /etc/dock/caddy.json
-
-say "==> kernel"
-# Hand queued connections to the new listener when Caddy reloads, instead of
-# resetting them.
-echo 'net.ipv4.tcp_migrate_req = 1' > /etc/sysctl.d/90-dock.conf
-sysctl -q -p /etc/sysctl.d/90-dock.conf
-
-say "==> buildkit image"
-docker pull -q "$BUILDKIT_IMAGE" >/dev/null
-
-retired=""
-if [[ "$convert" == true ]]; then
-  say "==> retire the control plane"
-  systemctl disable --now dock.service 2>/dev/null || true
-  rm -f /etc/systemd/system/dock.service
-  # The node serves the registry on [registry] listen itself.
-  docker rm -f dock-registry >/dev/null 2>&1 || true
-  # Kept until the new control plane checks out; Railpack's cache stays.
-  retired="/var/lib/dock-retired-$(date +%Y%m%d-%H%M%S)"
-  install -d -m 0700 "$retired"
-  find /var/lib/dock -mindepth 1 -maxdepth 1 ! -name railpack -exec mv -t "$retired" {} +
-fi
-
-say "==> systemd"
-if [[ "$node_mode" == true ]]; then
-  daemon=dock-node.service
-else
-  daemon=dock.service
-fi
-units=("$daemon" dock-caddy.service dock-firewall.service dock-update.path dock-update.service)
-[[ "$tunnel_unit" == false ]] || units+=(dock-cloudflared.service)
-caddy_unit_changed=false
-cmp -s "$SRC_DIR/systemd/dock-caddy.service" /etc/systemd/system/dock-caddy.service || caddy_unit_changed=true
-if [[ "$tunnel_unit" == true ]]; then
-  cmp -s "$SRC_DIR/systemd/dock-cloudflared.service" /etc/systemd/system/dock-cloudflared.service || tunnel_changed=true
-fi
-for unit in "${units[@]}"; do
-  install -m 0644 "$SRC_DIR/systemd/$unit" "/etc/systemd/system/$unit"
-done
-systemctl daemon-reload
-# The daemon stages releases and asks for updates in here; dock-update.path
-# starts the updater when it does (ADR 0028).
-install -d -m 0700 -o dock -g dock /var/lib/dock /var/lib/dock/update
-systemctl enable --now dock-update.path
-
-say "==> firewall"
-systemctl enable dock-firewall.service
-systemctl restart dock-firewall.service \
-  || die "the app firewall failed to apply; see: journalctl -u dock-firewall"
-
-systemctl enable dock-caddy.service
-if [[ "$caddy_unit_changed" == true ]] && systemctl is-active -q dock-caddy.service; then
-  # Picks up unit changes such as the dock-caddy user. Routes come back
-  # from --resume; traffic blips for a moment. Listener changes (tunnel
-  # mode's 127.0.0.1) need no restart: the daemon loads them on start.
-  say "    restarting caddy (unit changed)"
-  systemctl restart dock-caddy.service
-else
-  systemctl start dock-caddy.service
-fi
-
-if [[ "$tunnel_unit" == true ]]; then
-  say "==> cloudflare tunnel"
-  systemctl enable dock-cloudflared.service
-  if [[ "$tunnel_changed" == true ]]; then
-    systemctl restart dock-cloudflared.service
+    say ""
+    say "Tempo Dock is removed, with its data. Docker stays installed."
   else
-    systemctl start dock-cloudflared.service
+    say ""
+    say "Tempo Dock is removed. Its data stays: /etc/dock, /var/lib/dock and the apps' volumes."
+    say "  Install again to get the projects back, then redeploy the apps; or remove it all:"
+    say "  curl -fsSL $INSTALL_URL | sudo bash -s -- --uninstall --purge"
   fi
-fi
+}
 
 # registry_storage creates the dock-registry user, the registry's storage
 # dir and its config dir, and prints the storage dir. The dock group may
@@ -800,114 +645,576 @@ setup_registry() {
     "$REGISTRY_IMAGE" >/dev/null
 }
 
-token=""
-if [[ "$node_mode" == true ]]; then
-  if [[ -n "${NODE_JOIN_TOKEN:-}" ]]; then
-    say "==> join"
-    # A new join replaces this node's key and control plane pins.
-    systemctl stop dock-node.service 2>/dev/null || true
-    install -d -m 0700 -o dock -g dock /var/lib/dock
-    # On stdin, not as an argument: argv is visible to every user.
-    printf '%s\n' "$NODE_JOIN_TOKEN" | /usr/local/bin/dock node join --config "$CONF" --token-file - \
-      || die "joining failed; get a new token with \`dock server add <name>\` if this one expired"
-    # join ran as root; the node daemon runs as dock.
-    chown -R dock:dock /var/lib/dock
-    [[ -f "$NODE_STATE" ]] || die "dock node join did not write $NODE_STATE"
-  fi
-  systemctl enable dock-node.service
-  systemctl restart dock-node.service
-else
-  if [[ -n "$restore" ]]; then
-    say "==> restore"
-    systemctl stop dock.service 2>/dev/null || true
-    [[ "$(toml_get "$CONF" registry enabled)" != true ]] || registry_storage >/dev/null
-    restore_args=(admin restore --config "$CONF")
-    [[ "$old_server_node" == false ]] || restore_args+=(--old-server-becomes-node)
-    /usr/local/bin/dock "${restore_args[@]}" "$restore" \
-      || die "the restore failed and dock was not started; fix the cause and run the same command again"
-    if [[ -s "$old_config" ]]; then
-      install -m 0640 -o root -g dock "$old_config" /etc/dock/config.from-backup.toml
-    fi
-  fi
-  if [[ "$(toml_get "$CONF" registry enabled)" == true ]]; then
-    registry_storage >/dev/null # the daemon writes into its config dir
-    if [[ -z "$restore" && "$registry_was_enabled" == false ]]; then
-      ask_registry_storage
-    fi
-    if [[ "${REGISTRY_STORAGE:-}" == s3 ]]; then
-      say "==> registry storage"
-      set_registry_storage
-    fi
-  elif [[ -n "${REGISTRY_STORAGE:-}" ]]; then
-    die "REGISTRY_STORAGE is for the registry; set REGISTRY=1 too"
-  fi
-  systemctl enable dock.service
-  systemctl restart dock.service
-  if [[ "$(toml_get "$CONF" registry enabled)" == true ]]; then
-    say "==> registry"
-    setup_registry
-  fi
-  say "==> admin token"
-  # Prints nothing (and succeeds) when an admin already exists.
-  token="$(runuser -u dock -- /usr/local/bin/dock admin bootstrap --config "$CONF")" ||
-    die "creating the first admin failed (see above); dock itself is installed and running"
-fi
 
-say ""
-if [[ "$node_mode" == true ]]; then
-  say "Tempo Dock node is installed and connecting to the control plane."
-  say "  Check it there:  dock server list"
-  say "  Logs here:       journalctl -u dock-node -f"
-  if [[ -n "$retired" ]]; then
-    say "  The old control plane's data is in $retired. It holds every secret of the"
-    say "  platform: delete it once the new control plane checks out."
+# main installs, upgrades or removes Dock on this server. Everything runs from
+# here, called on the last line, so a download cut short runs nothing.
+main() {
+  node_mode=false
+  restore=""
+  old_server_node=false
+  assume_yes=false
+  [[ "${DOCK_YES:-}" != 1 ]] || assume_yes=true
+  remove=false
+  purge=false
+  local args=("$@")
+  while (( $# )); do
+    case "$1" in
+      --node) node_mode=true ;;
+      --restore)
+        [[ -n "${2:-}" ]] || die "--restore needs the archive from \`dock admin backup\`"
+        restore="$(realpath "$2")"; shift ;;
+      --old-server-becomes-node) old_server_node=true ;;
+      --yes|-y) assume_yes=true ;;
+      --uninstall) remove=true ;;
+      --purge) purge=true ;;
+      -h|--help)
+        if [[ -n "$SRC_DIR" ]]; then
+          awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$SRC_DIR/install.sh"
+        else
+          say "Installs Tempo Dock. Options and variables: https://github.com/$RELEASE_REPO/blob/main/deploy/install.sh"
+        fi
+        exit 0 ;;
+      *) die "unknown option $1 (see --help)" ;;
+    esac
+    shift
+  done
+  [[ -n "${NODE_JOIN_TOKEN:-}" ]] && node_mode=true
+  [[ "$purge" == false || "$remove" == true ]] || die "--purge goes with --uninstall"
+
+  [[ "$(uname -s)" == Linux ]] || die "Dock servers run Linux; on a Mac or Windows, install the CLI instead: curl -fsSL $CLI_URL | sh"
+  [[ $EUID -eq 0 ]] || die "run as root: curl -fsSL $INSTALL_URL | sudo bash"
+  case "$(uname -m)" in
+    x86_64) ARCH=amd64 ;;
+    aarch64|arm64) ARCH=arm64 ;;
+    *) die "unsupported architecture $(uname -m)" ;;
+  esac
+
+  if [[ "$remove" == true ]]; then
+    uninstall "$purge"
+    exit 0
   fi
-else
-  listen_addr="$(toml_get "$CONF" "" listen)"
-  say "Tempo Dock is installed."
-  say "  API and UI:  http://$listen_addr"
-  if [[ -n "$token" ]]; then
-    say "  admin token: $token"
-    say "  (shown once; store it now)"
-    say ""
-    say "  On your laptop:  dock login http://$listen_addr"
-    say "  then approve in the browser (sign in with the admin email and password above)."
-  else
-    say "  An admin already exists; no new token was created."
+  # Piped: fetch this release's deploy/ and run its install.sh instead.
+  [[ -f "$SRC_DIR/systemd/dock.service" ]] || bootstrap "${args[@]}"
+
+  # A server is one or the other; re-runs keep what it is. The exception is
+  # a control plane that moved away (`dock admin backup --move` left its
+  # marker): it may become a node of the new one, keeping its apps.
+  [[ -f /etc/systemd/system/dock-node.service ]] && node_mode=true
+  convert=false
+  if [[ "$node_mode" == true && -f /etc/systemd/system/dock.service ]]; then
+    [[ -f "$MOVED" ]] \
+      || die "this server runs the control plane (dock.service); a node must be a separate server, or move the control plane away first (docs/guide/install.md#moving-the-control-plane)"
+    [[ -n "${NODE_JOIN_TOKEN:-}" ]] \
+      || die "set NODE_JOIN_TOKEN to turn this retired control plane into a node: run \`dock server add <name>\` against the new control plane"
+    convert=true
   fi
-  node_listen="$(toml_get "$CONF" node listen)"
-  if [[ -n "$node_listen" ]]; then
-    say "  Nodes connect to $node_listen. Add a server: dock server add <name>"
-  fi
-  say "  Updates: the console's Updates page, or dock update."
   if [[ -n "$restore" ]]; then
-    say "  Restored from $restore."
-    [[ ! -f /etc/dock/config.from-backup.toml ]] || say "  The old config.toml is in /etc/dock/config.from-backup.toml for reference."
-    [[ -z "$node_listen" ]] || say "  On each node that should follow: sudo dock node set-control-plane $node_listen"
-    say "  Next steps: docs/guide/install.md#moving-the-control-plane"
+    [[ "$node_mode" == false ]] || die "--restore installs a control plane; leave out --node and NODE_JOIN_TOKEN"
+    [[ -r "$restore" ]] || die "can't read $restore"
+    [[ ! -f /var/lib/dock/dock.db ]] \
+      || die "this server already has a control plane database (/var/lib/dock/dock.db); --restore is for a fresh server"
+  elif [[ "$old_server_node" == true ]]; then
+    die "--old-server-becomes-node goes with --restore"
   fi
-  if [[ "$(toml_get "$CONF" registry enabled)" == true ]]; then
-    registry_listen="$(toml_get "$CONF" registry listen)"
-    say "  Registry: $(toml_get "$CONF" registry public_name) (container dock-registry on ${registry_listen:-127.0.0.1:5000})"
-    say "  Its images: dock registry (dock registry migrate moves them to a bucket or back)"
+  if [[ "$node_mode" == true ]]; then
+    [[ -n "${NODE_JOIN_TOKEN:-}" || -f "$NODE_STATE" ]] \
+      || die "set NODE_JOIN_TOKEN to a join token: run \`dock server add <name>\` against the control plane"
+    for v in LISTEN NODE_LISTEN REGISTRY REGISTRY_NAME REGISTRY_LISTEN REGISTRY_STORAGE; do
+      [[ -z "${!v:-}" ]] || die "$v is for the control plane; this is a node install"
+    done
   fi
-fi
-say ""
-if [[ "$tunnel" == true && "$tunnel_unit" == false ]]; then
-  say "Public traffic arrives through a Cloudflare Tunnel that Dock creates (or adopts) and runs"
-  say "in its dock-cloudflared container; no inbound ports are needed. On the control plane:"
-  say "  dock server tunnel create|adopt <server>   (automatic for dock server add --tunnel)"
-  say "Steps: docs/guide/install.md#cloudflare-tunnel"
-elif [[ "$tunnel" == true ]]; then
-  say "Public traffic arrives through the Cloudflare Tunnel; no inbound ports are needed."
-  http_port="$(toml_get "$CONF" caddy http_port)"
-  say "In Cloudflare, route all of the tunnel's traffic to http://127.0.0.1:${http_port:-80}"
-  say "(not localhost: Caddy listens on IPv4 loopback only) and add a DNS record:"
-  say "  *.<zone> CNAME $(toml_get "$CONF" ingress tunnel_hostname) (proxied)"
-  say "Steps: docs/guide/install.md#cloudflare-tunnel"
-  say "Status: systemctl status dock-cloudflared"
-else
-  say "Open 80/tcp and 443/tcp+udp (HTTP/3) to the internet. Keep the API and node ports private (Tailscale)."
-fi
-say "Apps and builds can't reach your LAN, tailnet or this server; to allow a LAN host,"
-say "add it to [network] allow_private in $CONF, then: systemctl restart dock-firewall"
+
+  # tunnel: the server is in tunnel mode. tunnel_unit: this script runs its
+  # cloudflared (dock-cloudflared.service); without it, Dock does (ADR 0036).
+  tunnel=false
+  tunnel_unit=false
+  tunnel_hostname=""
+  if [[ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]]; then
+    tunnel=true tunnel_unit=true
+    tid="$(tunnel_id "$CLOUDFLARE_TUNNEL_TOKEN")" \
+      || die "CLOUDFLARE_TUNNEL_TOKEN is not a tunnel token; copy it from the tunnel's install command in the Cloudflare dashboard"
+    tunnel_hostname="$tid.cfargotunnel.com"
+  elif [[ -f "$TUNNEL_ENV" ]]; then
+    tunnel=true tunnel_unit=true
+  fi
+  case "${INGRESS:-}" in
+    "" | direct) ;;
+    cloudflare_tunnel) tunnel=true ;;
+    *) die "INGRESS must be direct or cloudflare_tunnel" ;;
+  esac
+  if [[ -f "$CONF" && -z "$restore" && "$(toml_get "$CONF" ingress mode)" == cloudflare_tunnel ]]; then
+    [[ "${INGRESS:-}" != direct ]] \
+      || die "this server is in tunnel mode; install.sh doesn't switch it to direct: set [ingress] mode = \"direct\" and public_ip in $CONF, then restart dock"
+    tunnel=true
+  fi
+
+  case "$CLOUDFLARED_VERSION/$ARCH" in
+    2026.10.3/amd64) cloudflared_sha256=053b80b0a23031a038fdbf3c073f59f82b8f1f152aa67971d7383ffafc0dbab0 ;;
+    2026.10.3/arm64) cloudflared_sha256=89297ebfb9e8c99c0dc013a1140601453cf3798d8306c5591651f4a3f5210be8 ;;
+    *) cloudflared_sha256="${CLOUDFLARED_SHA256:-}" ;;
+  esac
+  if [[ "$tunnel_unit" == true && -z "$cloudflared_sha256" ]]; then
+    die "set CLOUDFLARED_SHA256 to the SHA-256 of cloudflared-linux-$ARCH from the $CLOUDFLARED_VERSION release notes"
+  fi
+
+  ensure_prereqs
+
+  # Dock runs the tunnel in its dock-cloudflared container once it adopted it
+  # (ADR 0036): this script's cloudflared is then a second connector of the
+  # same tunnel, and goes.
+  if [[ "$tunnel_unit" == true && -z "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]] \
+    && [[ -n "$(docker ps -q --filter name=^dock-cloudflared\$ --filter label=dock.role=cloudflared)" ]]; then
+    say "==> cloudflare tunnel: Dock runs it now; removing dock-cloudflared.service"
+    systemctl disable --now dock-cloudflared.service 2>/dev/null || true
+    rm -f /etc/systemd/system/dock-cloudflared.service "$TUNNEL_ENV" /usr/local/bin/cloudflared
+    systemctl daemon-reload
+    tunnel_unit=false
+  fi
+
+  if [[ -z "${DOCK_BINARY:-}" ]]; then
+    download_dir="$(mktemp -d)"
+    dock_version="$(release_info "${DOCK_VERSION:-$(cat "$SRC_DIR/VERSION" 2>/dev/null || echo latest)}" "$download_dir")"
+    say "==> download dock $dock_version"
+    download_assets "$download_dir" "$dock_version" "dock-linux-$ARCH"
+    DOCK_BINARY="$download_dir/dock-linux-$ARCH"
+    chmod 0755 "$DOCK_BINARY"
+  fi
+  [[ -x "$DOCK_BINARY" ]] || die "$DOCK_BINARY is not an executable file"
+
+  docker_version="$(docker version --format '{{.Server.Version}}' 2>/dev/null || true)"
+  if [[ "${docker_version%%.*}" =~ ^[0-9]+$ ]] && (( ${docker_version%%.*} < 28 )); then
+    say "warning: Docker $docker_version is older than 28. Before 28, ports published on"
+    say "         127.0.0.1 are reachable from the LAN. Upgrade Docker."
+  fi
+
+  say "==> users"
+  # dock runs the daemon; its unit adds the docker group to that process
+  # only. dock-caddy runs Caddy, with no Docker access at all.
+  id dock >/dev/null 2>&1 || useradd --system --home-dir /var/lib/dock --shell /usr/sbin/nologin dock
+  id dock-caddy >/dev/null 2>&1 || useradd --system --home-dir /var/lib/dock-caddy --shell /usr/sbin/nologin dock-caddy
+  # Older installs put dock in the docker group and ran Caddy as dock.
+  if id -nG dock | tr ' ' '\n' | grep -qx docker; then
+    gpasswd -d dock docker >/dev/null
+  fi
+  if [[ -d /var/lib/dock-caddy ]]; then
+    chown -R dock-caddy:dock-caddy /var/lib/dock-caddy
+  fi
+
+  say "==> dock binary"
+  install -m 0755 "$DOCK_BINARY" /usr/local/bin/dock.new
+  mv /usr/local/bin/dock.new /usr/local/bin/dock
+
+  say "==> caddy $CADDY_VERSION"
+  if ! /usr/local/bin/caddy version 2>/dev/null | grep -q "v$CADDY_VERSION"; then
+    tmp="$(mktemp -d)"
+    base="https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}"
+    tarball="caddy_${CADDY_VERSION}_linux_${ARCH}.tar.gz"
+    curl -fsSLo "$tmp/$tarball" "$base/$tarball"
+    curl -fsSLo "$tmp/checksums.txt" "$base/caddy_${CADDY_VERSION}_checksums.txt"
+    (cd "$tmp" && grep -E "  ${tarball}\$" checksums.txt | sha512sum --check --quiet --strict) \
+      || die "$tarball does not match Caddy's published checksum"
+    tar -xzf "$tmp/$tarball" -C "$tmp" caddy
+    install -m 0755 "$tmp/caddy" /usr/local/bin/caddy.new
+    mv /usr/local/bin/caddy.new /usr/local/bin/caddy
+    rm -rf "$tmp"
+  fi
+
+  tunnel_changed=false
+  if [[ "$tunnel_unit" == true ]]; then
+    say "==> cloudflared $CLOUDFLARED_VERSION"
+    if ! /usr/local/bin/cloudflared --version 2>/dev/null | grep -q "version $CLOUDFLARED_VERSION "; then
+      tmp="$(mktemp -d)"
+      curl -fsSLo "$tmp/cloudflared" \
+        "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-${ARCH}"
+      # Cloudflare publishes checksums only in the release notes, so the
+      # default version's are pinned above.
+      printf '%s  %s\n' "$cloudflared_sha256" "$tmp/cloudflared" | sha256sum --check --quiet --strict \
+        || die "cloudflared-linux-$ARCH does not match the expected SHA-256"
+      install -m 0755 "$tmp/cloudflared" /usr/local/bin/cloudflared.new
+      mv /usr/local/bin/cloudflared.new /usr/local/bin/cloudflared
+      rm -rf "$tmp"
+      tunnel_changed=true
+    fi
+    if [[ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]]; then
+      env_new="TUNNEL_TOKEN=$CLOUDFLARE_TUNNEL_TOKEN"
+      if [[ ! -f "$TUNNEL_ENV" ]] || [[ "$(cat "$TUNNEL_ENV")" != "$env_new" ]]; then
+        install -d -m 0751 -o root -g dock /etc/dock
+        (umask 077 && printf '%s\n' "$env_new" > "$TUNNEL_ENV")
+        tunnel_changed=true
+      fi
+    fi
+  fi
+
+  # A registry this run turns on is new: install.sh may ask where it keeps
+  # its images (ask_registry_storage).
+  registry_was_enabled=false
+  if [[ -f "$CONF" && "$(toml_get "$CONF" registry enabled)" == true ]]; then
+    registry_was_enabled=true
+  fi
+  case "${REGISTRY_STORAGE:-}" in
+    ""|local|s3) ;;
+    *) die "REGISTRY_STORAGE must be local or s3" ;;
+  esac
+  [[ -z "$restore" || -z "${REGISTRY_STORAGE:-}" ]] \
+    || die "a restored control plane keeps its registry storage from the backup; leave out REGISTRY_STORAGE (dock registry migrate moves the images later)"
+
+  say "==> config"
+  # fresh: this run writes config.toml for the first time (or restores).
+  fresh=false
+  # 0751: Caddy (dock-caddy) reads caddy.json in here; config.toml stays 0640.
+  install -d -m 0751 -o root -g dock /etc/dock
+  # Changes go to a staged copy first and only replace config.toml once the
+  # new binary accepts it.
+  staged="$(mktemp /etc/dock/.config.toml.XXXXXX)"
+  if [[ -f "$CONF" && -z "$restore" ]]; then
+    cat "$CONF" > "$staged"
+  else
+    fresh=true
+    public_ip=""
+    if [[ "$tunnel" == false ]]; then
+      public_ip="${PUBLIC_IP:-$(curl -fsS4 --max-time 5 https://api.ipify.org || true)}"
+    fi
+    if [[ -z "${BASE_DOMAIN+x}" && -z "$restore" && "$node_mode" == false ]]; then
+      BASE_DOMAIN="$(ask_base_domain "$public_ip")"
+    fi
+    if [[ "$node_mode" == true ]]; then
+      cat > "$staged" <<CONF
+# Tempo Dock node config (dock node). Every field has a default; see
+# internal/config. The link to the control plane is in $NODE_STATE.
+data_dir = "/var/lib/dock"
+internal_listen = "127.0.0.1:7071"
+public_ip = "$public_ip"
+# Reported to the control plane when this server joins; after that,
+# \`dock server update\` there decides.
+base_domain = "${BASE_DOMAIN:-}"
+CONF
+    else
+      listen="${LISTEN:-}"
+      if [[ -z "$listen" ]]; then
+        ts_ip="$(tailscale ip -4 2>/dev/null | head -1 || true)"
+        listen="${ts_ip:-127.0.0.1}:7070"
+      fi
+      cat > "$staged" <<CONF
+# Tempo Dock daemon config. Every field has a default; see internal/config.
+data_dir = "/var/lib/dock"
+listen = "$listen"
+internal_listen = "127.0.0.1:7071"
+public_ip = "$public_ip"
+base_domain = "${BASE_DOMAIN:-}"
+CONF
+    fi
+    cat >> "$staged" <<CONF
+
+[caddy]
+admin_socket = "/run/dock-caddy/admin.sock"
+http_port = 80
+https_port = 443
+disable_tls = ${DISABLE_TLS:-false}
+
+[buildkit]
+enabled = true
+image = "$BUILDKIT_IMAGE"
+memory_mb = 2048
+# 0: half this server's cores, at least two. Builds run at a quarter of
+# the CPU weight of apps, so apps win any contention either way.
+cpus = 0
+
+[network]
+# App networks get a /24 each from this range.
+pool = "10.213.0.0/16"
+# Apps and builds can't reach private addresses (LAN, tailnet) or this
+# server, except these CIDRs. Then: sudo systemctl restart dock-firewall
+allow_private = []
+
+[ingress]
+# direct: public IP, Caddy issues certificates. cloudflare_tunnel: public
+# traffic arrives through cloudflared (ADR 0013).
+mode = "direct"
+tunnel_hostname = ""
+CONF
+    if [[ "$node_mode" == false ]]; then
+      cat >> "$staged" <<CONF
+
+[node]
+# Where other servers connect when they join as nodes, e.g. the Tailscale
+# IP and port 7443. Empty: this server runs everything alone.
+listen = ""
+
+[registry]
+# Image registry for builds and deploys across servers (dock-registry).
+enabled = false
+listen = "127.0.0.1:5000"
+# Its images, unless they are in a bucket (dock registry migrate).
+storage_dir = "/var/lib/dock-registry"
+config_dir = "/etc/dock/registry"
+# The registry's name: the audience of its tokens.
+public_name = ""
+CONF
+    fi
+  fi
+
+  # A restore keeps the old control plane's config, with the machine's own
+  # keys from the new install written above (ADR 0021). The base domain and
+  # plain HTTP go with the server's role, so they are kept only when this
+  # server takes the old one's place, unless given.
+  old_config=""
+  if [[ -n "$restore" ]]; then
+    old_config="$(mktemp)"
+    /usr/local/bin/dock admin restore --print-config "$restore" > "$old_config" \
+      || die "$restore is not a backup this dock can restore (see above)"
+    if [[ -s "$old_config" ]]; then
+      keys=("${MACHINE_KEYS[@]}")
+      [[ "$old_server_node" == false && -z "${BASE_DOMAIN+x}" ]] || keys+=(:base_domain)
+      [[ "$old_server_node" == false && -z "${DISABLE_TLS:-}" ]] || keys+=(caddy:disable_tls)
+      merged="$(mktemp /etc/dock/.config.toml.XXXXXX)"
+      cat "$old_config" > "$merged"
+      for k in "${keys[@]}"; do
+        v="$(toml_get_raw "$staged" "${k%%:*}" "${k#*:}")"
+        [[ -z "$v" ]] || toml_set "$merged" "${k%%:*}" "${k#*:}" "$v"
+      done
+      # Nodes need an address here; the old one is on the old server.
+      old_node_listen="$(toml_get "$old_config" node listen)"
+      if [[ -z "${NODE_LISTEN:-}" ]]; then
+        if [[ -n "$old_node_listen" ]]; then
+          ts_ip="$(tailscale ip -4 2>/dev/null | head -1 || true)"
+          [[ -n "$ts_ip" ]] || die "the old control plane took nodes on $old_node_listen; set NODE_LISTEN to this server's address for them, e.g. 100.64.0.20:7443"
+          NODE_LISTEN="$ts_ip:${old_node_listen##*:}"
+        fi
+        toml_set "$merged" node listen "\"${NODE_LISTEN:-}\""
+      fi
+      if [[ "$(toml_get "$old_config" ingress mode)" == cloudflare_tunnel && "$tunnel" == false ]]; then
+        say "warning: the old control plane served apps through a Cloudflare Tunnel and this one serves them directly."
+        say "         Point their DNS at this server, or re-run with CLOUDFLARE_TUNNEL_TOKEN (the same tunnel keeps DNS as it is)."
+      fi
+      mv "$merged" "$staged"
+    fi
+    if [[ "$old_server_node" == true && -z "${NODE_LISTEN:-}" ]]; then
+      die "--old-server-becomes-node needs nodes to reach this server: set NODE_LISTEN, e.g. \"\$(tailscale ip -4):7443\""
+    fi
+  fi
+  if [[ "$convert" == true ]]; then
+    # A node serves the registry on [registry] listen itself, and takes no nodes.
+    toml_set "$staged" registry enabled false
+    toml_set "$staged" node listen '""'
+  fi
+
+  if [[ "$tunnel" == true ]]; then
+    toml_set "$staged" ingress mode '"cloudflare_tunnel"'
+    [[ -z "$tunnel_hostname" ]] || toml_set "$staged" ingress tunnel_hostname "\"$tunnel_hostname\""
+    # Caddy is plain HTTP on 127.0.0.1 in this mode regardless; this keeps
+    # app URLs https://, as Cloudflare's edge serves them.
+    toml_set "$staged" caddy disable_tls false
+    # The home IP never goes into DNS or the control plane.
+    toml_set "$staged" "" public_ip '""'
+  fi
+  [[ -z "${NODE_LISTEN:-}" ]] || toml_set "$staged" node listen "\"$NODE_LISTEN\""
+  if [[ "${REGISTRY:-}" == 1 ]]; then
+    toml_set "$staged" registry enabled true
+    # The name only has to be set; this one is as good as any.
+    if [[ -z "${REGISTRY_NAME:-}" && -z "$(toml_get "$staged" registry public_name)" ]]; then
+      REGISTRY_NAME=dock-registry
+    fi
+  fi
+  [[ -z "${REGISTRY_NAME:-}" ]] || toml_set "$staged" registry public_name "\"$REGISTRY_NAME\""
+  [[ -z "${REGISTRY_LISTEN:-}" ]] || toml_set "$staged" registry listen "\"$REGISTRY_LISTEN\""
+
+  /usr/local/bin/dock admin caddy-config --config "$staged" > /etc/dock/caddy.json.new \
+    || die "the config above was not accepted; nothing in $CONF was changed"
+  if ! cmp -s "$staged" "$CONF"; then
+    chmod 0640 "$staged"
+    chgrp dock "$staged"
+    mv "$staged" "$CONF"
+  fi
+  # The initial Caddy config only puts the admin API on the Unix socket and
+  # serves the 404 page. The daemon loads the real config on start.
+  chmod 0644 /etc/dock/caddy.json.new
+  mv /etc/dock/caddy.json.new /etc/dock/caddy.json
+
+  say "==> kernel"
+  # Hand queued connections to the new listener when Caddy reloads, instead of
+  # resetting them.
+  echo 'net.ipv4.tcp_migrate_req = 1' > /etc/sysctl.d/90-dock.conf
+  sysctl -q -p /etc/sysctl.d/90-dock.conf
+
+  say "==> buildkit image"
+  docker pull -q "$BUILDKIT_IMAGE" >/dev/null
+
+  retired=""
+  if [[ "$convert" == true ]]; then
+    say "==> retire the control plane"
+    systemctl disable --now dock.service 2>/dev/null || true
+    rm -f /etc/systemd/system/dock.service
+    # The node serves the registry on [registry] listen itself.
+    docker rm -f dock-registry >/dev/null 2>&1 || true
+    # Kept until the new control plane checks out; Railpack's cache stays.
+    retired="/var/lib/dock-retired-$(date +%Y%m%d-%H%M%S)"
+    install -d -m 0700 "$retired"
+    find /var/lib/dock -mindepth 1 -maxdepth 1 ! -name railpack -exec mv -t "$retired" {} +
+  fi
+
+  say "==> systemd"
+  if [[ "$node_mode" == true ]]; then
+    daemon=dock-node.service
+  else
+    daemon=dock.service
+  fi
+  units=("$daemon" dock-caddy.service dock-firewall.service dock-update.path dock-update.service)
+  [[ "$tunnel_unit" == false ]] || units+=(dock-cloudflared.service)
+  caddy_unit_changed=false
+  cmp -s "$SRC_DIR/systemd/dock-caddy.service" /etc/systemd/system/dock-caddy.service || caddy_unit_changed=true
+  if [[ "$tunnel_unit" == true ]]; then
+    cmp -s "$SRC_DIR/systemd/dock-cloudflared.service" /etc/systemd/system/dock-cloudflared.service || tunnel_changed=true
+  fi
+  for unit in "${units[@]}"; do
+    install -m 0644 "$SRC_DIR/systemd/$unit" "/etc/systemd/system/$unit"
+  done
+  systemctl daemon-reload
+  # The daemon stages releases and asks for updates in here; dock-update.path
+  # starts the updater when it does (ADR 0028).
+  install -d -m 0700 -o dock -g dock /var/lib/dock /var/lib/dock/update
+  systemctl enable --now dock-update.path
+
+  say "==> firewall"
+  systemctl enable dock-firewall.service
+  systemctl restart dock-firewall.service \
+    || die "the app firewall failed to apply; see: journalctl -u dock-firewall"
+
+  systemctl enable dock-caddy.service
+  if [[ "$caddy_unit_changed" == true ]] && systemctl is-active -q dock-caddy.service; then
+    # Picks up unit changes such as the dock-caddy user. Routes come back
+    # from --resume; traffic blips for a moment. Listener changes (tunnel
+    # mode's 127.0.0.1) need no restart: the daemon loads them on start.
+    say "    restarting caddy (unit changed)"
+    systemctl restart dock-caddy.service
+  else
+    systemctl start dock-caddy.service
+  fi
+
+  if [[ "$tunnel_unit" == true ]]; then
+    say "==> cloudflare tunnel"
+    systemctl enable dock-cloudflared.service
+    if [[ "$tunnel_changed" == true ]]; then
+      systemctl restart dock-cloudflared.service
+    else
+      systemctl start dock-cloudflared.service
+    fi
+  fi
+
+  token=""
+  if [[ "$node_mode" == true ]]; then
+    if [[ -n "${NODE_JOIN_TOKEN:-}" ]]; then
+      say "==> join"
+      # A new join replaces this node's key and control plane pins.
+      systemctl stop dock-node.service 2>/dev/null || true
+      install -d -m 0700 -o dock -g dock /var/lib/dock
+      # On stdin, not as an argument: argv is visible to every user.
+      printf '%s\n' "$NODE_JOIN_TOKEN" | /usr/local/bin/dock node join --config "$CONF" --token-file - \
+        || die "joining failed; get a new token with \`dock server add <name>\` if this one expired"
+      # join ran as root; the node daemon runs as dock.
+      chown -R dock:dock /var/lib/dock
+      [[ -f "$NODE_STATE" ]] || die "dock node join did not write $NODE_STATE"
+    fi
+    systemctl enable dock-node.service
+    systemctl restart dock-node.service
+  else
+    if [[ -n "$restore" ]]; then
+      say "==> restore"
+      systemctl stop dock.service 2>/dev/null || true
+      [[ "$(toml_get "$CONF" registry enabled)" != true ]] || registry_storage >/dev/null
+      restore_args=(admin restore --config "$CONF")
+      [[ "$old_server_node" == false ]] || restore_args+=(--old-server-becomes-node)
+      /usr/local/bin/dock "${restore_args[@]}" "$restore" \
+        || die "the restore failed and dock was not started; fix the cause and run the same command again"
+      if [[ -s "$old_config" ]]; then
+        install -m 0640 -o root -g dock "$old_config" /etc/dock/config.from-backup.toml
+      fi
+    fi
+    if [[ "$(toml_get "$CONF" registry enabled)" == true ]]; then
+      registry_storage >/dev/null # the daemon writes into its config dir
+      if [[ -z "$restore" && "$registry_was_enabled" == false ]]; then
+        ask_registry_storage
+      fi
+      if [[ "${REGISTRY_STORAGE:-}" == s3 ]]; then
+        say "==> registry storage"
+        set_registry_storage
+      fi
+    elif [[ -n "${REGISTRY_STORAGE:-}" ]]; then
+      die "REGISTRY_STORAGE is for the registry; set REGISTRY=1 too"
+    fi
+    systemctl enable dock.service
+    systemctl restart dock.service
+    if [[ "$(toml_get "$CONF" registry enabled)" == true ]]; then
+      say "==> registry"
+      setup_registry
+    fi
+    say "==> admin"
+    # dock.service migrates the database as it starts: wait until it
+    # answers, so bootstrap doesn't meet it in SQLite's write lock.
+    api="$(toml_get "$CONF" "" listen)"
+    for _ in $(seq 90); do
+      curl -fsS -o /dev/null --max-time 2 "http://$api/api/v1/health" 2> /dev/null && break
+      sleep 1
+    done
+    curl -fsS -o /dev/null --max-time 2 "http://$api/api/v1/health" 2> /dev/null \
+      || die "dock didn't start answering on $api; see: journalctl -u dock"
+    admin_email="${DOCK_ADMIN_EMAIL:-admin@localhost}"
+    if [[ "$fresh" == true && -z "$restore" && -z "${DOCK_ADMIN_EMAIL:-}" ]]; then
+      admin_email="$(ask "Your email, to sign in to the console [admin@localhost]:" admin@localhost)"
+    fi
+    # Prints nothing (and succeeds) when an admin already exists. The
+    # generated password comes on stderr, for the summary below.
+    bootstrap_err="$(mktemp)"
+    token="$(runuser -u dock -- /usr/local/bin/dock admin bootstrap --config "$CONF" --email "$admin_email" 2> "$bootstrap_err")" ||
+      { cat "$bootstrap_err" >&2; die "creating the first admin failed (see above); dock itself is installed and running"; }
+    admin_password="$(sed -n 's/.*with password \([^ ]*\) .*/\1/p' "$bootstrap_err")"
+  fi
+
+  say ""
+  if [[ "$node_mode" == true ]]; then
+    say "Tempo Dock node is installed and connecting to the control plane."
+    say "  Check it there:  dock server list"
+    say "  Logs here:       journalctl -u dock-node -f"
+    if [[ -n "$retired" ]]; then
+      say "  The old control plane's data is in $retired. It holds every secret of the"
+      say "  platform: delete it once the new control plane checks out."
+    fi
+  else
+    summary
+    node_listen="$(toml_get "$CONF" node listen)"
+    if [[ -n "$node_listen" ]]; then
+      say "  Nodes connect to $node_listen. Add a server: dock server add <name>"
+    fi
+    if [[ -n "$restore" ]]; then
+      say "  Restored from $restore."
+      [[ ! -f /etc/dock/config.from-backup.toml ]] || say "  The old config.toml is in /etc/dock/config.from-backup.toml for reference."
+      [[ -z "$node_listen" ]] || say "  On each node that should follow: sudo dock node set-control-plane $node_listen"
+      say "  Next steps: docs/guide/install.md#moving-the-control-plane"
+    fi
+    if [[ "$(toml_get "$CONF" registry enabled)" == true ]]; then
+      registry_listen="$(toml_get "$CONF" registry listen)"
+      say "  Registry: $(toml_get "$CONF" registry public_name) (container dock-registry on ${registry_listen:-127.0.0.1:5000})"
+      say "  Its images: dock registry (dock registry migrate moves them to a bucket or back)"
+    fi
+  fi
+  say ""
+  if [[ "$tunnel" == true && "$tunnel_unit" == false ]]; then
+    say "Public traffic arrives through a Cloudflare Tunnel that Dock creates (or adopts) and runs"
+    say "in its dock-cloudflared container; no inbound ports are needed. On the control plane:"
+    say "  dock server tunnel create|adopt <server>   (automatic for dock server add --tunnel)"
+    say "Steps: docs/guide/install.md#cloudflare-tunnel"
+  elif [[ "$tunnel" == true ]]; then
+    say "Public traffic arrives through the Cloudflare Tunnel; no inbound ports are needed."
+    http_port="$(toml_get "$CONF" caddy http_port)"
+    say "In Cloudflare, route all of the tunnel's traffic to http://127.0.0.1:${http_port:-80}"
+    say "(not localhost: Caddy listens on IPv4 loopback only) and add a DNS record:"
+    say "  *.<zone> CNAME $(toml_get "$CONF" ingress tunnel_hostname) (proxied)"
+    say "Steps: docs/guide/install.md#cloudflare-tunnel"
+    say "Status: systemctl status dock-cloudflared"
+  else
+    say "Open 80/tcp and 443/tcp+udp (HTTP/3) to the internet. Keep the API and node ports private (Tailscale)."
+  fi
+  say "Apps and builds can't reach your LAN, tailnet or this server; to allow a LAN host,"
+  say "add it to [network] allow_private in $CONF, then: systemctl restart dock-firewall"
+}
+
+main "$@"

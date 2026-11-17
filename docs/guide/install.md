@@ -10,9 +10,9 @@ control plane.
 
 | What | Needed |
 |---|---|
-| OS | Linux with systemd, `amd64` or `arm64` |
-| Docker | Docker Engine 28 or newer, installed and running (`systemctl enable --now docker`), with its default iptables firewall backend. Older versions expose ports published on 127.0.0.1 to the LAN; the script warns |
-| Tools | `curl` (downloads Caddy, detects the public IP), `iptables` (the app firewall) |
+| OS | Linux with systemd, `amd64` or `arm64`. Tested on every change: Debian 12 and 13, Ubuntu 22.04 and 24.04 (`e2e/fresh-install.sh`) |
+| Docker | Docker Engine 28 or newer with its default iptables firewall backend. On Debian and Ubuntu, `install.sh` installs it when missing and starts it when stopped. Older versions expose ports published on 127.0.0.1 to the LAN; the script warns |
+| Tools | `curl` (downloads, detects the public IP), `iptables` (the app firewall; installed with Docker on Debian and Ubuntu), OpenSSL 3 for the signature check |
 | Access | root (`sudo`) |
 | Size | 2 vCPU / 4 GB is comfortable. Idle platform is about 490 MB including Docker, Caddy and BuildKit ([measured](../experience.md#measured-in-the-m0-spike-2026-10)). Builds are capped at 2 GB by default |
 | Ports | 80/tcp, 443/tcp and 443/udp public. The API port (7070) and node port (7443) private: Dock goes public only through Caddy, at its [public address](#public-address). None on a [Cloudflare Tunnel](#cloudflare-tunnel) server |
@@ -21,84 +21,129 @@ control plane.
 
 ## Install
 
-A server needs two files from a [release](https://github.com/NordTempo/tempoDock/releases):
-the `dock-linux-<arch>` binary and `dock-install-<version>.tar.gz` (the
-`deploy/` directory: `install.sh` and the systemd units). Download them,
-check them against `SHA256SUMS` (and that file's signature: see
-[Verifying a release](../../SECURITY.md#verifying-a-release)), copy them
-over and run the script as root:
+On the server, as a user who can `sudo`:
 
 ```sh
-v=v0.1.0
-mkdir dock-$v
+curl -fsSL https://dock.nordtempo.com/install.sh | sudo bash
+```
+
+That is the latest release's `install.sh`. It downloads the release's
+install tarball (`deploy/`: the script and the systemd units) and the
+`dock-linux-<arch>` binary, checks both against the release's
+`SHA256SUMS` and that file's signature
+([ADR 0088](../decisions/0088-signed-releases.md)), and runs. Piped like
+this the signature check is required: it needs OpenSSL 3, which Debian 12,
+Ubuntu 22.04 and later have (`DOCK_REQUIRE_SIGNATURE=0` accepts
+`SHA256SUMS` alone). A download cut short runs nothing: the whole script is
+one function, called on its last line.
+
+On Debian and Ubuntu it installs what's missing: Docker Engine (from
+Docker's own apt repository, as [docs.docker.com](https://docs.docker.com/engine/install/)
+does it) and `iptables`. It asks first; `--yes` doesn't. Elsewhere it
+says what to install. On a new install with a terminal it also asks for
+your email, the console login (`DOCK_ADMIN_EMAIL`, default
+`admin@localhost`), and an optional domain for apps' generated hostnames
+(`BASE_DOMAIN`). Options go after `bash -s --`, variables after `sudo`:
+
+```sh
+curl -fsSL https://dock.nordtempo.com/install.sh | sudo DOCK_ADMIN_EMAIL=you@example.com bash -s -- --yes
+```
+
+It ends with what to do next:
+
+```
+  Console   http://localhost:7070
+            The console listens on this server only. On your laptop, open a tunnel first:
+            ssh -L 7070:127.0.0.1:7070 you@203.0.113.7
+  Sign in   you@example.com with password … (shown once)
+  CLI       curl -fsSL https://dock.nordtempo.com/cli.sh | sh -s -- http://localhost:7070
+            installs dock on your laptop (macOS, Linux or WSL) and signs it in
+  Apps      get hostnames under apps.example.com; it needs DNS: *.apps.example.com  A  203.0.113.7
+```
+
+The console and API listen on loopback, or on the Tailscale address when
+the server has one ([Network access](#network-access)); to reach Dock
+from anywhere without a tunnel, give it a [public address](#public-address).
+The user you sign in as is the platform's operator and the admin of its
+first organization. The output also has an operator token, `admin token:
+dock_…`, shown once: keep it for scripts and for creating agent tokens.
+It is both the first organization's admin token and the platform's; split
+it in Console › Tokens (`dock platform token split`) once you have other
+credentials. Operators run the platform: servers, backups and user
+accounts, with a platform login (`dock login --platform`) beside their org
+login; an organization's admins manage its projects, members' roles and
+tokens ([ADR 0027](../decisions/0027-organizations.md),
+[ADR 0080](../decisions/0080-permissions-roles-groups-and-agents.md)).
+
+A given release: `releases/download/<version>/install.sh` installs that
+version. Running the script again is safe ([What it installs](#what-it-installs)).
+
+### By hand
+
+The same from files you copy over yourself: a release's
+`dock-linux-<arch>` and `dock-install-<version>.tar.gz`, checked against
+its `SHA256SUMS` (and that file's signature, see
+[Verifying a release](../../SECURITY.md#verifying-a-release)):
+
+```sh
+v=v0.56.0
+mkdir dock-$v && cd dock-$v
 for f in dock-linux-amd64 "dock-install-$v.tar.gz" SHA256SUMS; do
-  curl -fsSL -o "dock-$v/$f" "https://github.com/NordTempo/tempoDock/releases/download/$v/$f"
+  curl -fsSLO "https://github.com/NordTempo/tempoDock/releases/download/$v/$f"
 done
-(cd dock-$v && grep -E " (dock-linux-amd64|dock-install-$v.tar.gz)\$" SHA256SUMS | shasum -a 256 -c)
-scp -r dock-$v server:/tmp/
+grep -E " (dock-linux-amd64|dock-install-$v.tar.gz)\$" SHA256SUMS | sha256sum -c   # shasum -a 256 -c on a Mac
+chmod +x dock-linux-amd64
+scp -r ../dock-$v server:/tmp/
 ssh server "cd /tmp/dock-$v && tar -xzf dock-install-$v.tar.gz && sudo DOCK_BINARY=./dock-linux-amd64 ./deploy/install.sh"
 ```
 
-Without `DOCK_BINARY`, `install.sh` downloads the binary itself: the
-version the tarball came from (or `DOCK_VERSION`), checked against the
-release's `SHA256SUMS` and its signature
-([ADR 0088](../decisions/0088-signed-releases.md); from v0.56.0 on). The
-signature check needs OpenSSL 3, which Debian 12 and Ubuntu 22.04 have;
-without it the script warns and checks `SHA256SUMS` only, unless
-`DOCK_REQUIRE_SIGNATURE=1`:
-
-```sh
-tar -xzf dock-install-v0.1.0.tar.gz
-sudo ./deploy/install.sh
-```
-
-From source instead: `make web && GOOS=linux GOARCH=amd64 make build`
-builds `bin/dock`; copy it and `deploy/` over and pass
-`DOCK_BINARY=./dock`. The examples below say `DOCK_BINARY=./dock`; use
-whichever binary you have.
-
-The last lines of output print the API address and the first operator
-token (shown once). `install.sh` also creates a user `admin@localhost` for
-the UI, the platform's operator and the admin of its first organization,
-and prints its generated password to stderr, once. Log in from your
-laptop, then sign in as that user in the browser it opens, type the code
-from the terminal and approve:
-
-```sh
-dock login http://100.64.0.10:7070
-```
-
-Keep the bootstrap token for scripts and for creating agent tokens
-(`dock login <url> --token-stdin` works too). It is both the first
-organization's admin token and the platform's, so install scripts can set
-up servers and projects with it; split it in Console › Tokens (`dock
-platform token split`) once you have other credentials. Operators run the
-platform: servers, backups and user accounts, with a platform login (`dock
-login --platform`) beside their org login; an organization's admins manage
-its projects, members' roles and tokens ([ADR 0027](../decisions/0027-organizations.md),
-[ADR 0080](../decisions/0080-permissions-roles-groups-and-agents.md)).
+Without `DOCK_BINARY`, the tarball's `install.sh` downloads the binary of
+its own version (or `DOCK_VERSION`), checked as above. From source
+instead: `make web && GOOS=linux GOARCH=amd64 make build` builds
+`bin/dock`; copy it and `deploy/` over and pass `DOCK_BINARY=./dock`. The
+examples below say `DOCK_BINARY=./dock`; use whichever binary you have.
 
 ### The CLI
 
 Laptops and CI only need the client, `dock-cli-<os>-<arch>` (a quarter of
-the size; see [CLI-only build](../cli.md#cli-only-build)). Install the one
-matching the server's version: `install-cli.sh` from the release picks the
-right build, checks it against `SHA256SUMS` and its signature, and
-installs it as `dock` in `~/.local/bin` (`/usr/local/bin` as root, or
-`DOCK_INSTALL_DIR`). The signature check needs OpenSSL 3; macOS ships
-LibreSSL, so there the script warns and checks `SHA256SUMS` only, unless
-you `brew install openssl@3` and put it first in `PATH`
-(`DOCK_REQUIRE_SIGNATURE=1` makes a missing OpenSSL 3 an error).
+the size; see [CLI-only build](../cli.md#cli-only-build)). With your
+server's address, the installer picks the version that server runs and
+signs you in (`dock login`, a code you approve in the browser):
 
 ```sh
-curl -fsSL https://github.com/NordTempo/tempoDock/releases/download/v0.1.0/install-cli.sh | DOCK_VERSION=v0.1.0 sh
+curl -fsSL https://dock.nordtempo.com/cli.sh | sh -s -- https://dock.example.com
 ```
+
+The console shows this line with its own address, on the empty Overview
+and the sign-in page. Without an address it installs the latest release
+(`DOCK_VERSION=v0.56.0` for another). It checks the build against
+`SHA256SUMS` and its signature and installs it as `dock` in
+`~/.local/bin` (`/usr/local/bin` as root, or `DOCK_INSTALL_DIR`), and
+prints the `PATH` line to add when that directory isn't on it. The
+signature check needs OpenSSL 3; macOS ships LibreSSL, so there the script
+warns and checks `SHA256SUMS` only, unless you `brew install openssl@3`
+and put it first in `PATH` (`DOCK_REQUIRE_SIGNATURE=1` makes a missing
+OpenSSL 3 an error).
+
+With [Homebrew](https://brew.sh), on macOS or Linux:
+
+```sh
+brew install nordtempo/tap/dock
+dock login https://dock.example.com
+```
+
+The tap's formula ([NordTempo/homebrew-tap](https://github.com/NordTempo/homebrew-tap))
+is written by the release workflow, with each build's SHA-256 from the
+signed `SHA256SUMS`; `brew upgrade` follows releases.
+
+**Windows:** in WSL (`wsl --install`), with the Linux line above. There is
+no native Windows build.
 
 Or by hand:
 
 ```sh
 for f in dock-cli-darwin-arm64 SHA256SUMS; do
-  curl -fsSLO "https://github.com/NordTempo/tempoDock/releases/download/v0.1.0/$f"
+  curl -fsSLO "https://github.com/NordTempo/tempoDock/releases/download/v0.56.0/$f"
 done
 grep ' dock-cli-darwin-arm64$' SHA256SUMS | shasum -a 256 -c
 install -m 0755 dock-cli-darwin-arm64 ~/.local/bin/dock
@@ -114,7 +159,8 @@ release the current context's server runs (or the latest, with
 release's signed `SHA256SUMS`, in place of the running binary. A release
 from before v0.56.0, which has no signature, installs with a warning. In a directory
 only root can write to, such as `/usr/local/bin`, it prints the `sudo`
-command to run, with the version pinned.
+command to run, with the version pinned. Installed with Homebrew, use
+`brew upgrade dock` instead.
 
 ```sh
 dock self-update             # the server's version
@@ -126,7 +172,9 @@ dock self-update --dry-run   # what it would install, and where
 
 ### install.sh options
 
-`--node` installs a [node](#add-a-server) instead of a control plane.
+`--yes` installs missing prerequisites without asking and asks nothing
+else (no terminal is a no). `--uninstall` and `--purge`: see
+[Uninstalling](#uninstalling). `--node` installs a [node](#add-a-server) instead of a control plane.
 `--restore ARCHIVE` (with `--old-server-becomes-node`) installs a control
 plane from a backup: see [Moving the control plane](#moving-the-control-plane).
 The rest are environment variables. `PUBLIC_IP`, `LISTEN`, `BASE_DOMAIN` and
@@ -137,12 +185,16 @@ the others also change an existing config, touching only their own keys.
 |---|---|---|
 | `DOCK_BINARY` | download | Path to a `dock` binary: a release's `dock-linux-<arch>`, or `bin/dock` from `make build` |
 | `DOCK_VERSION` | the tarball's version, else the latest release | Without `DOCK_BINARY`: the release to download `dock-linux-<arch>` from, checked against its signed `SHA256SUMS` |
-| `DOCK_REQUIRE_SIGNATURE` | empty | `1`: fail that download when this machine can't check the signature (no OpenSSL 3) instead of warning |
+| `DOCK_REQUIRE_SIGNATURE` | empty; `1` when piped | `1`: fail that download when this machine can't check the signature (no OpenSSL 3) instead of warning. `0` accepts `SHA256SUMS` alone when piped |
+| `DOCK_ADMIN_EMAIL` | asked, else `admin@localhost` | The first admin's email, the console login. Only when the first admin is created |
+| `DOCK_YES` | empty | `1` is `--yes` |
+| `DOCK_RELEASE_DIR` | empty | Take the release from this directory instead of GitHub: its `dock-install-<version>.tar.gz`, `dock-linux-<arch>`, `SHA256SUMS` and `SHA256SUMS.sig`, as `make release-local` builds them |
+| `DOCK_TRUSTED_KEYS` | empty | More release keys to trust, base64 Ed25519, space separated, as `[updates] trusted_keys`: for builds you sign yourself |
 | `GITHUB_TOKEN` | empty | For that download, only from a private repository: a token that can read its releases (pass it with `sudo --preserve-env=GITHUB_TOKEN`) |
 | `CADDY_VERSION` | `2.11.7` | Caddy release to download from GitHub |
 | `PUBLIC_IP` | auto (`api.ipify.org`), empty on tunnel servers | Address users point DNS at → `public_ip` |
 | `LISTEN` | Tailscale IPv4`:7070`, else `127.0.0.1:7070` | API and UI address → `listen`. Control plane only |
-| `BASE_DOMAIN` | empty | Base for generated hostnames → `base_domain`. Needs a wildcard DNS record |
+| `BASE_DOMAIN` | asked, else empty | Base for generated hostnames → `base_domain`. Needs a wildcard DNS record. Later: `dock server update <server> --base-domain` |
 | `DISABLE_TLS` | `false` | `true` serves plain HTTP only → `[caddy] disable_tls`. For LAN/Tailscale-only setups. Ignored on tunnel servers |
 | `CLOUDFLARE_TUNNEL_TOKEN` | empty | Serve public traffic through a [Cloudflare Tunnel](#cloudflare-tunnel): installs `cloudflared` and `dock-cloudflared.service`, sets `[ingress]` |
 | `CLOUDFLARED_VERSION`, `CLOUDFLARED_SHA256` | `2026.10.3`, pinned | Another `cloudflared` release and the SHA-256 of `cloudflared-linux-<arch>` from its release notes |
@@ -185,6 +237,21 @@ Re-running the script is safe: config and data are kept, binaries and units
 are replaced, and no second admin is created. A server installed with
 `--node` is upgraded as a node without the flag; the script refuses to turn
 a control plane into a node or back.
+
+### Uninstalling
+
+```sh
+curl -fsSL https://dock.nordtempo.com/install.sh | sudo bash -s -- --uninstall
+```
+
+removes Dock's services, binaries (`dock`, Caddy, `cloudflared`), kernel
+setting and app firewall, and every container Dock made, the apps'
+included: nothing would route to them without Caddy. Its data stays:
+`/etc/dock`, `/var/lib/dock` (the database and secrets) and the apps'
+volumes, so installing again brings the projects back, ready to
+redeploy. `--uninstall --purge` removes those too, with Dock's networks
+and system users. Docker stays either way. On a node, remove the server
+on the control plane first (`dock server remove`).
 
 ## config.toml
 
