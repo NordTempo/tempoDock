@@ -4,8 +4,10 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/core"
@@ -30,10 +32,34 @@ type sourceInput struct {
 	body io.Reader
 }
 
-// Resolve captures the raw request body.
+// Resolve captures the raw request body, read with uploadIdle between
+// its bytes at most.
 func (in *sourceInput) Resolve(ctx huma.Context) []error {
-	in.body = ctx.BodyReader()
+	_, w := humago.Unwrap(ctx)
+	in.body = &idleBody{r: ctx.BodyReader(), rc: http.NewResponseController(w)}
 	return nil
+}
+
+// uploadIdle is how long a source upload may send nothing before it is
+// cut. An upload holds one of the server's few upload places for as long
+// as its client keeps the connection open, and nothing else bounds a
+// body: without this a connection that sends a byte and waits holds its
+// place for good. A variable so tests can shorten it.
+var uploadIdle = time.Minute
+
+// idleBody reads a request's body with a deadline uploadIdle past each
+// read: the connection's own read deadline, moved along as bytes come,
+// so a slow upload goes on and a silent one ends. The deadline is the
+// connection's (no timer of Dock's), and the server clears it before the
+// connection's next request.
+type idleBody struct {
+	r  io.Reader
+	rc *http.ResponseController
+}
+
+func (b *idleBody) Read(p []byte) (int, error) {
+	_ = b.rc.SetReadDeadline(time.Now().Add(uploadIdle))
+	return b.r.Read(p)
 }
 
 func registerReleases(s *Server, a huma.API) {

@@ -955,23 +955,39 @@ func (c *Core) deploySource(ctx context.Context, a Actor, ss svcScope, open func
 }
 
 // maxConcurrentUploads caps source uploads streaming to disk at once on
-// this server, whatever the service.
-const maxConcurrentUploads = 2
+// this server, whatever the service, and maxOrgUploads how many of them
+// one organization's may be: a client decides how fast its upload goes,
+// so one organization's uploads never hold every place.
+const (
+	maxConcurrentUploads = 4
+	maxOrgUploads        = 2
+)
 
 // beginUpload claims the right to stream a source upload for a service:
-// one per service, and at most maxConcurrentUploads per server, so parallel
-// uploads can't fill the disk before the in-flight check sees them. Call
-// done when the upload is saved and its release created (or it failed).
+// one per service, maxOrgUploads per organization and at most
+// maxConcurrentUploads per server, so parallel uploads can't fill the
+// disk before the in-flight check sees them. Call done when the upload
+// is saved and its release created (or it failed).
 func (c *Core) beginUpload(ss svcScope) (done func(), err error) {
 	c.uploadsMu.Lock()
 	defer c.uploadsMu.Unlock()
+	org := ss.project.OrgID
+	own := 0
+	for _, o := range c.uploads {
+		if o == org {
+			own++
+		}
+	}
+	_, busy := c.uploads[ss.svc.ID]
 	switch {
-	case c.uploads[ss.svc.ID]:
+	case busy:
 		return nil, errf(apitypes.CodeDeployInProgress, "a source upload for %s is already in progress; wait for it to finish", ss)
+	case own >= maxOrgUploads:
+		return nil, errf(apitypes.CodeConflict, "%d source uploads of this organization are already in progress; try again when one has finished", own)
 	case len(c.uploads) >= maxConcurrentUploads:
 		return nil, errf(apitypes.CodeConflict, "%d source uploads are already in progress on this server; try again in a moment", len(c.uploads))
 	}
-	c.uploads[ss.svc.ID] = true
+	c.uploads[ss.svc.ID] = org
 	return func() {
 		c.uploadsMu.Lock()
 		delete(c.uploads, ss.svc.ID)
@@ -1008,6 +1024,9 @@ func (c *Core) saveUpload(body io.Reader, maxBytes int64) (string, *repoconfig.C
 		return "", nil, err
 	}
 	switch {
+	case errors.Is(err, os.ErrDeadlineExceeded):
+		// The API cuts an upload that goes silent (its read deadline).
+		return fail(invalid("the upload stopped sending and was cut off; deploy again"))
 	case err != nil:
 		return fail(fmt.Errorf("receive upload: %w", err))
 	case in.n > maxBytes:
