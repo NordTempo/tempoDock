@@ -513,6 +513,7 @@ func TestChannelsNeverReachTheServer(t *testing.T) {
 	for _, u := range []string{
 		"http://127.0.0.1:7071/internal/caddy/ask", "http://localhost:5000/v2/", "http://[::1]/", "http://0.0.0.0/",
 		"http://169.254.169.254/latest/meta-data", "http://[fd00:ec2::254]/", "http://[::ffff:127.0.0.1]/",
+		"http://168.63.129.16/machine?comp=goalstate",
 	} {
 		if _, err := h.c.CreateAlertChannel(h.ctx, testSystem, false, apitypes.CreateAlertChannelRequest{Name: "x", Kind: apitypes.ChannelWebhook, URL: u}); CodeOf(err) != apitypes.CodeValidation {
 			t.Errorf("channel to %s: %v", u, err)
