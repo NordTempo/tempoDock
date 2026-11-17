@@ -490,10 +490,10 @@ func shadowData(in permissionInput, got apitypes.DataPermission) {
 	a := in.actor
 	// People's data access stays on the data policy until it moves into
 	// grants; this keeps finding the rules that can't.
-	if a.Kind == "system" || a.platformOnly || a.OrgID == 0 || isAgent(a) || rank(a.Scope) >= rank(apitypes.ScopeAdmin) {
+	if a.Kind == "system" || a.platformOnly || a.OrgID == 0 || isAgent(a) || rank(a.dataScope()) >= rank(apitypes.ScopeAdmin) {
 		return
 	}
-	subject := subjectOf(a.Scope)
+	subject := subjectOf(a.dataScope())
 	model := in.platform.builtIn(subject, in.kind)
 	for _, r := range in.rules.scoped() {
 		if r.Subject != subject || r.Kind != in.kind {

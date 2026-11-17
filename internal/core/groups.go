@@ -259,6 +259,8 @@ func (c *Core) loadAccess(ctx context.Context, a Actor) (Actor, error) {
 			return a, err
 		}
 		cp := capOf(settings, rules, true)
+		// The data policy judges the agent as its person (dataScope).
+		cp.person = summaryOf(orgWide(entries))
 		entries, a.agent = cp.capEntries(entries), &cp
 	}
 	if !c.enforceGrants.Load() {
@@ -267,25 +269,12 @@ func (c *Core) loadAccess(ctx context.Context, a Actor) (Actor, error) {
 		a.grants, a.watchGrants = entries, true
 		return a, nil
 	}
-	var org Perms
-	for _, g := range entries {
-		if g.project == 0 && g.env == 0 && g.kinds == uint8(allKinds) {
-			org |= g.perms
-		}
-	}
+	org := orgWide(entries)
 	// An agent's environment permissions held in every kind count too.
 	if a.isPersonalAgent() {
 		org |= everyKind(entries)
 	}
-	// The Data panel's permissions don't count: the data policy decides
-	// them (and an agent's setting caps them there).
-	summary := apitypes.ScopeRead
-	switch admins, devs := seedPerms("admins")&^dataPerms, seedPerms("developers")&^dataPerms; {
-	case org&admins == admins:
-		summary = apitypes.ScopeAdmin
-	case org&devs == devs:
-		summary = apitypes.ScopeDeploy
-	}
+	summary := summaryOf(org)
 	// The role column is what role-setting APIs last wrote; groups changed
 	// since may give more or less, so the summary replaces it. (`dock
 	// login` tokens, which acted with the role capped at their scope, are
@@ -293,6 +282,32 @@ func (c *Core) loadAccess(ctx context.Context, a Actor) (Actor, error) {
 	a.Scope = summary
 	a.grants, a.hasGrants = entries, true
 	return a, nil
+}
+
+// orgWide is what entries give on the whole org in every environment
+// kind.
+func orgWide(entries []grantEntry) Perms {
+	var org Perms
+	for _, g := range entries {
+		if g.project == 0 && g.env == 0 && g.kinds == uint8(allKinds) {
+			org |= g.perms
+		}
+	}
+	return org
+}
+
+// summaryOf is the role that org-wide permissions amount to: admin with
+// all of the seeded Admins group, deploy with all of Developers, else
+// read. The Data panel's permissions don't count: the data policy decides
+// them (and an agent's setting caps them there).
+func summaryOf(org Perms) apitypes.Scope {
+	switch admins, devs := seedPerms("admins")&^dataPerms, seedPerms("developers")&^dataPerms; {
+	case org&admins == admins:
+		return apitypes.ScopeAdmin
+	case org&devs == devs:
+		return apitypes.ScopeDeploy
+	}
+	return apitypes.ScopeRead
 }
 
 // grantAllows is a person's answer to a check from their grants: the

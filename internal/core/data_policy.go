@@ -83,15 +83,16 @@ type permissionInput struct {
 // decidePermission works out what the caller may do and why
 // (datapanel.Decide) from Dock's view of them. A `dock login` token acts
 // for its user (isAgent), so it is judged like that user (its subject is
-// its role, capped by the user's current role) and may write production
-// like them; every other token is an agent: the tokens rule or its own
+// their role, dataScope) and may write production like them, as far as
+// their agent setting lets it (dataPermission); every other token is an
+// agent: the tokens rule or its own
 // override, capped by its scope and creator, and only proposing on
 // production.
 func decidePermission(in permissionInput) apitypes.DataPermission {
 	a := in.actor
-	agent := isAgent(a)
+	agent, scope := isAgent(a), a.dataScope()
 	pin := datapanel.PolicyInput{
-		Kind: in.kind, Admin: rank(a.Scope) >= rank(apitypes.ScopeAdmin), Agent: agent, Subject: subjectOf(a.Scope),
+		Kind: in.kind, Admin: rank(scope) >= rank(apitypes.ScopeAdmin), Agent: agent, Subject: subjectOf(scope),
 		Rules: in.rules.scoped(), BuiltIn: in.platform.builtIn,
 		ScopeName: func(s apitypes.DataPolicyScope) string {
 			switch s {
@@ -109,7 +110,7 @@ func decidePermission(in permissionInput) apitypes.DataPermission {
 			tok.Override = tokenData(*in.token)
 		}
 		if agent {
-			tok.Caps = append(tok.Caps, datapanel.Cap{Subject: subjectOf(a.Scope), Why: fmt.Sprintf("capped by the token's scope %s: ", a.Scope)})
+			tok.Caps = append(tok.Caps, datapanel.Cap{Subject: subjectOf(scope), Why: fmt.Sprintf("capped by the token's scope %s: ", scope)})
 		}
 		if in.creator != nil && rank(*in.creator) < rank(apitypes.ScopeAdmin) {
 			who := "its creator " + in.token.CreatedBy
@@ -120,7 +121,7 @@ func decidePermission(in permissionInput) apitypes.DataPermission {
 		}
 		pin.Token = tok
 	}
-	subject := subjectOf(a.Scope)
+	subject := subjectOf(scope)
 	if agent {
 		subject = apitypes.SubjectTokens
 	}
@@ -132,7 +133,7 @@ func decidePermission(in permissionInput) apitypes.DataPermission {
 // rules) and decides it. Admins need none.
 func (c *Core) dataPermission(ctx context.Context, a Actor, es envScope) (apitypes.DataPermission, error) {
 	in := permissionInput{actor: a, kind: apitypes.EnvironmentKind(es.env.Kind), project: es.project.Name, env: es.env.Name, platform: c.platformPolicy.Load()}
-	if rank(a.Scope) < rank(apitypes.ScopeAdmin) {
+	if rank(a.dataScope()) < rank(apitypes.ScopeAdmin) {
 		if a.Kind == "token" {
 			t, err := c.store.GetToken(ctx, a.TokenID)
 			if err != nil {
@@ -161,6 +162,11 @@ func (c *Core) dataPermission(ctx context.Context, a Actor, es envScope) (apityp
 		if i := kindIndex(envKind(es.env)); i >= 0 {
 			perm = capAgentData(perm, a.agent.data[i])
 		}
+	}
+	if a.hasGrants && a.isPersonalAgent() && perm.Approve && !a.approves(es.project.ID, es.env.ID, envKind(es.env)) {
+		// Judged as its person, an admin's agent would approve changesets;
+		// agents approve only where their Approver setting says.
+		perm.Approve = false
 	}
 	if a.suspended {
 		// ADR 0062: in a suspended org the actor reads, nothing more.

@@ -283,3 +283,15 @@ Settled after reviewing phases 6 and 7 as a whole:
   a member, and taking parts out of a custom role all ask what giving
   them would. Managing members without Full access is no way to strip
   those who hold more.
+- **A personal agent's data access is its person's.** The data policy
+  speaks in roles, and judged a `dock login` by the agent's own summary
+  role, which is never admin: agents don't approve unless their person
+  turns Approver on, and the summary needs all of Admins. So an admin's
+  login got the `role:deploy` rule (read on non-production, masked, no
+  tunnel) while its agent setting said Data panel `all`. Now the policy
+  judges a personal agent by its person's role (their grants before the
+  agent's cap), and the agent's Data panel level per environment kind,
+  with the org's agent rules, lowers that: `all` is everything the policy
+  gives the person. Approving changesets follows the agent's Approver
+  setting, as other approvals do. Org agents are unchanged: the `tokens`
+  rule or their own override, capped by their scope and creator.
