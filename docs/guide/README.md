@@ -21,6 +21,7 @@ reasons behind it, see the [docs index](../../README.md#docs).
 | [Watching](watching.md) | Logs, errors, alerts and the Inbox, Analytics, image vulnerabilities |
 | [Organizations](organizations.md) | Switching, members and roles, tokens, the organization's settings |
 | [Status pages](status-pages.md) | A public page of your services' status and 90 days of uptime, from Dock's uptime checks |
+| [GitHub Actions](github-actions.md) | Deploying from your own CI after tests pass: the Deploy to Tempo Dock action, its token, inputs and exit codes |
 | [Agents](agents.md) | Letting Claude Code, CI and other bots deploy safely |
 | [API](api.md) | Auth, OpenAPI spec, event stream, errors, curl examples |
 

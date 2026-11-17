@@ -408,37 +408,24 @@ The token can deploy `shop/staging` only.
 
 ## CI
 
-Deploy an image built in CI; the server only pulls it. For a private
-registry, an admin adds the organization's credentials for its host once
-(`dock registry login ghcr.io --username NAME --password-stdin`, see
-[private registries](deploying.md#private-registries)); deploys pull with
-them.
+On GitHub Actions, use the **Deploy to Tempo Dock** action: it installs
+the CLI the server runs with its signature checked, deploys, shows the
+build in the job's log and fails the job when the release fails
+([Deploy from GitHub Actions](github-actions.md)).
 
-The runner needs the CLI: download `dock-cli-linux-amd64` from the release
-the server runs (`dock version` shows it) and check it against
-`SHA256SUMS`, and the file against its build provenance with `gh
-attestation verify` (releases from v0.56.0 on). The deploy itself only
-uses `DOCK_URL` and `DOCK_TOKEN`.
+Elsewhere, the runner needs the CLI: `install-cli.sh` from the release
+the server runs (`dock version` shows it), with `DOCK_VERSION` set and
+`DOCK_REQUIRE_SIGNATURE=1` so a release whose signature doesn't check out
+doesn't install. The deploy itself only uses `DOCK_URL` and `DOCK_TOKEN`;
+`--json-file` keeps the build's progress in the log and writes the result
+for the job to read ([CLI conventions](../cli.md#output)):
 
-```yaml
-# .github/workflows/deploy.yml (excerpt)
-- name: Install dock
-  run: |
-    for f in dock-cli-linux-amd64 SHA256SUMS; do
-      curl -fsSLO "https://github.com/NordTempo/tempoDock/releases/download/v0.1.0/$f"
-    done
-    grep ' dock-cli-linux-amd64$' SHA256SUMS | sha256sum --check
-    gh attestation verify dock-cli-linux-amd64 --repo NordTempo/tempoDock
-    sudo install -m 0755 dock-cli-linux-amd64 /usr/local/bin/dock
-- name: Deploy to staging
-  env:
-    DOCK_URL: ${{ secrets.DOCK_URL }}
-    DOCK_TOKEN: ${{ secrets.DOCK_TOKEN }}
-  run: |
-    dock deploy --image ghcr.io/acme/web:${{ github.sha }} \
-      --project shop --environment staging --service web --json
+```sh
+curl -fsSL https://github.com/NordTempo/tempoDock/releases/download/v0.56.0/install-cli.sh \
+  | DOCK_VERSION=v0.56.0 DOCK_REQUIRE_SIGNATURE=1 sh
+dock deploy --image "ghcr.io/acme/web:$CI_COMMIT_SHA" \
+  --project shop --environment staging --service web --json-file release.json
 ```
 
 The runner must reach the API: use Dock's [public address](install.md#public-address)
-as `DOCK_URL`, or join the runner to the tailnet (e.g.
-`tailscale/github-action`). Never expose the API port itself.
+as `DOCK_URL`, or join the runner to the tailnet. Never expose the API port itself.
