@@ -164,7 +164,9 @@ function SSOAgain({ onCancel }: { onCancel: () => void }) {
             primary
             data-autofocus
             disabled={start.isPending || start.isSuccess || !provider}
-            onClick={() => provider && start.mutate({ provider, to: here() })}
+            onClick={() =>
+              provider && start.mutate({ provider, to: here(), confirm: true })
+            }
           >
             Continue with {me?.sso_label}
           </Button>

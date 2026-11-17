@@ -13845,6 +13845,9 @@
       "SSOStartRequest": {
         "additionalProperties": false,
         "properties": {
+          "confirm": {
+            "type": "boolean"
+          },
           "provider": {
             "maxLength": 32,
             "minLength": 1,

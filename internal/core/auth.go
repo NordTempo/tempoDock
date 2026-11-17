@@ -343,19 +343,24 @@ func (c *Core) checkPassword(ctx context.Context, email, password string) (store
 }
 
 // newSession starts a UI session for u, signed in via (a password alone
-// when empty), verified now. It returns the session's secret and the
-// actor it authenticates, in no org yet.
+// when empty), verified now, or when the identity provider last had the
+// person sign in (via.authAt) if that was earlier. It returns the
+// session's secret and the actor it authenticates, in no org yet.
 func (c *Core) newSession(ctx context.Context, u store.User, via signInVia) (secret string, expires time.Time, a Actor, err error) {
 	secret, hash := newSecret(sessionPrefix)
 	t := now()
 	expires = t.Add(SessionTTL)
-	id, err := c.store.CreateSession(ctx, store.CreateSessionParams{UserID: u.ID, Hash: hash, ExpiresAt: expires, Factor: via.factor, VerifiedAt: &t, SsoProviderID: via.ssoProviderIDPtr()})
+	verified := t
+	if !via.authAt.IsZero() && via.authAt.Before(t) {
+		verified = via.authAt.UTC()
+	}
+	id, err := c.store.CreateSession(ctx, store.CreateSessionParams{UserID: u.ID, Hash: hash, ExpiresAt: expires, Factor: via.factor, VerifiedAt: &verified, SsoProviderID: via.ssoProviderIDPtr()})
 	if err != nil {
 		return "", time.Time{}, Actor{}, err
 	}
 	_ = c.store.DeleteExpiredSessions(ctx, now())
 	a = userActor(u)
-	a.SessionID, a.Factor, a.VerifiedAt = id, via.factor, t
+	a.SessionID, a.Factor, a.VerifiedAt = id, via.factor, verified
 	a.SSOProviderID, a.SSOProvider, a.SSOLabel = via.ssoProviderID, via.ssoProvider, via.ssoLabel
 	return secret, expires, c.gateOperator(a), nil
 }

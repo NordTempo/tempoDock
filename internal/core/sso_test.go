@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -386,6 +387,42 @@ func TestSSOWithSecondFactor(t *testing.T) {
 	}
 	if s := session(t, h, done.Secret); s.a.SSOProvider != "corp" || s.a.Factor != factorTOTP {
 		t.Fatalf("finished session = %+v", s.a)
+	}
+}
+
+// A session counts as confirmed when the provider last had the person
+// sign in, so signing in again on the provider's old session is no
+// step-up; a step-up asks the provider to sign them in again.
+func TestSSOStepUpNeedsAFreshSignIn(t *testing.T) {
+	h, idp := ssoHarness(t)
+	h.cliUser(adaEmail, apitypes.ScopeDeploy)
+	signedInAt := func(at time.Time) func(map[string]any) {
+		return func(c map[string]any) { c["auth_time"] = at.Unix() }
+	}
+
+	res, err := h.ssoSignIn(idp, "ada-sub", adaEmail, signedInAt(now().Add(-time.Hour)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := session(t, h, res.Secret)
+	wantCode(t, "step-up on an hour-old provider sign-in", stale.a.requireRecent("revealing a secret"), apitypes.CodeReauthRequired)
+
+	start, err := h.c.StartSSO(h.ctx, apitypes.SSOStartRequest{Provider: "corp", To: "/test/shop", Confirm: true}, testClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u, _ := url.Parse(start.URL); u.Query().Get("prompt") != "login" {
+		t.Fatalf("a step-up doesn't ask the provider to sign in again: %s", start.URL)
+	}
+	req := oidctest.Read(t, start.URL)
+	claims := idp.Claims(req, "ada-sub", adaEmail)
+	signedInAt(now())(claims)
+	res, err = h.c.FinishSSO(h.ctx, SSOCallback{State: req.State, Code: idp.Authorize(req, claims), Binding: start.Binding}, testClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session(t, h, res.Secret).a.requireRecent("revealing a secret"); err != nil {
+		t.Fatalf("a fresh sign-in at the provider doesn't confirm: %v", err)
 	}
 }
 

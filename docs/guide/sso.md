@@ -106,7 +106,12 @@ the provider. An operator can give them one from the console's Users.
   authenticator app or passkey in Dock, Dock asks for it after the
   provider.
 - When Dock asks you to confirm it's you, you sign in through the same
-  provider again (or use your Dock second factor).
+  provider again (or use your Dock second factor). Dock asks the provider
+  to sign you in again even if you are still signed in there, and counts
+  a sign-in as confirmed when you last signed in at the provider, so
+  signing in to Dock on a provider session hours old asks you to
+  confirm before sensitive actions. GitHub can't be asked: its step-ups
+  reuse your GitHub session.
 
 ## Turning passwords off
 

@@ -75,6 +75,11 @@ type signInVia struct {
 	ssoProviderID int64
 	ssoProvider   string
 	ssoLabel      string
+	// authAt is when an identity provider last had the person sign in
+	// (the ID token's auth_time): the session counts as confirmed then,
+	// not now, so reusing an old provider session is no step-up. Zero
+	// for now.
+	authAt time.Time
 }
 
 // ssoProviderIDPtr is ssoProviderID for the store, nil for none.

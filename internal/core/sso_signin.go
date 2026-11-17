@@ -41,6 +41,9 @@ import (
 //  3. ssoUser maps the person to a Dock account (see there). The session
 //     then starts as after a password, with factor sso and the provider
 //     recorded, and a user with an authenticator app still gives a code.
+//     It counts as confirmed when the provider last had the person sign
+//     in (auth_time), so a step-up (SSOStartRequest.Confirm) asks the
+//     provider to sign them in again.
 
 const (
 	// ssoTimeout bounds each request to an identity provider.
@@ -167,9 +170,25 @@ func (c *Core) StartSSO(ctx context.Context, req apitypes.SSOStartRequest, clien
 	opts := []oauth2.AuthCodeOption{oauth2.S256ChallengeOption(verifier)}
 	if prov != nil {
 		opts = append(opts, oidc.Nonce(nonce))
+		if req.Confirm {
+			opts = append(opts, ssoConfirmOptions(p.Kind))
+		}
 	}
 	authURL := c.oauthConfig(p, prov, "").AuthCodeURL(state, opts...)
 	return SSOStart{SSOStart: apitypes.SSOStart{URL: authURL}, Binding: binding}, nil
+}
+
+// ssoConfirmOptions asks an OpenID Connect provider to have the person
+// sign in again even with a live session of its own, for a step-up:
+// prompt=login, which Google refuses, so it gets max_age=0 instead. The
+// session then counts as confirmed at the ID token's auth_time
+// (signInVia.authAt), so a provider that ignores the request confirms
+// nothing. GitHub's OAuth has neither; its step-ups reuse its session.
+func ssoConfirmOptions(kind string) oauth2.AuthCodeOption {
+	if kind == string(apitypes.SSOGoogle) {
+		return oauth2.SetAuthURLParam("max_age", "0")
+	}
+	return oauth2.SetAuthURLParam("prompt", "login")
 }
 
 // oauthConfig is the OAuth 2.0 client Dock is at provider p; prov is its
@@ -272,9 +291,11 @@ func errSSOAnswer(label string) error {
 	return errf(apitypes.CodeUnauthorized, "%s's answer didn't check out; try again, or ask an operator to check the %s provider in the console", label, label)
 }
 
-// ssoPerson is who a provider says signed in.
+// ssoPerson is who a provider says signed in, and when the provider last
+// had them sign in (auth_time; zero when it doesn't say).
 type ssoPerson struct {
 	subject, email, name string
+	authAt               time.Time
 }
 
 // finishSSO checks the provider's answer for flow f and signs the person
@@ -317,7 +338,7 @@ func (c *Core) finishSSO(ctx context.Context, p store.SsoProvider, f *ssoFlow, c
 	if err != nil {
 		return LoginResult{}, err
 	}
-	via := signInVia{factor: factorSSO, ssoProviderID: p.ID, ssoProvider: p.Name, ssoLabel: p.Label}
+	via := signInVia{factor: factorSSO, ssoProviderID: p.ID, ssoProvider: p.Name, ssoLabel: p.Label, authAt: who.authAt}
 	n, err := c.store.CountUserFactors(ctx, u.ID)
 	if err != nil {
 		return LoginResult{}, err
@@ -354,12 +375,18 @@ func oidcPerson(ctx context.Context, log *slog.Logger, p store.SsoProvider, f *s
 		EmailDomainVerified any    `json:"xms_edov"`
 		Name                string `json:"name"`
 		PreferredUsername   string `json:"preferred_username"`
+		// AuthTime is when the person last signed in at the provider,
+		// in seconds since 1970.
+		AuthTime float64 `json:"auth_time"`
 	}
 	if err := idt.Claims(&claims); err != nil {
 		log.Warn("sso: ID token claims", "err", err)
 		return ssoPerson{}, errSSOAnswer(p.Label)
 	}
 	who := ssoPerson{subject: idt.Subject, email: strings.TrimSpace(claims.Email)}
+	if claims.AuthTime > 0 {
+		who.authAt = time.Unix(int64(claims.AuthTime), 0)
+	}
 	if who.email == "" {
 		return who, errf(apitypes.CodeForbidden, "%s sent no email address; ask an operator to let Dock read it (the email scope)", p.Label)
 	}

@@ -140,6 +140,9 @@ type SSOStartRequest struct {
 	Provider string `json:"provider" minLength:"1" maxLength:"32"`
 	// To is the path to land on after signing in; "/" by default.
 	To string `json:"to,omitempty" maxLength:"512"`
+	// Confirm is a step-up ("Confirm it's you"): the provider is asked to
+	// have the person sign in again rather than reuse its own session.
+	Confirm bool `json:"confirm,omitempty"`
 }
 
 // SSOStart is the identity provider's page to send the browser to.

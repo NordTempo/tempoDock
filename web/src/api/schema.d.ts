@@ -10811,6 +10811,7 @@ export interface components {
             url: string;
         };
         SSOStartRequest: {
+            confirm?: boolean;
             provider: string;
             to?: string;
         };
