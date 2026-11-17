@@ -48,7 +48,19 @@ export function StateText({
   );
 }
 
-/** Who did something: ◇ for tokens (agents, CI), ○ for people. */
+/**
+ * Who did something: ◇ for tokens (agents, CI), ○ for people. The token
+ * `dock admin bootstrap` makes at install, named "bootstrap", reads as
+ * "setup token".
+ */
+/**
+ * How an actor's name reads in plain text: the install's first token
+ * (`dock admin bootstrap` names it "bootstrap") is the setup token.
+ * Actor uses it, and plain-text lines ("set by", "manual by") too.
+ */
+export const actorLabel = (name: string) =>
+  name === "bootstrap" ? "setup token" : name;
+
 export function Actor({
   name,
   kind,
@@ -58,7 +70,18 @@ export function Actor({
 }) {
   switch (kind) {
     case "token":
-      return <span className="text-info">◇ {name}</span>;
+      return (
+        <span
+          className="text-info"
+          title={
+            name === "bootstrap"
+              ? "The token named bootstrap: made by dock admin bootstrap when Dock was installed"
+              : undefined
+          }
+        >
+          ◇ {actorLabel(name)}
+        </span>
+      );
     case "user":
       return <span>○ {name}</span>;
     case "system":

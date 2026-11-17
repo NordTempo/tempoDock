@@ -91,12 +91,13 @@ function useStaged({
   });
   // A service with a volume stops its old container before the new one
   // starts: said as the rollback confirm says it.
-  const downtimes = affected.flatMap((s) =>
-    s.service.stateful && s.service.active_release && !s.service.stopped_at
-      ? [
-          `${s.service.name} is down for a few seconds while r${s.service.active_release} stops and the new release starts: only one copy can use its volume at a time.`,
-        ]
-      : [],
+  const stopping = affected.filter(
+    (s) =>
+      s.service.stateful && s.service.active_release && !s.service.stopped_at,
+  );
+  const downtimes = stopping.map(
+    (s) =>
+      `${s.service.name} is down for a few seconds while r${s.service.active_release} stops and the new release starts: only one copy can use its volume at a time.`,
   );
   // Releases can't start on an unreachable server.
   const blocked = useDeployBlock(env);
@@ -238,6 +239,8 @@ function useStaged({
     releases,
     keptImages,
     downtimes,
+    /** The services applying stops for a few seconds, by name. */
+    stopping: stopping.map((s) => s.service.name),
     applyBlocked,
     own,
     ownCount,
@@ -294,7 +297,15 @@ export function ApplyControl({
   service: string;
 }) {
   const staged = useStaged({ env, service });
-  const { changes, busy, applyBlocked, apply, downtimes, applyLabel } = staged;
+  const {
+    changes,
+    busy,
+    applyBlocked,
+    apply,
+    downtimes,
+    stopping,
+    applyLabel,
+  } = staged;
   const [open, setOpen] = useState(false);
   const run = () => {
     if (downtimes.length > 0 && !open) return setOpen(true);
@@ -336,15 +347,16 @@ export function ApplyControl({
             <span className="text-warn">
               <span className="dot" />
             </span>
-            {/* Says what waits: "2 to apply", and that applying stops a
-                service for a moment. */}
+            {/* Says what waits: "2 to apply", and which service applying
+                stops for a moment ("▲ web down a few seconds"). */}
             {changes.count} to apply
-            {downtimes.length > 0 && (
-              <span
-                className="text-warn"
-                title="Applying stops a service for a few seconds"
-              >
-                ▲ downtime
+            {stopping.length > 0 && (
+              <span className="text-warn" title={downtimes.join(" ")}>
+                ▲{" "}
+                {stopping.length === 1
+                  ? stopping[0]
+                  : `${stopping.length} services`}{" "}
+                down a few seconds
               </span>
             )}
           </button>

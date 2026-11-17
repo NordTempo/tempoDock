@@ -12,6 +12,7 @@ import {
   Act,
   Actor,
   actorKind,
+  actorLabel,
   Confirm,
   ErrorText,
   Panel,
@@ -305,7 +306,7 @@ function JobDetail({
         <span className="text-xs text-faint">
           {job.source === "repo"
             ? "from dock.toml"
-            : `set by ${job.created_by} · ${day(job.updated_at)}`}
+            : `set by ${actorLabel(job.created_by)} · ${day(job.updated_at)}`}
         </span>
         {job.source === "api" && canDeploy && (
           <span className="ml-auto">

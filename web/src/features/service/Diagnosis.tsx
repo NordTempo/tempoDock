@@ -32,11 +32,11 @@ const diagnosisQuery = (ref: ServiceRef, release: number, id: number) =>
     staleTime: Number.POSITIVE_INFINITY,
   });
 
-/** The release's diagnosis once loaded; undefined without one. */
-export function useDiagnosis(ref: ServiceRef, release: Release) {
-  const id = release.diagnosis?.id;
+/** The release's diagnosis once loaded; undefined without one (or without a release). */
+export function useDiagnosis(ref: ServiceRef, release: Release | undefined) {
+  const id = release?.diagnosis?.id;
   return useQuery({
-    ...diagnosisQuery(ref, release.number, id ?? 0),
+    ...diagnosisQuery(ref, release?.number ?? 0, id ?? 0),
     enabled: id !== undefined,
   }).data;
 }

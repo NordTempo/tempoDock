@@ -33,14 +33,17 @@ export function severityTone(severity: Finding["severity"] | string) {
 export const edgeOf = (c: Counts) =>
   c.critical > 0 ? "border-fail" : c.high > 0 ? "border-warn" : "border-edge";
 
-/** CISA lists it as exploited in the wild. */
+/**
+ * CISA lists it as exploited in the wild (its KEV catalog), said in plain
+ * words: "exploited".
+ */
 export function Kev() {
   return (
     <span
-      className="ml-1.5 rounded-tag border border-fail-edge px-1 align-[1px] font-mono text-tag leading-4 font-normal text-fail"
-      title="Exploited in the wild (CISA's known exploited vulnerabilities)"
+      className="ml-1.5 rounded-tag border border-fail-edge px-1 align-[1px] text-tag leading-4 font-normal text-fail"
+      title="Known exploited: listed by CISA as exploited in the wild (KEV)"
     >
-      KEV
+      exploited
     </span>
   );
 }
