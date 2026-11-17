@@ -332,7 +332,7 @@ export function LockForm({
           checked={people}
           onChange={(e) => setPeople(e.target.checked)}
         />
-        Hold people's changes too
+        Hold people's changes too (full code freeze)
       </label>
       <Act small primary type="submit" cli={cli} disabled={lock.isPending}>
         Lock

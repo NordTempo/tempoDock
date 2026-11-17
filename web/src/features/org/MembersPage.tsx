@@ -341,7 +341,8 @@ function InviteForm({
               onChange={() => setRole(r)}
               aria-invalid={!!roleError}
             />
-            <span className="w-16 font-medium">{r}</span>
+            <span className="w-16 font-medium">{r}</span>{" "}
+            {/* The space keeps "deploy also deploy…" two words when read. */}
             <span className="text-xs text-mut">{roleNote[r]}</span>
           </label>
         ))}

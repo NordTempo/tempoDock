@@ -624,9 +624,9 @@ function AddCheck({
             className={`field w-[96px] font-mono ${control}`}
           />
         </label>
-        {/* With a check of this URL already there, both ways are fine
-            (a second check, or the existing one changed), so neither is
-            the primary. */}
+        {/* With a check of this URL already there, changing it is the
+            primary (blind reviewers made duplicates otherwise); a second
+            check stays possible. */}
         <Act
           primary={existing.length === 0}
           type="submit"
@@ -663,6 +663,7 @@ function AddCheck({
           {first && !repeat && (
             <Button
               small
+              primary
               disabled={update.isPending}
               title={`dock uptime update ${first.id} --interval ${intervalS}s --status ${status} -s ${ref.service} -e ${ref.environment}`}
               onClick={() =>
