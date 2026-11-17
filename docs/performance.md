@@ -233,6 +233,7 @@ make perf PERF_FLAGS='-tempobase-pg postgres://postgres:pw@127.0.0.1:5432/postgr
 make perf PERF_FLAGS='-idle 5s'               # shorter idle windows while iterating
 make perf PERF_FLAGS='-soft-timing'           # timing budgets warn instead of failing (CI)
 make perf-baseline               # re-record binary sizes and benchmarks
+go run ./scripts/perf -update-baseline -rerecord 'BenchmarkFoo$|BenchmarkBar'  # re-record only these rows
 go test -run '^$' -bench . -benchmem ./internal/core   # one package's benchmarks
 ```
 
@@ -292,7 +293,12 @@ masking secret values in logs (`BenchmarkRedactLine`, `BenchmarkRedactBuildLog`)
   purpose, or a new benchmark is added, run `make perf-baseline` on a quiet
   machine and commit `scripts/perf/baseline.json` with the change, saying why
   in the commit message. Never update it to silence a regression you didn't
-  mean.
+  mean. For a few rows, `-rerecord PATTERN` re-measures only the
+  benchmarks it matches and keeps everything else; it scales their times
+  to the baseline's calibration and keeps a time that moved less than the
+  ns tolerance. Don't edit rows by hand: an unscaled time drifts from the
+  calibration (BenchmarkCheckEnvShadowed was recorded 47% fast that way),
+  and the warn rows it leaves on every pull request hide real ones.
 - **Waivers.** `baseline.json` lists checks known to be over budget, with
   the reason and the fix. They are reported as `waived` instead of failing.
   Add one only for a pre-existing problem that has an owner, and remove it

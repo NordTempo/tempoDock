@@ -12,3 +12,5 @@
 coverage.out
 /internal/node/probe/bin/*
 !/internal/node/probe/bin/.gitkeep
+# `go build ./scripts/perf` writes its binary here (it was committed once, #386).
+/perf
