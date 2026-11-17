@@ -33,13 +33,19 @@ import (
 // open, escalate and resolve, and a reminder every renotify_minutes while
 // one stays open. Each channel's notifications are sent in order by a
 // goroutine that runs while it has some queued, each retried with backoff
-// (deliveryBackoff); the outcome is kept on the channel, so failures show
-// in `dock alerts channel list` and the UI. Queues live in memory only: a
-// restart drops what wasn't sent.
+// (deliveryBackoff, longer when the receiver asks with Retry-After; never
+// after an answer retrying can't change, deliveryError.final); the outcome
+// is kept on the channel, so failures show in `dock alerts channel list`
+// and the UI. Queues live in memory only: a restart drops what wasn't
+// sent.
 
 // deliveryBackoff is how long each delivery attempt waits before it runs:
 // the first right away, the last about 20 minutes after the alert.
 var deliveryBackoff = []time.Duration{0, 10 * time.Second, time.Minute, 5 * time.Minute, 15 * time.Minute}
+
+// maxRetryAfter caps how long a receiver's Retry-After makes the next
+// attempt wait: the longest backoff step.
+const maxRetryAfter = 15 * time.Minute
 
 const (
 	// maxQueued caps the notifications waiting for one channel (or status
@@ -203,12 +209,17 @@ func (q *deliveryQueue[T]) sendAll(ctx context.Context, id int64, send func(T)) 
 var errGone = errors.New("removed meanwhile")
 
 // withRetries makes up to len(deliveryBackoff) attempts, waiting between
-// them, until one succeeds, returns errGone or the daemon closes. It
-// returns the last attempt's error.
+// them, until one succeeds, returns errGone or a final deliveryError
+// (a 404 from a removed Slack webhook), or the daemon closes. A
+// deliveryError's Retry-After (Slack's and Discord's rate limits) makes
+// the next wait at least that long, up to maxRetryAfter. It returns the
+// last attempt's error.
 func (c *Core) withRetries(attempt func() error) error {
 	var err error
+	var after time.Duration
 	for _, wait := range deliveryBackoff {
 		if wait > 0 {
+			wait = max(wait, after)
 			t := time.NewTimer(wait)
 			select {
 			case <-c.ctx.Done():
@@ -220,8 +231,33 @@ func (c *Core) withRetries(attempt func() error) error {
 		if err = attempt(); err == nil || errors.Is(err, errGone) || c.ctx.Err() != nil {
 			return err
 		}
+		after = 0
+		if de, ok := errors.AsType[*deliveryError](err); ok {
+			if de.final() {
+				return err
+			}
+			after = min(de.retryAfter, maxRetryAfter)
+		}
 	}
 	return err
+}
+
+// deliveryError is a channel's or hook's answer other than 2xx.
+type deliveryError struct {
+	status int
+	// retryAfter is the answer's Retry-After in seconds, 0 without one.
+	retryAfter time.Duration
+	msg        string
+}
+
+func (e *deliveryError) Error() string { return e.msg }
+
+// final reports whether sending the same body again can't succeed: a
+// 4xx other than 408 (timeout) and 429 (rate limited). Slack answers 404
+// no_service for a removed webhook and 410 channel_is_archived, and
+// retrying those for 20 minutes only holds up the channel's queue.
+func (e *deliveryError) final() bool {
+	return e.status/100 == 4 && e.status != http.StatusRequestTimeout && e.status != http.StatusTooManyRequests
 }
 
 // deliver queues n for ch and starts the channel's sender if it isn't
@@ -367,7 +403,7 @@ func (e *alertEngine) guardFor(org bool) (*egressGuard, *http.Client) {
 }
 
 // post sends a JSON body, with the org's guard (org) or the platform's
-// (guardFor); anything but a 2xx answer is an error.
+// (guardFor); anything but a 2xx answer is a *deliveryError.
 func (e *alertEngine) post(ctx context.Context, org bool, target string, body []byte, headers map[string]string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
 	if err != nil {
@@ -390,7 +426,11 @@ func (e *alertEngine) post(ctx context.Context, org bool, target string, body []
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode/100 != 2 {
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 200))
-		return fmt.Errorf("the channel's URL answered %s: %s", resp.Status, strings.TrimSpace(string(snippet)))
+		de := &deliveryError{status: resp.StatusCode, msg: fmt.Sprintf("the channel's URL answered %s: %s", resp.Status, strings.TrimSpace(string(snippet)))}
+		if s, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && s > 0 {
+			de.retryAfter = time.Duration(s) * time.Second
+		}
+		return de
 	}
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 	return nil

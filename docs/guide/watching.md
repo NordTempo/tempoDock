@@ -59,6 +59,10 @@ wait for an admin ([locked environments](agents.md#locked-environments-and-acces
 Alert channels send them on: a webhook, Slack or email, each with a
 minimum severity, when an alert opens, while it stays open (`--renotify`)
 and when it resolves. Admins add them under Organization settings, Alerts.
+A delivery that fails is retried
+for about 20 minutes, waiting longer when Slack asks (`Retry-After`); an
+answer that can't change, like Slack's 404 for a removed webhook, isn't
+retried, and the channel shows the error until a delivery works again.
 
 ```sh
 dock alerts                                                      # open ones

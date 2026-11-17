@@ -181,3 +181,23 @@ dock made, and a few neighbouring gaps are closed.
 
 No new periodic work: the prune is still a list and removals while a disk
 is full, and archives prune the registry the way deploys do.
+
+## Amendment (2026-11-17): Slack's answers
+
+Decided by the agent after testing Slack channels against a mock of
+Slack's incoming webhooks on real servers.
+
+- **Retry-After is honoured.** Slack (and Discord) answer a burst with
+  429 and `Retry-After` in seconds. The next attempt waits at least that
+  long, up to 15 minutes; before, it went out after the fixed 10 s and
+  was refused again. Pacing sends to a channel ahead of a 429 isn't done:
+  it would need a timer between sends, and one channel's burst (ten
+  failed deploys at once) is rare.
+- **Final answers aren't retried.** A 4xx other than 408 and 429 means
+  the same body can't succeed: Slack's 404 `no_service` (webhook removed)
+  and 410 `channel_is_archived`, a receiver's 400 or 403. The delivery
+  fails at once and shows on the channel, instead of five attempts over
+  20 minutes that held up the channel's queue, filled it and dropped
+  later alerts, resolutions included. The channel isn't turned off: its
+  error shows in `dock alerts channel list` and the UI, and the next
+  alert tries again, one request each.

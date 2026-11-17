@@ -11,10 +11,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -315,6 +317,48 @@ func TestSlackTextIsEscaped(t *testing.T) {
 	if want := "[warning] Deploy of a/b/c failed\n&lt;!channel&gt; &lt;https://evil.example|log in&gt; &amp; retry"; got != want {
 		t.Fatalf("slack text = %q", got)
 	}
+}
+
+// Slack's rate limit (429 with Retry-After) makes the next attempt wait as
+// long as it asks; an answer retrying can't change (404 no_service for a
+// removed webhook, 410 channel_is_archived) ends the retries at once.
+func TestDeliveryRetryAfterAndFinalAnswers(t *testing.T) {
+	h := newHarness(t)
+	h.c.AllowLoopbackAlertChannels(true)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "30")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = io.WriteString(w, "rate_limited")
+	}))
+	t.Cleanup(srv.Close)
+	err := h.c.alerts.post(h.ctx, true, srv.URL, []byte(`{"text":"x"}`), nil)
+	if de, ok := errors.AsType[*deliveryError](err); !ok || de.retryAfter != 30*time.Second || de.final() || !strings.Contains(de.Error(), "429") {
+		t.Fatalf("post to a rate limited webhook = %v", err)
+	}
+
+	synctest.Test(t, func(t *testing.T) {
+		c := &Core{ctx: t.Context()}
+		start := time.Now()
+		var at []time.Duration
+		answers := []error{&deliveryError{status: http.StatusTooManyRequests, retryAfter: 2 * time.Minute}, &deliveryError{status: http.StatusServiceUnavailable}, nil}
+		err := c.withRetries(func() error {
+			at = append(at, time.Since(start))
+			e := answers[0]
+			answers = answers[1:]
+			return e
+		})
+		// The 10 s backoff stretched to the 2 minutes asked, then 1 minute.
+		if want := []time.Duration{0, 2 * time.Minute, 3 * time.Minute}; err != nil || !slices.Equal(at, want) {
+			t.Fatalf("attempts at %v (%v), want %v", at, err, want)
+		}
+		for _, status := range []int{400, 403, 404, 410} {
+			calls := 0
+			err := c.withRetries(func() error { calls++; return &deliveryError{status: status} })
+			if calls != 1 || err == nil {
+				t.Errorf("a %d answer was tried %d times (%v)", status, calls, err)
+			}
+		}
+	})
 }
 
 // Channels never reach the server itself (its loopback-only internal
