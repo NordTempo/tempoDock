@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -64,7 +65,20 @@ func openTestStore(t testing.TB, path string) *store.Store {
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	ctx := context.Background()
-	dir := t.TempDir()
+	// Cleanups run last first, so this one runs after t.TempDir's
+	// RemoveAll: when that failed with "directory not empty" (seen in
+	// CI's integration job only, never locally), it names what something
+	// wrote there after Close.
+	var dir string
+	t.Cleanup(func() {
+		_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+			if err == nil && p != dir {
+				t.Logf("left in the test's directory after Close: %s", p)
+			}
+			return nil
+		})
+	})
+	dir = t.TempDir()
 	st := openTestStore(t, filepath.Join(dir, "dock.db"))
 	box, err := secrets.New(bytes.Repeat([]byte{7}, secrets.KeySize))
 	if err != nil {

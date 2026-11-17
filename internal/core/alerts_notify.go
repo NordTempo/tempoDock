@@ -345,6 +345,12 @@ func (c *Core) channelFailed(ctx context.Context, id int64, cause error) {
 	}
 	c.connectionFailedIn(ctx, channelOrg(ch), channelAlertKey(id), "alert_channel:"+ch.Name,
 		"Alert channel "+ch.Name+" is broken", msg, command)
+	// A removal between the read above and the alert resolved nothing
+	// yet open: the alert goes now (RemoveAlertChannel deletes, then
+	// resolves, so one of the two sees the other).
+	if _, err := c.store.GetAlertChannelByID(ctx, id); store.IsNotFound(err) {
+		c.connectionWorks(ctx, channelAlertKey(id))
+	}
 }
 
 // channelAlertKey names a broken channel's alert.
