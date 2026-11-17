@@ -14,10 +14,8 @@
 # updater's own rollback with a fake release that never comes up; rollback
 # goes back to FROM by hand (old binary + the pre-update database).
 #
-# Needs Docker on the host and `gh` logged in to an account that can read
-# NordTempo/tempoDock (its token goes into the server's
-# /etc/dock/github-token for the updater). Everything it creates is named
-# upg-*; `down` removes it, volumes included.
+# Needs Docker on the host; releases download anonymously. Everything it
+# creates is named upg-*; `down` removes it, volumes included.
 set -euo pipefail
 
 FROM=${1:?usage: run.sh FROM TO [step]}
@@ -61,7 +59,6 @@ install() {
     && DOCK_BINARY=./dock-linux-amd64 DISABLE_TLS=true BASE_DOMAIN=upg.test LISTEN=127.0.0.1:7070 \
        ./deploy/install.sh > /root/upg/install.out 2> /root/upg/install.err"
   on bash /root/upg/lib.sh save_credentials
-  gh auth token | on bash -c 'umask 027; cat > /etc/dock/github-token; chown root:dock /etc/dock/github-token'
 }
 
 # down removes the server and everything inside it.
