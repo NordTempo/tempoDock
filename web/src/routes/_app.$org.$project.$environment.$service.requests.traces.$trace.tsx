@@ -48,7 +48,7 @@ function TracePage() {
   );
   return (
     <section aria-label="Trace" className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 text-[13px] text-mut">
+      <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 text-xs text-mut">
         <Link
           to="/$org/$project/$environment/$service/requests/traces"
           params={{ org, ...ref }}

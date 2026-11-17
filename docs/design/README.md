@@ -66,14 +66,14 @@ variables once, not as literals in components.
 | Page background | `#000` |
 | Panel, hover, selected row | `#0b0b0c`, `#141416`, `#1c1c1f` |
 | Lines | `#1f1f22` (dividers), `#161618` (subtle), `#2c2c30` (controls) |
-| Text | `#fafafa` primary, `#d0d0d6` secondary, `#a1a1aa` muted, `#8b8b94` faint |
+| Text | `#fafafa` primary, `#e4e4e7` secondary, `#b9b9c1` muted (faint is the same tone); `#8b8b94` only for disabled controls (2026-11-17, pick D) |
 | Live, healthy | `#4ade80` (dot and text), `#14261b` tint |
 | Staged, warning | `#fbbf24`, `#fcd77a` text, `#2a2210` / `#17140b` tints, `#3a2f12` border |
 | Failed | `#f87171` |
 | Links, info | `#93c5fd` |
 | Sans | Inter (weights 400, 500, 600) |
 | Mono | JetBrains Mono (ids, hashes, images, logs, values) |
-| Sizes | 24px page titles, 16px section headings, 14px body, 13.5px meta and hints, 13px table heads |
+| Sizes | 24px page titles, 16px section headings, 15px body, 14px meta, hints and table heads, 13px buttons and selects, 12px tags and keys (2026-11-17, pick D: blind reviewers found smaller grey text tiring) |
 | Radius | 6px controls and rows, 8 to 10px panels, 999px dots and badges |
 | Layout | sidebar 248px with the organization switcher, search, project tree and the organization's pages; main column with a 52px header bar and 24px 28px content, one width for every page (max 1400px) |
 | Root size | 14px, so Tailwind's spacing scale is 14/16 of the usual: a size that must be exact (24px targets) is written in px |

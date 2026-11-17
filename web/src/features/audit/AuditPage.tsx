@@ -254,7 +254,7 @@ export function AuditPage({
             placeholder="search target"
             value={search.q ?? ""}
             onChange={(e) => set({ q: e.target.value || undefined })}
-            className={`${control} max-w-[240px] min-w-[140px] flex-[1_1_140px] rounded-ctl border border-edge bg-page px-[9px] text-[12px] outline-none hover:border-dash focus:border-info`}
+            className={`${control} max-w-[240px] min-w-[140px] flex-[1_1_140px] rounded-ctl border border-edge bg-page px-[9px] text-ctl outline-none hover:border-dash focus:border-info`}
           />
           {filtered && (
             <button
