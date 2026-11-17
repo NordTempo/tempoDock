@@ -390,6 +390,17 @@ func (c *conn) query(ctx context.Context, sql string, cols int, row func([][]byt
 	}, row, nil)
 }
 
+// RereadSchema implements data.Tables.
+func (e *Engine) RereadSchema(serviceID int64) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if cat := e.schemas[serviceID]; cat != nil && time.Since(cat.readAt) < data.SchemaReread {
+		return false
+	}
+	delete(e.schemas, serviceID)
+	return true
+}
+
 // Forget closes the database's idle connections (busy ones close when
 // released) and drops its cached schema.
 func (e *Engine) Forget(id int64) {

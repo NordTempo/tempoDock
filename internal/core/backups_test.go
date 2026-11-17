@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/backup"
+	"github.com/NordTempo/tempoDock/internal/data"
+	"github.com/NordTempo/tempoDock/internal/data/pg"
 	"github.com/NordTempo/tempoDock/internal/node"
 )
 
@@ -334,8 +337,29 @@ func TestVolumeBackupWarnsAndCantRestore(t *testing.T) {
 	}
 }
 
+// forgetEngine stands in for one engine kind and records which services
+// the Data panel forgot.
+type forgetEngine struct {
+	data.Engine
+	mu     sync.Mutex
+	forgot []int64
+}
+
+func (e *forgetEngine) Kind() apitypes.DataEngine { return apitypes.EngineRedis }
+
+func (e *forgetEngine) Forget(id int64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.forgot = append(e.forgot, id)
+}
+
+func (e *forgetEngine) Close() {}
+
 func TestRestorePostgresIntoNewService(t *testing.T) {
 	h := newHarness(t)
+	forgets := &forgetEngine{}
+	h.opts.DataEngines = []data.Engine{pg.New(pg.Options{}), forgets}
+	h.restart()
 	db := h.templateDB("db", apitypes.TemplatePostgres)
 	snap := "dddd4444dddd4444"
 	h.rt.OnJob(func(node.JobSpec) (node.JobResult, error) {
@@ -355,6 +379,14 @@ func TestRestorePostgresIntoNewService(t *testing.T) {
 		t.Fatalf("restore = %+v", done)
 	}
 	old := ServiceRef{"shop", "production", "db-old"}
+	// Its schema, cached when its first release went live, is read again
+	// now that the dump filled it.
+	forgets.mu.Lock()
+	forgot := slices.Clone(forgets.forgot)
+	forgets.mu.Unlock()
+	if ss, err := h.c.loadService(h.ctx, 1, old); err != nil || !slices.Contains(forgot, ss.svc.ID) {
+		t.Fatalf("the Data panel kept db-old's schema: %v, forgot %v", err, forgot)
+	}
 	jobs := h.rt.Jobs()
 	job := jobs[len(jobs)-1]
 	newPw := h.revealed(old)["POSTGRES_PASSWORD"]

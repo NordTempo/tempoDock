@@ -785,6 +785,11 @@ func (c *Core) fillFromSnapshot(ctx context.Context, to svcScope, snap store.Vol
 // finishSnapshotRestore records and audits a restore's outcome; to is the
 // service restored into.
 func (c *Core) finishSnapshotRestore(ctx context.Context, ss svcScope, row store.VolumeSnapshotRestore, to string, err error) {
+	if row.InPlace {
+		// Its data changed under the Data panel's cached schema. A copy
+		// was filled before its first start.
+		c.panel.Forget(ss.svc.ID)
+	}
 	if ctx.Err() != nil {
 		return // shutting down: the next start marks it failed
 	}

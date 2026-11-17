@@ -464,7 +464,7 @@ func TestDataInfoWithoutAccess(t *testing.T) {
 	if err != nil || info.Status != apitypes.DataReady || info.ServerVersion != "17.2" || info.Access.Level != apitypes.LevelNone || info.Access.Manage {
 		t.Fatalf("info: %+v %v", info, err)
 	}
-	if _, err := h.c.DataSchema(h.ctx, deploy, db); CodeOf(err) != apitypes.CodeForbidden || !strings.Contains(err.Error(), "role:deploy gets none on production") {
+	if _, err := h.c.DataSchema(h.ctx, deploy, db, ""); CodeOf(err) != apitypes.CodeForbidden || !strings.Contains(err.Error(), "role:deploy gets none on production") {
 		t.Fatalf("schema without access: %v", err)
 	}
 	if _, err := h.c.SetupData(h.ctx, deploy, db); CodeOf(err) != apitypes.CodeForbidden {
@@ -520,6 +520,8 @@ func (e *pageEngine) References(context.Context, data.Target, data.Call, apitype
 }
 
 func (e *pageEngine) Redact(sql string) string { return pg.New(pg.Options{}).Redact(sql) }
+
+func (e *pageEngine) RereadSchema(int64) bool { return false }
 
 func (e *pageEngine) Forget(id int64) {
 	e.mu.Lock()

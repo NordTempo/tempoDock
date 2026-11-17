@@ -152,6 +152,24 @@ func TestCatalog(t *testing.T) {
 	}
 }
 
+// A cached catalog is read again for a missing table only once it is
+// SchemaReread old, so a name that doesn't exist can't make every call
+// read the catalog.
+func TestRereadSchema(t *testing.T) {
+	e := New(Options{})
+	e.schemas[1] = &catalog{readAt: time.Now()}
+	if e.RereadSchema(1) || e.schemas[1] == nil {
+		t.Fatal("a catalog read a moment ago was dropped")
+	}
+	e.schemas[1].readAt = time.Now().Add(-data.SchemaReread)
+	if !e.RereadSchema(1) || e.schemas[1] != nil {
+		t.Fatal("an older catalog was kept")
+	}
+	if !e.RereadSchema(2) {
+		t.Fatal("a service without a cached catalog")
+	}
+}
+
 func TestPlanPage(t *testing.T) {
 	cat := testCatalog(t)
 	orders, _ := cat.table("public.orders")

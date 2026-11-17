@@ -295,3 +295,19 @@ func TestDBSensitiveListKeys(t *testing.T) {
 		t.Fatalf("--json = %q", got)
 	}
 }
+
+// `db schema TABLE` names the table it looks for, so the server reads a
+// cached schema that lacks it (a migration's new table) again.
+func TestDBSchemaNamesTheTable(t *testing.T) {
+	setup(t)
+	var query string
+	newFakeAPI(t, map[string]http.HandlerFunc{
+		"GET " + dbPath + "/schema": func(w http.ResponseWriter, r *http.Request) {
+			query = r.URL.RawQuery
+			jsonReply(apitypes.DataSchema{Tables: []apitypes.DataTable{{Schema: "app", Name: "users"}}})(w, r)
+		},
+	})
+	if code, _, stderr := exec(t, dbArgs("db", "schema", "users")...); code != 0 || query != "table=users" {
+		t.Fatalf("schema users: exit %d, query %q\n%s", code, query, stderr)
+	}
+}

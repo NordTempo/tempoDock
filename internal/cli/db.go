@@ -211,9 +211,15 @@ POSTGRES_*).`,
 	return cmd
 }
 
-// schemaOf reads the database's schema.
-func schemaOf(ctx context.Context, s *session, data string) (apitypes.DataSchema, error) {
-	return get[apitypes.DataSchema](ctx, s, data+"/schema")
+// schemaOf reads the database's schema. With a table to find in it, the
+// server reads its catalog again when its cached one lacks it (made by a
+// migration a moment ago).
+func schemaOf(ctx context.Context, s *session, data, table string) (apitypes.DataSchema, error) {
+	path := data + "/schema"
+	if table != "" {
+		path += "?table=" + url.QueryEscape(table)
+	}
+	return get[apitypes.DataSchema](ctx, s, path)
 }
 
 func newDBTablesCmd(g *globals) *cobra.Command {
@@ -222,7 +228,7 @@ func newDBTablesCmd(g *globals) *cobra.Command {
 		Short: "List tables and views",
 		Args:  cobra.NoArgs,
 	}, func(ctx context.Context, s *session, _ target, data string, _ []string) error {
-		sc, err := schemaOf(ctx, s, data)
+		sc, err := schemaOf(ctx, s, data, "")
 		if err != nil {
 			return err
 		}
@@ -262,7 +268,11 @@ func newDBSchemaCmd(g *globals) *cobra.Command {
 		Long:    "Describe a table (schema.name, or a name in any schema), or every table without one.",
 		Args:    cobra.MaximumNArgs(1),
 	}, func(ctx context.Context, s *session, _ target, data string, args []string) error {
-		sc, err := schemaOf(ctx, s, data)
+		table := ""
+		if len(args) > 0 {
+			table = args[0]
+		}
+		sc, err := schemaOf(ctx, s, data, table)
 		if err != nil {
 			return err
 		}
@@ -503,7 +513,7 @@ func qualify(ctx context.Context, s *session, data, name string) (string, error)
 	if strings.Contains(name, ".") {
 		return name, nil
 	}
-	sc, err := schemaOf(ctx, s, data)
+	sc, err := schemaOf(ctx, s, data, name)
 	if err != nil {
 		return "", err
 	}
@@ -1509,7 +1519,7 @@ visible reveal them with ` + "`dock db rows TABLE --reveal`" + `, which is audit
 		Short:   "List sensitive columns (or, on Redis, key patterns)",
 		Args:    cobra.NoArgs,
 	}, func(ctx context.Context, s *session, _ target, data string, _ []string) error {
-		sc, err := schemaOf(ctx, s, data)
+		sc, err := schemaOf(ctx, s, data, "")
 		if err != nil {
 			return err
 		}

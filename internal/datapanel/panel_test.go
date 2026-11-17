@@ -3,7 +3,9 @@ package datapanel
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -161,11 +163,16 @@ func (h *fakeHost) actions() string {
 }
 
 // fakeEngine implements the engine calls the tests reach; Redact is
-// Postgres's. Setup records the passwords it was given.
+// Postgres's. Setup records the passwords it was given. Its schema is
+// tables; with fresh set, the catalog holds those, which RereadSchema
+// brings in, and Page refuses a table the schema lacks.
 type fakeEngine struct {
 	data.Engine
-	pg     *pg.Engine
-	reader string
+	pg      *pg.Engine
+	reader  string
+	tables  []apitypes.DataTable
+	fresh   []apitypes.DataTable
+	rereads int
 }
 
 func (e *fakeEngine) Setup(_ context.Context, _ data.Target, _, reader, _ data.Credentials) (data.ServerInfo, error) {
@@ -182,7 +189,13 @@ func (e *fakeEngine) SyncGrants(context.Context, data.Target, data.Credentials, 
 }
 
 func (e *fakeEngine) Schema(context.Context, data.Target, data.Call, []apitypes.DataColumnRef) (apitypes.DataSchema, error) {
-	return apitypes.DataSchema{}, nil
+	return apitypes.DataSchema{Tables: e.tables}, nil
+}
+
+func (e *fakeEngine) RereadSchema(int64) bool {
+	e.rereads++
+	e.tables = e.fresh
+	return true
 }
 
 func (e *fakeEngine) Render(context.Context, data.Target, []apitypes.DataChange) (string, error) {
@@ -197,7 +210,10 @@ func (e *fakeEngine) Redact(sql string) string { return e.pg.Redact(sql) }
 
 func (e *fakeEngine) Kind() apitypes.DataEngine { return apitypes.EnginePostgres }
 
-func (e *fakeEngine) Page(context.Context, data.Target, data.Call, apitypes.DataPageRequest) (apitypes.DataPage, error) {
+func (e *fakeEngine) Page(_ context.Context, _ data.Target, _ data.Call, req apitypes.DataPageRequest) (apitypes.DataPage, error) {
+	if e.fresh != nil && !slices.ContainsFunc(e.tables, func(tb apitypes.DataTable) bool { return tb.Schema+"."+tb.Name == req.Table }) {
+		return apitypes.DataPage{}, fmt.Errorf("%w: %s", data.ErrNoTable, req.Table)
+	}
 	return apitypes.DataPage{}, nil
 }
 
@@ -234,7 +250,7 @@ func TestPanelSetup(t *testing.T) {
 	if info, err := p.Info(ctx, admin, testDB(adminPerm)); err != nil || info.Status != apitypes.DataSetupNeeded {
 		t.Fatalf("before setup: %+v, %v", info, err)
 	}
-	if _, err := p.Schema(ctx, admin, testDB(adminPerm)); CodeOf(err) != apitypes.CodeConflict || !strings.Contains(err.Error(), "set it up") {
+	if _, err := p.Schema(ctx, admin, testDB(adminPerm), ""); CodeOf(err) != apitypes.CodeConflict || !strings.Contains(err.Error(), "set it up") {
 		t.Fatalf("schema before setup: %v", err)
 	}
 	if _, err := p.Setup(ctx, agent, testDB(agentPerm)); CodeOf(err) != apitypes.CodeForbidden {
@@ -253,6 +269,30 @@ func TestPanelSetup(t *testing.T) {
 	h.notRunning = true
 	if info, err := p.Info(ctx, admin, testDB(adminPerm)); err != nil || info.Status != apitypes.DataNotRunning {
 		t.Fatalf("not running: %+v, %v", info, err)
+	}
+}
+
+// A table the cached schema lacks (made by a migration, or by a restore
+// since) is looked for again before the panel says it doesn't exist.
+func TestPanelRereadsSchemaOnMiss(t *testing.T) {
+	p, _, eng := newTestPanel(t)
+	ctx := context.Background()
+	if _, err := p.Setup(ctx, admin, testDB(adminPerm)); err != nil {
+		t.Fatal(err)
+	}
+	eng.fresh = []apitypes.DataTable{{Schema: "public", Name: "orders"}}
+	if _, err := p.Rows(ctx, admin, testDB(adminPerm), apitypes.DataPageRequest{Table: "orders"}); err != nil || eng.rereads != 1 {
+		t.Fatalf("rows of a new table: %v, %d rereads", err, eng.rereads)
+	}
+	if s, err := p.Schema(ctx, admin, testDB(adminPerm), "orders"); err != nil || len(s.Tables) != 1 || eng.rereads != 1 {
+		t.Fatalf("schema with the table cached: %v %+v, %d rereads", err, s, eng.rereads)
+	}
+	if _, err := p.Rows(ctx, admin, testDB(adminPerm), apitypes.DataPageRequest{Table: "nope"}); CodeOf(err) != apitypes.CodeNotFound || eng.rereads != 2 {
+		t.Fatalf("rows of a missing table: %v, %d rereads", err, eng.rereads)
+	}
+	eng.tables, eng.fresh = nil, []apitypes.DataTable{{Schema: "app", Name: "users"}}
+	if s, err := p.Schema(ctx, admin, testDB(adminPerm), "app.users"); err != nil || len(s.Tables) != 1 {
+		t.Fatalf("schema looking for a new table: %v %+v", err, s)
 	}
 }
 

@@ -124,7 +124,7 @@ func DataTools[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate func(*
 			if err != nil {
 				return Reply{}, err
 			}
-			sch, err := ops.DataSchema(ctx, c.Actor, ref)
+			sch, err := ops.DataSchema(ctx, c.Actor, ref, in.Table)
 			if err != nil {
 				return Reply{}, err
 			}

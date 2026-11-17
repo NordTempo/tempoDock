@@ -78,6 +78,9 @@ dock db saved run open-orders
   cursor for the next one is printed on stderr. Row counts are estimates
   (`~N`); tables never analysed are counted exactly when small, else `?`.
   `--count` counts exactly.
+- The table list is cached for a minute. A table you name that it lacks
+  (one a migration just made) is looked up again at once, and a restore
+  into the service drops the cache.
 - Filters: `col=value`, `col=op:value` (`eq ne lt lte gt gte like ilike in`),
   `col=is_null`, `col=not_null`. Anything fancier is SQL.
 - `query` runs one statement in a read-only transaction: 1 000 rows by

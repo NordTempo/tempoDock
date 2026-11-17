@@ -4499,7 +4499,10 @@ export interface operations {
     };
     "get-data-schema": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description A table the caller looks for (name or schema.name): a cached schema without it is read again. */
+                table?: string;
+            };
             header?: never;
             path: {
                 /** @description The connection's name */
