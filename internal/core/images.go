@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -103,12 +104,8 @@ func repoOf(ref, host string) string {
 // can't name registry images themselves (validateImageRef), so this is
 // the last check that a release can't carry another project's image.
 func pullAllowed(ss svcScope, repo string) bool {
-	rest, ok := strings.CutPrefix(repo, buildTagPrefix)
-	if !ok {
-		return false
-	}
-	project, _, ok := strings.Cut(rest, "_")
-	return ok && project == strconv.FormatInt(ss.project.ID, 10)
+	project, ok := buildTagProject(repo)
+	return ok && project == ss.project.ID
 }
 
 // registryRef is where an image is in the registry: by digest.
@@ -126,11 +123,45 @@ func (c *Core) inRegistry(ref string) (repo string, ok bool) {
 	return repoOf(ref, c.reg.Host()), true
 }
 
-// ownImage reports whether the platform made the image ref names: a
-// build tag or a registry reference. Only those are ever removed.
-func (c *Core) ownImage(ref string) bool {
-	_, ok := c.inRegistry(ref)
-	return ok || strings.HasPrefix(ref, buildTagPrefix)
+// buildTagRef reads a build tag (buildTag), in any spelling Docker takes
+// for the same name: with or without Docker Hub's host, where a name
+// without a registry resolves.
+var buildTagRef = regexp.MustCompile(`^(?i:(?:(?:index\.|registry-1\.)?docker\.io/)?)dock/p([0-9]+)_e[0-9]+_s[0-9]+(?:[:@].*)?$`)
+
+// buildTagProject is the project a build tag names; ok is false for any
+// other reference. A build tag is a local name: it is what Dock calls an
+// image it built on a server, never something to pull, and to Docker it
+// reads as a repository on Docker Hub that isn't Dock's.
+func buildTagProject(ref string) (project int64, ok bool) {
+	m := buildTagRef.FindStringSubmatch(ref)
+	if m == nil {
+		return 0, false
+	}
+	project, err := strconv.ParseInt(m[1], 10, 64)
+	return project, err == nil
+}
+
+// dockNamed reports whether ref is a name Dock gives images it builds: a
+// build tag or a registry reference, whoever's. It says nothing about
+// whose the image is: ownImage does.
+func (c *Core) dockNamed(ref string) bool {
+	_, inReg := c.inRegistry(ref)
+	_, tag := buildTagProject(ref)
+	return inReg || tag
+}
+
+// ownImage reports whether ref names an image the platform built for
+// project projectID: its build tag or its registry reference. Only those
+// are removed, or read from a server by name, for one of the project's
+// releases: the name alone isn't enough, since anyone can write a
+// reference into a release that fails.
+func (c *Core) ownImage(projectID int64, ref string) bool {
+	if repo, ok := c.inRegistry(ref); ok {
+		p, ok := buildTagProject(repo)
+		return ok && p == projectID
+	}
+	p, ok := buildTagProject(ref)
+	return ok && p == projectID
 }
 
 // canBuild reports whether a server is a builder: set as one, not
@@ -248,7 +279,7 @@ func (c *Core) removeOldImages(ctx context.Context, ss svcScope) {
 	seen := map[removal]bool{}
 	var todo []removal
 	add := func(server int64, ref string) {
-		if rm := (removal{server, ref}); c.ownImage(ref) && !keptRef[ref] && !seen[rm] {
+		if rm := (removal{server, ref}); c.ownImage(ss.project.ID, ref) && !keptRef[ref] && !seen[rm] {
 			seen[rm] = true
 			todo = append(todo, rm)
 		}
@@ -427,6 +458,9 @@ func (c *Core) keepReleases() int { return max(c.cfg.Defaults.KeepReleases, 1) }
 // registry.example.com:5000) pass. Hostnames are resolved when pulling
 // (checkRegistry), not here.
 func validateImageRef(ref, registry string, g *egressGuard) error {
+	if _, ok := buildTagProject(ref); ok {
+		return invalid("image %q is a name Dock gives the images it builds, which are deployed by their service, not by name; deploy from source or promote, or use an image's name on its own registry", ref)
+	}
 	host := registryHost(ref)
 	if host == "" {
 		return nil

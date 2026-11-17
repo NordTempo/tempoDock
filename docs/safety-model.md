@@ -186,6 +186,12 @@ tailnet. Apps and builds reach the public internet, nothing private:
   when an image is set, and the registry's name is resolved and checked
   before every pull. The platform registry is Dock's own and always
   allowed.
+- **An image Dock built is its project's.** Without the platform
+  registry a built image has only the name Dock gave it on its server.
+  That name isn't an image anyone can deploy, a release whose image is
+  gone from the server fails and says to build again rather than pull
+  the name from anywhere, and an image is removed or scanned only for a
+  release of the project it was built for.
 
 BuildKit runs privileged to build images, so the firewall contains build
 steps but not a BuildKit escape. See the [install guide](guide/install.md#app-firewall)

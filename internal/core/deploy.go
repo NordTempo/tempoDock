@@ -366,6 +366,12 @@ func (d *deployment) pullNow(ctx context.Context, ref string) (string, error) {
 		defer release()
 		return d.rt.Pull(ctx, ref, d.log, node.PullOptions{Token: d.c.reg.Token("server "+d.server.Name, repo, false)})
 	}
+	// A build tag is the local name of an image built on a server, and
+	// reads to Docker as a repository on Docker Hub that isn't Dock's:
+	// it is never pulled by name.
+	if _, ok := buildTagProject(ref); ok {
+		return "", fmt.Errorf("image %s was built on a server and is no longer there, and without the platform registry there is no other copy; deploy the service again to build it", ref)
+	}
 	login, host, err := d.c.registryLogin(ctx, d.ss.project.OrgID, ref)
 	if err != nil {
 		return "", err
