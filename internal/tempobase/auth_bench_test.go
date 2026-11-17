@@ -17,7 +17,7 @@ func BenchmarkAuthenticateSession(b *testing.B) {
 	}
 	b.ReportAllocs()
 	for b.Loop() {
-		if _, err := h.AuthenticateSession(b.Context(), secret); err != nil {
+		if _, err := h.AuthenticateSession(b.Context(), secret, false); err != nil {
 			b.Fatal(err)
 		}
 	}

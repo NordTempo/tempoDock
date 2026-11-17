@@ -12,11 +12,14 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/datapanel"
+	"github.com/NordTempo/tempoDock/internal/httpkit"
 	"github.com/NordTempo/tempoDock/internal/tempobase"
 	"github.com/NordTempo/tempoDock/internal/tempobase/tbtypes"
 )
 
-// sessionCookie holds the UI session secret (HttpOnly, SameSite=Strict).
+// sessionCookie holds the UI session secret (HttpOnly, SameSite=Strict):
+// __Host-tempobase_session over HTTPS, so an app on a sibling hostname
+// can't set it (httpkit.CookieName).
 const sessionCookie = "tempobase_session"
 
 type (
@@ -104,8 +107,8 @@ func (s *server) authenticate(a huma.API) func(huma.Context, func(huma.Context))
 				return
 			}
 			actor, err = s.app.AuthenticateToken(ctx.Context(), strings.TrimSpace(token))
-		} else if c, cerr := huma.ReadCookie(ctx, sessionCookie); cerr == nil {
-			actor, err = s.app.AuthenticateSession(ctx.Context(), c.Value)
+		} else if secret, legacy := sessionSecret(ctx); secret != "" {
+			actor, err = s.app.AuthenticateSession(ctx.Context(), secret, legacy)
 		} else {
 			_ = huma.WriteErr(a, ctx, http.StatusUnauthorized, "sign in, or send `Authorization: Bearer <token>`")
 			return
@@ -123,17 +126,22 @@ func (s *server) authenticate(a huma.API) func(huma.Context, func(huma.Context))
 	}
 }
 
-// sessionCookie is the cookie that carries a session.
-func (c client) sessionCookie(secret string, expires time.Time) http.Cookie {
-	return http.Cookie{
-		Name: sessionCookie, Value: secret, Path: "/", Expires: expires,
-		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: c.secure,
-	}
+// sessionSecret is the session cookie's secret as the request carries
+// it, and legacy when it came under the bare name over HTTPS (a session
+// from before the __Host- prefix). The request's client must be set.
+func sessionSecret(ctx huma.Context) (secret string, legacy bool) {
+	get := func(name string) (*http.Cookie, error) { return huma.ReadCookie(ctx, name) }
+	return httpkit.SessionSecret(get, sessionCookie, clientFrom(ctx.Context()).secure)
+}
+
+// sessionCookies set (secret) or clear ("") the session cookie.
+func (c client) sessionCookies(secret string, expires time.Time) []http.Cookie {
+	return httpkit.SessionCookies(sessionCookie, secret, expires, c.secure)
 }
 
 // signedIn is the answer of every operation that starts a session.
 type signedIn struct {
-	SetCookie http.Cookie `header:"Set-Cookie"`
+	SetCookie []http.Cookie `header:"Set-Cookie"`
 	Body      tbtypes.Me
 }
 
@@ -146,7 +154,7 @@ func (s *server) signIn(ctx context.Context, secret string, expires time.Time, a
 	if err != nil {
 		return nil, err
 	}
-	return &signedIn{SetCookie: clientFrom(ctx).sessionCookie(secret, expires), Body: me}, nil
+	return &signedIn{SetCookie: clientFrom(ctx).sessionCookies(secret, expires), Body: me}, nil
 }
 
 // CodePath is a link's code in a path.
@@ -159,17 +167,24 @@ type useLinkInput struct {
 	Body tbtypes.UseLinkRequest
 }
 
+// logoutInput is the session to end: the request's own.
 type logoutInput struct {
-	Session string `cookie:"tempobase_session"`
+	session string
+}
+
+// Resolve reads the session cookie.
+func (in *logoutInput) Resolve(ctx huma.Context) []error {
+	in.session, _ = sessionSecret(ctx)
+	return nil
 }
 
 type clearCookie struct {
-	SetCookie http.Cookie `header:"Set-Cookie"`
+	SetCookie []http.Cookie `header:"Set-Cookie"`
 }
 
 // passwordOutput sets the caller's fresh session cookie.
 type passwordOutput struct {
-	SetCookie http.Cookie `header:"Set-Cookie"`
+	SetCookie []http.Cookie `header:"Set-Cookie"`
 }
 
 func registerAuth(s *server, a huma.API) {
@@ -201,12 +216,12 @@ func registerAuth(s *server, a huma.API) {
 		OperationID: "logout", Method: http.MethodPost, Path: Prefix + "/auth/logout",
 		Summary: "End the session", Tags: []string{"auth"}, DefaultStatus: http.StatusNoContent,
 	}, func(ctx context.Context, _ tempobase.Actor, in *logoutInput) (*clearCookie, error) {
-		if in.Session != "" {
-			if err := s.app.Logout(ctx, in.Session); err != nil {
+		if in.session != "" {
+			if err := s.app.Logout(ctx, in.session); err != nil {
 				return nil, err
 			}
 		}
-		return &clearCookie{SetCookie: http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode}}, nil
+		return &clearCookie{SetCookie: clientFrom(ctx).sessionCookies("", time.Time{})}, nil
 	})
 	public(s, a, huma.Operation{
 		OperationID: "get-link", Method: http.MethodGet, Path: Prefix + "/links/{code}",
@@ -244,6 +259,6 @@ func registerAuth(s *server, a huma.API) {
 		if err != nil {
 			return nil, err
 		}
-		return &passwordOutput{SetCookie: c.sessionCookie(secret, expires)}, nil
+		return &passwordOutput{SetCookie: c.sessionCookies(secret, expires)}, nil
 	})
 }
