@@ -1,0 +1,14 @@
+# The project file the action's apply test stages and applies in staging:
+# a new image service, which applying deploys.
+version = 1
+project = "shop"
+
+[[environments]]
+  name = "staging"
+  kind = "non_production"
+
+  [[environments.services]]
+    name = "worker"
+    image = "busybox:1.37"
+    [environments.services.values]
+      GREETING = "hello"

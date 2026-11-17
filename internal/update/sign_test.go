@@ -1,6 +1,7 @@
 package update
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
@@ -112,6 +113,23 @@ func TestKeyRotation(t *testing.T) {
 	trust(oldPub)
 	if _, err := VerifySums("v1.0.0", sums, []byte(Sign(newKey, sums))); !errors.Is(err, ErrBadSignature) {
 		t.Errorf("old binary, signed by the new key only: %v, want ErrBadSignature", err)
+	}
+}
+
+// The GitHub Action (contrib/github-action) carries its own copy of
+// install-cli.sh, so it checks a release with the keys it was pinned
+// with rather than the release's own script: the copy stays the same.
+func TestActionInstallerIsInstallCLI(t *testing.T) {
+	want, err := os.ReadFile("../../scripts/release/install-cli.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile("../../contrib/github-action/install-cli.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Error("contrib/github-action/install-cli.sh differs from scripts/release/install-cli.sh: cp scripts/release/install-cli.sh contrib/github-action/")
 	}
 }
 

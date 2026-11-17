@@ -1,0 +1,80 @@
+# Deploy to Tempo Dock from a GitHub Actions job: installs the dock CLI the
+# server runs (its signature checked), deploys the checkout, an image or a
+# project file, follows the release and fails the job when it fails.
+# Guide: https://github.com/NordTempo/tempoDock/blob/main/docs/guide/github-actions.md
+name: Deploy to Tempo Dock
+description: Deploy source, an image or a project file to your own Tempo Dock server, and follow the release until it is live.
+author: NordTempo
+branding:
+  icon: upload-cloud
+  color: gray-dark
+inputs:
+  server:
+    description: Your Dock's address, like https://dock.example.com. The runner must reach it.
+    required: true
+  token:
+    description: A Dock token, from a secret. The least it needs is deploy on the one environment (dock token create ... --scope deploy --project P --environment E).
+    required: true
+  project:
+    description: The project to deploy to (apply mode reads it from the file).
+    required: false
+  environment:
+    description: The environment to deploy to. Not needed when the project has only one.
+    required: false
+  service:
+    description: The service to deploy (source and image modes). One that doesn't exist yet is created.
+    required: false
+  mode:
+    description: "source: build the directory at path on the server. image: deploy a prebuilt image. apply: stage the project file at path and apply it."
+    required: false
+    default: source
+  path:
+    description: "The directory to deploy (source, default .) or the project file (apply, default dock.project.toml)."
+    required: false
+  image:
+    description: The image to deploy (image mode), like ghcr.io/acme/web:1.4.2 or one tagged with the commit.
+    required: false
+  wait:
+    description: Follow the release until it is live or failed, failing the job when it fails. false returns once it is queued.
+    required: false
+    default: "true"
+  version:
+    description: The dock CLI release to install, like v0.56.0. Default the one the server runs.
+    required: false
+  cli:
+    description: A dock binary to use instead of installing one (your own builds, tests).
+    required: false
+outputs:
+  release:
+    description: The release's number (one release; an apply that started several sets releases only).
+    value: ${{ steps.deploy.outputs.release }}
+  status:
+    description: The release's status, like active, failed or canceled (queued when wait is false).
+    value: ${{ steps.deploy.outputs.status }}
+  url:
+    description: The release's page in the console.
+    value: ${{ steps.deploy.outputs.url }}
+  releases:
+    description: Every release started, as a JSON array of Dock's releases (project, environment, service, number, status, error, ...).
+    value: ${{ steps.deploy.outputs.releases }}
+  exit-code:
+    description: dock's exit code (docs/cli.md): 0 deployed, 3 not allowed, 5 conflict, 6 failed, 7 unreachable, 10 canceled.
+    value: ${{ steps.deploy.outputs.exit-code }}
+runs:
+  using: composite
+  steps:
+    - id: deploy
+      shell: bash
+      run: '"$GITHUB_ACTION_PATH/deploy.sh"'
+      env:
+        INPUT_SERVER: ${{ inputs.server }}
+        INPUT_TOKEN: ${{ inputs.token }}
+        INPUT_PROJECT: ${{ inputs.project }}
+        INPUT_ENVIRONMENT: ${{ inputs.environment }}
+        INPUT_SERVICE: ${{ inputs.service }}
+        INPUT_MODE: ${{ inputs.mode }}
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_IMAGE: ${{ inputs.image }}
+        INPUT_WAIT: ${{ inputs.wait }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_CLI: ${{ inputs.cli }}
