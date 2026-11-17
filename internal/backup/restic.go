@@ -54,6 +54,23 @@ DUMP="$(command -v mariadb-dump || command -v mysqldump)"
 AT="-h $DOCK_DB_HOST -P $DOCK_DB_PORT -u root"
 `
 
+// mysqlNames makes the script's arguments ("$@") the database names in
+// $DBS, one a line as the client prints them. The names are the
+// tenant's: each stays one argument whatever it holds (spaces aren't
+// split, nothing is matched against files), so no part of a name is read
+// as an option of the dump tool, and a name that starts with a dash,
+// which the tool would read as one, stops the job. dbcopy has the same.
+const mysqlNames = `set -f
+IFS='
+'
+set -- $DBS
+unset IFS
+set +f
+for db in "$@"; do
+  case "$db" in -*) echo "dock: the database \"$db\" has a name that starts with a dash, which the dump tool reads as an option; rename it" >&2; exit 1 ;; esac
+done
+`
+
 // Repo is a restic repository and how to open it.
 type Repo struct {
 	// URL is an s3: repository URL; empty is the server's local one.
@@ -258,9 +275,9 @@ rm -f /tmp/dock.rdb
 		// Every database but the server's own: a restore goes into a new
 		// server with its own users and root password, which a dump of
 		// the mysql schema would overwrite.
-		run = mysqlTools + `DBS="$($CLIENT $AT -N -e 'SHOW DATABASES' | grep -Ev '^(information_schema|performance_schema|mysql|sys)$' | tr '\n' ' ')"
+		run = mysqlTools + `DBS="$($CLIENT $AT -N -e 'SHOW DATABASES' | grep -Ev '^(information_schema|performance_schema|mysql|sys)$')"
 [ -n "$DBS" ] || { echo "dock: the server has no databases to back up" >&2; exit 1; }
-$R backup ` + backupFlags + ` --stdin-filename ` + strings.TrimPrefix(MySQLFile, "/") + ` --stdin-from-command -- $DUMP $AT --single-transaction --routines --triggers --events --databases $DBS
+` + mysqlNames + `$R backup ` + backupFlags + ` --stdin-filename ` + strings.TrimPrefix(MySQLFile, "/") + ` --stdin-from-command -- $DUMP $AT --single-transaction --routines --triggers --events --databases "$@"
 `
 	case apitypes.BackupVolume:
 		run = `cd ` + VolumesPath + `

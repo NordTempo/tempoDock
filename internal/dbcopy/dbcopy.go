@@ -314,6 +314,21 @@ restore --section=post-data
 psql -X -q -c ANALYZE
 `
 
+// mysqlNames makes the script's arguments ("$@") the database names in
+// $DBS, one a line, each one argument whatever it holds; a name starting
+// with a dash stops the job. The same as backup.MySQLNames, which says
+// why.
+const mysqlNames = `set -f
+IFS='
+'
+set -- $DBS
+unset IFS
+set +f
+for db in "$@"; do
+  case "$db" in -*) echo "dock: the database \"$db\" has a name that starts with a dash, which the dump tool reads as an option; rename it" >&2; exit 1 ;; esac
+done
+`
+
 // mysqlTools names the MySQL or MariaDB client and dump tool in the image.
 const mysqlTools = `CLIENT="$(command -v mariadb || command -v mysql)"
 DUMP="$(command -v mariadb-dump || command -v mysqldump)"
@@ -331,9 +346,9 @@ AT="-h $DOCK_DB_HOST -P $DOCK_DB_PORT -u root"
 const mysqlDump = `SYS="'information_schema','performance_schema','mysql','sys'"
 size=$($CLIENT $AT -N -e "SELECT COALESCE(SUM(data_length + index_length), 0) FROM information_schema.tables WHERE table_schema NOT IN ($SYS)")
 room
-DBS="$($CLIENT $AT -N -e "SELECT schema_name FROM information_schema.schemata WHERE schema_name NOT IN ($SYS)" | tr '\n' ' ')"
+DBS="$($CLIENT $AT -N -e "SELECT schema_name FROM information_schema.schemata WHERE schema_name NOT IN ($SYS)")"
 [ -n "$DBS" ] || { echo "dock: the base's server has no databases to copy" >&2; exit 1; }
-printf "SET SESSION group_concat_max_len = 16777216;\nSET @marks = CONVERT(UNHEX('%s') USING utf8mb4);\n%s;\n" "$DOCK_MARKS_HEX" "$DOCK_PLAN_SQL" |
+` + mysqlNames + `printf "SET SESSION group_concat_max_len = 16777216;\nSET @marks = CONVERT(UNHEX('%s') USING utf8mb4);\n%s;\n" "$DOCK_MARKS_HEX" "$DOCK_PLAN_SQL" |
   $CLIENT $AT --batch --raw --skip-column-names >/tmp/plan
 tables=0
 columns=0
@@ -351,9 +366,9 @@ done </tmp/plan
   while read -r _ _ _ gen; do printf '%s;\n' "$(printf '%s' "$gen" | base64 -d)"; done </tmp/plan
   echo "COMMIT;"
 } | $CLIENT $AT --batch --raw --skip-column-names --default-character-set=utf8mb4 >"$D/masked.sql"
-$DUMP $AT --single-transaction --no-data --skip-triggers --routines --events --databases $DBS >"$D/schema.sql"
-$DUMP $AT --single-transaction --no-create-info --no-create-db --skip-triggers $IGNORE --databases $DBS >"$D/data.sql"
-$DUMP $AT --single-transaction --no-data --no-create-info --no-create-db --triggers --databases $DBS >"$D/triggers.sql"
+$DUMP $AT --single-transaction --no-data --skip-triggers --routines --events --databases "$@" >"$D/schema.sql"
+$DUMP $AT --single-transaction --no-create-info --no-create-db --skip-triggers $IGNORE --databases "$@" >"$D/data.sql"
+$DUMP $AT --single-transaction --no-data --no-create-info --no-create-db --triggers --databases "$@" >"$D/triggers.sql"
 echo "` + statsMarker + ` bytes=$size tables=$tables columns=$columns"
 `
 
