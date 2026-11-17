@@ -197,7 +197,8 @@ Notes:
 - Turning `login` off and on again signs everyone out. A disabled user can
   keep a sign-in for up to 12 hours.
 - `X-Dock-User` is always set by Dock; a value the client sends is
-  replaced.
+  replaced, and so is `X_Dock_User`, which some app servers read as the
+  same header.
 
 See [ADR 0030](../decisions/0030-access-protection.md).
 

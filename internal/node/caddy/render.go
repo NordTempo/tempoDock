@@ -762,6 +762,12 @@ const (
 	forwardedURI      = "X-Forwarded-Uri"
 )
 
+// userHeaderAlias is access.UserHeader as some app servers also read it:
+// CGI-style ones (PHP, Rack, some WSGI servers) turn dashes and
+// underscores into the same variable, so a client's X_Dock_User would
+// arrive beside the one Caddy sets. It is removed wherever that is set.
+const userHeaderAlias = "X_Dock_User"
+
 // passwordAccess asks for HTTP basic auth and tells the app who signed in
 // (access.UserHeader), replacing any value the client sent.
 func passwordAccess(a *node.Access) []handler {
@@ -772,7 +778,7 @@ func passwordAccess(a *node.Access) []handler {
 			HashCache: &struct{}{},
 			Realm:     "restricted",
 		}}},
-		{Handler: "headers", Request: &headerOps{Set: map[string][]string{access.UserHeader: {"{http.auth.user.id}"}}}},
+		{Handler: "headers", Request: &headerOps{Delete: []string{userHeaderAlias}, Set: map[string][]string{access.UserHeader: {"{http.auth.user.id}"}}}},
 	}
 }
 
@@ -797,7 +803,7 @@ func loginAccess(check accessCheck, a *node.Access) []handler {
 			HandleResponse: []responseHandler{{
 				Match: responseMatch{StatusCode: []int{2}},
 				Routes: []route{{Handle: []handler{{Handler: "headers", Request: &headerOps{
-					Delete: []string{accessKeyHeader, accessLoginHeader, forwardedMethod, forwardedURI},
+					Delete: []string{accessKeyHeader, accessLoginHeader, forwardedMethod, forwardedURI, userHeaderAlias},
 					Set:    map[string][]string{access.UserHeader: {"{http.reverse_proxy.header." + access.UserHeader + "}"}},
 				}}}}},
 			}},
