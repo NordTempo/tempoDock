@@ -67,6 +67,10 @@ project = "shop"
 	if len(res.Staged) != 1 || len(res.Staged[0].Services) != 1 || len(res.Applied) != 0 {
 		t.Fatalf("staged = %+v", res)
 	}
+	// Staging the same file again changes nothing and says so.
+	if code, stdout, stderr := exec(t, "apply", edited); code != 0 || !strings.Contains(stdout+stderr, "No new changes in shop/production (2 changes staged already)") {
+		t.Fatalf("staging twice: exit %d\n%s%s", code, stdout, stderr)
+	}
 	if code, stdout, _ := exec(t, "changes", "-p", "shop", "-e", "production"); code != 0 || !strings.Contains(stdout, "service (created when applied)") {
 		t.Fatalf("changes:\n%s", stdout)
 	}

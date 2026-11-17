@@ -382,9 +382,16 @@ project = "shop"
 	if err != nil || api.Staged != "create" || api.ActiveRelease != nil {
 		t.Fatalf("api = %+v, %v", api, err)
 	}
-	// Staging again is a no-op; the plan is still against live values.
-	if again, err := h.c.ApplyProject(h.ctx, testSystem, "shop", apitypes.ApplyRequest{File: file}); err != nil || again.Staged[0].Count != staged.Count {
-		t.Fatalf("staging twice: %+v, %v", again.Staged, err)
+	// Staging again is a no-op that says so and audits nothing; the plan
+	// is still against live values.
+	audits := func() int {
+		evs, _ := h.c.ListAudit(h.ctx, testSystem, AuditFilter{Action: "changes.stage_file"})
+		return len(evs)
+	}
+	n := audits()
+	if again, err := h.c.ApplyProject(h.ctx, testSystem, "shop", apitypes.ApplyRequest{File: file}); err != nil || again.Staged[0].Count != staged.Count ||
+		!slices.Equal(again.Unchanged, []string{"production"}) || len(again.Plan.Changes) == 0 || audits() != n {
+		t.Fatalf("staging twice: %+v, %v (%d audits, %d before)", again, err, audits(), n)
 	}
 	// A staged service can't be promoted or restarted into running.
 	if _, err := h.c.Restart(h.ctx, testSystem, ServiceRef{"shop", "production", "api"}); err == nil {

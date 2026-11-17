@@ -84,6 +84,9 @@ type ApplyResult struct {
 	Plan ApplyPlan `json:"plan"`
 	// Staged are the staged changes of each touched environment afterwards.
 	Staged []PendingChanges `json:"staged"`
+	// Unchanged names the environments where staging the file changed
+	// nothing: it matches them live, or its changes were staged already.
+	Unchanged []string `json:"unchanged,omitempty"`
 	// Applied, with deploy, is what applying each environment started.
 	Applied []EnvironmentApplied `json:"applied,omitempty"`
 }
