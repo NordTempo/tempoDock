@@ -21,7 +21,8 @@
 # and E2E_ADMIN_PASSWORD at $DOCK_URL): the service overview's
 # vulnerability strip, Images, Status pages, the Data tab of mysql and
 # cache (commit the pending changeset there, open Health), and the public
-# page at status-rel<run>.e2e2.test (map *.e2e2.test to the proxy).
+# page at the address `dock status-page show rel<run>` prints (map
+# *.e2e2.test to the proxy).
 set -uo pipefail
 source "$(dirname "$0")/lib.sh"
 RUN=${E2E_RUN:-$(date +%H%M%S)}
@@ -75,7 +76,8 @@ scenario_status() {
 		dk status-page component add "$page" "Web app" --service "$P/production/web" --group Core >/dev/null &&
 		dk status-page component add "$page" Billing --manual --group Core >/dev/null &&
 		dk status-page publish "$page" >/dev/null || { fail "making status page $page"; return; }
-	h=status-$page.${E2E_BASE_DOMAIN:-e2e2.test}
+	# Its address carries a random suffix (ADR 0087): ask for it.
+	h=$(dk status-page show "$page" --json | jq -r .address)
 	id=$(dk incident open "$page" "Card payments failing" --component Billing:partial -m "Investigating." --json | jq -r .id)
 	dk incident update "$id" --state identified -m "A processor outage." >/dev/null
 	out=$(http_get "$h" /)
