@@ -591,7 +591,10 @@ func newDBQueryCmd(g *globals) *cobra.Command {
 		Long: `Run one SQL statement as Dock's read-only role and print the result as it
 arrives: an aligned table (wide cells are cut; use --csv or --json for full
 values), CSV with --csv, or with --json one JSON frame per line (header,
-rows, then end or error), as the API streams them.
+rows, then end or error), as the API streams them. --csv writes values as
+they are, for scripts: check a file before opening it in a spreadsheet, which
+runs a cell that starts with = + - or @ as a formula (the web UI's CSV button
+marks those as text).
 
 Results stop at --limit rows (default 1 000) or 64 MB; the summary on stderr
 says when. Exit 2 for SQL the database refuses as invalid, 3 for writes

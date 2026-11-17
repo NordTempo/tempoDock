@@ -1,3 +1,4 @@
+import { csv } from "../../ui/csv";
 import type {
   DataCell,
   DataFilter,
@@ -105,13 +106,11 @@ export function cellDetail(cell: DataCell, typeName: string): string {
 
 const oneLine = (s: string) => s.replace(/\s*\n\s*/g, " ");
 
-/** A CSV field, quoted when it has to be. */
-const csvField = (s: string) =>
-  /[",\r\n]|^\s/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
-
 /**
- * A result as CSV, like `dock db query --csv`: NULL is an empty field,
- * truncated values end in "…", masked ones read "(masked)".
+ * A result as CSV: NULL is an empty field, truncated values end in "…",
+ * masked ones read "(masked)". It is for opening in a spreadsheet, so a
+ * value that one would run as a formula is marked as text (ui/csv.ts);
+ * `dock db query --csv` writes values as they are, for scripts.
  */
 export function toCsv(columns: DataResultColumn[], rows: DataRow[]) {
   const text = (cell: DataCell) =>
@@ -122,10 +121,7 @@ export function toCsv(columns: DataResultColumn[], rows: DataRow[]) {
           ? "(masked)"
           : `${cell.truncated}…`
         : String(cell);
-  return [
-    columns.map((c) => csvField(c.name)).join(","),
-    ...rows.map((r) => r.map((c) => csvField(text(c))).join(",")),
-  ].join("\r\n");
+  return csv([columns.map((c) => c.name), ...rows.map((r) => r.map(text))]);
 }
 
 /**
