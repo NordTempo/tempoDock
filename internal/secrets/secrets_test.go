@@ -135,3 +135,25 @@ func TestReseal(t *testing.T) {
 		t.Fatal("resealed a bound value at another place")
 	}
 }
+
+// TestTag: a tag is the same for the same purpose and data, and differs
+// with the purpose, the data and the key; a purpose and data that join to
+// the same bytes still differ.
+func TestTag(t *testing.T) {
+	a, _ := New(bytes.Repeat([]byte{7}, KeySize))
+	b, _ := New(bytes.Repeat([]byte{8}, KeySize))
+	tag := a.Tag("scope", []byte("p1_e1"))
+	if len(tag) != 32 || !bytes.Equal(tag, a.Tag("scope", []byte("p1_e1"))) {
+		t.Fatalf("a tag should be 32 bytes and repeat: %x", tag)
+	}
+	for what, other := range map[string][]byte{
+		"data":         a.Tag("scope", []byte("p1_e2")),
+		"purpose":      a.Tag("other", []byte("p1_e1")),
+		"key":          b.Tag("scope", []byte("p1_e1")),
+		"where to cut": a.Tag("scopep", []byte("1_e1")),
+	} {
+		if bytes.Equal(tag, other) {
+			t.Errorf("a different %s gave the same tag", what)
+		}
+	}
+}

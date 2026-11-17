@@ -115,6 +115,10 @@ func TestKeySecretSteps(t *testing.T) {
 		df:   "FROM alpine\nARG WHICH\nRUN --mount=type=secret,id=$WHICH x\n",
 		want: "FROM alpine\nARG WHICH\nARG DOCK_CACHE_KEY\nRUN --mount=type=secret,id=$WHICH x\n",
 	}, {
+		name: "type written so only the build tells",
+		df:   "FROM alpine\nRUN --mount=type=s\\\\ecret,id=X x\n",
+		want: "FROM alpine\nARG DOCK_CACHE_KEY\nRUN --mount=type=s\\\\ecret,id=X x\n",
+	}, {
 		name: "type from a variable",
 		df:   "FROM alpine\nRUN --mount=type=${T},id=X x\n",
 		want: "FROM alpine\nARG DOCK_CACHE_KEY\nRUN --mount=type=${T},id=X x\n",

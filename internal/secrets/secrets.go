@@ -38,6 +38,8 @@ type Box struct {
 	// nonceKey derives Reseal's nonces; it is derived from the key and
 	// used for nothing else.
 	nonceKey []byte
+	// tagKey is Tag's key, derived the same way.
+	tagKey []byte
 	// refuseUnbound is set once the host has resealed its values.
 	refuseUnbound atomic.Bool
 }
@@ -121,9 +123,28 @@ func New(key []byte) (*Box, error) {
 	if err != nil {
 		return nil, err
 	}
+	return &Box{aead: aead, nonceKey: subkey(key, "tempo dock secrets: reseal nonce"), tagKey: subkey(key, "tempo dock secrets: tag")}, nil
+}
+
+// subkey is a key for one purpose, derived from the Box's key.
+func subkey(key []byte, purpose string) []byte {
 	mac := hmac.New(sha256.New, key)
-	mac.Write([]byte("tempo dock secrets: reseal nonce"))
-	return &Box{aead: aead, nonceKey: mac.Sum(nil)}, nil
+	mac.Write([]byte(purpose))
+	return mac.Sum(nil)
+}
+
+// Tag is a keyed hash (HMAC-SHA256) of data for one purpose: a value
+// that is the same every time for the same data, and that nobody without
+// the key can work out from the data. Use it where a name derived from
+// guessable IDs must not be guessable itself (a build's cache scope).
+func (b *Box) Tag(purpose string, data []byte) []byte {
+	mac := hmac.New(sha256.New, b.tagKey)
+	var n [8]byte
+	binary.BigEndian.PutUint64(n[:], uint64(len(purpose)))
+	mac.Write(n[:]) // the length keeps purpose || data unambiguous
+	mac.Write([]byte(purpose))
+	mac.Write(data)
+	return mac.Sum(nil)
 }
 
 // RefuseUnbound makes Open refuse unbound values from now on. A host calls

@@ -115,9 +115,12 @@ func dockerfileOpt(dir, src, dockerfile string, vars map[string]string, ns strin
 // hand another a layer built from its own PIP_INDEX_URL. A declared ARG
 // is in the environment of every later RUN in its stage, so its value
 // (secretsKey) enters their cache keys; later steps and stages built on
-// those layers chain on them. ids are the secrets the steps mount, or
-// nil when one can't be told before the build (an id naming a variable):
-// then every variable counts.
+// those layers chain on them. An ENV of the same name earlier in the
+// Dockerfile (or the base image) doesn't stand in for it: the ARG comes
+// later and wins, and a step after the first keyed one already chains on
+// this build's own key. ids are the secrets the steps mount, or nil when
+// one can't be told before the build (an id naming a variable): then
+// every variable counts.
 //
 // Line numbers in BuildKit's errors count the added lines.
 func keySecretSteps(dockerfile []byte) (keyed []byte, ids []string, err error) {
@@ -160,15 +163,30 @@ func keySecretSteps(dockerfile []byte) (keyed []byte, ids []string, err error) {
 }
 
 // secretMounts reports whether a RUN step mounts a secret, adding the
-// ids it mounts to ids, the way BuildKit reads --mount (instructions'
-// parseMount, dockerfile2llb's dispatchSecret). known is false when an id
-// can't be told before the build: a type or id naming a variable, which
-// BuildKit expands first, or flags that don't parse here.
+// ids it mounts to ids. known is false when the ids can't be told before
+// the build; then every variable counts.
+//
+// The Dockerfile parser takes one level of quotes and backslashes off a
+// flag; BuildKit then expands each value of the mount as a shell word
+// (dockerfile2llb's dispatch, instructions' parseMount): variables are
+// replaced, and quotes and backslashes still there are taken away, so a
+// type written `s\\ecret` in the file is a secret mount too. Rather than
+// follow that reading and fall behind it, a mount counts as one of a
+// secret unless it is plainly something else: left with none of the
+// characters the expansion acts on, and of a type that is bind, cache,
+// tmpfs or ssh (or none, which is bind). A step keyed without need only
+// loses layer sharing with other environments; one missed shares a
+// secret's layer. TestSecretMountsFollowBuildKit holds this against
+// BuildKit's own reading.
 func secretMounts(run *parser.Node, ids map[string]bool) (found, known bool) {
 	known = true
 	for _, f := range run.Flags {
 		name, val, _ := strings.Cut(strings.TrimPrefix(f, "--"), "=")
 		if name != "mount" {
+			continue
+		}
+		if strings.ContainsAny(val, "$\\\"'") {
+			found, known = true, false
 			continue
 		}
 		fields, err := csvvalue.Fields(val, nil)
@@ -181,7 +199,7 @@ func secretMounts(run *parser.Node, ids map[string]bool) (found, known bool) {
 			k, v, _ := strings.Cut(field, "=")
 			switch strings.ToLower(k) {
 			case "type":
-				typ = v
+				typ = strings.ToLower(v)
 			case "id":
 				id = v
 			case "source", "src":
@@ -190,11 +208,14 @@ func secretMounts(run *parser.Node, ids map[string]bool) (found, known bool) {
 				target = v
 			}
 		}
-		if strings.Contains(typ, "$") {
-			found, known = true, false
+		switch typ {
+		case "", "bind", "cache", "tmpfs", "ssh":
 			continue
-		}
-		if !strings.EqualFold(typ, "secret") {
+		case "secret":
+		default:
+			// Not a type BuildKit knows today: its build fails, and a
+			// later BuildKit's new type isn't shared unkeyed.
+			found, known = true, false
 			continue
 		}
 		if source != "" {
@@ -204,7 +225,7 @@ func secretMounts(run *parser.Node, ids map[string]bool) (found, known bool) {
 			id = path.Base(target)
 		}
 		found = true
-		if id == "" || strings.Contains(id, "$") {
+		if id == "" {
 			known = false
 			continue
 		}

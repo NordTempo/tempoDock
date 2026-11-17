@@ -1011,9 +1011,10 @@ type BuildRequest struct {
 	// RAILPACK_* settings from them.
 	BuildArgs map[string]string
 	// CacheScope namespaces BuildKit cache mounts, so one project's builds
-	// can't read or poison another's. Use one scope per project and
-	// environment; only letters, digits and _ are allowed. Empty shares a
-	// single "unscoped" namespace.
+	// can't read or poison another's, and keys the layers of steps that
+	// mount secrets. Use one scope per project and environment, with a
+	// part nobody outside can guess; only letters, digits and _ are
+	// allowed. Empty shares a single "unscoped" namespace.
 	CacheScope string
 	Tag        string
 	Logs       io.Writer
