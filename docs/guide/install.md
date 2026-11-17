@@ -850,7 +850,7 @@ dock server prune ubuntu-4gb-nbg1-1    # unused images, build cache above build_
 
 ## Upgrading
 
-The platform console's Updates page (under System) shows when a newer
+The platform console's Updates page (by the account, at the foot of its menu) shows when a newer
 release is out, with its notes, and updates the platform: the control
 plane first, then every node. The overview says when one is out. The CLI
 does the same:

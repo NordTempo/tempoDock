@@ -16,7 +16,6 @@ import {
   useProjects,
   useProjectTree,
   useSeesPlatform,
-  useServers,
   useSession,
 } from "../data/queries";
 import type {
@@ -40,7 +39,7 @@ import { useUpdateNote } from "../features/update/data";
 import { plural, since } from "../ui/format";
 import { Icon, type IconName } from "../ui/icons";
 import { ErrorText, Glyph, LockMark, Menu, menuItem } from "../ui/kit";
-import { serverState, serviceState, toneText } from "../ui/status";
+import { serviceState, toneText } from "../ui/status";
 import { modKey, useShortcuts } from "./keys";
 import { useCurrentContext, useOrg } from "./location";
 import { usePalette } from "./palette";
@@ -1149,11 +1148,12 @@ function ServiceLink({ view }: { view: ServiceView }) {
 }
 
 /**
- * The platform console's sidebar: infrastructure (servers, each with its
- * link status), access, and operations. Only admins reach it.
+ * The platform console's sidebar (Saile's pick A, 2026-11-17): the
+ * console's own views, then infrastructure, access and integrations, with
+ * Updates by the account at the foot. It fits a 900px screen. Only
+ * operators reach it.
  */
 function ConsoleNav() {
-  const servers = useServers();
   return (
     <>
       {/* In place of the organization: the console has none (ADR 0062). */}
@@ -1164,32 +1164,20 @@ function ConsoleNav() {
       <NavLink to="/console/orgs" icon="users">
         Organizations
       </NavLink>
+      <NavLink to="/console/alerts" icon="bell">
+        <span className="flex-1">Alerts</span>
+        <PlatformAlertCount />
+      </NavLink>
+      <NavLink to="/console/audit" icon="activity">
+        Activity
+      </NavLink>
       <div className={groupLabel}>Infrastructure</div>
-      <NavLink to="/console/servers" exact icon="server">
+      {/* Each server is a row on the Servers page, which stays current on
+          a server's own page: a row per server here pushed the account
+          off a 900px screen (Saile's pick A, 2026-11-17). */}
+      <NavLink to="/console/servers" icon="server">
         Servers
       </NavLink>
-      {servers.map((s) => {
-        const state = serverState(s.status);
-        return (
-          <Link
-            key={s.id}
-            to="/console/servers/$server"
-            params={{ server: s.name }}
-            activeProps={{ "aria-current": "page" }}
-            className="nav-row py-[5px] pl-[30px]"
-          >
-            <span className={toneText[state.tone]}>
-              <Glyph char={state.glyph ?? "●"} />
-            </span>
-            <span className="flex-1 truncate font-mono text-xs">{s.name}</span>
-            {s.status !== "online" && (
-              <span className={`text-2xs ${toneText[state.tone]}`}>
-                {state.label}
-              </span>
-            )}
-          </Link>
-        );
-      })}
       <NavLink to="/console/registry" icon="box">
         Registry
       </NavLink>
@@ -1209,21 +1197,13 @@ function ConsoleNav() {
       <NavLink to="/console/sign-in" icon="lock">
         Sign-in
       </NavLink>
-      <NavLink to="/console/email" icon="mail">
-        Email
-      </NavLink>
       <NavLink to="/console/data-access" icon="shield">
         Data access
       </NavLink>
-      <div className={groupLabel}>Operations</div>
-      <NavLink to="/console/alerts" icon="bell">
-        <span className="flex-1">Alerts</span>
-        <PlatformAlertCount />
+      <div className={groupLabel}>Integrations</div>
+      <NavLink to="/console/email" icon="mail">
+        Email
       </NavLink>
-      <NavLink to="/console/audit" icon="activity">
-        Activity
-      </NavLink>
-      <div className={groupLabel}>System</div>
       <NavLink to="/console/address" icon="globe">
         Address
       </NavLink>
@@ -1236,11 +1216,12 @@ function ConsoleNav() {
       <NavLink to="/console/analytics" icon="bars">
         Analytics
       </NavLink>
+      <div className="min-h-2 flex-1" />
+      {/* Updates by the account: both are about this Dock itself. */}
       <NavLink to="/console/updates" icon="upload">
         <span className="flex-1">Updates</span>
         <UpdateBadge />
       </NavLink>
-      <div className="min-h-6 flex-1" />
       <Me />
     </>
   );
