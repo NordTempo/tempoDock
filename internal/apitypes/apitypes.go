@@ -1060,7 +1060,8 @@ type AddVolumeRequest struct {
 	Apply     bool   `json:"apply,omitempty" doc:"Also apply all staged changes in the environment"`
 }
 
-// Token is an API token (without its secret).
+// Token is an API token (without its secret). A `dock login` token acts
+// as its person, so its Scope is their role in the org it is listed in.
 type Token struct {
 	ID          int64      `json:"id"`
 	Name        string     `json:"name"`

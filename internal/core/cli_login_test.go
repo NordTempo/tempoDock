@@ -89,7 +89,8 @@ func TestCLILoginApprovedTokenIsReturnedOnce(t *testing.T) {
 	}
 	tokens, _ := h.c.ListTokens(h.ctx, testSystem)
 	last := tokens[len(tokens)-1]
-	if last.Origin != "cli_login" || last.CreatedBy != "ada@example.com" || last.ExpiresAt == nil {
+	// It lists with ada's role, which caps it, not its stored ceiling.
+	if last.Origin != "cli_login" || last.CreatedBy != "ada@example.com" || last.ExpiresAt == nil || last.Scope != apitypes.ScopeDeploy {
 		t.Fatalf("token = %+v", last)
 	}
 	if _, err := h.c.WaitCLILogin(h.ctx, s.DeviceCode); CodeOf(err) != apitypes.CodeExpired {
