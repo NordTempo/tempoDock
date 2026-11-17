@@ -39,10 +39,10 @@ inputs:
     required: false
     default: "true"
   version:
-    description: The dock CLI release to install, like v0.56.0. Default the one the server runs.
+    description: The dock CLI release to install, like v0.56.0. Default the one the server runs. Only signed releases install, v0.56.0 or later.
     required: false
   cli:
-    description: A dock binary to use instead of installing one (your own builds, tests).
+    description: A dock binary to use instead of installing one (your own builds, tests, a server older than v0.56.0).
     required: false
 outputs:
   release:

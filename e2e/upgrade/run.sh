@@ -26,6 +26,10 @@ NAME=${UPG_NAME:-upg-cp}
 WORK=${UPG_WORK:-${TMPDIR:-/tmp}/upg}
 IMAGE=upg-server:latest
 REPO=NordTempo/tempoDock
+# The versions go into URLs and paths: release versions, nothing else.
+for v in "$FROM" "$TO"; do
+  [[ $v =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "FROM and TO are release versions like v0.58.0, not this" >&2; exit 1; }
+done
 
 say() { printf '\n== %s\n' "$*"; }
 on() { docker exec -i "$NAME" "$@"; }
@@ -38,7 +42,7 @@ up() {
   if [[ ! -f "$WORK/rel/$FROM/SHA256SUMS" ]]; then
     rm -rf "$WORK/rel/$FROM" && mkdir -p "$WORK/rel/$FROM"
     for f in dock-linux-amd64 "dock-install-$FROM.tar.gz" SHA256SUMS; do
-      curl -fsSL -o "$WORK/rel/$FROM/$f" "https://github.com/$REPO/releases/download/$FROM/$f"
+      curl --proto '=https' --proto-redir '=https' -fsSL -o "$WORK/rel/$FROM/$f" "https://github.com/$REPO/releases/download/$FROM/$f"
     done
   fi
   (cd "$WORK/rel/$FROM" && grep -E " (dock-linux-amd64|dock-install-$FROM.tar.gz)\$" SHA256SUMS | sha256sum -c --quiet)

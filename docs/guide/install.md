@@ -122,8 +122,15 @@ and the sign-in page. Without an address it installs the latest release
 prints the `PATH` line to add when that directory isn't on it. The
 signature check needs OpenSSL 3; macOS ships LibreSSL, so there the script
 warns and checks `SHA256SUMS` only, unless you `brew install openssl@3`
-and put it first in `PATH` (`DOCK_REQUIRE_SIGNATURE=1` makes a missing
-OpenSSL 3 an error).
+and put it first in `PATH`.
+
+A version is a release version (`v0.56.0`, `v0.56.0-rc.1`) or nothing is
+downloaded, whoever names it. The latest release and a server's version
+must be signed: a release from before v0.56.0, which has no signature,
+installs only when you name it yourself with `DOCK_VERSION`, with a
+warning. `DOCK_REQUIRE_SIGNATURE=1` installs nothing without a signature
+checked on this machine: no such older release, and none where OpenSSL 3
+is missing.
 
 With [Homebrew](https://brew.sh), on macOS or Linux:
 
@@ -156,8 +163,11 @@ Checking by hand, check `SHA256SUMS` itself too: with its signature
 Once it is installed, `dock self-update` keeps it in step: it installs the
 release the current context's server runs (or the latest, with
 `--latest`, or a given one, with `--to v0.54.1`), checked against the
-release's signed `SHA256SUMS`, in place of the running binary. A release
-from before v0.56.0, which has no signature, installs with a warning. In a directory
+release's signed `SHA256SUMS`, in place of the running binary. It only
+goes forward, to a signed release, on its own: for a server on an older
+release than the CLI, or on one from before v0.56.0 (no signature, so a
+warning), it stops and prints the `dock self-update --to <version>` that
+installs it anyway. In a directory
 only root can write to, such as `/usr/local/bin`, it prints the `sudo`
 command to run, with the version pinned. Installed with Homebrew, use
 `brew upgrade dock` instead.
@@ -184,8 +194,8 @@ the others also change an existing config, touching only their own keys.
 | Variable | Default | Meaning |
 |---|---|---|
 | `DOCK_BINARY` | download | Path to a `dock` binary: a release's `dock-linux-<arch>`, or `bin/dock` from `make build` |
-| `DOCK_VERSION` | the tarball's version, else the latest release | Without `DOCK_BINARY`: the release to download `dock-linux-<arch>` from, checked against its signed `SHA256SUMS` |
-| `DOCK_REQUIRE_SIGNATURE` | empty; `1` when piped | `1`: fail that download when this machine can't check the signature (no OpenSSL 3) instead of warning. `0` accepts `SHA256SUMS` alone when piped |
+| `DOCK_VERSION` | the tarball's version, else the latest release | Without `DOCK_BINARY`: the release to download `dock-linux-<arch>` from, checked against its signed `SHA256SUMS`. A release from before v0.56.0, which has no signature, is taken on its `SHA256SUMS` alone only when named here |
+| `DOCK_REQUIRE_SIGNATURE` | empty; `1` when piped | `1`: fail that download without a signature checked on this machine: a release from before v0.56.0, or no OpenSSL 3 here. `0` accepts `SHA256SUMS` alone when piped (for a release before v0.56.0, with `DOCK_VERSION`) |
 | `DOCK_ADMIN_EMAIL` | asked, else `admin@localhost` | The first admin's email, the console login. Only when the first admin is created |
 | `DOCK_YES` | empty | `1` is `--yes` |
 | `DOCK_RELEASE_DIR` | empty | Take the release from this directory instead of GitHub: its `dock-install-<version>.tar.gz`, `dock-linux-<arch>`, `SHA256SUMS` and `SHA256SUMS.sig`, as `make release-local` builds them |

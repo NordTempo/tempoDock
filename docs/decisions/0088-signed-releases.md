@@ -74,6 +74,19 @@ v0.56.0 that does have a signature is checked. Docks before v0.56.0
 don't know about signatures and update to signed releases as before; the
 first check happens on the update after that.
 
+*Amended 2026-11-17: an unsigned release only on an explicit pin.* The
+exception above is for a person who names an old release, and is now
+only theirs: `dock self-update --to <version>`, or `DOCK_VERSION` for the
+scripts. A version someone else supplies, which is the one a server
+reports and the one GitHub calls the latest, must be signed, and `dock
+self-update` doesn't follow either to a release older than the CLI: it
+stops and prints the `--to` command. `DOCK_REQUIRE_SIGNATURE=1` accepts
+no unsigned release at all, pinned or not, which is how the GitHub Action
+runs the installer ([0094](0094-deploying-from-github-actions.md)). The
+scripts also take nothing but a release version (`update.IsRelease`'s
+grammar; a test runs the same strings through both) from any of those
+sources, and download from GitHub over https only.
+
 **Keys.** The private key was generated on the maintainers' machine
 (`openssl genpkey -algorithm ed25519`), is kept offline, and its only
 other copy is the secret `RELEASE_SIGNING_KEY` of the protected GitHub

@@ -44,11 +44,14 @@ mkdir -p "$STATE"
 say() { printf '\033[1m==> %s\033[0m\n' "$*"; }
 
 if [[ -n ${E2E_RELEASE:-} ]]; then
+	# The version goes into a URL and paths: a release version, nothing else.
+	[[ $E2E_RELEASE =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] ||
+		{ echo "E2E_RELEASE is a release version like v0.58.0, not this" >&2; exit 1; }
 	rel=${XDG_CACHE_HOME:-$HOME/.cache}/dock-e2e-releases/$E2E_RELEASE
 	if [[ ! -f $rel/ok ]]; then
 		rm -rf "$rel" && mkdir -p "$rel"
 		for f in dock-linux-amd64 "dock-install-$E2E_RELEASE.tar.gz" SHA256SUMS; do
-			curl -fsSL -o "$rel/$f" "https://github.com/NordTempo/tempoDock/releases/download/$E2E_RELEASE/$f"
+			curl --proto '=https' --proto-redir '=https' -fsSL -o "$rel/$f" "https://github.com/NordTempo/tempoDock/releases/download/$E2E_RELEASE/$f"
 		done
 		(cd "$rel" && grep -E " (dock-linux-amd64|dock-install-$E2E_RELEASE.tar.gz)\$" SHA256SUMS | sha256sum -c --quiet)
 		chmod +x "$rel/dock-linux-amd64"

@@ -25,7 +25,10 @@ release key ([ADR 0088](docs/decisions/0088-signed-releases.md)), in
 attestation. Dock checks the signature itself: `dock update apply`, the
 console's Updates page, the root updater and `dock self-update` refuse a
 release without a valid one, and `install.sh` and `install-cli.sh` check
-it when OpenSSL 3 is installed.
+it when OpenSSL 3 is installed. A release from before v0.56.0 has no
+signature: `dock self-update` and the scripts install one only when you
+name it yourself (`--to`, `DOCK_VERSION`), never because a server runs it
+or it is the latest.
 
 The release signing keys (raw Ed25519, base64, with their key id):
 
