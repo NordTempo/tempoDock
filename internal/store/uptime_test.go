@@ -10,7 +10,7 @@ import (
 // alert key. Grouping sorts a bounded set (a service's checks, an hour's
 // minute rows), so only scans of growing tables and sorts for ORDER BY
 // fail. The scheduler's list (ListUptimeSchedule) reads every check on
-// purpose, and its login domains (ListLoginDomains) every protected
+// purpose, and its protected domains (ListProtectedDomains) every protected
 // service, each one's domains through the index.
 func TestUptimeQueryPlans(t *testing.T) {
 	f := newDataFixture(t)
@@ -26,7 +26,7 @@ func TestUptimeQueryPlans(t *testing.T) {
 		{"UptimeTotals", uptimeTotals, []any{1, 2, 3, 1, 0}, "s USING PRIMARY KEY (check_id=?)"},
 		{"UptimeSeries", uptimeSeries, []any{1, 0}, "s USING PRIMARY KEY (check_id=? AND res=? AND at>?)"},
 		{"UptimeProjectSummary", uptimeProjectSummary, []any{0, 1}, "s USING PRIMARY KEY (check_id=? AND res=? AND at>?)"},
-		{"ListLoginDomains", listLoginDomains, nil, "domains USING INDEX domains_service (service_id=?)"},
+		{"ListProtectedDomains", listProtectedDomains, nil, "domains USING INDEX domains_service (service_id=?)"},
 		{"ListUptimeIncidents", listUptimeIncidents, []any{1, 5}, "alerts USING INDEX alerts_key (key=?)"},
 	} {
 		rows, err := f.s.DB.Query("EXPLAIN QUERY PLAN "+tc.sql, tc.args...)

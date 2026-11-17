@@ -710,10 +710,10 @@ func TestIntegrationAccess(t *testing.T) {
 	}))
 	t.Cleanup(app.Close)
 	hash, _ := bcrypt.GenerateFromPassword([]byte("correct horse battery"), 4)
-	key := access.NewKey()
+	key, probeKey := access.NewKey(), access.NewKey()
 	upstream := strings.TrimPrefix(app.URL, "http://")
 	tc.applyRoutes(t, []node.Route{
-		{Hostnames: []string{"pw.test"}, Upstream: upstream, Access: &node.Access{Username: "team", PasswordHash: string(hash)}},
+		{Hostnames: []string{"pw.test"}, Upstream: upstream, Access: &node.Access{Username: "team", PasswordHash: string(hash), ProbeKey: probeKey}},
 		{Hostnames: []string{"login.test"}, Upstream: upstream, Access: &node.Access{Key: key, LoginURL: "https://dock.test/access"}},
 	})
 	var err error
@@ -751,6 +751,28 @@ func TestIntegrationAccess(t *testing.T) {
 	})
 	if code != 200 || body != "GET /x user=team body= key=" {
 		t.Fatalf("right password: %d %q", code, body)
+	}
+
+	// Dock's uptime probe passes the password with its session; a
+	// visitor's session doesn't, with or without the probe's User-Agent.
+	probe := func(cookie string) func(*http.Request) {
+		return func(r *http.Request) {
+			r.Header.Set("User-Agent", "dock-uptime/1.0")
+			r.Header.Set("Cookie", cookie)
+			r.Header.Set(access.UserHeader, "eve")
+			r.Header.Set(accessProbeHeader, "forged")
+		}
+	}
+	code, _, body = do("GET", tc.url("http", "pw.test", "/health"), "", probe(access.ProbeCookie(probeKey, "pw.test", time.Now())))
+	if code != 200 || body != "GET /health user="+access.ProbeUser+" body= key=" {
+		t.Fatalf("probe of a password route: %d %q", code, body)
+	}
+	visitor := accessCookie + "=" + access.Sign(probeKey, access.Session, "pw.test", "ada@example.com", time.Now().Add(access.SessionTTL))
+	if code, _, _ := do("GET", tc.url("http", "pw.test", "/"), "", probe(visitor)); code != 401 {
+		t.Fatalf("a visitor's session as the probe: %d", code)
+	}
+	if code, h, _ := do("GET", tc.url("http", "pw.test", "/"), "", func(r *http.Request) { r.Header.Set("Cookie", visitor) }); code != 401 || !strings.HasPrefix(h.Get("WWW-Authenticate"), "Basic") {
+		t.Fatalf("a visitor's session: %d %v", code, h)
 	}
 
 	// Login: a page load goes to sign in, a script gets a 401.

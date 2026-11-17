@@ -501,9 +501,9 @@ func TestAutoUptimeChecks(t *testing.T) {
 	}
 }
 
-// A check of a domain behind a Dock login is probed with a one-minute
-// session for that hostname, signed with its service's key (ADR 0030),
-// so it is up instead of answering the login's 401. A check whose host
+// A check of a domain behind a Dock login or a password is probed with a
+// one-minute session for that hostname, signed with its service's key
+// (ADR 0030), so it is up instead of answering the protection's 401. A check whose host
 // isn't a login domain of its own service never carries one.
 func TestUptimeProbePassesItsServicesLogin(t *testing.T) {
 	h := newHarness(t)
@@ -576,6 +576,27 @@ func TestUptimeProbePassesItsServicesLogin(t *testing.T) {
 				}
 			}
 			seen[r.URL] = true
+		}
+	}
+
+	// Behind a password instead: a session signed with the service's
+	// probe key, which the password's route passes (ADR 0030).
+	if _, err := h.c.SetServiceAccess(h.ctx, testSystem, web, apitypes.SetAccessRequest{Mode: apitypes.AccessPassword, Username: "team", Password: "correct horse battery"}); err != nil {
+		t.Fatal(err)
+	}
+	probeKey := h.c.probeKey(webSvc.svc.ID)
+	for deadline, ok := time.Now().Add(5*time.Second), false; !ok; {
+		if time.Now().After(deadline) {
+			t.Fatal("no probe with the password route's session")
+		}
+		time.Sleep(5 * time.Millisecond)
+		for _, r := range h.rt.ProbeRequests() {
+			token, _ := strings.CutPrefix(r.Cookie, access.CookieName+"=")
+			user, valid := access.Verify(probeKey, token, access.Session, "shop.example.com", time.Now())
+			if valid && (r.URL != shop || user != access.ProbeUser) {
+				t.Fatalf("%s was probed with the password route's session for %q", r.URL, user)
+			}
+			ok = ok || valid
 		}
 	}
 

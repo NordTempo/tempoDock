@@ -126,3 +126,35 @@ func TestAccessHandlerLetsAProbeThrough(t *testing.T) {
 		}
 	}
 }
+
+// On a password-protected route the check passes Dock's uptime probe and
+// nobody else: a visitor's session under the same key, or a grant at the
+// callback, gets a 401 and so meets the password.
+func TestAccessHandlerPassesOnlyTheProbeOnAPasswordRoute(t *testing.T) {
+	key := access.NewKey()
+	serve := func(uri string, h http.Header) *httptest.ResponseRecorder {
+		r := checkRequest(key, "GET", uri, h)
+		r.Header.Set(accessProbeHeader, "1")
+		w := httptest.NewRecorder()
+		AccessHandler().ServeHTTP(w, r)
+		return w
+	}
+	now := time.Now()
+	w := serve("/", http.Header{"Cookie": {access.ProbeCookie(key, "app.example.com", now)}})
+	if w.Code != http.StatusNoContent || w.Header().Get(access.UserHeader) != access.ProbeUser {
+		t.Fatalf("probe: %d %q", w.Code, w.Header().Get(access.UserHeader))
+	}
+	visitor := accessCookie + "=" + access.Sign(key, access.Session, "app.example.com", "ada@example.com", now.Add(access.SessionTTL))
+	grant := access.Sign(key, access.Grant, "app.example.com", access.ProbeUser, now.Add(access.GrantTTL))
+	for name, w := range map[string]*httptest.ResponseRecorder{
+		"a visitor's session":          serve("/", http.Header{"Cookie": {visitor}}),
+		"another hostname's probe":     serve("/", http.Header{"Cookie": {access.ProbeCookie(key, "other.example.com", now)}}),
+		"another key's probe":          serve("/", http.Header{"Cookie": {access.ProbeCookie(access.NewKey(), "app.example.com", now)}}),
+		"a grant at the callback":      serve(access.CallbackPath+"?grant="+grant, http.Header{"Sec-Fetch-Mode": {"navigate"}}),
+		"a page load without a cookie": serve("/", http.Header{"Sec-Fetch-Mode": {"navigate"}}),
+	} {
+		if w.Code != http.StatusUnauthorized || len(w.Result().Cookies()) != 0 {
+			t.Errorf("%s: %d, want 401 and no cookie", name, w.Code)
+		}
+	}
+}

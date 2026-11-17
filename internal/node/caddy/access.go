@@ -26,6 +26,11 @@ const accessCookie = access.CookieName
 //     redirects to the page the visitor asked for.
 //   - Otherwise a browser page load is redirected to Dock's /access page
 //     (the login URL), and anything else gets a 401.
+//
+// For a password-protected route (accessProbeHeader, probeAccess) it
+// passes one thing only: a valid session naming access.ProbeUser, Dock's
+// uptime probe. Any other session, or the callback, gets a 401: a
+// visitor's Dock login never stands in for the password.
 func AccessHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -36,6 +41,17 @@ func AccessHandler() http.Handler {
 			return
 		}
 		host, now := hostOnly(r.Host), time.Now()
+		if r.Header.Get(accessProbeHeader) != "" {
+			if c, err := r.Cookie(accessCookie); err == nil {
+				if user, ok := access.Verify(key, c.Value, access.Session, host, now); ok && user == access.ProbeUser {
+					w.Header().Set(access.UserHeader, user)
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+			}
+			http.Error(w, "This address asks for a password.", http.StatusUnauthorized)
+			return
+		}
 		if uri.Path == access.CallbackPath {
 			signIn(w, r, key, host, uri.Query(), now)
 			return
