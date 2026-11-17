@@ -26,6 +26,9 @@ query or the UI. The rules that matter most:
 - **`make perf` must pass.** Add a benchmark (`*_bench_test.go`, `b.Loop`,
   `b.ReportAllocs`) for new hot paths. Update `scripts/perf/baseline.json`
   with `make perf-baseline` only for intended changes, and say why.
+  Allocations fail CI past 3% of the baseline and warn past 1%; timings
+  only warn there. A warn row on allocations is your change's: fix it or
+  re-record it with the reason, in the same PR.
 
 ## Fix what taught the mistake
 

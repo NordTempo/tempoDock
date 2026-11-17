@@ -44,7 +44,7 @@ than on a quiet machine.
 | UI initial fonts (preloaded or declared by the initial CSS, woff2 as shipped) | ≤ 100 KB | 63.6 KB (Inter and JetBrains Mono, Latin subsets) |
 | UI fonts (all font files) | ≤ 150 KB | 63.6 KB |
 | Binary size (`bin/dock`, UI and dock-probe embedded) | ≤ baseline + 3% (64.5 MB) | 62.6 MB (2026-11-15, re-recorded with the sign-in hardening after the features since 2026-11-11 used the headroom): measure before adding a dependency |
-| Go benchmarks | ns/op ≤ baseline + 30%, allocs/op ≤ baseline + 15% (+2) | see `scripts/perf/baseline.json` |
+| Go benchmarks | ns/op ≤ baseline + 30%, allocs/op ≤ baseline + 3% (+2); a rise past 1% (+2) warns | see `scripts/perf/baseline.json` |
 
 `make perf` also prints, without a budget, the daemon's memory after
 seeding and load (63.7 MB) and the gzipped JS of every route (727 KB in
@@ -259,11 +259,15 @@ masking secret values in logs (`BenchmarkRedactLine`, `BenchmarkRedactBuildLog`)
   tmpfs and 38-54 µs on a shared disk (WAL writes, checkpoint fsyncs),
   and the same code read anywhere from 16 to 60 µs on CI. API latency budgets scale with the same factor on
   machines slower than the baseline's.
-- **Near the gate.** Allocations are deterministic, so a benchmark whose
-  count sits within 2% of its gate warns: the next change that adds a
-  little fails it, often a parallel PR that passed on its own (#307 and
+- **Allocations gate, timings warn.** Allocations barely vary (the
+  median of 5 runs moves under 2%, most under 0.5%), so they fail CI past
+  3% (+2) of the baseline, on shared runners too, and any rise past 1%
+  (+2) warns. Fix such a rise or re-record it in the pull request that
+  made it, with the reason: a looser gate let small rises add up unseen
+  (BenchmarkCoreReads/Changes went 6884 → 7772 under a 15% gate, 855 of
+  them from error text #366 built for every variable reference), and
+  then the next change that adds a little fails on the sum (#307 and
   #306 took `BenchmarkNewAPI` 38 allocations over after each passed).
-  Re-record it in the PR that brought it there, with the reason.
 - **Updating the baseline.** When a change makes something slower on
   purpose, or a new benchmark is added, run `make perf-baseline` on a quiet
   machine and commit `scripts/perf/baseline.json` with the change, saying why

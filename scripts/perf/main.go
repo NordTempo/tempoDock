@@ -124,7 +124,7 @@ func main() {
 	flag.StringVar(&o.benchTime, "benchtime", "200ms", "go test -benchtime")
 	flag.IntVar(&o.benchCount, "count", 5, "go test -count; the fastest run's ns/op and the median allocs/op are compared")
 	flag.Float64Var(&o.nsTol, "ns-tolerance", 0.30, "allowed ns/op regression (fraction), after normalizing for machine speed")
-	flag.Float64Var(&o.allocsTol, "allocs-tolerance", 0.15, "allowed allocs/op regression (fraction, plus 2 allocs)")
+	flag.Float64Var(&o.allocsTol, "allocs-tolerance", 0.03, "allowed allocs/op regression (fraction, plus 2 allocs); allocations barely vary, so this fails CI too")
 	flag.BoolVar(&o.softTiming, "soft-timing", false, "report timing budgets as warnings (shared CI runners)")
 	flag.StringVar(&o.markdown, "markdown", "", "also write the results as Markdown to this file (CI's job summary and PR comment)")
 	flag.BoolVar(&o.update, "update-baseline", false, "record binary size and benchmarks into -baseline instead of checking")
