@@ -184,7 +184,7 @@ func (c *Core) promotedImage(from store.Release, sameServer bool) (ref, id strin
 		return c.registryRef(from.ImageRef, from.ImageDigest), "", true
 	case sameServer:
 		return from.ImageRef, from.ImageID, true
-	case !c.ownImage(from.ImageRef):
+	case !c.dockNamed(from.ImageRef):
 		return from.ImageRef, "", true // pulled from its registry
 	}
 	return "", "", false

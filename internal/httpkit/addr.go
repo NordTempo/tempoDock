@@ -8,11 +8,13 @@ import "net/netip"
 // DNS, so a hostname can't resolve its way past them. Private, CGNAT and
 // tailnet addresses are fine: a homelab's services live there.
 
-// Cloud metadata services outside 169.254.0.0/16: AWS over IPv6 and
-// Alibaba Cloud.
+// Cloud metadata services outside 169.254.0.0/16: AWS over IPv6, Alibaba
+// Cloud, and Azure's WireServer, which answers only from inside a VM and
+// holds its goal state and extension settings.
 var (
 	awsMetadataV6   = netip.MustParseAddr("fd00:ec2::254")
 	alibabaMetadata = netip.MustParseAddr("100.100.100.200")
+	azureWireServer = netip.MustParseAddr("168.63.129.16")
 )
 
 // IsSelfAddr reports whether ip is the dialing server itself: loopback or
@@ -39,7 +41,7 @@ func IsPublicAddr(ip netip.Addr) bool {
 // for a request a user configured.
 func IsInternalAddr(ip netip.Addr) bool {
 	ip = ip.Unmap()
-	return ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip == awsMetadataV6 || ip == alibabaMetadata
+	return ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip == awsMetadataV6 || ip == alibabaMetadata || ip == azureWireServer
 }
 
 // ClientKey is what per-client limits count a client IP as: an IPv4

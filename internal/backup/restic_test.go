@@ -21,7 +21,7 @@ func TestBackupScript(t *testing.T) {
 		apitypes.BackupRedis:    {`redis-cli -h "$DOCK_DB_HOST" -p "$DOCK_DB_PORT" --rdb /tmp/dock.rdb`, "--stdin-filename redis.rdb", "-- cat /tmp/dock.rdb"},
 		apitypes.BackupVolume:   {"cd /volumes", "backup --json"},
 		apitypes.BackupMySQL: {`CLIENT="$(command -v mariadb || command -v mysql)"`, "grep -Ev '^(information_schema|performance_schema|mysql|sys)$'",
-			"--stdin-filename mysql.sql", "--stdin-from-command -- $DUMP $AT --single-transaction --routines --triggers --events --databases $DBS"},
+			"--stdin-filename mysql.sql", "--stdin-from-command -- $DUMP $AT --single-transaction --routines --triggers --events --databases \"$@\""},
 	} {
 		s, err := BackupScript(kind)
 		if err != nil {

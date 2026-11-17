@@ -198,7 +198,7 @@ func (c *Core) scanWaitReason(ctx context.Context) func(production bool) string 
 // reference as written, or for the platform's own builds the service
 // and release that built it ("shop/web r42").
 func (c *Core) imageName(ref string, use apitypes.ImageUse) string {
-	if c.ownImage(ref) {
+	if c.dockNamed(ref) {
 		return fmt.Sprintf("%s/%s r%d", use.Project, use.Service, use.Release)
 	}
 	return ref
@@ -431,7 +431,10 @@ func (c *Core) addReleaseScan(ctx context.Context, ss svcScope, r store.Release)
 	if r.Status == string(apitypes.ReleaseActive) {
 		return nil
 	}
-	if r.ImageDigest == "" && r.PinnedRef == "" && !c.ownImage(r.ImageRef) {
+	// An image Dock built without a registry is read from the server by
+	// its name: only for the release's own project, and only once the
+	// release got as far as having one.
+	if r.ImageDigest == "" && r.PinnedRef == "" && (!c.ownImage(ss.project.ID, r.ImageRef) || r.ImageID == "") {
 		return invalid("release %d's image can only be scanned while it is live, since Dock didn't record its digest; roll back to it, or scan the live release", r.Number)
 	}
 	img, _ := c.scanImageOf(ctx, store.ListUnscannedReleasesRow{

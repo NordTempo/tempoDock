@@ -405,7 +405,7 @@ func (c *Core) scanImageOf(ctx context.Context, r store.ListUnscannedReleasesRow
 	case r.ImageDigest != "" && c.reg != nil:
 		// Built by Dock and in the registry.
 		return scanImage{key: r.ImageDigest, pull: c.registryRef(r.ImageRef, r.ImageDigest), local: r.ImageRef, builtOn: r.BuiltOnServerID}, true
-	case c.ownImage(r.ImageRef):
+	case c.dockNamed(r.ImageRef) && r.ImageID != "":
 		// Built by Dock without a registry: only on the server it was
 		// built on, by its local ID.
 		on := r.BuiltOnServerID
