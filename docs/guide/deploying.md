@@ -84,13 +84,48 @@ tar:
 - **One build at a time per server.** A second build waits ("Waiting for
   another build on this server to finish").
 - **Capped.** BuildKit runs in its own container (`dock-buildkit`) with
-  `[buildkit] memory_mb` (default 2048) and `cpus` (default 1), and a
-  quarter of the normal CPU weight, so apps win any contention. A build that
+  `[buildkit] memory_mb` (default 2048) and `cpus` (default 0: half the
+  server's cores, at least two), and a quarter of the normal CPU weight,
+  so apps win any contention. A build that
   needs more memory fails with `build_failed` and says so; running apps are
   unaffected. Raise the cap or build in CI and deploy the image.
 - **First Railpack build** downloads a ~150 MB version resolver to
   `/tmp/railpack`.
 - Servers with `[buildkit] enabled = false` reject source deploys.
+
+### Build caches
+
+Each builder keeps one BuildKit cache, so a second build only redoes what
+changed:
+
+- **Layers** are shared by every build on the server. A step whose inputs
+  didn't change (the same base image, files and command) is `CACHED`: with
+  `COPY package.json pnpm-lock.yaml ./` before the install, a change that
+  leaves the lockfile alone skips the install.
+- **Cache mounts** (`RUN --mount=type=cache`) are kept per environment, so
+  one environment can't read or change another's. Railpack builds use them
+  for the package manager's store and framework caches (`.next/cache`) on
+  their own. A preview environment starts with empty ones: a pull request's
+  code is untrusted, and must not write into the caches its base
+  environment's builds read.
+- `[retention] build_cache_keep_mb` (default 2048) is what a disk prune
+  leaves of the cache.
+
+A Dockerfile build keeps only what its cache mounts name. Without one on
+the step that runs `next build`, every Next.js build compiles the whole app
+again, and the build log says so. Mount `.next/cache` (under the
+`WORKDIR`) and the package manager's store:
+
+```dockerfile
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store pnpm i --frozen-lockfile
+COPY . .
+RUN --mount=type=cache,target=/app/.next/cache pnpm run build
+```
+
+The same goes for other tools: `/root/.npm` for npm, `/usr/local/share/.cache/yarn`
+for Yarn 1, `/root/.cache/pip` for pip, `/root/.cache/go-build` for Go. A
+cache mount isn't part of the image, so don't put what the app reads at
+runtime there.
 
 Build output is kept per release: `dock logs --build` (the newest build),
 `dock logs --build --release 41`. Service output: `dock logs`, with

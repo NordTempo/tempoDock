@@ -482,7 +482,9 @@ disable_tls = ${DISABLE_TLS:-false}
 enabled = true
 image = "$BUILDKIT_IMAGE"
 memory_mb = 2048
-cpus = 1
+# 0: half this server's cores, at least two. Builds run at a quarter of
+# the CPU weight of apps, so apps win any contention either way.
+cpus = 0
 
 [network]
 # App networks get a /24 each from this range.

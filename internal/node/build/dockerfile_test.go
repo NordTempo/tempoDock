@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -190,5 +191,58 @@ func TestBaseImage(t *testing.T) {
 	m := fromVertex.FindStringSubmatch("[base 1/2] FROM docker.io/library/alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc")
 	if m == nil || m[1] != "docker.io/library/alpine:3.20" || familiar(m[1]) != "alpine:3.20" {
 		t.Fatalf("vertex = %v", m)
+	}
+}
+
+func TestNextCacheHint(t *testing.T) {
+	const next = `{"dependencies": {"next": "15.5.6", "react": "19.1.1"}}`
+	example := `FROM node:22-alpine AS base
+FROM base AS deps
+WORKDIR /app
+RUN pnpm i --frozen-lockfile
+FROM base AS builder
+WORKDIR /srv
+WORKDIR web
+RUN --mount=type=cache,target=/root/.npm \
+  if [ -f pnpm-lock.yaml ]; then pnpm run build; fi
+FROM builder AS runner
+RUN npm run build
+`
+	cases := map[string]struct {
+		pkg, dockerfile, target string // target "" means no hint
+	}{
+		"example":       {next, example, "/srv/web/.next/cache"},
+		"inherited dir": {next, "FROM node AS b\nWORKDIR /x\nFROM b\nRUN next build\n", "/x/.next/cache"},
+		"variable dir":  {next, "FROM node\nWORKDIR $DIR\nRUN yarn build\n", "/app/.next/cache"},
+		"has the mount": {next, "FROM node\nWORKDIR /app\nRUN --mount=type=cache,target=/app/.next/cache npm run build\n", ""},
+		"no build step": {next, "FROM node\nCOPY . .\nCMD [\"next\", \"start\"]\n", ""},
+		"not next":      {`{"dependencies": {"vite": "7"}}`, "FROM node\nRUN npm run build\n", ""},
+		"next in dev":   {`{"devDependencies": {"next": "15"}}`, "FROM node\nRUN npm run build\n", "/.next/cache"},
+		"no package":    {"", "FROM node\nRUN npm run build\n", ""},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			if c.pkg != "" {
+				if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(c.pkg), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			root, err := os.OpenRoot(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = root.Close() }()
+			hint := nextCacheHint([]byte(c.dockerfile), root)
+			if c.target == "" {
+				if hint != "" {
+					t.Fatalf("unexpected hint: %s", hint)
+				}
+				return
+			}
+			if !strings.Contains(hint, "target="+c.target+" ") {
+				t.Fatalf("hint = %q, want one naming %s", hint, c.target)
+			}
+		})
 	}
 }

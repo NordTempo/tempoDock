@@ -19,7 +19,7 @@ line means a later record added to it without changing what it decided.
 | [0003](0003-sqlite-for-platform-state.md) | SQLite for platform state | accepted |
 | [0004](0004-caddy-as-separate-proxy.md) | Caddy as a separate proxy process | accepted |
 | [0005](0005-openapi-api-with-generated-clients.md) | OpenAPI API with generated clients | accepted |
-| [0006](0006-every-way-to-build.md) | Every way to build and deploy | accepted |
+| [0006](0006-every-way-to-build.md) | Every way to build and deploy | accepted; amended by [0089](0089-faster-builds.md) |
 | [0007](0007-config-db-plus-repo-file.md) | Config in the platform DB plus an optional repo file | accepted |
 | [0008](0008-keep-doors-open.md) | Keep open source and hosting possible, cheaply | superseded in part by [0027](0027-organizations.md), [0082](0082-open-source-license.md) |
 | [0009](0009-dynamic-domains-and-tls.md) | Dynamic domains and automatic TLS | superseded in part by [0042](0042-domain-verification.md); amended by [0087](0087-unguessable-generated-hostnames.md) (random part in generated hostnames) and [0090](0090-wildcard-certificates.md) (one wildcard per base domain) |
@@ -102,6 +102,7 @@ line means a later record added to it without changing what it decided.
 | [0086](0086-cancel-a-deploy.md) | Cancel a deploy: any step before the cutover, the serving release keeps serving, `canceled` is no failure | accepted |
 | [0087](0087-unguessable-generated-hostnames.md) | Generated hostnames nobody can guess: a random part in new ones, status page names per organization, plain HTTP alike for every host; what CT logs still show | accepted |
 | [0088](0088-signed-releases.md) | Signed releases: Ed25519 over `SHA256SUMS`, keys built into dock, checked on every download path from v0.56.0; build-provenance attestations | accepted |
+| [0089](0089-faster-builds.md) | Faster builds: half the server's cores (at least two) by default, zstd layers, Railpack images pinned, a hint for Dockerfiles without `.next/cache`, previews keep cold cache mounts | accepted |
 | [0090](0090-wildcard-certificates.md) | Wildcard certificates for generated hostnames: `*.<base>` over ACME DNS-01 through Cloudflare, sent to servers with their routes, no CT log entries or TLS oracle | accepted |
 
 ## Template
