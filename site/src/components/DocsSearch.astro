@@ -1,0 +1,104 @@
+---
+/**
+ * Search over the guides' titles and headings: the docs' one script.
+ * The field stays hidden until the script runs, and the index
+ * (/docs/headings.json, built with the site) loads on first use.
+ * "/" focuses it, the arrows and Enter pick a result, Escape closes.
+ */
+---
+
+<div id="docs-search" class="relative mb-5" hidden>
+  <input
+    type="search"
+    placeholder="Search headings"
+    aria-label="Search the docs' headings"
+    autocomplete="off"
+    class="w-full border border-edge bg-black px-2.5 py-1.5 text-sm text-white placeholder:text-meta focus:border-white focus:outline-none"
+  />
+  <kbd class="pointer-events-none absolute top-[7px] right-2 border border-edge px-1.5 font-mono text-[11px] text-body">/</kbd>
+  <ol class="absolute top-full right-0 left-0 z-10 max-h-[70vh] overflow-y-auto border border-t-0 border-edge bg-panel lg:w-[340px] lg:right-auto" hidden></ol>
+</div>
+
+<script>
+  /** A heading in the index: its text, its guide and its address. */
+  type Heading = { text: string; guide: string; href: string };
+
+  const box = document.querySelector<HTMLElement>("#docs-search");
+  const input = box?.querySelector("input");
+  const list = box?.querySelector("ol");
+  if (box && input && list) {
+    let index: Promise<Heading[]> | undefined;
+    let hits: Heading[] = [];
+    let picked = 0;
+    const load = () => {
+      index ??= fetch("/docs/headings.json").then((r) => r.json());
+      return index;
+    };
+
+    const draw = () => {
+      list.hidden = hits.length === 0;
+      list.replaceChildren(
+        ...hits.map((hit, n) => {
+          const item = document.createElement("li");
+          const link = item.appendChild(document.createElement("a"));
+          link.href = hit.href;
+          link.className = `block border-b border-line px-2.5 py-1.5 text-sm text-white hover:bg-neutral-900 ${n === picked ? "bg-neutral-900" : ""}`;
+          link.textContent = hit.text;
+          const guide = link.appendChild(document.createElement("span"));
+          guide.className = "block text-xs text-meta";
+          guide.textContent = hit.guide;
+          return item;
+        }),
+      );
+    };
+
+    const search = async () => {
+      const words = input.value.toLowerCase().split(/\s+/).filter(Boolean);
+      const all = words.length > 0 ? await load() : [];
+      const first = words[0] ?? "";
+      hits = all
+        .filter((h) => {
+          const text = `${h.text} ${h.guide}`.toLowerCase();
+          return words.every((word) => text.includes(word));
+        })
+        // Headings that start with what was typed come first.
+        .sort(
+          (a, b) =>
+            Number(b.text.toLowerCase().startsWith(first)) -
+            Number(a.text.toLowerCase().startsWith(first)),
+        )
+        .slice(0, 12);
+      picked = 0;
+      draw();
+    };
+
+    box.hidden = false;
+    input.addEventListener("focus", load);
+    input.addEventListener("input", search);
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        input.value = "";
+        hits = [];
+        input.blur();
+      } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const step = event.key === "ArrowDown" ? 1 : -1;
+        picked = Math.max(0, Math.min(hits.length - 1, picked + step));
+      } else if (event.key === "Enter") {
+        const hit = hits[picked];
+        if (hit) location.href = hit.href;
+        return;
+      } else return;
+      draw();
+    });
+    document.addEventListener("keydown", (event) => {
+      const typing = event.target instanceof HTMLElement && event.target.closest("input, textarea");
+      if (event.key !== "/" || typing) return;
+      event.preventDefault();
+      input.focus();
+    });
+    document.addEventListener("click", (event) => {
+      if (event.target instanceof Node && !box.contains(event.target)) list.hidden = true;
+    });
+  }
+</script>

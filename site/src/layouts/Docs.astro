@@ -1,0 +1,58 @@
+---
+import type { MarkdownHeading } from "astro";
+import DocsNav from "../components/DocsNav.astro";
+import DocsSearch from "../components/DocsSearch.astro";
+import Footer from "../components/Footer.astro";
+import Nav from "../components/Nav.astro";
+import { sourceUrl } from "../guide";
+import Page from "./Page.astro";
+import "../styles/docs.css";
+
+/**
+ * A docs page: the guides down the left, the page in the middle and its
+ * sections on the right. Narrow screens fold the guides into a menu and
+ * drop the section list.
+ */
+interface Props {
+  /** The guide's file name without .md; "readme" for the front page. */
+  slug: string;
+  title: string;
+  description: string;
+  headings: MarkdownHeading[];
+  /** The file under docs/guide, for the link to its source. */
+  file: string;
+}
+
+const { slug, title, description, headings, file } = Astro.props;
+const toc = headings.filter((h) => h.depth === 2 || h.depth === 3);
+---
+
+<Page title={`${title} · Tempo Dock docs`} description={description}>
+  <Nav current="docs" />
+  <div class="mx-auto mt-7 grid max-w-[1200px] border-t border-line px-6 md:px-14 lg:grid-cols-[200px_minmax(0,1fr)] xl:grid-cols-[200px_minmax(0,1fr)_200px]">
+    <aside class="border-line py-6 lg:sticky lg:top-0 lg:max-h-screen lg:overflow-y-auto lg:border-r lg:pr-5">
+      <DocsSearch />
+      <details class="lg:hidden">
+        <summary class="cursor-pointer text-sm font-semibold text-white">All guides</summary>
+        <nav class="mt-4 border-l border-line" aria-label="Guides"><DocsNav current={slug} /></nav>
+      </details>
+      <nav class="hidden border-l border-line lg:block" aria-label="Guides"><DocsNav current={slug} /></nav>
+    </aside>
+    <main class="guide min-w-0 pb-20 lg:px-10 lg:pt-8">
+      <slot />
+      <slot name="after" />
+    </main>
+    <aside class="hidden py-9 text-[13px] xl:sticky xl:top-0 xl:block xl:max-h-screen xl:overflow-y-auto">
+      {toc.length > 0 && (
+        <nav aria-label="On this page">
+          <p class="mb-2 font-semibold text-white">On this page</p>
+          {toc.map((h) => (
+            <a href={`#${h.slug}`} class:list={["block py-[3px] text-body hover:text-white", h.depth === 3 && "pl-3"]}>{h.text}</a>
+          ))}
+        </nav>
+      )}
+      <a href={sourceUrl(file)} class="mt-5 block text-meta hover:text-white">Edit on GitHub</a>
+    </aside>
+  </div>
+  <Footer />
+</Page>

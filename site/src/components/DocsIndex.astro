@@ -1,0 +1,20 @@
+---
+import { loadDocs } from "../docs";
+import Section from "./Section.astro";
+
+/** Every guide by section, as links: the docs' index on the home page. */
+const { groups } = await loadDocs();
+---
+
+<Section id="docs" title="Read before" dim="you install.">
+  <div class="grid grid-cols-2 gap-x-6 gap-y-8 border-t border-line pt-5 sm:grid-cols-3 lg:grid-cols-6">
+    {groups.map((group) => (
+      <div>
+        <h3 class="mb-2 text-sm font-semibold">{group.name}</h3>
+        {group.guides.map((guide) => (
+          <a href={guide.href} class="block py-0.5 text-sm text-body hover:text-white">{guide.title}</a>
+        ))}
+      </div>
+    ))}
+  </div>
+</Section>

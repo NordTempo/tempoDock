@@ -1,0 +1,37 @@
+---
+import { render } from "astro:content";
+import { type Guide, loadDocs } from "../../docs";
+import Docs from "../../layouts/Docs.astro";
+
+/** One guide page, with links to the guides before and after it. */
+export async function getStaticPaths() {
+  const { guides } = await loadDocs();
+  return guides.map((guide, n) => ({
+    params: { slug: guide.slug },
+    props: { guide, previous: guides[n - 1], next: guides[n + 1] },
+  }));
+}
+
+interface Props {
+  guide: Guide;
+  previous: Guide | undefined;
+  next: Guide | undefined;
+}
+
+const { guide, previous, next } = Astro.props;
+const { Content, headings } = await render(guide.entry);
+---
+
+<Docs
+  slug={guide.slug}
+  title={guide.title}
+  description={guide.summary || `${guide.title}: the Tempo Dock guide.`}
+  headings={headings}
+  file={`${guide.slug}.md`}
+>
+  <Content />
+  <nav slot="after" class="mt-12 flex justify-between gap-6 border-t border-line pt-4 text-sm" aria-label="Guides before and after">
+    {previous ? <a href={previous.href} class="text-body hover:text-white">← {previous.title}</a> : <span />}
+    {next && <a href={next.href} class="text-right text-body hover:text-white">{next.title} →</a>}
+  </nav>
+</Docs>

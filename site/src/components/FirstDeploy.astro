@@ -1,0 +1,33 @@
+---
+import { install } from "../site";
+import Section from "./Section.astro";
+
+/**
+ * From a new server to a live app in four commands, each with the guide
+ * that explains it. The commands are the guides' own.
+ */
+const steps = [
+  ["Install the server", install.server, "Install", "/docs/install"],
+  ["Sign in from your laptop", install.cli, "The CLI", "/docs/install#the-cli"],
+  ["Deploy", "dock deploy", "Getting started", "/docs/getting-started"],
+  [
+    "Give it a domain",
+    "dock domain add shop.example.com",
+    "Domains",
+    "/docs/domains",
+  ],
+] as const;
+---
+
+<Section id="start" title="From a server to a live app." dim="Four commands.">
+  <ol class="grid border-t border-line sm:grid-cols-2 lg:grid-cols-4">
+    {steps.map(([title, command, guide, href], n) => (
+      <li class:list={["min-w-0 border-line py-5 sm:pr-5", n > 0 && "border-t sm:border-t-0 lg:border-l lg:pl-5", n > 1 && "sm:max-lg:border-t"]}>
+        <p class="font-mono text-xs text-deploys">{n + 1}</p>
+        <h3 class="mt-1.5 mb-2.5 font-semibold">{title}</h3>
+        <pre class="overflow-x-auto pb-2.5 font-mono text-xs text-white"><code class="select-all [font-variant-ligatures:none]">{command}</code></pre>
+        <a href={href} class="text-sm text-body hover:text-white">{guide} →</a>
+      </li>
+    ))}
+  </ol>
+</Section>

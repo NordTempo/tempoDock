@@ -7,7 +7,8 @@
 #         full perf-artifacts.
 #   web   the UI under web/: the web job, and perf-artifacts' binary and
 #         UI checks (the binary embeds the UI).
-#   site  the landing page under site/.
+#   site  the landing page under site/, and the guide its docs pages
+#         render (docs/guide).
 #
 # The API's contract sets both: its Go types and handlers, the OpenAPI
 # specs generated from them, the UI's clients generated from those, and
@@ -72,8 +73,13 @@ while IFS= read -r f; do
 		;;
 	*.go) go=true ;;
 	# Embedded in the binaries (//go:embed): the in-app guide, tempoBase's
-	# docs, the built UIs' directories.
-	docs/guide/* | docs/tempobase/* | web/dist/* | web/tempobase/dist/*) go=true ;;
+	# docs, the built UIs' directories. The site builds its docs pages
+	# from the guide too (site/src/content.config.ts).
+	docs/guide/*)
+		go=true
+		site=true
+		;;
+	docs/tempobase/* | web/dist/* | web/tempobase/dist/*) go=true ;;
 	docs/* | *.md) ;;
 	web/*) web=true ;;
 	*) go=true ;;

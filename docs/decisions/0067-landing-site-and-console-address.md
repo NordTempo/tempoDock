@@ -48,3 +48,20 @@ so the console moves first:
 - The CLI drops its token on a redirect to another host, so a context on the
   old address fails until it is re-added; the redirect only helps browsers.
 - The site is one more container on the server: about 15 MB of memory idle.
+
+## The docs on the site (2026-11-17)
+
+The site also serves the user guide, at `/docs` and `/docs/<guide>`:
+people read it before they install. The pages are `docs/guide/*.md`
+rendered at build time, so the guide has one source for the repository,
+the binary (in-app help, MCP) and the site. Two consequences:
+
+- The image's build context is `site/`, which doesn't hold `docs/guide`,
+  so the Dockerfile fetches the directory from `main`. Dock deploys the
+  site on pushes that touch `site/`: a change to the guide alone is live
+  with the next site deploy.
+- The docs pages ship the site's only script, a search over the guides'
+  headings. The home page still ships none.
+
+The site no longer links to the console: it is NordTempo's own install,
+not a public one. The redirect of unknown paths stays for old links.
