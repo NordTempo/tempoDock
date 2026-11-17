@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, type ReactNode, useMemo, useState } from "react";
 import {
   useCanDeploy,
   useDeployBlock,
@@ -32,11 +32,14 @@ import {
 } from "./data";
 
 /** Where the page's selection is: a job (and an opened run), or a new job. */
-type Selection = { job: string; run: number | null } | "new" | null;
+// A job open under its row, the new-job editor, none picked yet (the
+// first job opens), or every job closed.
+type Selection = { job: string; run: number | null } | "new" | "closed" | null;
 
 /**
  * A service's Jobs tab (ADR 0054): every job in a table with Run now,
- * and the selected one under it, its schedule editor over its history.
+ * and the selected one opened in place under its row: who set it, its
+ * schedule editor and its history. A new job's editor goes under the table.
  * Job and run events keep both current; nothing polls.
  */
 export function JobsPanel({
@@ -49,13 +52,15 @@ export function JobsPanel({
   const [picked, setPicked] = useState<Selection>(null);
   // The first job until one is picked; a removed job's selection falls back.
   const selection: Selection =
-    picked === "new" || (picked && jobs.some((j) => j.name === picked.job))
+    picked === "new" ||
+    picked === "closed" ||
+    (picked && jobs.some((j) => j.name === picked.job))
       ? picked
       : jobs[0]
         ? { job: jobs[0].name, run: null }
         : null;
   const job =
-    selection && selection !== "new"
+    selection && typeof selection === "object"
       ? jobs.find((j) => j.name === selection.job)
       : undefined;
   const canDeploy = useCanDeploy(ref);
@@ -71,7 +76,26 @@ export function JobsPanel({
           serviceRef={ref}
           jobs={jobs}
           selected={job?.name}
-          onSelect={(name, run) => setPicked({ job: name, run: run ?? null })}
+          onSelect={(name, run) =>
+            setPicked(
+              name === job?.name && run === undefined
+                ? "closed"
+                : { job: name, run: run ?? null },
+            )
+          }
+          detail={
+            job &&
+            typeof selection === "object" &&
+            selection && (
+              <JobDetail
+                key={job.name}
+                serviceRef={ref}
+                job={job}
+                openRun={selection.run}
+                onOpenRun={(run) => setPicked({ job: job.name, run })}
+              />
+            )
+          }
         />
       )}
       {!service.active_release && jobs.length > 0 && (
@@ -90,7 +114,7 @@ export function JobsPanel({
           </Act>
         </div>
       )}
-      {selection === "new" ? (
+      {selection === "new" && (
         <section aria-label="New job" className="flex flex-col gap-3">
           <h2 className="text-md font-semibold">New job</h2>
           <Editor
@@ -99,17 +123,6 @@ export function JobsPanel({
             onCancel={() => setPicked(null)}
           />
         </section>
-      ) : (
-        job &&
-        selection && (
-          <JobDetail
-            key={job.name}
-            serviceRef={ref}
-            job={job}
-            openRun={selection.run}
-            onOpenRun={(run) => setPicked({ job: job.name, run })}
-          />
-        )
       )}
     </>
   );
@@ -137,17 +150,22 @@ function nextOf(job: Job) {
 /** `-s web -e production`: which service a CLI hint acts on. */
 const target = (ref: ServiceRef) => `-s ${ref.service} -e ${ref.environment}`;
 
-/** The jobs, by name; a name opens the job under the table. */
+/**
+ * The jobs, by name; a name opens the job in place under its row
+ * (`detail`), and again closes it.
+ */
 function JobsTable({
   serviceRef: ref,
   jobs,
   selected,
   onSelect,
+  detail,
 }: {
   serviceRef: ServiceRef;
   jobs: Job[];
   selected: string | undefined;
   onSelect: (name: string, run?: number) => void;
+  detail: ReactNode;
 }) {
   const denied = useWhyNot("deploy", ref);
   const canDeploy = denied === undefined;
@@ -185,94 +203,102 @@ function JobsTable({
                 variables?: { name: string };
               }) => m.isPending && m.variables?.name === j.name;
               return (
-                <tr
-                  key={j.name}
-                  className={`${open ? "bg-sel" : ""} ${j.enabled ? "" : "text-faint"}`}
-                >
-                  <td>
-                    <button
-                      type="button"
-                      aria-expanded={open}
-                      className={`font-mono hover:text-fg ${open ? "text-fg" : ""}`}
-                      onClick={() => onSelect(j.name)}
-                    >
-                      <span aria-hidden className="text-faint">
-                        {open ? "▾" : "▸"}
-                      </span>{" "}
-                      {j.name}
-                    </button>
-                  </td>
-                  <td>
-                    {words && <span className="mr-2">{words}</span>}
-                    <span className="font-mono text-faint">
-                      {j.schedule} · {j.timezone}
-                    </span>
-                  </td>
-                  <td
-                    className="font-mono"
-                    title={
-                      next && `${when(next)} in your time (${localZone()})`
-                    }
+                <Fragment key={j.name}>
+                  <tr
+                    className={`${open ? "bg-sel" : ""} ${j.enabled ? "" : "text-faint"}`}
                   >
-                    {j.enabled
-                      ? next
-                        ? `${zoned(new Date(next), j.timezone)} ${j.timezone}`
-                        : ""
-                      : "off"}
-                  </td>
-                  <td>
-                    {last && (
-                      <>
-                        <StateText state={runStates[last.status]} />{" "}
-                        {/* How long ago, so no timezone to read; the time in its title. */}
-                        <span
-                          className="font-mono text-faint"
-                          title={`${when(last.started_at)} in your time`}
-                        >
-                          {last.exit_code ? `exit ${last.exit_code} · ` : ""}
-                          {ago(last.started_at)}
-                        </span>
-                      </>
-                    )}
-                  </td>
-                  <td>{j.source === "repo" ? "dock.toml" : "api"}</td>
-                  <td className="text-right">
-                    <span className="inline-flex gap-1.5">
-                      {/* One width for Disable and Enable, so Run now
+                    <td>
+                      <button
+                        type="button"
+                        aria-expanded={open}
+                        className={`font-mono hover:text-fg ${open ? "text-fg" : ""}`}
+                        onClick={() => onSelect(j.name)}
+                      >
+                        <span aria-hidden className="text-faint">
+                          {open ? "▾" : "▸"}
+                        </span>{" "}
+                        {j.name}
+                      </button>
+                    </td>
+                    <td>
+                      {words && <span className="mr-2">{words}</span>}
+                      <span className="font-mono text-faint">
+                        {j.schedule} · {j.timezone}
+                      </span>
+                    </td>
+                    <td
+                      className="font-mono"
+                      title={
+                        next && `${when(next)} in your time (${localZone()})`
+                      }
+                    >
+                      {j.enabled
+                        ? next
+                          ? `${zoned(new Date(next), j.timezone)} ${j.timezone}`
+                          : ""
+                        : "off"}
+                    </td>
+                    <td>
+                      {last && (
+                        <>
+                          <StateText state={runStates[last.status]} />{" "}
+                          {/* How long ago, so no timezone to read; the time in its title. */}
+                          <span
+                            className="font-mono text-faint"
+                            title={`${when(last.started_at)} in your time`}
+                          >
+                            {last.exit_code ? `exit ${last.exit_code} · ` : ""}
+                            {ago(last.started_at)}
+                          </span>
+                        </>
+                      )}
+                    </td>
+                    <td>{j.source === "repo" ? "dock.toml" : "api"}</td>
+                    <td className="text-right">
+                      <span className="inline-flex gap-1.5">
+                        {/* One width for Disable and Enable, so Run now
                           stays put from row to row. */}
-                      <Act
-                        small
-                        className="min-w-[68px] justify-center"
-                        cli={`dock job ${j.enabled ? "disable" : "enable"} ${j.name} ${target(ref)}`}
-                        disabled={!canDeploy || pending(enable)}
-                        title={denied}
-                        onClick={() =>
-                          enable.mutate({
-                            ref,
-                            name: j.name,
-                            enabled: !j.enabled,
-                          })
-                        }
-                      >
-                        {j.enabled ? "Disable" : "Enable"}
-                      </Act>
-                      <Act
-                        small
-                        cli={`dock job run ${j.name} ${target(ref)}`}
-                        disabled={!!runBlock || pending(run)}
-                        title={runBlock}
-                        onClick={() =>
-                          run.mutate(
-                            { ref, name: j.name },
-                            { onSuccess: (r) => onSelect(j.name, r.id) },
-                          )
-                        }
-                      >
-                        Run now
-                      </Act>
-                    </span>
-                  </td>
-                </tr>
+                        <Act
+                          small
+                          className="min-w-[68px] justify-center"
+                          cli={`dock job ${j.enabled ? "disable" : "enable"} ${j.name} ${target(ref)}`}
+                          disabled={!canDeploy || pending(enable)}
+                          title={denied}
+                          onClick={() =>
+                            enable.mutate({
+                              ref,
+                              name: j.name,
+                              enabled: !j.enabled,
+                            })
+                          }
+                        >
+                          {j.enabled ? "Disable" : "Enable"}
+                        </Act>
+                        <Act
+                          small
+                          cli={`dock job run ${j.name} ${target(ref)}`}
+                          disabled={!!runBlock || pending(run)}
+                          title={runBlock}
+                          onClick={() =>
+                            run.mutate(
+                              { ref, name: j.name },
+                              { onSuccess: (r) => onSelect(j.name, r.id) },
+                            )
+                          }
+                        >
+                          Run now
+                        </Act>
+                      </span>
+                    </td>
+                  </tr>
+                  {open && detail && (
+                    <tr>
+                      <td colSpan={6} className="pt-3 pb-5">
+                        {detail}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               );
             })}
           </tbody>
@@ -283,7 +309,7 @@ function JobsTable({
   );
 }
 
-/** A job: who set it, Remove, its editor and its history. */
+/** A job, open under its row: who set it, Remove, its editor and its history. */
 function JobDetail({
   serviceRef: ref,
   job,
@@ -301,8 +327,8 @@ function JobDetail({
   const cli = `dock job remove ${job.name} ${target(ref)}`;
   return (
     <section aria-label={`Job ${job.name}`} className="flex flex-col gap-3">
+      {/* The row above names the job. */}
       <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-        <h2 className="font-mono text-sm font-semibold">{job.name}</h2>
         <span className="text-xs text-faint">
           {job.source === "repo"
             ? "from dock.toml"
