@@ -12,7 +12,7 @@ replaces or removes a container it keeps its log, up to 64 MB per
 service (compressed) and 30 days.
 
 ```sh
-dock logs -s web --follow                  # live
+dock logs -s web --follow                  # live, on to each new release
 dock logs -s web --grep timeout --since 1h # search
 dock logs -s web --release 41              # a release that no longer runs
 dock logs -s web --build                   # the newest build's log

@@ -35,8 +35,10 @@ func newLogsCmd(g *globals) *cobra.Command {
 from the server's container runtime. An earlier release's container is
 gone once it was replaced; its output was kept on its server when it was
 removed, for [logs] keep_days (30) and up to keep_mb_per_service (64 MB)
-per service, and --release N reads it (--follow ends after it). --build
-prints a build log instead (default: the newest release's).
+per service, and --release N reads it (--follow ends after it). Without
+--release, --follow goes on to the next release when a deploy replaces
+the active one, and says why it ends otherwise. --build prints a build
+log instead (default: the newest release's).
 
 --grep TEXT keeps the lines containing TEXT (plain text; all lower case
 matches any case) and --stderr the lines written to stderr; the server
@@ -78,8 +80,63 @@ With --json, every line is one JSON object on its own line.`,
 	return cmd
 }
 
-// serviceLogs streams a release container's output, filtered on the server.
+// serviceLogs streams a release container's output, filtered on the
+// server. Following the active release follows on to the next one when
+// a deploy replaces it, as the Logs tab does, and says why it ended
+// otherwise.
 func (g *globals) serviceLogs(ctx context.Context, s *session, t target, f logsFlags) error {
+	if !f.follow || f.release != 0 {
+		return g.releaseLogs(ctx, s, t, f)
+	}
+	svc, err := get[apitypes.Service](ctx, s, t.servicePath())
+	if err != nil {
+		return err
+	}
+	if svc.ActiveRelease == nil {
+		return g.releaseLogs(ctx, s, t, f) // the server says why there is nothing
+	}
+	for f.release = *svc.ActiveRelease; ; {
+		if err := g.releaseLogs(ctx, s, t, f); err != nil {
+			return err
+		}
+		next, why, err := g.nextLogs(ctx, s, t, f.release)
+		if err != nil {
+			return err
+		}
+		if next == 0 {
+			g.io.Progressf("%s", why)
+			return nil
+		}
+		g.io.Progressf("release %d of %s is live; following it", next, t)
+		f.release = next
+	}
+}
+
+// nextLogs is the release whose output a follow of release n goes on
+// to once n's container ended: the newest release, if it is newer and
+// live or deploying (a database's next release starts after the old one
+// stops). Without one, why says why the follow ends.
+func (g *globals) nextLogs(ctx context.Context, s *session, t target, n int64) (next int64, why string, err error) {
+	rels, err := get[[]apitypes.Release](ctx, s, t.servicePath()+"/releases?limit=1")
+	if err != nil {
+		return 0, "", err
+	}
+	if len(rels) > 0 && rels[0].Number > n && (rels[0].Status == apitypes.ReleaseActive || !rels[0].Status.Done()) {
+		return rels[0].Number, "", nil
+	}
+	svc, err := get[apitypes.Service](ctx, s, t.servicePath())
+	if err != nil {
+		return 0, "", err
+	}
+	if svc.StoppedAt != nil {
+		return 0, fmt.Sprintf("%s was stopped; `dock service start` starts it", t), nil
+	}
+	return 0, fmt.Sprintf("the container of release %d stopped; `dock status` says why, and `dock logs -f` follows it again once it runs", n), nil
+}
+
+// releaseLogs streams one release's output (the active one without
+// --release), filtered on the server.
+func (g *globals) releaseLogs(ctx context.Context, s *session, t target, f logsFlags) error {
 	q := url.Values{"tail": {strconv.Itoa(f.tail)}}
 	if f.follow {
 		q.Set("follow", "true")
