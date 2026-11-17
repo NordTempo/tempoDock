@@ -13,6 +13,7 @@ the CLI and real traffic through the proxy.
 | `analytics-*.sh` | Dock Analytics with a headless browser, on their own containers |
 | `upgrade/run.sh` | one published release updated to another, with data checks |
 | `nightly.sh` | all of the above that fits one cycle, every night (below) |
+| `repeat.sh` | one scenario N times, a line per run, for failures too rare for one run |
 
 Each scenario prints `ok:` and `FAIL:` lines and exits non-zero when one
 failed. They never run against production: `lib.sh` refuses its address,
