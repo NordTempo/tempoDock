@@ -382,6 +382,12 @@ func TestArchiveProjectAfterAClosedPreview(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.waitArchived(id, vols)
+	// The harness's own staging deploys may still run; archiving waits
+	// for them by refusing.
+	waitFor(t, func() bool {
+		rels, err := h.store.ListInFlightReleases(h.ctx)
+		return err == nil && len(rels) == 0
+	})
 	p, err := h.c.ArchiveProject(h.ctx, testSystem, "shop")
 	if err != nil || p.ArchivedAt == nil {
 		t.Fatalf("archive shop = %+v, %v", p, err)
