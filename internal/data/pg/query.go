@@ -293,6 +293,9 @@ func outcome(parent context.Context, err error) apitypes.DataOutcome {
 // error.
 func errorFrame(err error) apitypes.DataQueryFrame {
 	qe := &apitypes.DataQueryError{Message: err.Error()}
+	if tooLarge(err) {
+		qe.Message = tooLargeText
+	}
 	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok {
 		qe = &apitypes.DataQueryError{
 			Message:  pgErr.Message,

@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgconn/ctxwatch"
+	"github.com/jackc/pgx/v5/pgproto3"
 
 	"github.com/NordTempo/tempoDock/internal/data"
 	"github.com/NordTempo/tempoDock/internal/data/conncache"
@@ -28,7 +29,18 @@ const (
 	// stmtCacheSize bounds pgx's per-connection statement and description
 	// caches (table pages and catalog queries; ad-hoc SQL isn't cached).
 	stmtCacheSize = 64
+	// maxMessageBytes bounds one message from the database, which the
+	// client reads whole before the panel's own caps (a cell, a result)
+	// see any of it: a row. pgx's own limit is 1 GiB, more than the
+	// daemon has; one `SELECT repeat('x', 900000000)` would be read into
+	// memory to show 8 KB of it. 16 MiB is far above the rows the panel
+	// is for, and a row past it fails with tooLargeText.
+	maxMessageBytes = 16 << 20
 )
+
+// tooLargeText is what a statement whose row is past maxMessageBytes
+// answers with.
+const tooLargeText = "a row of this result is larger than 16 MB, more than the Data panel reads at once; select fewer or shorter columns, for example left(column, 1000)"
 
 // errClosed is what acquire returns after Close.
 var errClosed = conncache.ErrClosed
@@ -143,6 +155,7 @@ func (e *Engine) connect(ctx context.Context, t data.Target, cred data.Credentia
 	}
 	cfg.StatementCacheCapacity = stmtCacheSize
 	cfg.DescriptionCacheCapacity = stmtCacheSize
+	cfg.MaxProtocolMessageBodyLen = maxMessageBytes
 	return pgx.ConnectConfig(ctx, cfg)
 }
 
@@ -239,6 +252,9 @@ func dbError(err error) error {
 	if err == nil {
 		return nil
 	}
+	if tooLarge(err) {
+		return fmt.Errorf("%w: %s", data.ErrInvalid, tooLargeText)
+	}
 	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok {
 		if pgErr.Code == "42501" {
 			return fmt.Errorf("%w: %s", data.ErrNoPrivilege, pgErr.Message)
@@ -249,4 +265,12 @@ func dbError(err error) error {
 		}
 	}
 	return err
+}
+
+// tooLarge reports whether err is the client refusing a message past
+// maxMessageBytes. The connection is unusable after it: the message was
+// not read.
+func tooLarge(err error) bool {
+	_, ok := errors.AsType[*pgproto3.ExceededMaxBodyLenErr](err)
+	return ok
 }
