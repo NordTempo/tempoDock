@@ -698,9 +698,9 @@ function Members({ org, onClose }: DialogProps) {
           </Button>
           {!link && (
             <p className="basis-full text-xs text-faint">
-              Dock doesn't send email: an invite gives you a link to send them.
-              It works once, for 7 days, for that address. An existing user is
-              added at once.
+              An invite gives you a link to send them, also emailed when this
+              Dock sends email. It works once, for 7 days, for that address. An
+              existing user is added at once.
             </p>
           )}
         </form>
