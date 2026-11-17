@@ -157,6 +157,7 @@ func TestIntegrationPointInTimeRestore(t *testing.T) {
 	if got := psql(ServiceRef{project, "production", "db-between"}, "SELECT string_agg(id::text, ',' ORDER BY id) FROM notes"); got != "1,2,3,4,5,6,7,8,9,10" {
 		t.Fatalf("rows restored to between 10 and 11: %s", got)
 	}
+	noSecrets(t, c, docker, db, ServiceRef{project, "production", "db-between"})
 	// No commit after it: the archive replays to its end.
 	if r := restore(end, "db-end"); r.Status != apitypes.BackupSucceeded {
 		t.Fatalf("restore after the last commit: %+v", r)
@@ -228,4 +229,63 @@ func TestIntegrationPointInTimeRestore(t *testing.T) {
 		bs, err := c.store.ListPITRBases(ctx, ss.svc.ID)
 		return err == nil && slices.ContainsFunc(bs, func(b store.Backup) bool { return b.WalGeneration == next.Generation && b.WalStart != "" })
 	}, "a base backup of the new generation")
+}
+
+// noSecrets checks with docker inspect that the archive's key and the
+// bucket's secret are in the archiver's environment only: not in the
+// databases' containers (env, entrypoint or command) and not on the
+// archiver's command line.
+func noSecrets(t *testing.T, c *Core, docker *client.Client, src ServiceRef, dbs ...ServiceRef) {
+	t.Helper()
+	ctx := context.Background()
+	ss, err := c.loadService(ctx, 1, src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	side, err := docker.ContainerInspect(ctx, archiverName(ss), client.ContainerInspectOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var secrets []string
+	for _, e := range side.Container.Config.Env {
+		if k, v, _ := strings.Cut(e, "="); slices.Contains(walarchive.Secrets, k) && v != "" {
+			secrets = append(secrets, v)
+		}
+	}
+	if len(secrets) != len(walarchive.Secrets) {
+		t.Fatalf("the archiver's environment holds %d of the secrets", len(secrets))
+	}
+	leak := func(what string, texts []string) {
+		t.Helper()
+		for _, text := range texts {
+			for _, sec := range secrets {
+				if strings.Contains(text, sec) {
+					t.Errorf("%s holds a secret", what)
+				}
+			}
+		}
+	}
+	leak("the archiver's command line", append(slices.Clone(side.Container.Config.Entrypoint), side.Container.Config.Cmd...))
+	for _, ref := range append([]ServiceRef{src}, dbs...) {
+		s, err := c.loadService(ctx, 1, ref)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rel, err := c.store.GetActiveRelease(ctx, s.svc.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctr, err := docker.ContainerInspect(ctx, rel.ContainerID, client.ContainerInspectOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg := ctr.Container.Config
+		leak(ref.String()+"'s environment", cfg.Env)
+		leak(ref.String()+"'s command line", append(slices.Clone(cfg.Entrypoint), cfg.Cmd...))
+		for _, e := range cfg.Env {
+			if strings.HasPrefix(e, "DOCK_WAL_") {
+				t.Errorf("%s has %s", ref, e[:strings.Index(e, "=")])
+			}
+		}
+	}
 }

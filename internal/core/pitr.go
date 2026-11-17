@@ -160,7 +160,8 @@ func pitrUnavailable(ss svcScope, set store.BackupSetting) string {
 	return ""
 }
 
-// walConfig is where generation of a database's archive is, and its key.
+// walConfig is where generation of a database's archive is, and the
+// database's key (walarchive.ServiceKey).
 func (c *Core) walConfig(ctx context.Context, serviceID int64, generation string) (walarchive.Config, error) {
 	set, err := c.backupSettings(ctx)
 	if err != nil {
@@ -181,7 +182,12 @@ func (c *Core) walConfig(ctx context.Context, serviceID int64, generation string
 	if err != nil {
 		return walarchive.Config{}, err
 	}
-	key, err := walarchive.DeriveKey(repo.Password)
+	archive, err := walarchive.DeriveKey(repo.Password)
+	if err != nil {
+		return walarchive.Config{}, err
+	}
+	// The database's own key: an archiver can open only its archive.
+	key, err := walarchive.ServiceKey(archive, serviceID)
 	if err != nil {
 		return walarchive.Config{}, err
 	}

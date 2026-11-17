@@ -16,7 +16,8 @@ type Config struct {
 	Bucket s3.Bucket
 	// Prefix is the generation's folder (Prefix).
 	Prefix string
-	// Key is the archive key (DeriveKey).
+	// Key is the database's key (ServiceKey), never the archive key
+	// itself.
 	Key []byte
 }
 

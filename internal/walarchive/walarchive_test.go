@@ -3,6 +3,8 @@ package walarchive
 import (
 	"archive/tar"
 	"bytes"
+	"crypto/rand"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -85,41 +87,106 @@ func TestParseBase(t *testing.T) {
 	}
 }
 
-func TestSealOpen(t *testing.T) {
-	key, err := DeriveKey("repository password")
+// dbKey is service id's key under the archive key of password.
+func dbKey(t *testing.T, password string, id int64) []byte {
+	t.Helper()
+	archive, err := DeriveKey(password)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Past one chunk after compression: random-ish data.
-	plain := make([]byte, 3*chunkSize+17)
-	for i := range plain {
-		plain[i] = byte(i*7919 + i/13)
-	}
-	var obj bytes.Buffer
-	if err := Seal(&obj, bytes.NewReader(plain), key, "000000010000000000000003"); err != nil {
+	key, err := ServiceKey(archive, id)
+	if err != nil {
 		t.Fatal(err)
 	}
-	open := func(b []byte, name string) ([]byte, error) {
-		r, err := Open(bytes.NewReader(b), key, name)
-		if err != nil {
-			return nil, err
-		}
-		return io.ReadAll(r)
+	return key
+}
+
+// openAll opens and reads an object, sealed for file under key.
+func openAll(b, key []byte, file string) ([]byte, error) {
+	r, err := Open(bytes.NewReader(b), key, file)
+	if err != nil {
+		return nil, err
 	}
-	got, err := open(obj.Bytes(), "000000010000000000000003")
-	if err != nil || !bytes.Equal(got, plain) {
+	return io.ReadAll(r)
+}
+
+// TestSealOpen: an object opens with its database's key and file name
+// only, and not once cut short, its chunks or header changed.
+func TestSealOpen(t *testing.T) {
+	const file = "000000010000000000000003"
+	key := dbKey(t, "repository password", 7)
+	// Random, so it stays past three chunks after compression.
+	plain := make([]byte, 3*chunkSize+17)
+	if _, err := rand.Read(plain); err != nil {
+		t.Fatal(err)
+	}
+	var obj bytes.Buffer
+	if err := Seal(&obj, bytes.NewReader(plain), key, file); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := openAll(obj.Bytes(), key, file); err != nil || !bytes.Equal(got, plain) {
 		t.Fatalf("round trip: %v, %d bytes", err, len(got))
 	}
-	if _, err := open(obj.Bytes(), "000000010000000000000004"); err == nil {
-		t.Fatal("an object opened under another file's name")
+	tampered := func(i int) []byte {
+		b := bytes.Clone(obj.Bytes())
+		b[i] ^= 1
+		return b
 	}
-	if _, err := open(obj.Bytes()[:obj.Len()-200], "000000010000000000000003"); err == nil {
-		t.Fatal("a cut-short object opened")
+	for what, c := range map[string]struct {
+		obj  []byte
+		key  []byte
+		file string
+	}{
+		"another file's name":     {obj.Bytes(), key, "000000010000000000000004"},
+		"another database's key":  {obj.Bytes(), dbKey(t, "repository password", 8), file},
+		"another install's key":   {obj.Bytes(), dbKey(t, "another password", 7), file},
+		"cut short":               {obj.Bytes()[:obj.Len()-200], key, file},
+		"a changed magic":         {tampered(0), key, file},
+		"a changed salt":          {tampered(len(magic) + 3), key, file},
+		"a changed chunk":         {tampered(headerSize + 100), key, file},
+		"the last chunk left out": {obj.Bytes()[:headerSize+chunkSize+16], key, file},
+	} {
+		if _, err := openAll(c.obj, c.key, c.file); err == nil {
+			t.Errorf("an object opened with %s", what)
+		}
 	}
-	other, _ := DeriveKey("another password")
-	if r, err := Open(bytes.NewReader(obj.Bytes()), other, "000000010000000000000003"); err == nil {
-		if _, err := io.ReadAll(r); err == nil {
-			t.Fatal("an object opened with another key")
+}
+
+// TestKeysAreNeverShared: every object has a key of its own (its salt),
+// and no two databases' or files' keys are the same, so counter nonces
+// never repeat under one key.
+func TestKeysAreNeverShared(t *testing.T) {
+	archive, err := DeriveKey("repository password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]string{}
+	add := func(what string, key []byte) {
+		t.Helper()
+		if prev, ok := seen[string(key)]; ok {
+			t.Fatalf("%s has the key of %s", what, prev)
+		}
+		seen[string(key)] = what
+	}
+	add("the archive", archive)
+	for _, id := range []int64{1, 2, 10} {
+		db, err := ServiceKey(archive, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		add(fmt.Sprintf("database %d", id), db)
+		for _, file := range []string{"000000010000000000000003", "000000010000000000000004"} {
+			for n := range 3 { // the same file sealed again gets a new salt
+				var obj bytes.Buffer
+				if err := Seal(&obj, strings.NewReader("wal"), db, file); err != nil {
+					t.Fatal(err)
+				}
+				k, err := objectKey(db, obj.Bytes()[len(magic):headerSize], file)
+				if err != nil {
+					t.Fatal(err)
+				}
+				add(fmt.Sprintf("database %d's %s, sealing %d", id, file, n), k)
+			}
 		}
 	}
 }

@@ -15,11 +15,15 @@ import (
 	"github.com/NordTempo/tempoDock/internal/walarchive"
 )
 
+// testS3Secret is the fake bucket's secret key, distinct enough to find
+// wherever it leaks.
+const testS3Secret = "pitr-s3-secret-0123456789"
+
 // offBoxBackups points the backups at a storage connection (a fake
 // bucket), as `dock backup move` leaves them.
 func (h *harness) offBoxBackups() {
 	h.t.Helper()
-	if _, err := h.c.AddStorage(h.ctx, testSystem, apitypes.CreateStorageRequest{Name: "bucket", Endpoint: fakeS3(h.t), Bucket: "images", AccessKeyID: "k", SecretAccessKey: "s"}); err != nil {
+	if _, err := h.c.AddStorage(h.ctx, testSystem, apitypes.CreateStorageRequest{Name: "bucket", Endpoint: fakeS3(h.t), Bucket: "images", AccessKeyID: "pitr-access-key", SecretAccessKey: testS3Secret}); err != nil {
 		h.t.Fatal(err)
 	}
 	conn, err := h.c.store.GetStorageConnection(h.ctx, "bucket")
@@ -212,5 +216,77 @@ func TestWALDroppable(t *testing.T) {
 	}
 	if !walDroppable(p, p+"g3/000000010000000000000001@1", from, false, "g3") {
 		t.Error("off: the old current generation was kept")
+	}
+}
+
+// TestPITRSecretsStayWithDock: the archive's key and the bucket's secret
+// reach only the environment of Dock's own containers, the archiver and
+// the base backup and restore jobs (the template's image, Dock's
+// command). The database's container, which anyone with deploy can
+// point at any image, never gets them, nor does any command line: not
+// its archive_command, the archiver's arguments or a job's script, which
+// docker inspect and ps show.
+func TestPITRSecretsStayWithDock(t *testing.T) {
+	h := newHarness(t)
+	db := h.templateDB("db", apitypes.TemplatePostgres)
+	h.baseJobs()
+	h.offBoxBackups()
+	if _, err := h.c.SetPITR(h.ctx, testSystem, db, setPITR(true, 7)); err != nil {
+		t.Fatal(err)
+	}
+	h.wait(db, 2)
+	ss, err := h.c.loadService(h.ctx, 1, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	side := h.rt.Sidecars()[archiverName(ss)]
+	key := side.Env["DOCK_WAL_KEY"]
+	if len(key) != 2*walarchive.KeySize || side.Env["DOCK_WAL_SECRET_ACCESS_KEY"] != testS3Secret {
+		t.Fatalf("the archiver's environment lacks the key or the secret: %v", side.Env)
+	}
+	secrets := []string{key, testS3Secret}
+	leaks := func(what string, texts ...string) {
+		t.Helper()
+		for _, text := range texts {
+			for _, sec := range secrets {
+				if strings.Contains(text, sec) {
+					t.Errorf("%s holds a secret: %q", what, text)
+				}
+			}
+		}
+	}
+	leaks("the archiver's command line", side.Args...)
+
+	spec, _ := h.rt.Spec(h.ctr(db, 2))
+	leaks("the database's command line", append([]string{spec.Cmd}, spec.Args...)...)
+	for k, v := range spec.Env {
+		if slices.Contains(walarchive.Secrets, k) || strings.HasPrefix(k, "DOCK_WAL_") {
+			t.Errorf("the database's container has %s", k)
+		}
+		leaks("the database's variable "+k, v)
+	}
+
+	// A restore job's: its script and name hold none, its environment
+	// all (it runs Postgres for the recovery itself).
+	tpl, _ := templateOf(ss.svc)
+	cfg, err := h.c.walConfig(h.ctx, ss.svc.ID, "g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now()
+	plan := pitrPlan{base: store.Backup{SnapshotID: "base0000snap", WalStart: "000000010000000000000003", WalSegmentBytes: walarchive.DefaultSegmentBytes, ConsistentAt: &at}, cfg: cfg, target: at}
+	if _, err := h.c.recoverJob(h.ctx, ss, tpl, plan, 99, "vol", map[string]string{"POSTGRES_USER": "postgres", "POSTGRES_PASSWORD": "pw"}); err != nil {
+		t.Fatal(err)
+	}
+	jobs := h.rt.Jobs()
+	var restore *node.JobSpec
+	for i, j := range jobs {
+		leaks("job "+j.Name, j.Name, j.Script)
+		if strings.HasSuffix(j.Name, "_pitr99") {
+			restore = &jobs[i]
+		}
+	}
+	if restore == nil || restore.Env["DOCK_WAL_KEY"] != key || !restore.Dock || restore.Image != tpl.image {
+		t.Fatalf("restore job = %+v", restore)
 	}
 }

@@ -12,51 +12,83 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 )
 
 // Each object is gzip, then AES-256-GCM in chunks of chunkSize bytes
-// (the STREAM construction): after a magic and a random 7-byte prefix,
-// chunk i is sealed under nonce prefix || i (4 bytes) || last (1 byte),
-// with the file's name as additional data. A truncated object, chunks
-// in another order, or an object renamed to another file fail to open.
+// (the STREAM construction), under a key of its own:
+//
+//	header = magic || salt (16 random bytes)
+//	key    = HKDF-SHA256(database key, salt, "dock-wal object " || file)
+//	chunk i is sealed under nonce 0 (7 bytes) || i (4 bytes) || last (1 byte)
+//	with header || file as additional data
+//
+// The database key is the archive key with the service's ID in its
+// derivation (ServiceKey), so no two databases share a key, and no two
+// objects do either: a fresh salt per object makes counter nonces safe
+// however many objects there are. A truncated object, chunks in another
+// order, a changed header or salt, or an object renamed to another file
+// or moved to another database fail to open.
 
 // magic starts every object.
-const magic = "DWAL1"
+const magic = "DWAL2"
+
+// saltSize is the random salt in each object's header.
+const saltSize = 16
+
+// headerSize is magic and salt.
+const headerSize = len(magic) + saltSize
 
 // chunkSize is how much plaintext one sealed chunk holds.
 const chunkSize = 64 << 10
 
-// prefixSize is the random part of the nonces.
-const prefixSize = 7
-
-// KeySize is the archive key's size.
+// KeySize is the size of the archive key and of the keys derived from
+// it.
 const KeySize = 32
 
 // DeriveKey is the archive key from the backup repository password: one
 // password opens everything a database's backups hold, restic's and the
-// WAL archive, and the archiver gets only this key, not the password.
+// WAL archive. Archivers and jobs get a database's key (ServiceKey), not
+// this one or the password.
 func DeriveKey(password string) ([]byte, error) {
-	return hkdf.Key(sha256.New, []byte(password), nil, "dock-wal 1", KeySize)
+	return hkdf.Key(sha256.New, []byte(password), nil, "dock-wal 2", KeySize)
+}
+
+// ServiceKey is one database's key, derived from the archive key with
+// its service ID: an archiver holding it can't open another database's
+// archive.
+func ServiceKey(archiveKey []byte, serviceID int64) ([]byte, error) {
+	if len(archiveKey) != KeySize {
+		return nil, fmt.Errorf("the WAL archive key must be %d bytes", KeySize)
+	}
+	return hkdf.Key(sha256.New, archiveKey, nil, "dock-wal service "+strconv.FormatInt(serviceID, 10), KeySize)
+}
+
+// objectKey is one object's key, from the database key, the object's
+// salt and its file name.
+func objectKey(key, salt []byte, file string) ([]byte, error) {
+	if len(key) != KeySize {
+		return nil, fmt.Errorf("the WAL archive key must be %d bytes", KeySize)
+	}
+	return hkdf.Key(sha256.New, key, salt, "dock-wal object "+file, KeySize)
 }
 
 // Seal writes file's content from r to w, compressed and encrypted
-// under key.
+// under a key of its own derived from key (a database's, ServiceKey).
 func Seal(w io.Writer, r io.Reader, key []byte, file string) error {
-	aead, err := newAEAD(key)
+	header := make([]byte, headerSize)
+	copy(header, magic)
+	if _, err := rand.Read(header[len(magic):]); err != nil {
+		return err
+	}
+	aead, err := objectAEAD(key, header, file)
 	if err != nil {
 		return err
 	}
-	prefix := make([]byte, prefixSize)
-	if _, err := rand.Read(prefix); err != nil {
+	if _, err := w.Write(header); err != nil {
 		return err
 	}
-	if _, err := io.WriteString(w, magic); err != nil {
-		return err
-	}
-	if _, err := w.Write(prefix); err != nil {
-		return err
-	}
-	cw := &chunkWriter{w: w, aead: aead, prefix: prefix, ad: []byte(file), buf: make([]byte, 0, chunkSize)}
+	cw := &chunkWriter{w: w, aead: aead, ad: additional(header, file), buf: make([]byte, 0, chunkSize)}
 	zw, err := gzip.NewWriterLevel(cw, gzip.BestSpeed)
 	if err != nil {
 		return err
@@ -70,21 +102,36 @@ func Seal(w io.Writer, r io.Reader, key []byte, file string) error {
 	return cw.close()
 }
 
-// Open returns a reader of file's content from an object read from r.
+// Open returns a reader of file's content from an object read from r,
+// sealed under key (the database's).
 func Open(r io.Reader, key []byte, file string) (io.Reader, error) {
-	aead, err := newAEAD(key)
+	header := make([]byte, headerSize)
+	if _, err := io.ReadFull(r, header); err != nil {
+		return nil, fmt.Errorf("read %s: %w", file, err)
+	}
+	if string(header[:len(magic)]) != magic {
+		return nil, fmt.Errorf("%s is not a WAL archive object", file)
+	}
+	aead, err := objectAEAD(key, header, file)
 	if err != nil {
 		return nil, err
 	}
-	head := make([]byte, len(magic)+prefixSize)
-	if _, err := io.ReadFull(r, head); err != nil {
-		return nil, fmt.Errorf("read %s: %w", file, err)
-	}
-	if string(head[:len(magic)]) != magic {
-		return nil, fmt.Errorf("%s is not a WAL archive object", file)
-	}
-	cr := &chunkReader{r: bufio.NewReaderSize(r, chunkSize+aead.Overhead()+1), aead: aead, prefix: head[len(magic):], ad: []byte(file)}
+	cr := &chunkReader{r: bufio.NewReaderSize(r, chunkSize+aead.Overhead()+1), aead: aead, ad: additional(header, file)}
 	return gzip.NewReader(cr)
+}
+
+// objectAEAD is the cipher of the object whose header is header.
+func objectAEAD(key, header []byte, file string) (cipher.AEAD, error) {
+	k, err := objectKey(key, header[len(magic):], file)
+	if err != nil {
+		return nil, err
+	}
+	return newAEAD(k)
+}
+
+// additional is every chunk's additional data: the header and the file.
+func additional(header []byte, file string) []byte {
+	return append(append([]byte{}, header...), file...)
 }
 
 func newAEAD(key []byte) (cipher.AEAD, error) {
@@ -98,11 +145,11 @@ func newAEAD(key []byte) (cipher.AEAD, error) {
 	return cipher.NewGCM(block)
 }
 
-// nonce is chunk n's nonce.
-func nonce(prefix []byte, n uint32, last bool) []byte {
+// nonce is chunk n's nonce: the object's key is its own, so a counter
+// is enough.
+func nonce(n uint32, last bool) []byte {
 	out := make([]byte, 12)
-	copy(out, prefix)
-	binary.BigEndian.PutUint32(out[prefixSize:], n)
+	binary.BigEndian.PutUint32(out[7:], n)
 	if last {
 		out[11] = 1
 	}
@@ -111,12 +158,11 @@ func nonce(prefix []byte, n uint32, last bool) []byte {
 
 // chunkWriter seals what it is given in chunks.
 type chunkWriter struct {
-	w      io.Writer
-	aead   cipher.AEAD
-	prefix []byte
-	ad     []byte
-	buf    []byte
-	n      uint32
+	w    io.Writer
+	aead cipher.AEAD
+	ad   []byte
+	buf  []byte
+	n    uint32
 }
 
 func (c *chunkWriter) Write(p []byte) (int, error) {
@@ -139,7 +185,7 @@ func (c *chunkWriter) flush(last bool) error {
 	if c.n == ^uint32(0) {
 		return errors.New("WAL archive object too large")
 	}
-	sealed := c.aead.Seal(nil, nonce(c.prefix, c.n, last), c.buf, c.ad)
+	sealed := c.aead.Seal(nil, nonce(c.n, last), c.buf, c.ad)
 	c.n++
 	c.buf = c.buf[:0]
 	_, err := c.w.Write(sealed)
@@ -150,13 +196,12 @@ func (c *chunkWriter) close() error { return c.flush(true) }
 
 // chunkReader opens sealed chunks in order.
 type chunkReader struct {
-	r      *bufio.Reader
-	aead   cipher.AEAD
-	prefix []byte
-	ad     []byte
-	n      uint32
-	plain  []byte
-	done   bool
+	r     *bufio.Reader
+	aead  cipher.AEAD
+	ad    []byte
+	n     uint32
+	plain []byte
+	done  bool
 }
 
 func (c *chunkReader) Read(p []byte) (int, error) {
@@ -190,7 +235,7 @@ func (c *chunkReader) next() error {
 			last = true
 		}
 	}
-	plain, err := c.aead.Open(nil, nonce(c.prefix, c.n, last), sealed[:k], c.ad)
+	plain, err := c.aead.Open(nil, nonce(c.n, last), sealed[:k], c.ad)
 	if err != nil {
 		return errors.New("the WAL archive object doesn't open: wrong key, or damaged")
 	}
