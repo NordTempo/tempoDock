@@ -554,8 +554,8 @@ function TokenForm({
       <p className="text-mut">
         The token needs Account › Cloudflare Tunnel › Edit, and Zone › DNS ›
         Edit and Zone › Zone › Read on the zones domains may come from; for
-        redirects, Zone › Single Redirect › Edit too. Dock only edits records
-        and rules it made, and never points DNS at an IP.
+        redirects, Zone › Dynamic URL Redirects › Edit too. Dock only edits
+        records and rules it made, and never points DNS at an IP.
       </p>
       <ErrorText error={add.error ?? update.error} />
       <div className="flex items-center gap-2.5">

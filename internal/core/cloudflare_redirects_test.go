@@ -178,7 +178,7 @@ func TestRedirectWithoutPermission(t *testing.T) {
 	if _, err := p.c.AddCloudflareRedirect(p.ctx, testSystem, true, apitypes.CreateCloudflareRedirectRequest{Hostname: "ig.tempo.run", Target: "https://example.com"}); err != nil {
 		t.Fatal(err)
 	}
-	if r, _ := p.settledRedirect(testSystem, true, "ig.tempo.run"); r.Status != apitypes.RedirectError || !strings.Contains(r.Reason, "Zone › Single Redirect › Edit") {
+	if r, _ := p.settledRedirect(testSystem, true, "ig.tempo.run"); r.Status != apitypes.RedirectError || !strings.Contains(r.Reason, "Zone › Dynamic URL Redirects › Edit") {
 		t.Fatalf("redirect = %+v", r)
 	}
 	cf.Mu.Lock()
@@ -217,5 +217,22 @@ func TestRemoveConnectionWithRedirects(t *testing.T) {
 	}
 	if list, err := p.c.ListCloudflare(p.ctx, testSystem, true); err != nil || len(list) != 0 {
 		t.Fatalf("connections = %+v, %v", list, err)
+	}
+}
+
+// A hostname more than one label below its zone gets a note: Cloudflare's
+// free edge certificate covers the zone and *.zone only, so its https://
+// redirect fails in the handshake (seen on a real zone). One label deep
+// gets none.
+func TestRedirectNoteOnDeepNames(t *testing.T) {
+	p, _ := cfPool(t, "tempo.run")
+	for host, deep := range map[string]bool{"ig.tempo.run": false, "go.links.tempo.run": true} {
+		r, err := p.c.AddCloudflareRedirect(p.ctx, testSystem, true, apitypes.CreateCloudflareRedirectRequest{Hostname: host, Target: "https://example.com"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := r.Note != ""; got != deep || deep && !strings.Contains(r.Note, "*.tempo.run") {
+			t.Errorf("%s: note %q", host, r.Note)
+		}
 	}
 }

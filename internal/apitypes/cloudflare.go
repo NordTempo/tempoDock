@@ -180,11 +180,16 @@ type CloudflareRedirect struct {
 	// permanent one, which browsers keep.
 	StatusCode int `json:"status_code" enum:"301,302,307,308"`
 	// KeepPath appends the request's path and query to Target.
-	KeepPath  bool           `json:"keep_path"`
-	Status    RedirectStatus `json:"status" enum:"pending,live,error,deleting"`
-	Reason    string         `json:"reason,omitempty"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	UpdatedBy string         `json:"updated_by"`
+	KeepPath bool           `json:"keep_path"`
+	Status   RedirectStatus `json:"status" enum:"pending,live,error,deleting"`
+	Reason   string         `json:"reason,omitempty"`
+	// Note warns about what Dock can't check from here: a hostname more
+	// than one label below its zone has no certificate at Cloudflare's
+	// edge unless the zone has one for it (the free Universal SSL covers
+	// the zone and *.zone only), so its https:// redirect fails there.
+	Note      string    `json:"note,omitempty"`
+	UpdatedAt time.Time `json:"updated_at"`
+	UpdatedBy string    `json:"updated_by"`
 }
 
 // RedirectStatus is how far Dock is with a redirect in Cloudflare:

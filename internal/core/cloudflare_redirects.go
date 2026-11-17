@@ -345,6 +345,19 @@ func keepPathNote(keep bool) string {
 	return ""
 }
 
+// redirectNote is a redirect's Note: a hostname more than one label
+// below its zone gets no edge certificate from Cloudflare's free
+// Universal SSL (the zone and *.zone), so https:// fails in the TLS
+// handshake there. Seen on a real zone; Dock's token can't read the
+// zone's certificates, so it warns rather than refuses.
+func redirectNote(host, zone string) string {
+	label, ok := strings.CutSuffix(host, "."+zone)
+	if !ok || !strings.Contains(label, ".") {
+		return ""
+	}
+	return fmt.Sprintf("https://%s works only if the zone has an edge certificate for it: Cloudflare's free one covers %s and *.%s, not names deeper down (http:// works)", host, zone, zone)
+}
+
 // toRedirect is a redirect as the API shows it.
 func (c *Core) toRedirect(r store.CloudflareRedirect, conn string) apitypes.CloudflareRedirect {
 	status := apitypes.RedirectStatus(r.Status)
@@ -354,9 +367,10 @@ func (c *Core) toRedirect(r store.CloudflareRedirect, conn string) apitypes.Clou
 	case r.Status == "ok":
 		status = apitypes.RedirectLive
 	}
+	zone := c.zoneName(r.ZoneID)
 	return apitypes.CloudflareRedirect{
-		Hostname: r.Hostname, Zone: c.zoneName(r.ZoneID), Connection: conn, Target: r.Target, StatusCode: int(r.StatusCode),
-		KeepPath: r.KeepPath, Status: status, Reason: r.Reason, UpdatedAt: r.UpdatedAt, UpdatedBy: r.UpdatedBy,
+		Hostname: r.Hostname, Zone: zone, Connection: conn, Target: r.Target, StatusCode: int(r.StatusCode),
+		KeepPath: r.KeepPath, Status: status, Reason: r.Reason, Note: redirectNote(r.Hostname, zone), UpdatedAt: r.UpdatedAt, UpdatedBy: r.UpdatedBy,
 	}
 }
 
@@ -469,7 +483,7 @@ func (c *Core) forgetRedirect(ctx context.Context, cc *cfConn, r store.Cloudflar
 
 // redirectFailed saves what a failed redirect step means.
 func (c *Core) redirectFailed(ctx context.Context, cc *cfConn, r store.CloudflareRedirect, stepErr error) error {
-	perm := "Zone › Single Redirect › Edit and Zone › DNS › Edit on " + c.zoneName(r.ZoneID)
+	perm := "Zone › Dynamic URL Redirects › Edit and Zone › DNS › Edit on " + c.zoneName(r.ZoneID)
 	out, err := c.failed(ctx, cc, r.Attempts, stepErr, perm)
 	if out.status == "" {
 		return err

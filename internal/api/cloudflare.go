@@ -132,7 +132,7 @@ func registerRedirects(s *Server, a huma.API) {
 		OperationID: "create-cloudflare-redirect", Method: http.MethodPost, Path: all,
 		Summary: "Add a redirect", Tags: tags, DefaultStatus: http.StatusCreated,
 		Description: "The hostname must be in a zone of the level's own connections (a platform zone shared with organizations keeps its redirects on the platform). " +
-			"Dock makes a proxied placeholder record and a Single Redirect rule in the background; the token needs Zone › Single Redirect › Edit. " +
+			"Dock makes a proxied placeholder record and a Single Redirect rule in the background; the token needs Zone › Dynamic URL Redirects › Edit. " +
 			"409 (hostname_taken) when a domain or a record Dock didn't make holds the name." + who,
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		CloudflarePlatform

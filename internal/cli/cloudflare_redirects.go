@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -28,7 +29,7 @@ with no service behind them. Dock makes a proxied placeholder record
 A redirect is on the level its zone is added: a platform zone shared with
 organizations keeps its redirects on the platform.
 
-The connection's token needs Zone › Single Redirect › Edit on the zone, as
+The connection's token needs Zone › Dynamic URL Redirects › Edit on the zone, as
 well as Zone › DNS › Edit.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -52,7 +53,7 @@ well as Zone › DNS › Edit.`,
 					if r.KeepPath {
 						path = "kept"
 					}
-					t.Row(r.Hostname, r.Target, strconv.Itoa(r.StatusCode), path, string(r.Status), orDash(r.Reason))
+					t.Row(r.Hostname, r.Target, strconv.Itoa(r.StatusCode), path, string(r.Status), orDash(cmp.Or(r.Reason, r.Note)))
 				}
 				return t.Flush()
 			})
@@ -72,6 +73,9 @@ func printRedirect(g *globals, r apitypes.CloudflareRedirect, verb string) error
 	return g.io.Print(r, func() error {
 		g.io.Successf("%s redirect %s → %s (%d)", verb, r.Hostname, r.Target, r.StatusCode)
 		g.io.Detail("Dock makes it in Cloudflare in the background; `dock cloudflare redirects` shows when it is live.")
+		if r.Note != "" {
+			g.io.Warnf("%s", r.Note)
+		}
 		return nil
 	})
 }

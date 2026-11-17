@@ -127,7 +127,13 @@ A hostname in a connected Cloudflare zone can also redirect to any URL at
 Cloudflare's edge, with no service and no server involved
 ([ADR 0068](../decisions/0068-redirects-on-cloudflare-zones.md)). Dock
 makes a Single Redirect rule and a proxied placeholder record, both marked
-as its own; the token needs Zone › Single Redirect › Edit.
+as its own; the token needs Zone › Dynamic URL Redirects › Edit (called
+Single Redirect in older token screens). Keep the hostname one label
+below the zone (`go.example.com`, not `go.links.example.com`): Cloudflare's
+free edge certificate covers only the zone and `*.zone`, so `https://` on
+a deeper name fails at Cloudflare unless the zone has a certificate for
+it (Advanced Certificate Manager). `http://` works either way, and Dock
+notes it on such a redirect.
 
 ```sh
 dock cloudflare redirects add instagram.example.com https://instagram.com/acme   # 302 by default
