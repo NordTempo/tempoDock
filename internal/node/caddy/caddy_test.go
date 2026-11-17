@@ -70,7 +70,7 @@ func TestLoadResendsDroppedConnection(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			err = p.ApplyRoutes(context.Background(), []node.Route{{Hostnames: []string{"a.test"}, Upstream: "127.0.0.1:1"}})
+			err = p.ApplyRoutes(context.Background(), []node.Route{{Hostnames: []string{"a.test"}, Upstream: "127.0.0.1:1"}}, nil)
 			if tc.wantErr == "" && err != nil {
 				t.Fatalf("ApplyRoutes: %v", err)
 			}

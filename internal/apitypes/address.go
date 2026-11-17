@@ -23,6 +23,43 @@ type Address struct {
 	DNSRecords  []DNSRecord `json:"dns_records"`
 	ResolvedIPs []string    `json:"resolved_ips,omitempty"`
 	CheckedAt   *time.Time  `json:"checked_at,omitempty"`
+	// Wildcards are the certificates of the base domains direct servers
+	// generate hostnames under (ADR 0090), one per base domain.
+	Wildcards []Wildcard `json:"wildcards"`
+}
+
+// WildcardStatus is where a base domain's wildcard certificate is.
+type WildcardStatus string
+
+const (
+	// WildcardActive: issued and served; Reason, when set, is why its
+	// renewal is failing.
+	WildcardActive WildcardStatus = "active"
+	// WildcardIssuing: being obtained for the first time.
+	WildcardIssuing WildcardStatus = "issuing"
+	// WildcardFailed: none yet, and the last attempt failed (Reason).
+	// Generated hostnames get a certificate each meanwhile.
+	WildcardFailed WildcardStatus = "failed"
+	// WildcardUnavailable: none can be obtained (Reason: the base domain
+	// isn't in a zone of the platform's Cloudflare connections).
+	// Generated hostnames get a certificate each.
+	WildcardUnavailable WildcardStatus = "unavailable"
+)
+
+// Wildcard is a base domain's wildcard certificate, for *.<base_domain>
+// and <base_domain>, obtained over ACME DNS-01 through Cloudflare. With
+// one, generated hostnames never appear in certificate-transparency logs.
+type Wildcard struct {
+	BaseDomain string `json:"base_domain" example:"apps.example.com"`
+	// Servers are the direct servers whose base domain it is.
+	Servers []string       `json:"servers"`
+	Status  WildcardStatus `json:"status" enum:"active,issuing,failed,unavailable"`
+	Reason  string         `json:"reason,omitempty"`
+	// NotAfter is when the certificate expires, RenewAt when Dock renews
+	// it; RetryAt the next attempt after a failure.
+	NotAfter *time.Time `json:"not_after,omitempty"`
+	RenewAt  *time.Time `json:"renew_at,omitempty"`
+	RetryAt  *time.Time `json:"retry_at,omitempty"`
 }
 
 // SetAddressRequest sets Dock's public address.

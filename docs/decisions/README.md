@@ -22,7 +22,7 @@ line means a later record added to it without changing what it decided.
 | [0006](0006-every-way-to-build.md) | Every way to build and deploy | accepted |
 | [0007](0007-config-db-plus-repo-file.md) | Config in the platform DB plus an optional repo file | accepted |
 | [0008](0008-keep-doors-open.md) | Keep open source and hosting possible, cheaply | superseded in part by [0027](0027-organizations.md), [0082](0082-open-source-license.md) |
-| [0009](0009-dynamic-domains-and-tls.md) | Dynamic domains and automatic TLS | superseded in part by [0042](0042-domain-verification.md); amended by [0087](0087-unguessable-generated-hostnames.md) (random part in generated hostnames) |
+| [0009](0009-dynamic-domains-and-tls.md) | Dynamic domains and automatic TLS | superseded in part by [0042](0042-domain-verification.md); amended by [0087](0087-unguessable-generated-hostnames.md) (random part in generated hostnames) and [0090](0090-wildcard-certificates.md) (one wildcard per base domain) |
 | [0010](0010-environments-on-servers.md) | Environments are placed on servers | superseded in part by [0015](0015-server-pools-and-placement.md) |
 | [0011](0011-stateful-services-and-databases.md) | Stateful services and databases | superseded in part by [0047](0047-volume-snapshots.md) |
 | [0012](0012-name-tempo-dock.md) | Name: Tempo Dock, CLI `dock` | accepted |
@@ -49,7 +49,7 @@ line means a later record added to it without changing what it decided.
 | [0033](0033-traffic-statistics.md) | Traffic statistics for a service's domains | superseded in part by [0040](0040-traffic-counts-requests.md) |
 | [0034](0034-registry-object-storage.md) | The registry's images in S3-compatible object storage | accepted |
 | [0035](0035-server-disk-breakdown.md) | Where a server's disk goes | accepted |
-| [0036](0036-cloudflare-api.md) | Cloudflare tunnels, and domains through them, from Dock | superseded in part by [0062](0062-org-alerts-and-operators.md), [0068](0068-redirects-on-cloudflare-zones.md) |
+| [0036](0036-cloudflare-api.md) | Cloudflare tunnels, and domains through them, from Dock | superseded in part by [0062](0062-org-alerts-and-operators.md), [0068](0068-redirects-on-cloudflare-zones.md); amended by [0090](0090-wildcard-certificates.md) |
 | [0037](0037-analytics.md) | Dock Analytics | superseded in part by [0059](0059-analytics-area-and-slimmer-service-page.md); amended by [0085](0085-analytics-consent.md) and [0087](0087-unguessable-generated-hostnames.md) (dashboard addresses) |
 | [0038](0038-own-tokens.md) | Tokens in organization settings, your own on your account | superseded in part by [0080](0080-permissions-roles-groups-and-agents.md) |
 | [0039](0039-backups-on-storage-connections.md) | Backups on storage connections, and moving them | accepted |
@@ -102,6 +102,7 @@ line means a later record added to it without changing what it decided.
 | [0086](0086-cancel-a-deploy.md) | Cancel a deploy: any step before the cutover, the serving release keeps serving, `canceled` is no failure | accepted |
 | [0087](0087-unguessable-generated-hostnames.md) | Generated hostnames nobody can guess: a random part in new ones, status page names per organization, plain HTTP alike for every host; what CT logs still show | accepted |
 | [0088](0088-signed-releases.md) | Signed releases: Ed25519 over `SHA256SUMS`, keys built into dock, checked on every download path from v0.56.0; build-provenance attestations | accepted |
+| [0090](0090-wildcard-certificates.md) | Wildcard certificates for generated hostnames: `*.<base>` over ACME DNS-01 through Cloudflare, sent to servers with their routes, no CT log entries or TLS oracle | accepted |
 
 ## Template
 

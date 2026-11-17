@@ -398,6 +398,9 @@ func (c *Core) AllowCertificate(ctx context.Context, hostname string) (bool, err
 	if err != nil {
 		return false, nil
 	}
+	if covered, err := c.localWildcardCovers(ctx, host); covered || err != nil {
+		return false, err // Caddy serves the base domain's wildcard there (ADR 0090)
+	}
 	if host == c.cfg.Hooks.PublicHost || host == c.publicHost() || c.publicSite(host) != 0 {
 		return true, nil // the webhook route (ADR 0018), Dock's address (ADR 0029), a public dashboard (ADR 0037)
 	}

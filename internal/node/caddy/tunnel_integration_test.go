@@ -93,7 +93,8 @@ func TestIntegrationTunnel(t *testing.T) {
 	err := tc.proxy.ApplyRoutes(context.Background(), []node.Route{
 		{Hostnames: []string{"a.test"}, Upstream: echoBackend(t)},
 		{Hostnames: []string{"www.a.test"}, RedirectTo: "a.test"},
-	})
+	}, nil)
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +130,7 @@ func TestIntegrationTunnel(t *testing.T) {
 func TestIntegrationTunnelUntrustedPeer(t *testing.T) {
 	ip := nonLoopbackIP(t)
 	tc := startTunnelCaddy(t, func(o *Options) { o.tunnelListenHost = "0.0.0.0" })
-	if err := tc.proxy.ApplyRoutes(context.Background(), []node.Route{{Hostnames: []string{"a.test"}, Upstream: echoBackend(t)}}); err != nil {
+	if err := tc.proxy.ApplyRoutes(context.Background(), []node.Route{{Hostnames: []string{"a.test"}, Upstream: echoBackend(t)}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	var d net.Dialer
@@ -149,7 +150,7 @@ func TestIntegrationTunnelUntrustedPeer(t *testing.T) {
 // cloudflared would forward. The httptest certificate covers example.com.
 func TestIntegrationTunnelCheckDomain(t *testing.T) {
 	tc := startTunnelCaddy(t, nil)
-	if err := tc.proxy.ApplyRoutes(context.Background(), []node.Route{{Hostnames: []string{"example.com"}, Upstream: backend(t, "E")}}); err != nil {
+	if err := tc.proxy.ApplyRoutes(context.Background(), []node.Route{{Hostnames: []string{"example.com"}, Upstream: backend(t, "E")}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	origin, _ := url.Parse(tc.url("http", "127.0.0.1", ""))
@@ -211,7 +212,8 @@ func TestIntegrationAskFromLastRoutes(t *testing.T) {
 	err := tc.proxy.ApplyRoutes(context.Background(), []node.Route{
 		{Hostnames: []string{"ok.test"}, Upstream: backend(t, "OK")},
 		{Hostnames: []string{"later.test"}, Upstream: backend(t, "L")},
-	})
+	}, nil)
+
 	if err != nil {
 		t.Fatal(err)
 	}

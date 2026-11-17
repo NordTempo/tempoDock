@@ -86,6 +86,9 @@ const (
 	// AlertNewVulnerability: a live release's image has critical (or,
 	// as the org chose, high) vulnerabilities it didn't have (ADR 0074).
 	AlertNewVulnerability AlertKind = "new_vulnerability"
+	// AlertCertificate: the wildcard certificate of a base domain can't be
+	// issued or renewed (ADR 0090). The next success resolves it.
+	AlertCertificate AlertKind = "certificate_failed"
 )
 
 // Alert is one occurrence of a problem, open until its condition clears or
@@ -93,7 +96,7 @@ const (
 // fuller, the same deploy failing again), never raised twice.
 type Alert struct {
 	ID       int64         `json:"id"`
-	Kind     AlertKind     `json:"kind" doc:"disk, memory, cpu, server_offline, update_failed, connection_failed, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_regressed, error_spike, traffic_drop, unhealthy, uptime_down, job_failed, access_request, new_vulnerability; more may be added"`
+	Kind     AlertKind     `json:"kind" doc:"disk, memory, cpu, server_offline, update_failed, connection_failed, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_regressed, error_spike, traffic_drop, unhealthy, uptime_down, job_failed, access_request, new_vulnerability, certificate_failed; more may be added"`
 	Severity AlertSeverity `json:"severity" enum:"warning,critical"`
 	Title    string        `json:"title" example:"Disk 91% full on vps-1"`
 	Message  string        `json:"message,omitempty"`

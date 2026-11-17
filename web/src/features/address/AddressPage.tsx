@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ago } from "../../ui/format";
+import { type ReactNode, useState } from "react";
+import { ago, clock, day } from "../../ui/format";
 import {
   Act,
   Button,
@@ -11,18 +11,22 @@ import {
   Panel,
   StateText,
 } from "../../ui/kit";
-import { domainState } from "../../ui/status";
+import { domainState, type State } from "../../ui/status";
 import { Saved } from "../create/form";
 import {
   type Address,
   useAddress,
   useRemoveAddress,
+  useRetryWildcards,
   useSetAddress,
+  type Wildcard,
 } from "./data";
 
 // The console's Address page (mock A): Dock's public address, its status
 // the way a domain's shows, the DNS record it needs, and the private
-// address that always works (ADR 0029).
+// address that always works (ADR 0029). Under it, the wildcard
+// certificate of each base domain servers generate hostnames under (ADR
+// 0090, mock B).
 
 export function AddressPage() {
   const { data: address, refetch, isFetching } = useAddress();
@@ -95,6 +99,9 @@ export function AddressPage() {
             </tbody>
           </table>
         </Panel>
+        {(address.wildcards ?? []).length > 0 && (
+          <Wildcards wildcards={address.wildcards ?? []} />
+        )}
         <p className="text-mut">
           <span className="font-mono">dock login {address.url ?? "<url>"}</span>{" "}
           works from anywhere once it is active. Logins are rate limited per
@@ -248,5 +255,107 @@ function DNS({ address }: { address: Address }) {
         )}
       </span>
     </span>
+  );
+}
+
+/** A base domain's certificate as its status reads. */
+function wildcardState(w: Wildcard): State {
+  switch (w.status) {
+    case "active":
+      return w.reason
+        ? { tone: "warn", glyph: "▲", label: "renewal failing" }
+        : { tone: "ok", glyph: "●", label: "wildcard" };
+    case "issuing":
+      return { tone: "prog", glyph: "◐", label: "issuing" };
+    case "failed":
+      return { tone: "fail", glyph: "✕", label: "failed" };
+    default:
+      return { tone: "mut", glyph: "○", label: "one per hostname" };
+  }
+}
+
+/**
+ * Each base domain's wildcard certificate: served, being issued, failing
+ * (with Retry), or why its hostnames get a certificate each.
+ */
+function Wildcards({ wildcards }: { wildcards: Wildcard[] }) {
+  const retry = useRetryWildcards();
+  return (
+    <Panel>
+      <table>
+        <thead>
+          <tr>
+            <th>Generated hostnames</th>
+            <th>Servers</th>
+            <th>Certificate</th>
+            <th>Expires</th>
+            <th>Renews</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {wildcards.map((w) => {
+            const failing = w.status === "failed" || !!w.reason;
+            return (
+              <WildcardRow
+                key={w.base_domain}
+                wildcard={w}
+                retry={
+                  failing &&
+                  w.status !== "unavailable" && (
+                    <Act
+                      small
+                      cli="dock cloudflare retry"
+                      disabled={retry.isPending}
+                      onClick={() => retry.mutate()}
+                    >
+                      Retry
+                    </Act>
+                  )
+                }
+              />
+            );
+          })}
+        </tbody>
+      </table>
+      <ErrorText error={retry.error} />
+    </Panel>
+  );
+}
+
+function WildcardRow({
+  wildcard: w,
+  retry,
+}: {
+  wildcard: Wildcard;
+  retry: ReactNode;
+}) {
+  const renews = w.retry_at
+    ? `retry ${clock(w.retry_at)}`
+    : w.renew_at
+      ? day(w.renew_at)
+      : "–";
+  return (
+    <>
+      <tr>
+        <td className="py-2 font-mono">*.{w.base_domain}</td>
+        <td className="py-2 text-mut">{(w.servers ?? []).join(", ")}</td>
+        <td className="py-2">
+          <StateText state={wildcardState(w)} />
+        </td>
+        <td className="py-2 text-mut">
+          {w.not_after ? day(w.not_after) : "–"}
+        </td>
+        <td className="py-2 text-mut">{renews}</td>
+        <td className="w-full py-1.5 text-right">{retry}</td>
+      </tr>
+      {w.reason && (
+        <tr>
+          <td colSpan={6} className="pb-2 whitespace-normal text-mut">
+            {w.reason}
+          </td>
+        </tr>
+      )}
+    </>
   );
 }

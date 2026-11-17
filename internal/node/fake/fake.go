@@ -41,6 +41,7 @@ type Runtime struct {
 	// (SetVolumeData).
 	data   map[string][]byte
 	routes []node.Route
+	certs  []node.Certificate
 	ops    []string
 	logs   map[string][]node.LogLine
 	// changed is closed (and cleared) when logs or a container's state
@@ -313,6 +314,13 @@ func (r *Runtime) SetDomainCheck(fn func(hostname string) node.DomainCheck) {
 	r.mu.Lock()
 	r.domainCheck = fn
 	r.mu.Unlock()
+}
+
+// Certificates returns the certificates of the last applied routing table.
+func (r *Runtime) Certificates() []node.Certificate {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.certs)
 }
 
 // Routes returns the last applied routing table.
@@ -1402,8 +1410,9 @@ func (r *Runtime) PruneBuildCache(_ context.Context, keepBytes int64) (node.Prun
 	return node.PruneResult{}, nil
 }
 
-// ApplyRoutes implements node.Proxy.
-func (r *Runtime) ApplyRoutes(ctx context.Context, routes []node.Route) error {
+// ApplyRoutes implements node.Proxy, recorded as "routes <host->upstream
+// ...>", followed by " certs <names>" when there are certificates.
+func (r *Runtime) ApplyRoutes(ctx context.Context, routes []node.Route, certs []node.Certificate) error {
 	r.mu.Lock()
 	if h := r.routesHold; h != nil && h.match(routes) {
 		r.mu.Unlock()
@@ -1427,8 +1436,13 @@ func (r *Runtime) ApplyRoutes(ctx context.Context, routes []node.Route) error {
 		}
 		parts = append(parts, strings.Join(rt.Hostnames, ",")+"->"+to)
 	}
-	r.op("routes %s", strings.Join(parts, " "))
+	op := "routes " + strings.Join(parts, " ")
+	for _, c := range certs {
+		op += " certs " + strings.Join(c.Names, ",")
+	}
+	r.op("%s", op)
 	r.routes = slices.Clone(routes)
+	r.certs = slices.Clone(certs)
 	return nil
 }
 

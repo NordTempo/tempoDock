@@ -4,6 +4,8 @@ Status: accepted (asked by Saile through the coordinator, 2026-11-17).
 Amends [0009](0009-dynamic-domains-and-tls.md) (generated domains),
 [0037](0037-analytics.md) (public dashboard addresses) and
 [0073](0073-public-status-pages.md) (status page names and addresses).
+Amended by [0090](0090-wildcard-certificates.md): the wildcard
+follow-up below was built.
 
 ## Context
 

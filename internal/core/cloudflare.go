@@ -136,6 +136,8 @@ func (c *Core) loadCloudflareZones(ctx context.Context) error {
 	c.cf.mu.Lock()
 	c.cf.zones, c.cf.conns = zones, names
 	c.cf.mu.Unlock()
+	// A zone or token may now allow a base domain's wildcard (ADR 0090).
+	c.kickWildcards()
 	return nil
 }
 

@@ -443,8 +443,18 @@ func (c *Client) OpenRequests(ctx context.Context, upstreams []string) (int, err
 	return r.Open, err
 }
 
-// ApplyRoutes implements node.Proxy.
-func (c *Client) ApplyRoutes(ctx context.Context, routes []node.Route) error {
+// WildcardProtocol is the first node protocol that loads the certificates
+// apply-routes carries (ADR 0090).
+const WildcardProtocol = 31
+
+// ApplyRoutes implements node.Proxy. An older node gets no certificates:
+// it keeps issuing on demand, and a key never goes where it isn't used.
+func (c *Client) ApplyRoutes(ctx context.Context, routes []node.Route, certs []node.Certificate) error {
+	if len(certs) > 0 {
+		if s, err := c.session(ctx); err != nil || s.hello.Protocol < WildcardProtocol {
+			certs = nil
+		}
+	}
 	if slices.ContainsFunc(routes, func(r node.Route) bool { return r.Access != nil }) {
 		if err := c.needProtocol(ctx, AccessProtocol, "protect a service's domains"); err != nil {
 			return err
@@ -471,7 +481,7 @@ func (c *Client) ApplyRoutes(ctx context.Context, routes []node.Route) error {
 			}
 		}
 	}
-	_, err := unaryCall[empty](ctx, c, opApplyRoutes, routesRequest{Routes: toWireRoutes(routes)})
+	_, err := unaryCall[empty](ctx, c, opApplyRoutes, routesRequest{Routes: toWireRoutes(routes), Certificates: toWireCertificates(certs)})
 	return err
 }
 

@@ -30,7 +30,7 @@ func BenchmarkRender(b *testing.B) {
 			opts.DisableTLS = !tls
 			b.ReportAllocs()
 			for b.Loop() {
-				if _, err := Render(opts, routes); err != nil {
+				if _, err := Render(opts, routes, nil); err != nil {
 					b.Fatal(err)
 				}
 			}

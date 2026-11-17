@@ -123,7 +123,7 @@ func startCaddyWith(t *testing.T, mod func(*Options)) *testCaddy {
 // new connection can land on the old config and get its routes.
 func (tc *testCaddy) applyRoutes(t *testing.T, routes []node.Route) {
 	t.Helper()
-	if err := tc.proxy.ApplyRoutes(context.Background(), routes); err != nil {
+	if err := tc.proxy.ApplyRoutes(context.Background(), routes, nil); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(5 * time.Second)
@@ -380,12 +380,12 @@ func TestIntegrationSwapUnderTraffic(t *testing.T) {
 	for i := 1; i <= swaps; i++ {
 		time.Sleep(50 * time.Millisecond)
 		start := time.Now()
-		if err := tc.proxy.ApplyRoutes(ctx, routes(backends[i%2])); err != nil {
+		if err := tc.proxy.ApplyRoutes(ctx, routes(backends[i%2]), nil); err != nil {
 			t.Fatalf("swap %d: %v", i, err)
 		}
 		latencies = append(latencies, time.Since(start))
 	}
-	if err := tc.proxy.ApplyRoutes(ctx, routes(backend(t, "C"))); err != nil {
+	if err := tc.proxy.ApplyRoutes(ctx, routes(backend(t, "C")), nil); err != nil {
 		t.Fatal(err)
 	}
 	swapped := time.Now()
@@ -434,7 +434,7 @@ func TestIntegrationInFlightRequestSurvivesReload(t *testing.T) {
 		_, _ = io.WriteString(w, "slow")
 	}))
 	t.Cleanup(slow.Close)
-	if err := tc.proxy.ApplyRoutes(ctx, []node.Route{{Hostnames: []string{"slow.test"}, Upstream: strings.TrimPrefix(slow.URL, "http://")}}); err != nil {
+	if err := tc.proxy.ApplyRoutes(ctx, []node.Route{{Hostnames: []string{"slow.test"}, Upstream: strings.TrimPrefix(slow.URL, "http://")}}, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -451,7 +451,7 @@ func TestIntegrationInFlightRequestSurvivesReload(t *testing.T) {
 	}()
 	time.Sleep(300 * time.Millisecond)
 	start := time.Now()
-	if err := tc.proxy.ApplyRoutes(ctx, []node.Route{{Hostnames: []string{"other.test"}, Upstream: backend(t, "O")}}); err != nil {
+	if err := tc.proxy.ApplyRoutes(ctx, []node.Route{{Hostnames: []string{"other.test"}, Upstream: backend(t, "O")}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("reload with a slow request in flight took %v", time.Since(start))

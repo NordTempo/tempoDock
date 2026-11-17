@@ -50,6 +50,9 @@ type harness struct {
 	nodes Nodes
 	// dns answers custom domain verification's TXT lookups (ADR 0042).
 	dns *fakeDNS
+	// ca issues base domains' wildcard certificates (ADR 0090): no test
+	// ever reaches a real CA.
+	ca *fakeCA
 }
 
 // openTestStore opens a database with the test org (ID 1) in it.
@@ -77,13 +80,14 @@ func newHarness(t *testing.T) *harness {
 	if err := os.WriteFile(cfg.Analytics.StoreBinary, []byte("store"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	h := &harness{t: t, ctx: ctx, rt: fake.New(), store: st, dns: &fakeDNS{}}
+	h := &harness{t: t, ctx: ctx, rt: fake.New(), store: st, dns: &fakeDNS{}, ca: newFakeCA(t)}
 	// The registries tests pull from are public: servers may pull only
 	// from registries that resolve to public addresses (checkRegistry).
 	for _, registry := range []string{"ghcr.io", "quay.io", "registry.example.com"} {
 		h.dns.setIP(registry, "203.0.113.20")
 	}
-	h.opts = Options{Config: cfg, Store: st, Secrets: box, Runtime: h.rt, Logger: slog.New(slog.DiscardHandler), CutoverDrain: time.Nanosecond, PasswordCost: bcrypt.MinCost, LookupTXT: h.dns.lookupTXT, LookupIP: h.dns.lookupIP}
+	h.opts = Options{Config: cfg, Store: st, Secrets: box, Runtime: h.rt, Logger: slog.New(slog.DiscardHandler), CutoverDrain: time.Nanosecond, PasswordCost: bcrypt.MinCost, LookupTXT: h.dns.lookupTXT, LookupIP: h.dns.lookupIP,
+		ObtainCertificate: h.ca.obtain, WaitTXT: h.ca.waitTXT}
 	h.c = h.start()
 	t.Cleanup(func() {
 		h.c.Close()

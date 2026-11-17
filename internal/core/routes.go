@@ -22,7 +22,8 @@ import (
 // asleep environment ask the wake check first, and in environments that
 // sleep Dock's uptime probes aren't counted (sleep.go). On a direct
 // server, domains Dock routes through its Cloudflare tunnel are served
-// to the tunnel only (ADR 0036).
+// to the tunnel only (ADR 0036). The server's base domain's wildcard
+// certificate goes with them (ADR 0090, wildcards.go).
 func (c *Core) applyRoutes(ctx context.Context, serverID int64) error {
 	c.routesMu.Lock()
 	defer c.routesMu.Unlock()
@@ -126,7 +127,11 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 			}
 		}
 	}
-	return c.runtime(serverID).ApplyRoutes(ctx, c.withControlRoutes(serverID, routes))
+	certs, err := c.serverCertificates(ctx, serverID)
+	if err != nil {
+		return err
+	}
+	return c.runtime(serverID).ApplyRoutes(ctx, c.withControlRoutes(serverID, routes), certs)
 }
 
 // tunnelOnlyHosts are the hostnames a direct server serves to its

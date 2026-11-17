@@ -7020,6 +7020,7 @@ export interface components {
             status_reason?: string;
             /** @example https://dock.example.com */
             url?: string;
+            wildcards: components["schemas"]["Wildcard"][] | null;
         };
         AgentAccess: {
             grants: components["schemas"]["Grant"][] | null;
@@ -7049,7 +7050,7 @@ export interface components {
             environment?: string;
             /** Format: int64 */
             id: number;
-            /** @description disk, memory, cpu, server_offline, update_failed, connection_failed, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_regressed, error_spike, traffic_drop, unhealthy, uptime_down, job_failed, access_request, new_vulnerability; more may be added */
+            /** @description disk, memory, cpu, server_offline, update_failed, connection_failed, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_regressed, error_spike, traffic_drop, unhealthy, uptime_down, job_failed, access_request, new_vulnerability, certificate_failed; more may be added */
             kind: string;
             message?: string;
             /** Format: date-time */
@@ -12727,6 +12728,20 @@ export interface components {
         };
         VulnIgnores: {
             ignores: components["schemas"]["VulnIgnore"][] | null;
+        };
+        Wildcard: {
+            /** @example apps.example.com */
+            base_domain: string;
+            /** Format: date-time */
+            not_after?: string;
+            reason?: string;
+            /** Format: date-time */
+            renew_at?: string;
+            /** Format: date-time */
+            retry_at?: string;
+            servers: string[] | null;
+            /** @enum {string} */
+            status: "active" | "issuing" | "failed" | "unavailable";
         };
     };
     responses: never;

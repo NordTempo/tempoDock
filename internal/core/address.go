@@ -201,6 +201,10 @@ func (c *Core) checkHost(ctx context.Context, host string, ing serverIngress) (a
 // handshake is what makes Caddy issue the certificate.
 func (c *Core) describeAddress(ctx context.Context) (apitypes.Address, error) {
 	out := apitypes.Address{PrivateURL: "http://" + c.cfg.Listen, DNSRecords: []apitypes.DNSRecord{}}
+	var err error
+	if out.Wildcards, err = c.wildcards(ctx); err != nil {
+		return out, err
+	}
 	host := c.publicHost()
 	if host == "" {
 		return out, nil

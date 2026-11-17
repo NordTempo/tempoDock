@@ -285,6 +285,10 @@ type Caddy struct {
 	TunnelPort int `toml:"tunnel_port"`
 	// ACMEEmail is passed to the certificate authority. Optional.
 	ACMEEmail string `toml:"acme_email"`
+	// ACMEDirectory is the ACME directory the control plane gets base
+	// domains' wildcard certificates from (ADR 0090); empty is Let's
+	// Encrypt. Caddy's on-demand certificates don't use it.
+	ACMEDirectory string `toml:"acme_directory"`
 	// DisableTLS serves every route over plain HTTP. For local development
 	// and private-only setups in direct ingress mode. Tunnel servers leave it
 	// off: Caddy is plain HTTP there anyway, and apps are https:// at

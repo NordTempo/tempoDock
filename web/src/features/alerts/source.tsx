@@ -253,6 +253,12 @@ export function AlertLink({
           Open updates
         </Link>
       );
+    case "certificate_failed":
+      return (
+        <Link to="/console/address" {...props}>
+          Open address
+        </Link>
+      );
     case "connection_failed": {
       const [kind] = (a.target?.connection ?? "").split(":");
       const to = connectionPages[kind ?? ""];

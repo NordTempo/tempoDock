@@ -625,12 +625,22 @@
               "https://dock.example.com"
             ],
             "type": "string"
+          },
+          "wildcards": {
+            "items": {
+              "$ref": "#/components/schemas/Wildcard"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [
           "hostname",
           "private_url",
-          "dns_records"
+          "dns_records",
+          "wildcards"
         ],
         "type": "object"
       },
@@ -747,7 +757,7 @@
             "type": "integer"
           },
           "kind": {
-            "description": "disk, memory, cpu, server_offline, update_failed, connection_failed, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_regressed, error_spike, traffic_drop, unhealthy, uptime_down, job_failed, access_request, new_vulnerability; more may be added",
+            "description": "disk, memory, cpu, server_offline, update_failed, connection_failed, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_regressed, error_spike, traffic_drop, unhealthy, uptime_down, job_failed, access_request, new_vulnerability, certificate_failed; more may be added",
             "type": "string"
           },
           "message": {
@@ -20246,6 +20256,56 @@
         },
         "required": [
           "ignores"
+        ],
+        "type": "object"
+      },
+      "Wildcard": {
+        "additionalProperties": false,
+        "properties": {
+          "base_domain": {
+            "examples": [
+              "apps.example.com"
+            ],
+            "type": "string"
+          },
+          "not_after": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "renew_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "retry_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "servers": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "status": {
+            "enum": [
+              "active",
+              "issuing",
+              "failed",
+              "unavailable"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "base_domain",
+          "servers",
+          "status"
         ],
         "type": "object"
       }

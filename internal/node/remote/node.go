@@ -440,7 +440,7 @@ func (n *Node) runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 		return buildResult{ImageID: b.ID, Base: b.Base, BaseDigest: b.BaseDigest}, err
 	}))
 	h(opApplyRoutes, unary(func(ctx context.Context, a routesRequest) (empty, error) {
-		return empty{}, rt.ApplyRoutes(ctx, fromWireRoutes(a.Routes))
+		return empty{}, rt.ApplyRoutes(ctx, fromWireRoutes(a.Routes), fromWireCertificates(a.Certificates))
 	}))
 	h(opCheckDomain, unary(func(ctx context.Context, a domainRequest) (wireDomainCheck, error) {
 		d, err := rt.CheckDomain(ctx, a.Hostname)

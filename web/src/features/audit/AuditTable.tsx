@@ -65,6 +65,8 @@ const words: Record<string, readonly [label: string, past: string]> = {
     "changed the backup schedule of",
   ],
   "backup.succeeded": ["backup done", "backed up"],
+  "certificate.issue": ["issue certificate", "issued the certificate for"],
+  "certificate.renew": ["renew certificate", "renewed the certificate for"],
   "changes.apply": ["apply changes", "applied changes in"],
   "changes.discard": ["discard changes", "discarded changes in"],
   "changes.restage": ["restage changes", "restaged changes for"],

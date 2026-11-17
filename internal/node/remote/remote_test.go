@@ -184,7 +184,7 @@ func TestCalls(t *testing.T) {
 	}
 
 	routes := []node.Route{{Hostnames: []string{"web.example.com"}, Upstream: "127.0.0.1:40001"}, {Hostnames: []string{"www.example.com"}, RedirectTo: "web.example.com"}}
-	if err := h.client.ApplyRoutes(ctx, routes); err != nil || !equalJSON(h.rt.Routes(), routes) {
+	if err := h.client.ApplyRoutes(ctx, routes, nil); err != nil || !equalJSON(h.rt.Routes(), routes) {
 		t.Fatalf("apply routes: %v, node has %v", err, h.rt.Routes())
 	}
 	want := node.DomainCheck{ExpectedIPs: []string{"1.2.3.4"}, ResolvedIPs: []string{"5.6.7.8"}, Error: "points elsewhere"}
@@ -1329,5 +1329,26 @@ func TestCheckFacts(t *testing.T) {
 	}
 	if _, err := checkFacts(&Facts{Ingress: "other"}); err == nil {
 		t.Error("unknown ingress mode passed")
+	}
+}
+
+// TestRoutesCarryCertificates: apply-routes hands a node the server's
+// wildcard (ADR 0090); one before WildcardProtocol gets its routes
+// without it, and keeps issuing on demand.
+func TestRoutesCarryCertificates(t *testing.T) {
+	ctx := context.Background()
+	routes := []node.Route{{Hostnames: []string{"web.apps.example.com"}, Upstream: "127.0.0.1:40001"}}
+	certs := []node.Certificate{{Names: []string{"*.apps.example.com", "apps.example.com"}, ChainPEM: []byte("CHAIN"), KeyPEM: []byte("KEY")}}
+
+	h := newHarness(t)
+	if err := h.client.ApplyRoutes(ctx, routes, certs); err != nil || !equalJSON(h.rt.Certificates(), certs) {
+		t.Fatalf("apply routes: %v, node has %v", err, h.rt.Certificates())
+	}
+
+	h.stopNode()
+	h.startNode(func(n *Node) { n.protocol = WildcardProtocol - 1 })
+	waitFor(t, "the older node", func() bool { return h.hub.State(h.id).Hello.Protocol == WildcardProtocol-1 && h.client.Online() })
+	if err := h.client.ApplyRoutes(ctx, routes, certs); err != nil || len(h.rt.Certificates()) != 0 || !equalJSON(h.rt.Routes(), routes) {
+		t.Fatalf("older node: %v, has certificates %v and routes %v", err, h.rt.Certificates(), h.rt.Routes())
 	}
 }

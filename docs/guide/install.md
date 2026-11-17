@@ -207,6 +207,7 @@ running).
 | `[caddy] http_port` | `80` | |
 | `[caddy] https_port` | `443` | |
 | `[caddy] acme_email` | empty | Contact email for the certificate authority |
+| `[caddy] acme_directory` | empty (Let's Encrypt) | ACME directory for base domains' wildcard certificates ([domains](domains.md#wildcard-certificates-for-generated-hostnames)) |
 | `[caddy] disable_tls` | `false` | Serve every route over plain HTTP |
 | `[caddy] tunnel_port` | `7075` | Where a direct server's Caddy also serves its Cloudflare tunnel, on `127.0.0.1`, when Dock runs one next to the public IP ([Tunnels managed by Dock](#tunnels-managed-by-dock)). Only domains added from Cloudflare go that way, and Caddy listens there only while there are some. `0` turns it off. Changing it after a tunnel exists also needs the tunnel's route in Cloudflare changed |
 | `[caddy] traffic_listen` | `127.0.0.1:7074` | Loopback UDP address where Caddy sends the access log of service domains, counted for [traffic statistics](../decisions/0033-traffic-statistics.md). Must be a loopback IP; empty turns counting off |
