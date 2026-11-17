@@ -379,7 +379,7 @@ func (c *Core) RemoveDomain(ctx context.Context, a Actor, ref ServiceRef, hostna
 		c.log.Error("apply routes after removing domain", "domain", host, "err", err)
 	}
 	c.audit(ctx, a, "domain.remove", &ss.project, &ss.env, ss.String(), "removed domain "+host)
-	c.renameSiteNamedAfter(ctx, a, ss.project, ss.env, host, 0)
+	c.siteDomainRemoved(ctx, a, ss.project, ss.env, host)
 	c.dropUptimeChecks(ctx, ss, host)
 	dom := c.toDomain(ss, d, nil, serverIngress{})
 	c.checksMu.Lock()

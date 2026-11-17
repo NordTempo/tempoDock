@@ -1,10 +1,21 @@
 package core
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
+
+// lastMarker is the newest site marker's message.
+func (h *harness) lastMarker() string {
+	h.t.Helper()
+	var msg string
+	if err := h.store.DB.QueryRowContext(h.ctx, `SELECT message FROM site_markers ORDER BY id DESC LIMIT 1`).Scan(&msg); err != nil {
+		h.t.Fatal(err)
+	}
+	return msg
+}
 
 // siteNames are the project's live sites' names.
 func (h *harness) siteNames() []string {
@@ -55,6 +66,9 @@ func TestSiteNamesFollowLiveHostnames(t *testing.T) {
 	if got := h.siteNames(); len(got) != 1 || got[0] != "shop.example.com" {
 		t.Fatalf("after removing %s: sites %v", generated, got)
 	}
+	if got, want := h.lastMarker(), generated+" removed; the site is now shop.example.com"; got != want {
+		t.Errorf("marker %q, want %q", got, want)
+	}
 
 	// Turning analytics off for the hostname it is named after does too.
 	h.domain(web, "www.shop.example.com", "")
@@ -66,6 +80,9 @@ func TestSiteNamesFollowLiveHostnames(t *testing.T) {
 	}
 	if got := h.siteNames(); len(got) != 1 || got[0] != "www.shop.example.com" {
 		t.Fatalf("after turning shop.example.com off: sites %v", got)
+	}
+	if got := h.lastMarker(); got != "shop.example.com removed; the site is now www.shop.example.com" {
+		t.Errorf("marker %q", got)
 	}
 
 	// A name given by hand stays.
@@ -80,6 +97,34 @@ func TestSiteNamesFollowLiveHostnames(t *testing.T) {
 	}
 	if got := h.siteNames(); len(got) != 1 || got[0] != "Shop" {
 		t.Fatalf("a hand-given name changed: %v", got)
+	}
+}
+
+// A hostname that moves to a new site takes its name along; the site it
+// left, named after it, takes another of its hostnames' names.
+func TestSiteRenamedWhenItsHostnameMovesAway(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Port: 8080})
+	api := h.service("api", apitypes.CreateServiceRequest{Port: 8080})
+	h.domain(web, "detoo.no", "")
+	h.domain(web, "admin.detoo.no", "")
+	for _, host := range []string{"detoo.no", "admin.detoo.no"} {
+		if _, err := h.c.EnableHostnameAnalytics(h.ctx, testSystem, host, apitypes.EnableAnalyticsRequest{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := h.c.RemoveDomain(h.ctx, testSystem, web, "detoo.no"); err != nil {
+		t.Fatal(err)
+	}
+	// The removal renamed it; name it after detoo.no again to see a move.
+	if _, err := h.c.UpdateSite(h.ctx, testSystem, "shop", "admin.detoo.no", apitypes.UpdateSiteRequest{Name: "detoo.no"}); err != nil {
+		t.Fatal(err)
+	}
+	h.domain(api, "detoo.no", "new")
+	got := h.siteNames()
+	slices.Sort(got)
+	if !slices.Equal(got, []string{"admin.detoo.no", "detoo.no"}) {
+		t.Fatalf("sites %v, want the old one renamed and a new detoo.no", got)
 	}
 }
 
