@@ -710,7 +710,7 @@ func TestLogDrainStuckSinkHoldsUpNothing(t *testing.T) {
 	stuck := newStuckReceiver(h)
 	ok := newDrainReceiver(h, false)
 	s := h.addDrain(apitypes.AddLogDrainRequest{Kind: apitypes.DrainHTTP, Name: "stuck", URL: stuck.srv.URL})
-	h.addDrain(apitypes.AddLogDrainRequest{Kind: apitypes.DrainHTTP, Name: "ok", URL: ok.srv.URL})
+	healthy := h.addDrain(apitypes.AddLogDrainRequest{Kind: apitypes.DrainHTTP, Name: "ok", URL: ok.srv.URL})
 
 	h.rt.AddLogs(h.ctr(web, 1), "first")
 	eventually(t, "the healthy drain's first line", func() bool { return slices.Contains(ok.texts(), "first") })
@@ -720,6 +720,13 @@ func TestLogDrainStuckSinkHoldsUpNothing(t *testing.T) {
 		flood[i] = "line " + strconv.Itoa(i)
 	}
 	h.rt.AddLogs(h.ctr(web, 1), flood...)
+	// The flood overflows the healthy drain's queue too when its sender
+	// runs late (a slow runner): wait until it has sent or dropped every
+	// line, so the next one finds room.
+	eventually(t, "the healthy drain through the flood", func() bool {
+		st := h.drainStatus(healthy.ID)
+		return st.Sent+st.Dropped == int64(1+len(flood))
+	})
 	h.rt.AddLogs(h.ctr(web, 1), "after the flood")
 	eventually(t, "the healthy drain's line after the flood", func() bool { return slices.Contains(ok.texts(), "after the flood") })
 	if st := h.drainStatus(s.ID); st.Dropped == 0 || st.Sent != 0 {

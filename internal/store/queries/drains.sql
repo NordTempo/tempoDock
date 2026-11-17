@@ -42,9 +42,6 @@ UPDATE server_drain_items SET to_server_id = ? WHERE drain_id = +? AND environme
 -- name: CreateServerForward :exec
 INSERT INTO server_forwards (server_id, host_port, service_id, move_id, created_at) VALUES (?, ?, ?, ?, ?);
 
--- name: GetServerForward :one
-SELECT * FROM server_forwards WHERE server_id = +? AND host_port = +?;
-
 -- name: ListServerForwards :many
 SELECT * FROM server_forwards WHERE server_id = +? ORDER BY host_port;
 
