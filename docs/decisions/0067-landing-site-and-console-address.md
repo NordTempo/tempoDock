@@ -64,4 +64,5 @@ the binary (in-app help, MCP) and the site. Two consequences:
   headings. The home page still ships none.
 
 The site no longer links to the console: it is NordTempo's own install,
-not a public one. The redirect of unknown paths stays for old links.
+not a public one. The redirect of unknown paths to it is gone too; they
+get the site's 404 page.

@@ -28,6 +28,6 @@ docker build site   # the image, built from site/ as Dock builds it
   (`Dockerfile`), and Dock deploys the site on pushes that touch `site/`:
   a change to the guide alone goes live with the next site deploy.
 - Addresses (repository, early access email) live in `src/site.ts`. The
-  site never links to NordTempo's own console; example hostnames in the
-  guide are fine. The Caddyfile still redirects paths the site doesn't
-  serve there, so old invite links work.
+  site never links or redirects to NordTempo's own console; example
+  hostnames in the guide are fine. A path the site doesn't have gets its
+  404 page (`src/pages/404.astro`).
