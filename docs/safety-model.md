@@ -174,7 +174,11 @@ tailnet. Apps and builds reach the public internet, nothing private:
   values out of its layer cache keys, so build steps that mount a secret
   are keyed by a hash of their environment and the secrets' values. A
   project with the same Dockerfile and its own `PIP_INDEX_URL` can't hand
-  another environment or org a layer built from its own index.
+  another environment or org a layer built from its own index. The
+  environment's part of the key holds a value only the control plane can
+  work out, and a mount counts as a secret's however the Dockerfile
+  writes it (quotes, escapes, variables). Not covered: a secret mounted
+  by a base image's own `ONBUILD RUN` step, which Dock doesn't see.
 - **Image pulls go to public registries.** A server's Docker daemon pulls
   images from the host, outside the firewall. So an image's registry must
   not be the server itself, link-local or cloud metadata, or a private

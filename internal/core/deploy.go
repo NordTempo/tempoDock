@@ -438,8 +438,7 @@ func (d *deployment) build(ctx context.Context) (string, error) {
 	req := node.BuildRequest{
 		Source: f, Dockerfile: d.ss.svc.DockerfilePath, BuildCommand: d.ss.svc.BuildCommand,
 		StartCommand: d.cfg.Cmd, BuildArgs: d.cfg.Env, Tag: ref, Logs: d.log,
-		// Build caches are per environment, so one can't poison another's.
-		CacheScope: fmt.Sprintf("p%d_e%d", d.ss.project.ID, d.ss.env.ID),
+		CacheScope: d.c.cacheScope(d.ss.project.ID, d.ss.env.ID),
 	}
 	if rc := d.spec.repo; rc != nil {
 		d.event(ctx, "Using settings from dock.toml")
@@ -1168,4 +1167,15 @@ func (w *logWriter) Close() {
 		w.buf = nil
 	}
 	_ = w.f.Close()
+}
+
+// cacheScope is an environment's build cache scope (node.BuildRequest):
+// build caches are per environment, so one can't poison another's. The
+// IDs are small numbers anyone can guess, and the scope is what a build's
+// secret-dependent layers are keyed by, so it ends in a part only this
+// control plane can work out: a build elsewhere can't aim at this
+// environment's key. It is the same for every build of the environment.
+func (c *Core) cacheScope(projectID, envID int64) string {
+	scope := fmt.Sprintf("p%d_e%d", projectID, envID)
+	return fmt.Sprintf("%s_%x", scope, c.box.Tag("build cache scope", []byte(scope))[:8])
 }
