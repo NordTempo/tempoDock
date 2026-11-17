@@ -27,12 +27,13 @@ wait_for() {
 
 e2e/vm/up.sh 1
 # shellcheck disable=SC1091
-source /tmp/e2e2/env
+source "/tmp/${E2E_SLOT:-e2e2}/env"
+SLOT=${E2E_SLOT:-e2e2}
 dock() { ./bin/dock "$@"; }
 
 say "the control plane runs the store binary this build made"
-docker cp "$STORE" e2e2-cp:/usr/local/lib/dock-analytics
-docker exec e2e2-cp bash -c 'grep -q "^store_binary" /etc/dock/config.toml ||
+docker cp "$STORE" "$SLOT-cp":/usr/local/lib/dock-analytics
+docker exec "$SLOT-cp" bash -c 'grep -q "^store_binary" /etc/dock/config.toml ||
 	{ grep -q "^\[analytics\]" /etc/dock/config.toml &&
 		sed -i "/^\[analytics\]/a store_binary = \"/usr/local/lib/dock-analytics\"" /etc/dock/config.toml ||
 		printf "\n[analytics]\nstore_binary = \"/usr/local/lib/dock-analytics\"\n" >>/etc/dock/config.toml; }
@@ -52,8 +53,8 @@ app() {
 	shift 2
 	dock service create "$name" "${P[@]}" --port "$port" >/dev/null 2>&1 || true
 	dock env set "${P[@]}" -s "$name" OTEL_METRIC_EXPORT_INTERVAL=5000 "$@" >/dev/null
-	(cd "e2e/apps/$name" && ../../../bin/dock deploy "${P[@]}" -s "$name" >"/tmp/e2e2/deploy-$name.log" 2>&1) ||
-		{ echo "FAIL: deploying $name: $(tail -3 "/tmp/e2e2/deploy-$name.log")" >&2; exit 1; }
+	(cd "e2e/apps/$name" && ../../../bin/dock deploy "${P[@]}" -s "$name" >"/tmp/$SLOT/deploy-$name.log" 2>&1) ||
+		{ echo "FAIL: deploying $name: $(tail -3 "/tmp/$SLOT/deploy-$name.log")" >&2; exit 1; }
 }
 say "two stock apps: node-otel and go-otel (with its bomb)"
 app node-otel 3000
@@ -61,10 +62,10 @@ app go-otel 8080 BOMB=1
 
 # The trace store answers on its port on the control plane, with the
 # install's analytics token (its container's environment).
-TOKEN=$(docker exec e2e2-cp docker inspect dock-traces --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^DOCK_ANALYTICS_TOKEN=//p')
+TOKEN=$(docker exec "$SLOT-cp" docker inspect dock-traces --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^DOCK_ANALYTICS_TOKEN=//p')
 names() { # names SERVICE_ID: the service's metrics of the last hour
 	local to=$(($(date +%s) + 60))
-	docker exec e2e2-cp curl -fsS -H "Authorization: Bearer $TOKEN" \
+	docker exec "$SLOT-cp" curl -fsS -H "Authorization: Bearer $TOKEN" \
 		-d "{\"org\":1,\"services\":[$1],\"from\":$((to - 3660)),\"to\":$to}" http://127.0.0.1:7080/v1/metrics/names
 }
 service_id() { dock service show "$1" "${P[@]}" --json | jq -r '.id'; }

@@ -5,6 +5,9 @@
 // traffic switched).
 //
 //	go run ./e2e/hammer -url http://web-p.example/ -c 8 -d 60s
+//
+// -connect ADDR sends every request to ADDR whatever the URL's host
+// resolves to (curl's --connect-to), for servers without DNS like e2e/vm's.
 package main
 
 import (
@@ -13,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -58,6 +62,7 @@ func main() {
 	conc := flag.Int("c", 8, "concurrent workers")
 	dur := flag.Duration("d", time.Minute, "how long to run")
 	rate := flag.Duration("every", 10*time.Millisecond, "pause between requests per worker")
+	connect := flag.String("connect", "", "host:port to dial instead of the URL's host")
 	flag.Parse()
 	if *url == "" {
 		fmt.Fprintln(os.Stderr, "hammer: -url is required")
@@ -70,6 +75,14 @@ func main() {
 	defer cancel()
 
 	client := &http.Client{Timeout: 5 * time.Second}
+	if *connect != "" {
+		var d net.Dialer
+		tr := http.DefaultTransport.(*http.Transport).Clone()
+		tr.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return d.DialContext(ctx, network, *connect)
+		}
+		client.Transport = tr
+	}
 	st := &stats{start: time.Now(), failures: map[string]int{}, bodies: map[string]*seen{}}
 	var wg sync.WaitGroup
 	for range *conc {

@@ -13,6 +13,13 @@ esac
 API="${DOCK_URL%/}/api/v1"
 E2E_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_NAME="${DOCK_ENV:-production}"
+# SLOT is the e2e/vm slot the servers run in (E2E_SLOT, written to its env
+# file by up.sh): containers $SLOT-cp and $SLOT-node<N> on $SLOT-net,
+# addresses in E2E_SUBNET. Scenarios name containers through it, never
+# e2e2-* directly, so they run in any slot (e2e/nightly.sh's included).
+SLOT="${E2E_SLOT:-e2e2}"
+SUBNET_PREFIX="${E2E_SUBNET:-10.250.250.0/24}"
+SUBNET_PREFIX="${SUBNET_PREFIX%.*}"
 
 log() { printf '\033[1m[%s] %s\033[0m\n' "$(date +%T)" "$*" >&2; }
 fail() { printf '\033[31mFAIL: %s\033[0m\n' "$*" >&2; FAILURES=$((${FAILURES:-0} + 1)); }

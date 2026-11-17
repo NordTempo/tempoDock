@@ -1,0 +1,3 @@
+# Scenarios e2e/nightly.sh skips: one per line, "suite/scenario reason".
+# A flaky scenario is fixed, or quarantined here with what makes it flaky
+# and the issue tracking the fix; never retried. Remove the line with the fix.

@@ -42,8 +42,8 @@ scenario_traces() {
 	local store=$E2E_DIR/../bin/dock-analytics-linux-amd64 h n E2E_PROXY=${E2E_PROXY:-}
 	[[ -x $store ]] || { fail "no $store; make analytics-binary"; return; }
 	# The control plane runs this build's trace store instead of downloading a release's.
-	docker cp "$store" e2e2-cp:/usr/local/lib/dock-analytics
-	docker exec e2e2-cp bash -c 'grep -q "^store_binary" /etc/dock/config.toml || {
+	docker cp "$store" "$SLOT-cp":/usr/local/lib/dock-analytics
+	docker exec "$SLOT-cp" bash -c 'grep -q "^store_binary" /etc/dock/config.toml || {
 		printf "\n[analytics]\nstore_binary = \"/usr/local/lib/dock-analytics\"\n" >>/etc/dock/config.toml; systemctl restart dock; }'
 	wait_for 60 curl -fsS "$DOCK_URL/api/v1/health" >/dev/null
 	dk tracing on >/dev/null

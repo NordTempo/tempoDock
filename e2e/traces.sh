@@ -26,12 +26,13 @@ wait_for() {
 
 e2e/vm/up.sh 1
 # shellcheck disable=SC1091
-source /tmp/e2e2/env
+source "/tmp/${E2E_SLOT:-e2e2}/env"
+SLOT=${E2E_SLOT:-e2e2}
 dock() { ./bin/dock "$@"; }
 
 say "the control plane runs the store binary this build made"
-docker cp "$STORE" e2e2-cp:/usr/local/lib/dock-analytics
-docker exec e2e2-cp bash -c 'grep -q "^store_binary" /etc/dock/config.toml ||
+docker cp "$STORE" "$SLOT-cp":/usr/local/lib/dock-analytics
+docker exec "$SLOT-cp" bash -c 'grep -q "^store_binary" /etc/dock/config.toml ||
 	{ grep -q "^\[analytics\]" /etc/dock/config.toml &&
 		sed -i "/^\[analytics\]/a store_binary = \"/usr/local/lib/dock-analytics\"" /etc/dock/config.toml ||
 		printf "\n[analytics]\nstore_binary = \"/usr/local/lib/dock-analytics\"\n" >>/etc/dock/config.toml; }
@@ -63,16 +64,16 @@ send() {
 	dock deploy -p "$1" -e production -s sender --image nginx:1.29-alpine >/dev/null
 }
 say "a sender on the control plane (shop) and on the node (lab)"
-send shop e2e2-cp
-send lab e2e2-node1
+send shop "$SLOT-cp"
+send lab "$SLOT-node1"
 
 # The trace store answers on its port on the control plane, with the
 # install's analytics token (its container's environment).
-TOKEN=$(docker exec e2e2-cp docker inspect dock-traces --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^DOCK_ANALYTICS_TOKEN=//p')
+TOKEN=$(docker exec "$SLOT-cp" docker inspect dock-traces --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^DOCK_ANALYTICS_TOKEN=//p')
 spans() { # spans SERVICE_ID: how many of the service's traces the store has in the last 10 minutes
 	local to from
 	to=$(($(date +%s) * 1000000 + 60000000)) from=$((to - 660000000))
-	docker exec e2e2-cp curl -fsS -H "Authorization: Bearer $TOKEN" \
+	docker exec "$SLOT-cp" curl -fsS -H "Authorization: Bearer $TOKEN" \
 		-d "{\"org\":1,\"services\":[$1],\"from\":$from,\"to\":$to,\"limit\":200}" http://127.0.0.1:7080/v1/traces |
 		jq '.traces | length'
 }
@@ -90,10 +91,10 @@ for name in shop lab; do
 done
 
 # What was stored is masked and attributed by the token, not the span.
-first=$(docker exec e2e2-cp curl -fsS -H "Authorization: Bearer $TOKEN" \
+first=$(docker exec "$SLOT-cp" curl -fsS -H "Authorization: Bearer $TOKEN" \
 	-d "{\"org\":1,\"services\":[$shop],\"from\":0,\"to\":$(($(date +%s) * 1000000 + 60000000)),\"limit\":1}" http://127.0.0.1:7080/v1/traces)
 trace=$(jq -r '.traces[0].trace' <<<"$first") at=$(jq -r '.traces[0].start' <<<"$first")
-detail=$(docker exec e2e2-cp curl -fsS -H "Authorization: Bearer $TOKEN" -d "{\"org\":1,\"trace\":\"$trace\",\"at\":$at}" http://127.0.0.1:7080/v1/trace)
+detail=$(docker exec "$SLOT-cp" curl -fsS -H "Authorization: Bearer $TOKEN" -d "{\"org\":1,\"trace\":\"$trace\",\"at\":$at}" http://127.0.0.1:7080/v1/trace)
 jq -e '.spans[0].attrs["db.password"] == "*****" and .spans[0].route == "/e2e" and .spans[0].entry' <<<"$detail" >/dev/null ||
 	{ echo "FAIL: the stored span: $detail" >&2; exit 1; }
 say "ok: stored spans are masked and attributed"

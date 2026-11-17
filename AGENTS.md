@@ -118,7 +118,7 @@ deploy/                install.sh, systemd units, analytics and tempoBase packag
 dev/                   config for `make dev` (state in .data/)
 scripts/               perf/ (the `make perf` checker and baseline), ci/, release/
 docs/                  design docs and the user guide; decisions/ holds the ADRs
-e2e/                   scenarios against a live server (see e2e/run.sh)
+e2e/                   scenarios against a live server, and the nightly run (e2e/README.md)
 ```
 
 Some directories have their own AGENTS.md with the rules for working
