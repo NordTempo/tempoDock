@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -17,11 +18,18 @@ import (
 // truth, read once on start (reconcile) and then followed via its event
 // stream. Nothing polls.
 
+// storedStatus is a service's status in memory, with the statusSets
+// count of the setStatus call that last set it outright.
+type storedStatus struct {
+	apitypes.ServiceStatus
+	set uint64
+}
+
 func (c *Core) getStatus(serviceID int64) apitypes.ServiceStatus {
 	c.statusMu.Lock()
 	defer c.statusMu.Unlock()
 	if s, ok := c.status[serviceID]; ok {
-		return s
+		return s.ServiceStatus
 	}
 	return apitypes.ServiceStatus{State: apitypes.ServiceNone}
 }
@@ -58,13 +66,17 @@ func (l serverLink) mark(s apitypes.ServiceStatus) apitypes.ServiceStatus {
 }
 
 // setStatus stores a service's status and publishes it if it changed.
+// Callers that change what the service's status follows (an archive, a
+// stop, a sleep) write the store first: a container event read before
+// that write is then read again (changeStatusSince).
 func (c *Core) setStatus(ss svcScope, s apitypes.ServiceStatus) {
 	c.statusMu.Lock()
 	prev, had := c.status[ss.svc.ID]
-	changed := !had || !sameStatus(prev, s)
+	changed := !had || !sameStatus(prev.ServiceStatus, s)
 	t := now()
 	s.UpdatedAt = &t
-	c.status[ss.svc.ID] = s
+	c.statusSets++
+	c.status[ss.svc.ID] = storedStatus{s, c.statusSets}
 	c.statusMu.Unlock()
 	if changed {
 		c.publish(ss, apitypes.Event{Type: apitypes.EventServiceStatus, ServiceStatus: &s})
@@ -86,22 +98,44 @@ func sameStatus(a, b apitypes.ServiceStatus) bool {
 // stream (health restarts), which a read and a later setStatus could
 // undo.
 func (c *Core) changeStatus(ss svcScope, fn func(*apitypes.ServiceStatus)) {
+	c.changeStatusSince(ss, math.MaxUint64, fn)
+}
+
+// statusClock is the statusSets count now, read before a container
+// event's store reads for changeStatusSince.
+func (c *Core) statusClock() uint64 {
 	c.statusMu.Lock()
-	s, ok := c.status[ss.svc.ID]
+	defer c.statusMu.Unlock()
+	return c.statusSets
+}
+
+// changeStatusSince is changeStatus for a change worked out from reads
+// made after statusClock said since. It changes nothing and returns false
+// if setStatus set the service's status after that: the reads may predate
+// what it followed (an archive's superseded release), so the caller reads
+// again.
+func (c *Core) changeStatusSince(ss svcScope, since uint64, fn func(*apitypes.ServiceStatus)) bool {
+	c.statusMu.Lock()
+	cur, ok := c.status[ss.svc.ID]
+	if ok && cur.set > since {
+		c.statusMu.Unlock()
+		return false
+	}
+	s := cur.ServiceStatus
 	if !ok {
 		s = apitypes.ServiceStatus{State: apitypes.ServiceNone}
 	}
-	prev := s
 	fn(&s)
-	if ok && sameStatus(s, prev) {
+	if ok && sameStatus(s, cur.ServiceStatus) {
 		c.statusMu.Unlock()
-		return
+		return true
 	}
 	t := now()
 	s.UpdatedAt = &t
-	c.status[ss.svc.ID] = s
+	c.status[ss.svc.ID] = storedStatus{s, cur.set}
 	c.statusMu.Unlock()
 	c.publish(ss, apitypes.Event{Type: apitypes.EventServiceStatus, ServiceStatus: &s})
+	return true
 }
 
 // statusOf is a service's status as its container reads.
@@ -191,16 +225,9 @@ func (c *Core) onContainerEvent(ctx context.Context, serverID int64, ev node.Con
 	}
 	c.drainContainerEvent(serverID, ev)
 	own := c.ownRemoval(ev)
-	id, err := strconv.ParseInt(ev.Labels.Release, 10, 64)
-	if err != nil {
-		return
-	}
-	rel, err := c.store.GetRelease(ctx, id)
-	if err != nil || rel.ContainerID == "" || rel.ContainerID != ev.ContainerID {
-		return
-	}
-	ss, err := c.scopeOf(ctx, rel.ServiceID)
-	if err != nil || ss.env.ServerID != serverID {
+	since := c.statusClock()
+	rel, ss, ok := c.eventTarget(ctx, serverID, ev)
+	if !ok {
 		return
 	}
 	if ev.Action == "die" || ev.Action == "destroy" {
@@ -209,15 +236,23 @@ func (c *Core) onContainerEvent(ctx context.Context, serverID int64, ev node.Con
 		// superseded already when the daemon replaces or archives it.
 		c.panel.Forget(ss.svc.ID)
 	}
-	if own || rel.Status != string(apitypes.ReleaseActive) || ss.svc.StoppedAt != nil || ss.env.AsleepAt != nil {
-		// The daemon is stopping it, it isn't the active container, the
-		// service is stopped on purpose (ADR 0050) and stays so, or its
-		// environment sleeps or wakes (sleep.go), which sets its status.
+	if own || !followsRelease(rel, ss) {
 		return
 	}
-	// The status is changed in place under its lock (changeStatus): a
-	// read here and a write after the work below would undo what the
-	// deploy's cutover or the health watch set meanwhile.
+	// The status is changed in place under its lock: a read here and a
+	// write after the work below would undo what the deploy's cutover or
+	// the health watch set meanwhile. A status set outright after the
+	// reads above (an archive right after a deploy, with this its
+	// container's late start event) means reading again: the release may
+	// no longer be the service's.
+	change := func(fn func(*apitypes.ServiceStatus)) {
+		for !c.changeStatusSince(ss, since, fn) {
+			since = c.statusClock()
+			if rel, ss, ok = c.eventTarget(ctx, serverID, ev); !ok || !followsRelease(rel, ss) {
+				return
+			}
+		}
+	}
 	now := time.Now()
 	if (ev.Action == "die" || ev.Action == "start" || ev.Action == "restart") && c.health.ownEvent(ev, now) {
 		// A health restart (health.go): not a crash, and not counted in
@@ -225,7 +260,7 @@ func (c *Core) onContainerEvent(ctx context.Context, serverID int64, ev node.Con
 		if ev.Action == "restart" {
 			return // its last event: the restart is over
 		}
-		c.changeStatus(ss, func(s *apitypes.ServiceStatus) {
+		change(func(s *apitypes.ServiceStatus) {
 			if ev.Action == "die" {
 				s.State, s.StartedAt = apitypes.ServiceRestarting, nil
 				return
@@ -247,7 +282,7 @@ func (c *Core) onContainerEvent(ctx context.Context, serverID int64, ev node.Con
 	default:
 		return
 	}
-	c.changeStatus(ss, func(s *apitypes.ServiceStatus) {
+	change(func(s *apitypes.ServiceStatus) {
 		switch ev.Action {
 		case "start", "restart":
 			if s.State == apitypes.ServiceCrashed || s.State == apitypes.ServiceRestarting || ev.Action == "restart" {
@@ -272,6 +307,33 @@ func (c *Core) onContainerEvent(ctx context.Context, serverID int64, ev node.Con
 	if ev.Action == "destroy" {
 		c.drift(ctx, &ss, fmt.Sprintf("container of active release %d of %s was removed outside the platform", rel.Number, ss))
 	}
+}
+
+// eventTarget reads the release and service a container event from
+// serverID is about. ok is false unless the event's container is the one
+// the store has for the labelled release, of a service on serverID.
+func (c *Core) eventTarget(ctx context.Context, serverID int64, ev node.ContainerEvent) (store.Release, svcScope, bool) {
+	id, err := strconv.ParseInt(ev.Labels.Release, 10, 64)
+	if err != nil {
+		return store.Release{}, svcScope{}, false
+	}
+	rel, err := c.store.GetRelease(ctx, id)
+	if err != nil || rel.ContainerID == "" || rel.ContainerID != ev.ContainerID {
+		return store.Release{}, svcScope{}, false
+	}
+	ss, err := c.scopeOf(ctx, rel.ServiceID)
+	if err != nil || ss.env.ServerID != serverID {
+		return store.Release{}, svcScope{}, false
+	}
+	return rel, ss, true
+}
+
+// followsRelease reports whether a release's container events set its
+// service's status: it is the active release, the service isn't stopped
+// on purpose (ADR 0050) and its environment doesn't sleep or wake
+// (sleep.go), which set the status themselves.
+func followsRelease(rel store.Release, ss svcScope) bool {
+	return rel.Status == string(apitypes.ReleaseActive) && ss.svc.StoppedAt == nil && ss.env.AsleepAt == nil
 }
 
 // started marks a status running after a start or restart event. The

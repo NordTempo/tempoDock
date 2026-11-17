@@ -170,7 +170,10 @@ type Core struct {
 	routesMu sync.Mutex
 
 	statusMu sync.Mutex
-	status   map[int64]apitypes.ServiceStatus // by service ID
+	status   map[int64]storedStatus // by service ID
+	// statusSets counts setStatus calls, for container events read
+	// before a service's last one (changeStatusSince).
+	statusSets uint64
 	// removing holds the IDs of containers the daemon itself is stopping
 	// and removing, so their die and destroy events aren't taken for a
 	// crash or drift. An ID leaves the set on its destroy event, or when
@@ -351,7 +354,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		checking:   map[int64]chan struct{}{},
 		lookupTXT:  o.LookupTXT,
 		lookupIP:   o.LookupIP,
-		status:     map[int64]apitypes.ServiceStatus{},
+		status:     map[int64]storedStatus{},
 		removing:   map[string]chan struct{}{},
 		health:     newHealthWatch(),
 		uploads:    map[int64]bool{},

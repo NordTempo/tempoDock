@@ -132,7 +132,6 @@ func (h *harness) waitArchived(id int64, vols []string) {
 func TestPreviewLockedBase(t *testing.T) {
 	h, _, _, appHook := previewHarness(t)
 	h.lock("staging")
-	h.settled("staging")
 	before := h.envSnapshot("staging")
 	h.openPreview(appHook, 7)
 	h.previewLive("pr-7")

@@ -116,6 +116,9 @@ func previewHarness(t *testing.T) (*harness, *fakeGitHub, *prComments, string) {
 	if _, err := h.c.SetEnvironmentPreviews(h.ctx, testSystem, staging, apitypes.SetEnvironmentPreviewsRequest{MaxPreviews: 2}); err != nil {
 		t.Fatal(err)
 	}
+	// The applied SECRET redeploys db and api in the background: wait for
+	// them, so tests that snapshot staging (envSnapshot) see it settled.
+	h.settled("staging")
 	return h, gh, pc, appHook
 }
 
