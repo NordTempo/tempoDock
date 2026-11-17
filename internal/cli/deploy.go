@@ -41,6 +41,14 @@ A service named with --service that doesn't exist yet is created first.`,
   dock deploy --image ghcr.io/acme/web:1.4 --detach`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// An empty value is usually a variable that was never set: it
+			// would deploy the current directory instead.
+			if err := blankFlag(cmd, "image", "Pass the image to deploy, e.g. --image ghcr.io/acme/web:1.4, or leave out --image to deploy this directory."); err != nil {
+				return err
+			}
+			if len(args) == 1 && strings.TrimSpace(args[0]) == "" {
+				return usageError("the directory to deploy is empty", "Pass a directory, or none for the current one.")
+			}
 			if image != "" && len(args) > 0 {
 				return usageError("pass a directory or --image, not both", "`dock deploy <dir>` builds source; `dock deploy --image <ref>` deploys an image.")
 			}
@@ -82,6 +90,17 @@ A service named with --service that doesn't exist yet is created first.`,
 	cmd.Flags().StringVar(&image, "image", "", "deploy this image instead of building source")
 	addDetachFlag(cmd, &detach)
 	return cmd
+}
+
+// blankFlag refuses flag name given with an empty value (`--image ""`,
+// usually from a variable that was never set) where empty would quietly
+// mean something else than what was asked for.
+func blankFlag(cmd *cobra.Command, name, hint string) error {
+	f := cmd.Flags().Lookup(name)
+	if f == nil || !f.Changed || strings.TrimSpace(f.Value.String()) != "" {
+		return nil
+	}
+	return usageError("--"+name+" is empty", hint)
 }
 
 // ensureService fetches the target service, creating it when the user named
