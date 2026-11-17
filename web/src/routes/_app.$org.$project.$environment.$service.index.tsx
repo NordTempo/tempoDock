@@ -46,10 +46,11 @@ function ServiceOverview() {
       {service.service.template && <RestoredFrom serviceRef={ref} />}
       <Signals serviceRef={ref} />
       {/* `dock connect` reaches an app's set port, once it was deployed
-          (before that, the status says "Not deployed yet." once). */}
+          (before that, the status says "Not deployed yet." once). Folded:
+          it is the same on every service and few need it. */}
       {service.service.port > 0 &&
         !service.service.template &&
-        service.latest_release && <ConnectHint serviceRef={ref} />}
+        service.latest_release && <ConnectHint serviceRef={ref} folded />}
       {current && (
         <DeployProgress
           key={current.number}

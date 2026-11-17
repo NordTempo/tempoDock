@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { api, body } from "../../api/client";
 import { servicePath, useEnvironment } from "../../data/queries";
 import type { ServiceRef } from "../../data/types";
@@ -17,11 +18,45 @@ export const connectCli = (ref: ServiceRef, production: boolean) =>
   }`;
 
 /**
- * How to reach the service from your machine: the `dock connect` line and
- * whether you may run it, then (for Postgres, MySQL and Redis) the client's line,
- * each with Copy.
+ * How to reach the service from your machine. Folded (a service's
+ * Overview, where it would repeat on every service) it is one quiet row
+ * that opens to the lines, and asks the server only once opened; open
+ * (the Data tab, where connecting is the point) it shows them at once.
  */
-export function ConnectHint({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+export function ConnectHint({
+  serviceRef,
+  folded,
+}: {
+  serviceRef: ServiceRef;
+  folded?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  if (!folded) return <ConnectLines serviceRef={serviceRef} />;
+  return (
+    <details
+      className="group text-xs"
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+    >
+      <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 text-mut hover:text-fg [&::-webkit-details-marker]:hidden">
+        <span aria-hidden className="group-open:rotate-90">
+          ›
+        </span>
+        Connect from your machine
+      </summary>
+      {open && (
+        <div className="pt-2">
+          <ConnectLines serviceRef={serviceRef} />
+        </div>
+      )}
+    </details>
+  );
+}
+
+/**
+ * The `dock connect` line and whether you may run it, then (for Postgres,
+ * MySQL and Redis) the client's line, each with Copy.
+ */
+function ConnectLines({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const production = useEnvironment(ref).environment.kind === "production";
   const info = useQuery({
     queryKey: ["connect", ref.project, ref.environment, ref.service],
