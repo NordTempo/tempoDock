@@ -115,10 +115,9 @@ Memory: the verify links share the 16 slots of 0031's pending links.
 - Org admins on an App made before this can't get an install link until
   an operator adds the client secret. Their installations that are
   already assigned keep working.
-- A person who can see an installation on GitHub (a member of the GitHub
-  org with access) can claim it for a Dock org they administer, if no
-  other org has it. That matches what GitHub lets them do with the App
-  itself.
+- A person who can access every repository an installation covers on
+  GitHub can claim it for a Dock org they administer, if no other org
+  has it (amended 2026-11-17, below).
 
 ## Amendment (2026-11-15): an install link is its starter's
 
@@ -145,3 +144,30 @@ repositories.
   without its client secret confirm the same way.
 - Install links are a person's: a token with no user is refused, since
   it has no browser to finish in.
+
+## Amendment (2026-11-17): the installer can access every repository
+
+Dock reads every repository an installation covers, while
+`GET /user/installations` lists an installation to anyone with explicit
+access (read, write or admin) to any one of them. The claim now checks
+the person can access all of them, so an org gets what its installer
+could read on GitHub.
+
+- After the list check, Dock compares how many of the installation's
+  repositories the person's token has access to
+  (`GET /user/installations/{id}/repositories`, its `total_count`) with
+  how many the installation covers (`GET /installation/repositories`
+  with the App's installation token). The person's repositories are a
+  subset of the installation's, so equal counts are equal sets. With
+  fewer, the claim is refused: "ask an owner of the GitHub account to
+  install it from Dock, or to limit the installation to repositories you
+  can access".
+- An owner of the account, or a member who can access everything the
+  installation covers, claims as before, e.g. an organization owner
+  installing the App on chosen repositories.
+- Checking for an owner instead (`GET /user/memberships/orgs/{org}`)
+  would need the App's Members permission, and a new permission makes
+  every installation of a public App approve again. The count check
+  needs nothing new.
+- Two more calls per claim. Repositories an owner adds to the
+  installation later are theirs to give, as before.

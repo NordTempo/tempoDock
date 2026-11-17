@@ -31,6 +31,9 @@ type fakeGitHub struct {
 	// mux serves the API; withApp adds the GitHub App's endpoints.
 	mux *http.ServeMux
 	mu  sync.Mutex
+	// installRepos is how many repositories installation 7 covers (0: 1,
+	// acme/shop); withApp's user dev can access only one of them.
+	installRepos int
 	// files are the repository's files at every commit.
 	files map[string]string
 	// branches are the repository's branches besides main.
