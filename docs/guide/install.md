@@ -214,7 +214,7 @@ running).
 | `[buildkit] enabled` | `true` | This server builds images. `false`: source deploys fail; deploy images instead |
 | `[buildkit] image` | `moby/buildkit:v0.34.1@sha256:9936…` | BuildKit image, pinned by digest |
 | `[buildkit] memory_mb` | `2048` | Hard memory cap for builds (no swap). Builds over it fail; apps are unaffected |
-| `[buildkit] cpus` | `1` | CPU cap for builds. Builds also get a quarter of the normal CPU weight |
+| `[buildkit] cpus` | `0` | CPU cap for builds; 0 is half the server's cores, at least two (all of a smaller server). Builds also get a quarter of the normal CPU weight, so apps win any contention |
 | `[buildkit] timeout_minutes` | `30` | A build running longer fails, on any builder (read by the control plane). A release's build log stops at 16 MB |
 | `[backup] restic_image` | `restic/restic:0.18.1@sha256:39d9…` | Where backup jobs get the restic binary, pinned by digest. Retention is set with `dock backup configure`, the repository with `dock backup move` |
 | `[backup] snapshot_keep`, `snapshot_days` | `5`, `7` | [Volume snapshots](../decisions/0047-volume-snapshots.md) kept per service, and for how many days at most |

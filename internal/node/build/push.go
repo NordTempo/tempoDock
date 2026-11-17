@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/distribution/reference"
 	"github.com/moby/moby/api/types/jsonstream"
@@ -32,7 +33,7 @@ func checkPushTarget(p *node.PushTarget) error {
 }
 
 // push pushes the built image (tag, in the local Docker) to p.Ref and
-// logs the pushed manifest's digest.
+// logs the pushed manifest's digest and how long the push took.
 //
 // Docker pushes, not BuildKit: the registry is at 127.0.0.1:5000 on every
 // server (the node's registry proxy, ADR 0014 amendment), which is the
@@ -49,6 +50,7 @@ func (b *Builder) push(ctx context.Context, tag string, p *node.PushTarget, logs
 		_, _ = b.docker.ImageRemove(context.WithoutCancel(ctx), p.Ref, client.ImageRemoveOptions{})
 	}()
 	_, _ = fmt.Fprintf(logs, "Pushing %s\n", p.Ref)
+	started := time.Now()
 	resp, err := b.docker.ImagePush(ctx, p.Ref, client.ImagePushOptions{RegistryAuth: docker.RegistryAuth(p.Token)})
 	if err != nil {
 		return fmt.Errorf("push %s: %w", p.Ref, err)
@@ -69,7 +71,7 @@ func (b *Builder) push(ctx context.Context, tag string, p *node.PushTarget, logs
 	if digest == "" {
 		return fmt.Errorf("push %s: docker reported no digest", p.Ref)
 	}
-	_, _ = fmt.Fprintf(logs, "Pushed %s (%s)\n", p.Ref, digest)
+	_, _ = fmt.Fprintf(logs, "Pushed %s (%s) in %.1fs\n", p.Ref, digest, time.Since(started).Seconds())
 	return nil
 }
 

@@ -19,6 +19,7 @@ import (
 
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
+	spb "github.com/moby/buildkit/sourcepolicy/pb"
 	"github.com/railwayapp/railpack/core"
 	"github.com/railwayapp/railpack/core/app"
 	"github.com/railwayapp/railpack/core/logger"
@@ -66,8 +67,12 @@ func railpackOpt(ctx context.Context, dir, src string, req node.BuildRequest, ns
 		return bkclient.SolveOpt{}, err
 	}
 
+	frontend := railpackFrontend()
+	if d, ok := railpackImages[frontend]; ok {
+		frontend += "@" + d
+	}
 	attrs := map[string]string{
-		"source":   "ghcr.io/railwayapp/railpack-frontend:" + railpackVersion,
+		"source":   frontend,
 		"filename": planFile,
 		// Prefixes every cache mount ID in the plan ("<ns>-<cache name>").
 		"build-arg:cache-key": ns,
@@ -79,7 +84,43 @@ func railpackOpt(ctx context.Context, dir, src string, req node.BuildRequest, ns
 	}
 	opt, err := localOpt("gateway.v0", attrs, src, planDir)
 	opt.Session = []session.Attachable{secretStore(req.BuildArgs)}
+	opt.SourcePolicy = railpackPolicy()
 	return opt, err
+}
+
+// railpackFrontend is the Railpack frontend image for the plans this
+// binary generates.
+func railpackFrontend() string { return "ghcr.io/railwayapp/railpack-frontend:" + railpackVersion }
+
+// railpackImages pins the images a Railpack build uses to their digests:
+// the frontend, the builder and runtime images its plans name, and the
+// alpine image it hashes secrets in (a helper; nothing of it reaches the
+// image). Unpinned, BuildKit asks each image's registry what its tag
+// points at on every build, about 15 s of a 35 s warm build on the dev
+// VM (ADR 0089). The Railpack tags are versioned, so the pins change
+// only with Railpack; TestRailpackImagesPinned fails when an upgrade
+// names others. A digest is the index digest, e.g. the
+// docker-content-digest of `curl -I` on the manifest with an OCI index
+// Accept header.
+var railpackImages = map[string]string{
+	"ghcr.io/railwayapp/railpack-frontend:v0.43.0":        "sha256:355ef61fae6f2551103cd8b10c710cb07167dd353d561f15c69b8d7ac1c676cc",
+	"ghcr.io/railwayapp/railpack-builder:mise-2026.10.14": "sha256:03df9e9aa1e786c2e0dd12c5409acad3bbd5a0fa8a75c1117c7ddab5c0c3fde4",
+	"ghcr.io/railwayapp/railpack-runtime:mise-2026.10.14": "sha256:02820533713338569ae4d4f0df986c3e7cc6e93457fd06fbb0d2cfa86fba9cdb",
+	"docker.io/library/alpine:latest":                     "sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf",
+}
+
+// railpackPolicy is a BuildKit source policy that swaps each pinned image
+// (railpackImages) for its digest wherever the build names it.
+func railpackPolicy() *spb.Policy {
+	p := &spb.Policy{}
+	for _, ref := range slices.Sorted(maps.Keys(railpackImages)) {
+		p.Rules = append(p.Rules, &spb.Rule{
+			Action:   spb.PolicyAction_CONVERT,
+			Selector: &spb.Selector{Identifier: "docker-image://" + ref},
+			Updates:  &spb.Update{Identifier: "docker-image://" + ref + "@" + railpackImages[ref]},
+		})
+	}
+	return p
 }
 
 // PlanCommand is the hidden first argument that makes the dock binary run

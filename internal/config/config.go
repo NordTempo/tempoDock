@@ -306,7 +306,8 @@ type BuildKit struct {
 	Enabled bool `toml:"enabled"`
 	// Image is the BuildKit image to run.
 	Image string `toml:"image"`
-	// MemoryMB and CPUs cap the BuildKit container.
+	// MemoryMB and CPUs cap the BuildKit container. CPUs 0 lets the
+	// builder pick: half the server's cores, at least two.
 	MemoryMB int     `toml:"memory_mb"`
 	CPUs     float64 `toml:"cpus"`
 	// TimeoutMinutes fails a build that runs longer, on any builder.
@@ -471,7 +472,6 @@ func Default() Config {
 			Enabled:        true,
 			Image:          "moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c",
 			MemoryMB:       2048,
-			CPUs:           1,
 			TimeoutMinutes: 30,
 		},
 		Network: Network{
@@ -577,6 +577,9 @@ func (c *Config) validate() error {
 		if c.Registry.SpoolMaxGB < 0 {
 			return errors.New("[registry] spool_max_gb can't be negative (0 picks the default)")
 		}
+	}
+	if c.BuildKit.CPUs < 0 {
+		return errors.New("[buildkit] cpus can't be negative (0 is half the server's cores, at least two)")
 	}
 	if err := c.Hooks.validate(); err != nil {
 		return err

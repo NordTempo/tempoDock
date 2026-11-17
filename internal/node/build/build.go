@@ -26,8 +26,9 @@
 // the cache namespacing below. Everything else gets a Railpack build: the
 // plan is generated with the Railpack library in a capped child process
 // (PlanMain) and built with the matching Railpack BuildKit frontend, which
-// is what Railpack recommends for platforms. Results are exported straight
-// into the local Docker Engine.
+// is what Railpack recommends for platforms; its images are pinned by
+// digest (railpackImages). Results are exported straight into the local
+// Docker Engine, new layers compressed with zstd.
 //
 // # Push
 //
@@ -359,8 +360,12 @@ func localOpt(frontend string, attrs map[string]string, contextDir, dockerfileDi
 func (b *Builder) solve(ctx context.Context, bk *bkclient.Client, opt bkclient.SolveOpt, tag string, logs io.Writer, froms map[string]string) error {
 	pr, pw := io.Pipe()
 	opt.Exports = []bkclient.ExportEntry{{
-		Type:   bkclient.ExporterDocker,
-		Attrs:  map[string]string{"name": tag},
+		Type: bkclient.ExporterDocker,
+		// zstd compresses about three times faster than gzip (a cold
+		// Railpack export 15.6 s -> 5.2 s on two cores, ADR 0089), and
+		// Docker 23+ reads it. Layers that already have a blob keep it,
+		// so unchanged layers aren't pushed again.
+		Attrs:  map[string]string{"name": tag, "compression": "zstd"},
 		Output: func(map[string]string) (io.WriteCloser, error) { return pw, nil },
 	}}
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -48,7 +49,7 @@ const (
 // the platform that loosens it, since a build swapping past the cap
 // thrashes the disk.
 func (b *Builder) ensureDaemon(ctx context.Context, logs io.Writer) (*bkclient.Client, error) {
-	want := fmt.Sprintf("%s mem=%dMB cpus=%g", b.cfg.Image, b.cfg.MemoryMB, b.cfg.CPUs)
+	want := fmt.Sprintf("%s mem=%dMB cpus=%g", b.cfg.Image, b.cfg.MemoryMB, b.cpus())
 	if b.Network != "" {
 		want += " net=" + b.Network
 	}
@@ -100,6 +101,20 @@ func (b *Builder) ensureDaemon(ctx context.Context, logs io.Writer) (*bkclient.C
 		return nil, fmt.Errorf("start %s: %w", b.name, err)
 	}
 	return b.connect(ctx)
+}
+
+// cpus is the BuildKit container's CPU cap: [buildkit] cpus, or with 0
+// half this server's cores but at least two (all of them on a smaller
+// server). A Next.js build spends most of its time compiling, which
+// scales with cores: one core to two halves a warm build (ADR 0089). The
+// low CPU weight (cpuShares) already makes apps win any contention, so
+// the cap only keeps a build from taking a larger server whole.
+func (b *Builder) cpus() float64 {
+	if b.cfg.CPUs > 0 {
+		return b.cfg.CPUs
+	}
+	n := runtime.NumCPU()
+	return float64(min(n, max(2, n/2)))
 }
 
 // checkOwner refuses a BuildKit container (by its labels) this runtime
@@ -163,7 +178,7 @@ func (b *Builder) createDaemon(ctx context.Context, configLabel string, logs io.
 			Resources: container.Resources{
 				Memory:     mem,
 				MemorySwap: docker.NoSwap(mem), // hitting the cap fails the build instead of thrashing the disk
-				NanoCPUs:   int64(b.cfg.CPUs * 1e9),
+				NanoCPUs:   int64(b.cpus() * 1e9),
 				CPUShares:  cpuShares,
 			},
 		},

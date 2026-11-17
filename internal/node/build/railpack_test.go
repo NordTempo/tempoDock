@@ -1,6 +1,12 @@
 package build
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/distribution/reference"
+	"github.com/railwayapp/railpack/core/generate"
+	"github.com/railwayapp/railpack/core/plan"
+)
 
 // A planner that hits its memory cap crashes in one of several ways,
 // depending on the kernel and machine; all mean the same to users. A
@@ -14,6 +20,21 @@ func TestRuntimeCrash(t *testing.T) {
 	} {
 		if got := runtimeCrash(stderr); got != want {
 			t.Errorf("runtimeCrash(%q) = %v", stderr, got)
+		}
+	}
+}
+
+// Every image a Railpack build of this version names is pinned, so a
+// Railpack upgrade that names new ones fails here until railpackImages
+// has their digests.
+func TestRailpackImagesPinned(t *testing.T) {
+	for _, ref := range []string{railpackFrontend(), generate.RailpackBuilderImage, plan.RailpackRuntimeImage, "alpine:latest"} {
+		named, err := reference.ParseNormalizedNamed(ref)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := railpackImages[named.String()]; !ok {
+			t.Errorf("%s is not pinned in railpackImages", named)
 		}
 	}
 }

@@ -2,8 +2,10 @@ package build
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -67,6 +69,9 @@ func dockerfileOpt(dir, src, dockerfile string, vars map[string]string, ns strin
 	}
 	if ref, _, _, ok := parser.DetectSyntax(df); ok {
 		_, _ = fmt.Fprintf(logs, "ignoring the syntax directive (%s): builds use BuildKit's built-in Dockerfile frontend\n", ref)
+	}
+	if hint := nextCacheHint(df, root); hint != "" {
+		_, _ = fmt.Fprintln(logs, hint)
 	}
 
 	attrs := map[string]string{
@@ -341,6 +346,70 @@ func (m envMap) Keys() []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// nextBuild matches a RUN step that builds a Next.js app: `next build`, or
+// a package manager's build script.
+var nextBuild = regexp.MustCompile(`\b(next build|(npm|pnpm|yarn|bun)( run)? build)\b`)
+
+// nextCacheHint returns a build log line for a Dockerfile that builds a
+// Next.js app (src's package.json depends on next) without a cache mount
+// on .next/cache, or "". Without one every build compiles the whole app
+// again; with one only what changed (ADR 0089). The mount's target is the
+// .next/cache under the building step's WORKDIR, /app/.next/cache when
+// that can't be told.
+func nextCacheHint(dockerfile []byte, src *os.Root) string {
+	f, err := src.Open("package.json")
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }()
+	var pkg struct{ Dependencies, DevDependencies map[string]json.RawMessage }
+	if json.NewDecoder(io.LimitReader(f, maxDockerfileSize)).Decode(&pkg) != nil ||
+		pkg.Dependencies["next"] == nil && pkg.DevDependencies["next"] == nil {
+		return ""
+	}
+	res, err := parser.Parse(bytes.NewReader(dockerfile))
+	if err != nil {
+		return ""
+	}
+	workdirs := map[string]string{} // stage name -> its WORKDIR at the end
+	stage, workdir, target := "", "/", ""
+	for _, n := range res.AST.Children {
+		switch {
+		case strings.EqualFold(n.Value, command.From) && n.Next != nil:
+			workdir, stage = cmp.Or(workdirs[strings.ToLower(n.Next.Value)], "/"), ""
+			if as := n.Next.Next; as != nil && strings.EqualFold(as.Value, "as") && as.Next != nil {
+				stage = strings.ToLower(as.Next.Value)
+			}
+		case strings.EqualFold(n.Value, command.Workdir) && n.Next != nil:
+			if w := n.Next.Value; path.IsAbs(w) {
+				workdir = path.Clean(w)
+			} else {
+				workdir = path.Join(workdir, w)
+			}
+		case strings.EqualFold(n.Value, command.Run):
+			if slices.ContainsFunc(n.Flags, func(f string) bool {
+				return strings.HasPrefix(f, "--mount=") && strings.Contains(f, "type=cache") && strings.Contains(f, ".next/cache")
+			}) {
+				return ""
+			}
+			if target == "" && nextBuild.MatchString(n.Original) {
+				target = path.Join(workdir, ".next/cache")
+				if strings.Contains(workdir, "$") {
+					target = "/app/.next/cache"
+				}
+			}
+		}
+		if stage != "" {
+			workdirs[stage] = workdir
+		}
+	}
+	if target == "" {
+		return ""
+	}
+	return "hint: this Dockerfile builds a Next.js app without keeping .next/cache, so every build compiles it from scratch. " +
+		"Keep it between builds with a cache mount on the step that builds: RUN --mount=type=cache,target=" + target + " <your build command>"
 }
 
 // fromVertex matches the BuildKit progress line of a FROM step, which
