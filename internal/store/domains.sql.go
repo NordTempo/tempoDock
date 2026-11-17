@@ -333,7 +333,7 @@ func (q *Queries) ListProjectDomains(ctx context.Context, projectID int64) ([]Do
 }
 
 const listRoutableDomains = `-- name: ListRoutableDomains :many
-SELECT domains.hostname, domains.redirect_to, domains.service_id,
+SELECT domains.hostname, domains.redirect_to, domains.service_id, domains.generated,
        services.name AS service_name,
        CAST(services.stopped_at IS NOT NULL AS BOOLEAN) AS stopped,
        environments.id AS environment_id, environments.project_id, projects.org_id,
@@ -360,6 +360,7 @@ type ListRoutableDomainsRow struct {
 	Hostname           string
 	RedirectTo         string
 	ServiceID          int64
+	Generated          bool
 	ServiceName        string
 	Stopped            bool
 	EnvironmentID      int64
@@ -393,6 +394,7 @@ func (q *Queries) ListRoutableDomains(ctx context.Context, serverID int64) ([]Li
 			&i.Hostname,
 			&i.RedirectTo,
 			&i.ServiceID,
+			&i.Generated,
 			&i.ServiceName,
 			&i.Stopped,
 			&i.EnvironmentID,

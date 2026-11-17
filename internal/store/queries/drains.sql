@@ -77,7 +77,7 @@ DELETE FROM server_forwards WHERE service_id = +?;
 -- name: ListForwardedDomains :many
 -- The verified domains of the services a server forwards, with the
 -- forward's port as host port and the rest like ListRoutableDomains.
-SELECT domains.hostname, domains.redirect_to, domains.service_id,
+SELECT domains.hostname, domains.redirect_to, domains.service_id, domains.generated,
        services.name AS service_name,
        CAST(services.stopped_at IS NOT NULL AS BOOLEAN) AS stopped,
        environments.id AS environment_id, environments.project_id, projects.org_id,

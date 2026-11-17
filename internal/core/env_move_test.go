@@ -734,3 +734,43 @@ func TestMoveWithNestedBaseDomains(t *testing.T) {
 		t.Errorf("generated domains under %v, want one under each of %v", bases, want)
 	}
 }
+
+// TestForwardLeavesOutOtherServersNames: the server a service moved away
+// from forwards its own generated name and its custom domains, not the
+// name the move made under the target's base: that would change its
+// config, and the next move's hold would reload its Caddy.
+func TestForwardLeavesOutOtherServersNames(t *testing.T) {
+	p, lab, _, web, _ := movePool(t)
+	cp := p.ids2name("cp")
+	for name, base := range map[string]string{"homelab": "lab.example.dev", cp: "cp.example.dev"} {
+		if _, err := p.c.UpdateServer(p.ctx, testSystem, name, apitypes.UpdateServerRequest{BaseDomain: ptr(base)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := p.c.GenerateDomain(p.ctx, testSystem, web); err != nil {
+		t.Fatal(err)
+	}
+	staging := EnvRef{"shop", "staging"}
+	if _, err := p.c.MoveEnvironment(p.ctx, testSystem, staging, apitypes.MoveEnvironmentRequest{To: cp}); err != nil {
+		t.Fatal(err)
+	}
+	if m := p.waitMove(staging); m.Status != apitypes.MoveSucceeded {
+		t.Fatalf("move = %+v", m)
+	}
+	// The next change on homelab (the hold of another move) renders its
+	// routes again.
+	if err := p.c.applyRoutes(p.ctx, p.ids["homelab"]); err != nil {
+		t.Fatal(err)
+	}
+	i := slices.IndexFunc(lab.Routes(), func(r node.Route) bool { return slices.Contains(r.Hostnames, "shop.example.com") })
+	if i < 0 {
+		t.Fatalf("homelab doesn't forward web: %+v", lab.Routes())
+	}
+	hosts := lab.Routes()[i].Hostnames
+	if !slices.ContainsFunc(hosts, generatedLike("web-shop-staging", "lab.example.dev").MatchString) {
+		t.Errorf("homelab forwards %v, without web's name under its own base", hosts)
+	}
+	if slices.ContainsFunc(hosts, generatedLike("web-shop-staging", "cp.example.dev").MatchString) {
+		t.Errorf("homelab forwards %v, with web's name under cp's base", hosts)
+	}
+}
