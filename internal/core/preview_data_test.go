@@ -283,8 +283,8 @@ func TestRefreshPreviewData(t *testing.T) {
 		t.Error("the preview's database wasn't emptied before the new copy")
 	}
 	h.waitReleases(api, 2)
-	if h.envSnapshot("staging") != before {
-		t.Error("the base was touched")
+	if after := h.envSnapshot("staging"); after != before {
+		t.Errorf("the base was touched: before\n%s\nafter\n%s", before, after)
 	}
 	if _, err := h.c.RefreshPreviewData(h.ctx, testSystem, EnvRef{"shop", "staging"}, apitypes.RefreshPreviewDataRequest{}); CodeOf(err) != apitypes.CodeNotFound {
 		t.Errorf("refreshed staging: %v", err)
