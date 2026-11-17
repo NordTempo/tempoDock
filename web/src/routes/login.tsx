@@ -8,6 +8,7 @@ import { currentMe, keys, queries } from "../data/queries";
 import { useSignInMethods, useStartSSO } from "../features/sso/data";
 import { ProviderMark } from "../features/sso/ProviderMark";
 import { CodeInput } from "../ui/CodeInput";
+import { cliInstallLine } from "../ui/cliInstall";
 import { ErrorText } from "../ui/kit";
 
 /**
@@ -386,7 +387,9 @@ function Login() {
         )}
         <div className="flex flex-col gap-1 border-t border-line pt-4">
           <span className="text-mut">From a terminal</span>
-          <code className="font-mono">dock login {window.location.origin}</code>
+          <code className="font-mono [overflow-wrap:anywhere]">
+            {cliInstallLine(window.location.origin)}
+          </code>
         </div>
         <p className="text-xs text-mut">
           {health.isSuccess ? (
