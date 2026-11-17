@@ -168,6 +168,10 @@ Dock's own; saving again replaces it.`,
   dock template show umami --toml > stats.toml && dock template save --file stats.toml`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Empty would save the environment's services instead.
+			if err := blankFlag(cmd, "file", "Pass the template file to save, or leave out --file to save the environment's services."); err != nil {
+				return err
+			}
 			if file != "" {
 				if len(args) > 0 {
 					return usageError("--file names the template itself", "Drop the name: `dock template save --file "+file+"`.")

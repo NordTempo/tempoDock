@@ -121,7 +121,7 @@
       "allocs_op": 5
     },
     "core.BenchmarkCheckEnvShadowed": {
-      "ns_op": 38,
+      "ns_op": 54.3,
       "bytes_op": 0,
       "allocs_op": 0
     },
@@ -292,8 +292,8 @@
     },
     "core.BenchmarkStatsTick50": {
       "ns_op": 458590,
-      "bytes_op": 87653,
-      "allocs_op": 943
+      "bytes_op": 88596,
+      "allocs_op": 958
     },
     "core.BenchmarkStatusPage100": {
       "ns_op": 14262027,
@@ -432,33 +432,33 @@
     },
     "store.BenchmarkPreparedQuery/param": {
       "ns_op": 76501,
-      "bytes_op": 7056,
-      "allocs_op": 254
+      "bytes_op": 7208,
+      "allocs_op": 258
     },
     "store.BenchmarkPreparedQuery/param,parallel=8": {
-      "ns_op": 85781,
-      "bytes_op": 7056,
-      "allocs_op": 254
+      "ns_op": 52842.6,
+      "bytes_op": 7345,
+      "allocs_op": 261
     },
     "store.BenchmarkPreparedQuery/plus-param": {
       "ns_op": 53634,
-      "bytes_op": 7056,
-      "allocs_op": 254
+      "bytes_op": 7208,
+      "allocs_op": 258
     },
     "store.BenchmarkPreparedQuery/plus-param,parallel=8": {
       "ns_op": 13162,
-      "bytes_op": 7056,
-      "allocs_op": 254
+      "bytes_op": 7346,
+      "allocs_op": 261
     },
     "store.BenchmarkPreparedQuery/sqlc": {
-      "ns_op": 92080,
-      "bytes_op": 38096,
-      "allocs_op": 282
+      "ns_op": 63403.9,
+      "bytes_op": 39112,
+      "allocs_op": 286
     },
     "store.BenchmarkPreparedQuery/sqlc,parallel=8": {
       "ns_op": 32764,
-      "bytes_op": 38096,
-      "allocs_op": 282
+      "bytes_op": 39251,
+      "allocs_op": 289
     },
     "tempobase.BenchmarkAuthenticateSession": {
       "ns_op": 12601,

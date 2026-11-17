@@ -73,6 +73,9 @@ type options struct {
 	benchCount           int
 	nsTol, allocsTol     float64
 	update               bool
+	// rerecord, with update, re-records only the benchmarks this
+	// go test -bench pattern matches (updateBaseline).
+	rerecord string
 
 	// baseRev is the git revision whose baseline this one's budgets are
 	// compared with (budgetChanges); "" compares nothing.
@@ -128,6 +131,7 @@ func main() {
 	flag.BoolVar(&o.softTiming, "soft-timing", false, "report timing budgets as warnings (shared CI runners)")
 	flag.StringVar(&o.markdown, "markdown", "", "also write the results as Markdown to this file (CI's job summary and PR comment)")
 	flag.BoolVar(&o.update, "update-baseline", false, "record binary size and benchmarks into -baseline instead of checking")
+	flag.StringVar(&o.rerecord, "rerecord", "", "with -update-baseline: re-record only the benchmarks this go test -bench pattern matches, timed in the baseline's machine units; nothing else changes")
 	flag.StringVar(&o.baseRev, "base-rev", "origin/main", "git revision whose -baseline the budgets are compared with, to show raises; empty for none")
 	flag.Parse()
 	o.checks = slices.DeleteFunc(strings.Split(checks, ","), func(c string) bool {

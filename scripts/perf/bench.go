@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -72,6 +73,14 @@ func updateBaseline(o options) error {
 		BinaryBytes: old.BinaryBytes, TempobaseBinaryBytes: old.TempobaseBinaryBytes,
 		CalibrationNs: old.CalibrationNs, Benchmarks: old.Benchmarks,
 	}
+	if o.rerecord != "" {
+		// A few rows: the rest, the toolchain's name included, stay.
+		b.Go = old.Go
+		if err := rerecordBenchmarks(o, &b); err != nil {
+			return err
+		}
+		return writeBaseline(o, old, b)
+	}
 	if slices.Contains(o.checks, "binary") {
 		st, err := os.Stat(o.dock)
 		if err != nil {
@@ -96,6 +105,12 @@ func updateBaseline(o options) error {
 			b.Benchmarks[name] = summarize(rs)
 		}
 	}
+	return writeBaseline(o, old, b)
+}
+
+// writeBaseline writes b to o.baseline and prints how its budgets moved
+// from old.
+func writeBaseline(o options, old, b baseline) error {
 	data, err := json.MarshalIndent(b, "", "  ")
 	if err != nil {
 		return err
@@ -222,6 +237,39 @@ func nsString(ns float64) string {
 type benchRuns struct {
 	byName map[string][]bench
 	dir    map[string]string
+}
+
+// rerecordBenchmarks re-records the benchmarks o.rerecord matches into b,
+// keeping every other row and the calibration. Allocations and bytes are
+// taken as measured. ns/op is scaled by this machine's speed against the
+// baseline's calibration, as checkBench compares it, and only replaces a
+// row's time that moved past the ns tolerance: the scaling is rougher
+// than the tolerance between machines (CI and a dev VM differ by ~15%),
+// so rewriting every time would tighten budgets by noise. Rows edited by
+// hand skip the scaling and drift (#386's BenchmarkCheckEnvShadowed sat
+// 47% under its real time).
+func rerecordBenchmarks(o options, b *baseline) error {
+	if b.CalibrationNs <= 0 {
+		return fmt.Errorf("the baseline has no calibration; record it whole with `make perf-baseline`")
+	}
+	runs, calib, err := runBenchmarks(o, nil, o.rerecord)
+	if err != nil {
+		return err
+	}
+	if len(runs.byName) == 0 {
+		return fmt.Errorf("no benchmark matches %q", o.rerecord)
+	}
+	speed := calib / b.CalibrationNs
+	b.Benchmarks = maps.Clone(b.Benchmarks)
+	for name, rs := range runs.byName {
+		s := summarize(rs)
+		s.NsOp = math.Round(s.NsOp/speed*10) / 10
+		if prev, ok := b.Benchmarks[name]; ok && math.Abs(s.NsOp/prev.NsOp-1) <= o.nsTol {
+			s.NsOp = prev.NsOp
+		}
+		b.Benchmarks[name] = s
+	}
+	return nil
 }
 
 // summarize reduces a benchmark's runs to the fastest ns/op (noise only
