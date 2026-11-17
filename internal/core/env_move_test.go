@@ -564,3 +564,41 @@ func TestMoveKeepsOneGeneratedDomainPerServer(t *testing.T) {
 		t.Fatalf("after removing homelab: generated domains %v, want %v", got, onCP)
 	}
 }
+
+// A server's base domain can be a parent of another's (example.dev and
+// lab.example.dev): a name under the node's base isn't the control
+// plane's, so moving to the control plane gives the service one there.
+func TestMoveWithNestedBaseDomains(t *testing.T) {
+	p, _, _, web, _ := movePool(t)
+	staging := EnvRef{"shop", "staging"}
+	cp := p.ids2name("cp")
+	for name, base := range map[string]string{"homelab": "lab.example.dev", cp: "example.dev"} {
+		if _, err := p.c.UpdateServer(p.ctx, testSystem, name, apitypes.UpdateServerRequest{BaseDomain: ptr(base)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := p.c.GenerateDomain(p.ctx, testSystem, web); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.c.MoveEnvironment(p.ctx, testSystem, staging, apitypes.MoveEnvironmentRequest{To: cp}); err != nil {
+		t.Fatal(err)
+	}
+	if m := p.waitMove(staging); m.Status != apitypes.MoveSucceeded {
+		t.Fatalf("move = %+v", m)
+	}
+	doms, err := p.c.ListDomains(p.ctx, testSystem, web)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bases []string
+	for _, d := range doms {
+		if d.Generated {
+			_, base, _ := strings.Cut(d.Hostname, ".")
+			bases = append(bases, base)
+		}
+	}
+	slices.Sort(bases)
+	if want := []string{"example.dev", "lab.example.dev"}; !slices.Equal(bases, want) {
+		t.Errorf("generated domains under %v, want one under each of %v", bases, want)
+	}
+}

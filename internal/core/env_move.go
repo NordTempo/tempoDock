@@ -1488,7 +1488,10 @@ func (c *Core) moveDomains(ctx context.Context, es envScope, from, to store.Serv
 
 // underBase reports whether host is a hostname under base.
 func underBase(host, base string) bool {
-	return base != "" && strings.HasSuffix(host, "."+base)
+	label, ok := strings.CutSuffix(host, "."+base)
+	// One label: a server's base can be a parent of another's
+	// (example.com and node1.example.com), whose names aren't its.
+	return base != "" && ok && label != "" && !strings.Contains(label, ".")
 }
 
 // pruneGeneratedDomains removes a service's generated domains that no
