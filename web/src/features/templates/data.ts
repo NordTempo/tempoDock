@@ -13,7 +13,11 @@ export type AppTemplate = Schemas["AppTemplate"];
 export type TemplateInput = Schemas["TemplateInput"];
 export type UseTemplate = Schemas["UseTemplateRequest"];
 
-/** The template catalog (ADR 0083); it changes only with a Dock release. */
+/**
+ * The template catalog (ADR 0083): Dock's, which change only with a
+ * release, and the organization's own, which live.ts refetches when one
+ * is saved or removed (template.save, template.remove).
+ */
 export const appTemplates = () =>
   queryOptions({
     queryKey: ["app-templates"],

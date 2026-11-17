@@ -1,13 +1,16 @@
 package cli
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/cli/output"
 	"github.com/NordTempo/tempoDock/internal/clientconfig"
+	"github.com/NordTempo/tempoDock/internal/node"
 )
 
 // `dock apply FILE`: an export plans no change; an edited file plans as a
@@ -70,6 +73,14 @@ project = "shop"
 	code, stdout, stderr = exec(t, "apply", edited, "--deploy")
 	if code != 0 || !strings.Contains(stdout+stderr, "Applied shop/production: 2 releases started") {
 		t.Fatalf("--deploy: exit %d\n%s%s", code, stdout, stderr)
+	}
+	// A release the apply starts that fails exits deploy_failed.
+	srv.rt.FailHealthCheck(func(node.ContainerSpec) error { return errors.New("connection refused") })
+	if err := os.WriteFile(edited, []byte(strings.Replace(file, "8080", "9090", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code, stdout, stderr := exec(t, "apply", edited, "--deploy"); code != int(output.ExitDeployFailed) || !strings.Contains(stderr, "release 3 failed") {
+		t.Fatalf("failed --deploy: exit %d\n%s%s", code, stdout, stderr)
 	}
 	if code, _, stderr := exec(t, "apply", "--plan", "-p", "shop", "-e", "production"); code != 2 || !strings.Contains(stderr, "for a project file") {
 		t.Fatalf("--plan without a file: exit %d %s", code, stderr)

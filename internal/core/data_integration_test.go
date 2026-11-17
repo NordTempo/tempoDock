@@ -126,7 +126,7 @@ func TestIntegrationDataReads(t *testing.T) {
 	if info, err := h.c.DataInfo(h.ctx, admin, db); err != nil || info.Status != apitypes.DataSetupNeeded || !info.Access.Manage {
 		t.Fatalf("before setup: %+v %v", info, err)
 	}
-	if _, err := h.c.DataSchema(h.ctx, dev, db); CodeOf(err) != apitypes.CodeConflict || !strings.Contains(err.Error(), "dock db setup") {
+	if _, err := h.c.DataSchema(h.ctx, dev, db, ""); CodeOf(err) != apitypes.CodeConflict || !strings.Contains(err.Error(), "dock db setup") {
 		t.Fatalf("schema before setup: %v", err)
 	}
 	info, err := h.c.SetupData(h.ctx, admin, db)
@@ -166,7 +166,7 @@ func TestIntegrationDataReads(t *testing.T) {
 	if err != nil || len(cols) != 1 {
 		t.Fatalf("mark: %+v %v", cols, err)
 	}
-	schema, err := h.c.DataSchema(h.ctx, dev, db)
+	schema, err := h.c.DataSchema(h.ctx, dev, db, "")
 	if err != nil || len(schema.Tables) != 2 || !schema.Tables[0].Columns[3].Sensitive {
 		t.Fatalf("schema: %+v %v", schema, err)
 	}
@@ -300,7 +300,7 @@ func TestIntegrationDataReads(t *testing.T) {
 
 	// Tokens get nothing by default; an override grants reading.
 	plain := h.token(admin, apitypes.CreateTokenRequest{Name: "plain", Scope: apitypes.ScopeDeploy})
-	if _, err := h.c.DataSchema(h.ctx, plain, db); CodeOf(err) != apitypes.CodeForbidden {
+	if _, err := h.c.DataSchema(h.ctx, plain, db, ""); CodeOf(err) != apitypes.CodeForbidden {
 		t.Fatalf("token without access: %v", err)
 	}
 	bot := h.token(admin, apitypes.CreateTokenRequest{Name: "bot", Scope: apitypes.ScopeDeploy, Data: &apitypes.DataTokenAccess{

@@ -101,12 +101,7 @@ func (g *globals) finishApplied(ctx context.Context, s *session, w *watcher, a a
 	if err != nil {
 		return err
 	}
-	for _, r := range a.Releases {
-		if err := releaseFailure(ctx, s, r); err != nil {
-			return err
-		}
-	}
-	return nil
+	return firstFailure(ctx, s, a.Releases)
 }
 
 func newChangesCmd(g *globals) *cobra.Command {

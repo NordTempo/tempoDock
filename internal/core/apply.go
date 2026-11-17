@@ -342,6 +342,10 @@ type liveEnv struct {
 	archived map[string]bool
 	// baseDomain is whether the server can generate hostnames.
 	baseDomain bool
+	// hostFree refuses a hostname the plan adds that can't be had
+	// (hostname_taken), as adding the domain would; nil for an
+	// environment that doesn't exist yet.
+	hostFree func(host string) error
 	// drains are the environment's log drains by name.
 	drains map[string]store.LogDrain
 }
@@ -376,6 +380,7 @@ func (c *Core) liveEnvFor(ctx context.Context, q *store.Queries, a Actor, p stor
 // many services it has.
 func loadLiveEnv(ctx context.Context, q *store.Queries, c *Core, e store.Environment) (*liveEnv, error) {
 	le := &liveEnv{row: e, shared: map[string]string{}, sharedStaged: map[string]string{}, svcs: map[string]*liveSvc{}, archived: map[string]bool{}}
+	le.hostFree = func(host string) error { return c.hostFree(ctx, q, e, host) }
 	svcs, err := q.ListServices(ctx, e.ID)
 	if err != nil {
 		return nil, err
@@ -599,7 +604,7 @@ func (c *Core) planEnv(a Actor, fe apitypes.EnvironmentExport, le *liveEnv, valu
 			line(&ep.kept, ch)
 		}
 	}
-	return ep, nil
+	return ep, ep.planTakenHosts(le)
 }
 
 // planService compares one file service with the live one, if any.
@@ -826,6 +831,74 @@ func (ep *envPlan) planVolumes(line func(*[]apitypes.PlanChange, apitypes.PlanCh
 		line(&ep.kept, apitypes.PlanChange{Service: service, Kind: apitypes.PlanVolume, Action: apitypes.ChangeRemove, Name: name, Old: ls.vols[name].MountPath,
 			Note: "not in the file; kept: a project file never removes volumes"})
 	}
+}
+
+// hostFree refuses host for a service of environment e as addDomain
+// would: one of Dock's own names, a Cloudflare redirect, or a hostname
+// another service holds (checkClaims). Two queries, and one more for
+// the project, per hostname a file adds.
+func (c *Core) hostFree(ctx context.Context, q *store.Queries, e store.Environment, host string) error {
+	if err := c.checkOwnHost(host); err != nil {
+		return err
+	}
+	if redirect, err := q.RedirectHostnameExists(ctx, host); err != nil || redirect {
+		if err != nil {
+			return err
+		}
+		return errf(apitypes.CodeHostnameTaken, "%s is a Cloudflare redirect; remove the redirect first (`dock cloudflare redirects remove %s`)", host, host)
+	}
+	claims, err := q.ListHostnameClaims(ctx, host)
+	if err != nil || len(claims) == 0 {
+		return err
+	}
+	p, err := q.GetProject(ctx, e.ProjectID)
+	if err != nil {
+		return err
+	}
+	return checkClaims(claims, p.OrgID, host)
+}
+
+// planTakenHosts moves the hostnames the plan adds that can't be had
+// (liveEnv.hostFree) from its changes to what needs a person: staged,
+// one would only fail when it's applied, after its services exist. A
+// hostname another service in the plan gives up (--prune) is free.
+func (ep *envPlan) planTakenHosts(le *liveEnv) error {
+	if le.hostFree == nil {
+		return nil
+	}
+	freed := map[string]bool{}
+	for _, d := range ep.domains {
+		if d.remove {
+			freed[d.host] = true
+		}
+	}
+	kept := ep.domains[:0]
+	for _, d := range ep.domains {
+		if d.generated || d.remove || d.cancel || freed[d.host] {
+			kept = append(kept, d)
+			continue
+		}
+		err := le.hostFree(d.host)
+		if CodeOf(err) != apitypes.CodeHostnameTaken {
+			if err != nil {
+				return err
+			}
+			kept = append(kept, d)
+			continue
+		}
+		ep.staged--
+		i := slices.IndexFunc(ep.changes, func(ch apitypes.PlanChange) bool {
+			return ch.Kind == apitypes.PlanDomain && ch.Action == apitypes.ChangeAdd && ch.Service == d.service && ch.Name == d.host
+		})
+		if i >= 0 {
+			ch := ep.changes[i]
+			ep.changes = slices.Delete(ep.changes, i, i+1)
+			ch.Note = err.Error()
+			ep.manual = append(ep.manual, ch)
+		}
+	}
+	ep.domains = kept
+	return nil
 }
 
 // planDomains compares a service's domains. A generated domain in the file

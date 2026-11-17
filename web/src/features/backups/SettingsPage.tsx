@@ -256,14 +256,7 @@ function Settings({ settings }: { settings: BackupSettings }) {
       <div className="flex max-w-[760px] flex-col gap-3.5">
         <label className="flex flex-wrap items-center gap-2.5">
           <span>
-            Time{" "}
-            <span className="text-mut">
-              (
-              {settings.time_zone === "Local"
-                ? "server local"
-                : settings.time_zone}
-              )
-            </span>
+            Time <span className="text-mut">({settings.time_zone})</span>
           </span>
           <select
             value={settings.hour}

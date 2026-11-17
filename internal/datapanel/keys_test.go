@@ -116,7 +116,7 @@ func TestSensitiveKeys(t *testing.T) {
 	if _, err := p.Query(ctx, agent, redisDB(reader), apitypes.DataQueryRequest{SQL: "GET session:1"}); CodeOf(err) != apitypes.CodeForbidden {
 		t.Fatalf("console for a masked caller: %v", err)
 	}
-	if s, err := p.Schema(ctx, agent, redisDB(reader)); err != nil || len(s.SensitiveKeys) != 1 {
+	if s, err := p.Schema(ctx, agent, redisDB(reader), ""); err != nil || len(s.SensitiveKeys) != 1 {
 		t.Fatalf("schema: %+v %v", s, err)
 	}
 }

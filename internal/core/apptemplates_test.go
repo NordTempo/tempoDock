@@ -62,6 +62,17 @@ func TestUseAppTemplate(t *testing.T) {
 	if _, err := h.c.UseAppTemplate(h.ctx, testSystem, env, "umami", apitypes.UseTemplateRequest{Name: "stats", Plan: true}); err != nil {
 		t.Fatalf("another name: %v", err)
 	}
+	// A hostname another service has is refused before anything is made:
+	// the template's references to its domain would break the first deploy.
+	for _, plan := range []bool{true, false} {
+		_, err := h.c.UseAppTemplate(h.ctx, testSystem, env, "umami", apitypes.UseTemplateRequest{Name: "stats", Domain: "stats.example.com", Plan: plan})
+		if CodeOf(err) != apitypes.CodeHostnameTaken || !strings.Contains(err.Error(), "--domain") {
+			t.Fatalf("taken hostname (plan %v): %v", plan, err)
+		}
+	}
+	if svcs, _ := h.c.ListServices(h.ctx, testSystem, env); len(svcs) != 3 {
+		t.Fatalf("a refused use created services: %d", len(svcs))
+	}
 }
 
 // Inputs reach their services (secrets sealed), unknown templates and
@@ -187,6 +198,15 @@ func TestOrgTemplates(t *testing.T) {
 	vars := h.revealed(ServiceRef{"shop", "staging", "api"})
 	if vars["STRIPE_KEY"] != "sk_test_2" || vars["DATABASE_URL"] != "${{api-db.DATABASE_URL}}" {
 		t.Fatalf("staging api variables: %v", vars)
+	}
+	// Saved again from staging, the parts lose the main's prefix and the
+	// reference orders the deploys, as Dock's own templates do.
+	if _, err := h.c.SaveAppTemplateFrom(h.ctx, testSystem, EnvRef{"shop", "staging"}, apitypes.SaveTemplateFromRequest{Name: "shop-again"}); err != nil {
+		t.Fatal(err)
+	}
+	again, _ := h.c.AppTemplateFile(h.ctx, testSystem, "shop-again")
+	if !strings.Contains(again, "name = 'db'") || !strings.Contains(again, "${{db.DATABASE_URL}}") || !strings.Contains(again, "depends_on = ['db']") || strings.Contains(again, "api-db") {
+		t.Fatalf("saved from staging:\n%s", again)
 	}
 
 	if _, err := h.c.SaveAppTemplate(h.ctx, testSystem, apitypes.SaveTemplateRequest{File: strings.Replace(file, "name = 'shop-stack'", "name = 'umami'", 1)}); CodeOf(err) != apitypes.CodeConflict {

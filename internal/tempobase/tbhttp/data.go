@@ -60,8 +60,11 @@ func registerData(s *server, a huma.API) {
 	})
 	authed(s, a, dataOp(huma.Operation{
 		OperationID: "get-data-schema", Method: http.MethodGet, Path: dataPathT + "/schema",
-	}), func(ctx context.Context, act tempobase.Actor, in *ConnPath) (*out[apitypes.DataSchema], error) {
-		return reply(s.app.DataSchema(ctx, act, in.Connection))
+	}), func(ctx context.Context, act tempobase.Actor, in *struct {
+		ConnPath
+		Table string `query:"table" doc:"A table the caller looks for (name or schema.name): a cached schema without it is read again."`
+	}) (*out[apitypes.DataSchema], error) {
+		return reply(s.app.DataSchema(ctx, act, in.Connection, in.Table))
 	})
 	authed(s, a, dataOp(huma.Operation{
 		OperationID: "get-data-rows", Method: http.MethodGet, Path: dataPathT + "/tables/{table}/rows",

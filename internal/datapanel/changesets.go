@@ -254,7 +254,11 @@ func (p *Panel[D]) CreateChangeset(ctx context.Context, a Actor, db *Database[D]
 		if err := checkSensitiveChanges(tg, req.Changes); err != nil {
 			return apitypes.DataChangeset{}, err
 		}
-		if sql, err = tg.eng.Render(ctx, tg.t, req.Changes); err != nil {
+		err = rereadOnMiss(tg, func() (err error) {
+			sql, err = tg.eng.Render(ctx, tg.t, req.Changes)
+			return err
+		})
+		if err != nil {
 			return apitypes.DataChangeset{}, p.dataError(db, err)
 		}
 		what = summarizeChanges(req.Changes)

@@ -43,7 +43,9 @@ func (c *Core) scheduleOf(ctx context.Context, ss svcScope, set store.BackupSett
 		}
 	}
 	n := now()
-	next := later(backup.NextDue(out.Hour, since, n, time.Local), n)
+	// In the control plane's zone, like the hour, so a client prints both
+	// in one zone.
+	next := later(backup.NextDue(out.Hour, since, n, time.Local), n).In(time.Local)
 	out.NextAt = &next
 	return out, nil
 }

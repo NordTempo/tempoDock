@@ -211,9 +211,15 @@ POSTGRES_*).`,
 	return cmd
 }
 
-// schemaOf reads the database's schema.
-func schemaOf(ctx context.Context, s *session, data string) (apitypes.DataSchema, error) {
-	return get[apitypes.DataSchema](ctx, s, data+"/schema")
+// schemaOf reads the database's schema. With a table to find in it, the
+// server reads its catalog again when its cached one lacks it (made by a
+// migration a moment ago).
+func schemaOf(ctx context.Context, s *session, data, table string) (apitypes.DataSchema, error) {
+	path := data + "/schema"
+	if table != "" {
+		path += "?table=" + url.QueryEscape(table)
+	}
+	return get[apitypes.DataSchema](ctx, s, path)
 }
 
 func newDBTablesCmd(g *globals) *cobra.Command {
@@ -222,7 +228,7 @@ func newDBTablesCmd(g *globals) *cobra.Command {
 		Short: "List tables and views",
 		Args:  cobra.NoArgs,
 	}, func(ctx context.Context, s *session, _ target, data string, _ []string) error {
-		sc, err := schemaOf(ctx, s, data)
+		sc, err := schemaOf(ctx, s, data, "")
 		if err != nil {
 			return err
 		}
@@ -262,7 +268,11 @@ func newDBSchemaCmd(g *globals) *cobra.Command {
 		Long:    "Describe a table (schema.name, or a name in any schema), or every table without one.",
 		Args:    cobra.MaximumNArgs(1),
 	}, func(ctx context.Context, s *session, _ target, data string, args []string) error {
-		sc, err := schemaOf(ctx, s, data)
+		table := ""
+		if len(args) > 0 {
+			table = args[0]
+		}
+		sc, err := schemaOf(ctx, s, data, table)
 		if err != nil {
 			return err
 		}
@@ -503,7 +513,7 @@ func qualify(ctx context.Context, s *session, data, name string) (string, error)
 	if strings.Contains(name, ".") {
 		return name, nil
 	}
-	sc, err := schemaOf(ctx, s, data)
+	sc, err := schemaOf(ctx, s, data, name)
 	if err != nil {
 		return "", err
 	}
@@ -851,10 +861,17 @@ func queryError(e *apitypes.DataQueryError) error {
 	hint := strings.TrimSpace(strings.Join([]string{e.Detail, e.Hint}, "\n"))
 	exit := output.ExitError
 	switch {
-	case e.SQLState == "25006" || e.SQLState == "42501":
+	case e.SQLState == "25006":
 		exit = output.ExitAuth
 		if hint == "" {
 			hint = "Queries are read-only; change data with `dock db apply`."
+		}
+	case e.SQLState == "42501":
+		// Insufficient privilege: a masked reader selecting a sensitive
+		// column, or a function or table the reader roles aren't granted.
+		exit = output.ExitAuth
+		if hint == "" {
+			hint = "Your access can't read that. If it is a table, its sensitive columns are masked for you: select the other columns (`dock db schema TABLE` marks them)."
 		}
 	case strings.HasPrefix(e.SQLState, "42"):
 		exit = output.ExitUsage
@@ -1499,12 +1516,23 @@ visible reveal them with ` + "`dock db rows TABLE --reveal`" + `, which is audit
 	list := dbCmd(g, &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List sensitive columns",
+		Short:   "List sensitive columns (or, on Redis, key patterns)",
 		Args:    cobra.NoArgs,
 	}, func(ctx context.Context, s *session, _ target, data string, _ []string) error {
-		sc, err := schemaOf(ctx, s, data)
+		sc, err := schemaOf(ctx, s, data, "")
 		if err != nil {
 			return err
+		}
+		if sc.Keyspace != nil || sc.SensitiveKeys != nil {
+			// A key-value database: its patterns, as `set --keys` prints
+			// them, so a new one can be added to the list it replaces.
+			patterns := append([]string{}, sc.SensitiveKeys...)
+			return g.io.Print(patterns, func() error {
+				for _, p := range patterns {
+					_, _ = fmt.Fprintln(g.io.Out, p)
+				}
+				return nil
+			})
 		}
 		cols := []apitypes.DataColumnRef{}
 		for _, tb := range sc.Tables {
@@ -1524,7 +1552,8 @@ visible reveal them with ` + "`dock db rows TABLE --reveal`" + `, which is audit
 		Long: `Replace the whole list with the columns named (a bare table name is looked
 up, Postgres's public schema first), or empty it with --clear. On Redis, --keys takes key patterns (globs such as
 session:*): matching keys are masked for callers who see sensitive values
-masked, and read only with an audited --reveal by the others.`,
+masked, and read only with an audited --reveal by the others. The patterns
+given replace the list: ` + "`dock db sensitive list`" + ` shows the current one.`,
 		Example: `  dock db sensitive set users.password_hash users.email
   dock db sensitive set --keys 'session:*' 'auth:*'
   dock db sensitive set --clear`,

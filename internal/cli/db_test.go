@@ -119,6 +119,8 @@ func TestDBQueryErrors(t *testing.T) {
 					`{"type":"error","error":{"message":"relation \"nope\" does not exist","sqlstate":"42P01","position":15}}`)(w, r)
 			case strings.Contains(string(b), "delete"):
 				ndjsonReply(`{"type":"error","error":{"message":"cannot execute DELETE in a read-only transaction","sqlstate":"25006"}}`)(w, r)
+			case strings.Contains(string(b), "email"):
+				ndjsonReply(`{"type":"error","error":{"message":"permission denied for table orders","sqlstate":"42501"}}`)(w, r)
 			case strings.Contains(string(b), "forbidden"):
 				problemReply(403, apitypes.CodeForbidden, "reading data needs level read; built-in default: role:deploy has none on production")(w, r)
 			default:
@@ -133,6 +135,7 @@ func TestDBQueryErrors(t *testing.T) {
 	}{
 		{"select * from nope", output.ExitUsage, `relation "nope" does not exist (SQLSTATE 42P01) at character 15`},
 		{"delete from t", output.ExitAuth, "dock db apply"},
+		{"select email from orders", output.ExitAuth, "select the other columns"},
 		{"forbidden", output.ExitAuth, "role:deploy has none on production"},
 		{"down", output.ExitUnreachable, "dock db status"},
 	}
@@ -273,5 +276,38 @@ func TestTokenDataFlags(t *testing.T) {
 	}
 	if code, _, _ := exec(t, "token", "update", "7", "--data-production", "all"); code != int(output.ExitUsage) {
 		t.Errorf("invalid level = %d, want usage", code)
+	}
+}
+
+// On Redis, `sensitive list` shows the key patterns `set --keys`
+// replaces, so a new one can be added to the list.
+func TestDBSensitiveListKeys(t *testing.T) {
+	setup(t)
+	newFakeAPI(t, map[string]http.HandlerFunc{
+		"GET " + dbPath + "/schema": jsonReply(apitypes.DataSchema{
+			Tables: []apitypes.DataTable{}, Keyspace: []apitypes.DataKeyspaceDB{{}}, SensitiveKeys: []string{"session:*", "auth:*"},
+		}),
+	})
+	if code, stdout, stderr := exec(t, dbArgs("db", "sensitive", "list")...); code != 0 || stdout != "session:*\nauth:*\n" {
+		t.Fatalf("list: exit %d\n%s%s", code, stdout, stderr)
+	}
+	if got := ok[[]string](t, dbArgs("db", "sensitive", "list")...); strings.Join(got, ",") != "session:*,auth:*" {
+		t.Fatalf("--json = %q", got)
+	}
+}
+
+// `db schema TABLE` names the table it looks for, so the server reads a
+// cached schema that lacks it (a migration's new table) again.
+func TestDBSchemaNamesTheTable(t *testing.T) {
+	setup(t)
+	var query string
+	newFakeAPI(t, map[string]http.HandlerFunc{
+		"GET " + dbPath + "/schema": func(w http.ResponseWriter, r *http.Request) {
+			query = r.URL.RawQuery
+			jsonReply(apitypes.DataSchema{Tables: []apitypes.DataTable{{Schema: "app", Name: "users"}}})(w, r)
+		},
+	})
+	if code, _, stderr := exec(t, dbArgs("db", "schema", "users")...); code != 0 || query != "table=users" {
+		t.Fatalf("schema users: exit %d, query %q\n%s", code, query, stderr)
 	}
 }

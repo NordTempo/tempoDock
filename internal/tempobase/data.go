@@ -58,13 +58,14 @@ func (a *App) SetupData(ctx context.Context, act Actor, name string) (apitypes.D
 	return info, err
 }
 
-// DataSchema returns the database's structure. Needs level schema.
-func (a *App) DataSchema(ctx context.Context, act Actor, name string) (apitypes.DataSchema, error) {
+// DataSchema returns the database's structure; table, when set, is one
+// the caller looks for (datapanel's Schema). Needs level schema.
+func (a *App) DataSchema(ctx context.Context, act Actor, name, table string) (apitypes.DataSchema, error) {
 	db, err := a.dataDB(ctx, act, name)
 	if err != nil {
 		return apitypes.DataSchema{}, err
 	}
-	return a.panel.Schema(ctx, act.panelActor(), db)
+	return a.panel.Schema(ctx, act.panelActor(), db, table)
 }
 
 // DataRows returns one keyset page of a table. Needs level read.

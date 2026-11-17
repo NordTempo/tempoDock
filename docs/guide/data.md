@@ -78,13 +78,20 @@ dock db saved run open-orders
   cursor for the next one is printed on stderr. Row counts are estimates
   (`~N`); tables never analysed are counted exactly when small, else `?`.
   `--count` counts exactly.
+- The table list is cached for a minute. A table you name that it lacks
+  (one a migration just made) is looked up again at once, and a restore
+  into the service drops the cache.
 - Filters: `col=value`, `col=op:value` (`eq ne lt lte gt gte like ilike in`),
   `col=is_null`, `col=not_null`. Anything fancier is SQL.
 - `query` runs one statement in a read-only transaction: 1 000 rows by
   default (`-n`, at most 100 000), a 10 s timeout (`--timeout`, at most
   60 s), at most 64 MB, cells over 8 KB cut. Results stream as they arrive;
   `--json` prints the API's NDJSON frames (header, rows, then end or error).
-- Writes in `query` fail (exit 3). Change data with changesets.
+- Writes in `query` fail: a statement that isn't a read is refused before
+  it runs (exit 2), and a write inside a read (`WITH ... DELETE`, a
+  function that writes) fails in the read-only transaction (exit 3).
+  Selecting a sensitive column your access masks fails too (exit 3).
+  Change data with changesets.
 - MySQL and MariaDB: `query` runs reads only (`SELECT`, `WITH`, `SHOW`,
   `DESCRIBE`, `EXPLAIN`, `TABLE`, `VALUES`), never locking reads (`FOR
   UPDATE`, `FOR SHARE`) or executable comments (`/*! */`); named locks a
@@ -126,7 +133,8 @@ dock db query 'ZRANGE board 0 9 REV WITHSCORES' --db 0
 - Key names need level `read`, like rows: they often hold IDs and
   emails.
 - Sensitive keys are patterns an admin marks (`dock db sensitive set
-  --keys 'session:*'`, or Sensitive keys in the Keys view). Callers who
+  --keys 'session:*'`, which replaces the list `dock db sensitive list`
+  shows, or Sensitive keys in the Keys view). Callers who
   see sensitive values masked get matching keys by pattern, not name, and
   no console (Redis ACLs can't deny a pattern, so the console could read
   what the list masks); the others read them with an audited reveal

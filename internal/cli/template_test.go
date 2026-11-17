@@ -1,13 +1,16 @@
 package cli
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/cli/output"
 	"github.com/NordTempo/tempoDock/internal/clientconfig"
+	"github.com/NordTempo/tempoDock/internal/node"
 )
 
 // `dock template`: list and show the catalog, plan and print a file
@@ -46,6 +49,16 @@ func TestTemplateCommands(t *testing.T) {
 	}
 	if code, _, stderr := exec(t, append([]string{"template", "use", "grafana", "--set", "nope"}, env...)...); code != 2 || !strings.Contains(stderr, "KEY=VALUE") {
 		t.Fatalf("bad --set: %d %s", code, stderr)
+	}
+	// A first deploy that fails exits deploy_failed, like `dock deploy`.
+	srv.rt.FailHealthCheck(func(s node.ContainerSpec) error {
+		if s.Env["APP_SECRET"] != "" { // umami, not its database
+			return errors.New("connection refused")
+		}
+		return nil
+	})
+	if code, _, stderr := exec(t, append([]string{"template", "use", "umami", "--name", "broken"}, env...)...); code != int(output.ExitDeployFailed) || !strings.Contains(stderr, "dock diagnose") {
+		t.Fatalf("failed first deploy: exit %d\n%s", code, stderr)
 	}
 }
 

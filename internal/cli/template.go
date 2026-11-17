@@ -313,7 +313,7 @@ edit and apply with ` + "`dock apply`" + `.`,
 				}
 				res.Releases = rels
 			}
-			return g.io.Print(res, func() error {
+			err = g.io.Print(res, func() error {
 				g.io.Successf("Created %s in %s/%s", strings.Join(res.Services, ", "), t.Project, t.Environment)
 				for _, r := range res.Releases {
 					g.printNotLive(r.Service, r)
@@ -326,6 +326,10 @@ edit and apply with ` + "`dock apply`" + `.`,
 				}
 				return nil
 			})
+			if err != nil {
+				return err
+			}
+			return firstFailure(cmd.Context(), s, res.Releases)
 		},
 	}
 	f.add(cmd, needEnvironment)

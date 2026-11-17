@@ -118,7 +118,7 @@ func printBackups(g *globals, b apitypes.ServiceBackups) error {
 		g.io.Warnf("%s", b.Warning)
 	}
 	if !b.OffBox {
-		g.io.Warnf("Backups stay on the service's server. Send them off-box with `dock backup configure --repository s3:...`.")
+		g.io.Warnf("Backups stay on the service's server. Add a bucket with `dock storage add`, then `dock backup move --storage <name>`.")
 	}
 	if len(b.Runs) == 0 {
 		g.io.Detail("No backups yet. Run one with `dock backup run`.")
@@ -136,12 +136,18 @@ func scheduleText(s apitypes.BackupSchedule) string {
 	if !s.Enabled {
 		return "off"
 	}
-	out := fmt.Sprintf("daily at %02d:00", s.Hour)
+	// The hour is the control plane's, and NextAt comes in its zone too:
+	// both print in it, never one converted to this machine's.
+	zone := ""
+	if s.NextAt != nil {
+		zone = " " + s.NextAt.Format("MST")
+	}
+	out := fmt.Sprintf("daily at %02d:00%s", s.Hour, zone)
 	if s.DefaultHour {
 		out += " (install default)"
 	}
 	if s.NextAt != nil {
-		out += ", next " + s.NextAt.Local().Format("Mon 15:04")
+		out += ", next " + s.NextAt.Format("Mon 15:04")
 	}
 	return out
 }
@@ -542,7 +548,7 @@ func controlPlaneText(cp apitypes.ControlPlaneBackup) string {
 		}
 	}
 	if cp.NextAt != nil {
-		out += ", next " + cp.NextAt.Local().Format("Mon 15:04")
+		out += ", next " + cp.NextAt.Format("Mon 15:04 MST") // the control plane's zone, as its hour
 	}
 	return out
 }

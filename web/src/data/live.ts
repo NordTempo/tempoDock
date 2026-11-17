@@ -723,6 +723,10 @@ function invalidateForAudit(
   // 0073).
   if (kind === "status_page" || kind === "incident") invalidate(statusPagesKey);
   if (kind === "data") return invalidateForData(queryClient, audit);
+  // An organization template saved or removed (from the CLI too): the
+  // picker's list (features/templates/data.ts) holds them with Dock's.
+  if (audit.action === "template.save" || audit.action === "template.remove")
+    invalidate(["app-templates"]);
   // The install's settings and the control plane's own backups.
   if (kind === "backup" && !audit.project) invalidate(backupSettingsKey);
   if (kind === "registry") invalidate(registryKey);

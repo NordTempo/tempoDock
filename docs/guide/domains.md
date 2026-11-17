@@ -119,7 +119,9 @@ dock domain add www.example.com --redirect-to example.com
 ```
 
 Permanent `308` redirect to the other hostname, keeping path and query.
-Typical: `www` → apex. A redirect domain gets its own certificate.
+Typical: `www` → apex. A redirect domain gets its own certificate. A
+redirect that Dock's other redirects would lead back from (a loop) is
+refused.
 
 A hostname in a connected Cloudflare zone can also redirect to any URL at
 Cloudflare's edge, with no service and no server involved

@@ -182,6 +182,18 @@ func interrupted(err error, rels []apitypes.Release) error {
 	}
 }
 
+// firstFailure is releaseFailure for the first of rels that didn't go
+// live, so a command that started several deploys exits deploy_failed
+// (or deploy_canceled) when one didn't.
+func firstFailure(ctx context.Context, s *session, rels []apitypes.Release) error {
+	for _, r := range rels {
+		if err := releaseFailure(ctx, s, r); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // releaseFailure explains a failed or canceled release and what to do
 // next, or returns nil when r went live. A canceled one (ADR 0086) exits
 // deploy_canceled, not deploy_failed: nothing went wrong.

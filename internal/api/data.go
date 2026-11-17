@@ -23,7 +23,7 @@ type dataCore interface {
 	DataInfo(ctx context.Context, a core.Actor, ref core.ServiceRef) (apitypes.DataInfo, error)
 	UpdateDatabaseSettings(ctx context.Context, a core.Actor, ref core.ServiceRef, req apitypes.UpdateDatabaseSettingsRequest) (apitypes.Service, error)
 	SetupData(ctx context.Context, a core.Actor, ref core.ServiceRef) (apitypes.DataInfo, error)
-	DataSchema(ctx context.Context, a core.Actor, ref core.ServiceRef) (apitypes.DataSchema, error)
+	DataSchema(ctx context.Context, a core.Actor, ref core.ServiceRef, table string) (apitypes.DataSchema, error)
 	DataRows(ctx context.Context, a core.Actor, ref core.ServiceRef, req apitypes.DataPageRequest) (apitypes.DataPage, error)
 	DataKeys(ctx context.Context, a core.Actor, ref core.ServiceRef, req apitypes.DataKeysRequest) (apitypes.DataKeyPage, error)
 	DataKey(ctx context.Context, a core.Actor, ref core.ServiceRef, req apitypes.DataKeyRequest) (apitypes.DataKeyValue, error)
@@ -118,8 +118,11 @@ func registerData(s *Server, a huma.API) {
 	})
 	authed(s, a, dataOp(huma.Operation{
 		OperationID: "get-data-schema", Method: http.MethodGet, Path: dataPathT + "/schema",
-	}), func(ctx context.Context, actor core.Actor, in *ServicePath) (*out[apitypes.DataSchema], error) {
-		return reply(s.dataAPI().DataSchema(ctx, actor, in.ref()))
+	}), func(ctx context.Context, actor core.Actor, in *struct {
+		ServicePath
+		Table string `query:"table" doc:"A table the caller looks for (name or schema.name): a cached schema without it is read again."`
+	}) (*out[apitypes.DataSchema], error) {
+		return reply(s.dataAPI().DataSchema(ctx, actor, in.ref(), in.Table))
 	})
 	authed(s, a, dataOp(huma.Operation{
 		OperationID: "get-data-rows", Method: http.MethodGet, Path: dataPathT + "/tables/{table}/rows",

@@ -59,6 +59,10 @@ func newControlPlane(t *testing.T) *controlPlane {
 		"builds/work/build-1/x":    "transient",
 		"uploads/abc.tar":          "transient",
 		"railpack/cache":           "cache",
+		"scan/syft-d11d066006ed":   "syft",
+		"scan/database.tar.zst":    "imported vulnerability database",
+		"probe/dock-probe":         "probe",
+		"sboms/1.json.gz":          "sbom",
 		MovedFile:                  "{}",
 		".link.key.tmp-1":          "half written",
 	} {
@@ -139,7 +143,7 @@ func TestRestoreRoundTrip(t *testing.T) {
 			t.Errorf("%s: mode %o", hdr.Name, hdr.Mode)
 		}
 	}
-	for _, left := range []string{"data/uploads/abc.tar", "data/builds/work/build-1/x", "data/railpack/cache", "data/" + MovedFile, "data/.link.key.tmp-1", "data/dock.db-wal"} {
+	for _, left := range []string{"data/uploads/abc.tar", "data/builds/work/build-1/x", "data/railpack/cache", "data/scan/syft-d11d066006ed", "data/probe/dock-probe", "data/" + MovedFile, "data/.link.key.tmp-1", "data/dock.db-wal"} {
 		if names[left] {
 			t.Errorf("%s is in the archive", left)
 		}
@@ -154,7 +158,7 @@ func TestRestoreRoundTrip(t *testing.T) {
 	if got != m {
 		t.Errorf("restored manifest %+v, want %+v", got, m)
 	}
-	for _, name := range []string{SecretKeyFile, remote.ControlPlaneKeyFile, "registry.key", "builds/7.log", "builds/7-container.jsonl"} {
+	for _, name := range []string{SecretKeyFile, remote.ControlPlaneKeyFile, "registry.key", "builds/7.log", "builds/7-container.jsonl", "sboms/1.json.gz", "scan/database.tar.zst"} {
 		same(t, filepath.Join(cp.dir, name), filepath.Join(to.DataDir, name))
 	}
 	same(t, filepath.Join(cp.registry, "docker/registry/v2/blobs/sha256/ab/data"), filepath.Join(to.RegistryDir, "docker/registry/v2/blobs/sha256/ab/data"))

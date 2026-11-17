@@ -37,6 +37,11 @@ const (
 	MaxConns       = 8
 	// SchemaTTL is how long an introspection result is reused.
 	SchemaTTL = 60 * time.Second
+	// SchemaReread is how old a cached introspection must be before a
+	// table it lacks reads it again (Tables.RereadSchema): a table made
+	// since (a migration) is found at once, and a name that doesn't exist
+	// costs at most one catalog read this often.
+	SchemaReread = 5 * time.Second
 	// ReadLockTimeout is lock_timeout for reads; reads also get the
 	// request's statement timeout (apitypes.DataQueryTimeout by default).
 	ReadLockTimeout = time.Second
@@ -300,6 +305,10 @@ type Tables interface {
 	// Schema introspects the database with one catalog query, cached for
 	// SchemaTTL. sensitive marks columns in the result.
 	Schema(ctx context.Context, t Target, c Call, sensitive []apitypes.DataColumnRef) (apitypes.DataSchema, error)
+	// RereadSchema drops the service's cached introspection unless it was
+	// read less than SchemaReread ago, and reports whether the next read
+	// is a new one: called when a table a caller names isn't in it.
+	RereadSchema(serviceID int64) bool
 	// Page reads one keyset page. Core has applied defaults and limits to
 	// req.Limit. Next (and req.After) are the engine's own cursors, which
 	// hold the last row's key values in the clear: core seals them before

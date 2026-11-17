@@ -160,14 +160,15 @@ func (c *Core) SetupData(ctx context.Context, a Actor, ref ServiceRef) (apitypes
 	return info, err
 }
 
-// DataSchema returns the database's structure, sensitive columns marked.
+// DataSchema returns the database's structure, sensitive columns marked;
+// table, when set, is one the caller looks for (datapanel's Schema).
 // Needs level schema.
-func (c *Core) DataSchema(ctx context.Context, a Actor, ref ServiceRef) (apitypes.DataSchema, error) {
+func (c *Core) DataSchema(ctx context.Context, a Actor, ref ServiceRef, table string) (apitypes.DataSchema, error) {
 	db, err := c.dataDB(ctx, a, ref)
 	if err != nil {
 		return apitypes.DataSchema{}, err
 	}
-	return c.panel.Schema(ctx, panelActor(a), db)
+	return c.panel.Schema(ctx, panelActor(a), db, table)
 }
 
 // DataRows returns one keyset page of a table. Needs level read; cursors

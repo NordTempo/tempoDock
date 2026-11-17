@@ -288,3 +288,46 @@ func (h *harness) generatedHost(ref ServiceRef) string {
 	}
 	return out[0]
 }
+
+// A redirect that Dock's other redirects lead back from is refused,
+// naming the one that closes the loop; one that ends somewhere is fine.
+func TestRedirectLoopRefused(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "web:1", Port: 3000})
+	add := func(host, to string) error {
+		_, err := h.c.AddDomain(h.ctx, testSystem, web, apitypes.AddDomainRequest{Hostname: host, RedirectTo: to})
+		return err
+	}
+	for _, d := range [][2]string{{"a.example.com", "b.example.com"}, {"b.example.com", "c.example.com"}} {
+		if err := add(d[0], d[1]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := add("c.example.com", "a.example.com"); CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), "b.example.com redirects back to c.example.com") {
+		t.Fatalf("a loop through two redirects: %v", err)
+	}
+	if err := add("x.example.com", "a.example.com"); err != nil {
+		t.Fatalf("a chain that ends: %v", err)
+	}
+}
+
+// A generated domain without DNS names the one wildcard record that
+// serves every generated domain, not a record of its own.
+func TestGeneratedDomainNamesTheWildcard(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	h.rt.SetDomainCheck(func(host string) node.DomainCheck {
+		return node.DomainCheck{ExpectedIPs: []string{"203.0.113.10"}, Error: host + " has no DNS records yet; add an A record pointing at this server"}
+	})
+	if _, err := h.c.GenerateDomain(h.ctx, testSystem, web); err != nil {
+		t.Fatal(err)
+	}
+	ss, _ := h.c.serviceFor(h.ctx, testSystem, web, apitypes.ScopeRead, "testing")
+	rows, _ := h.store.ListDomainsByService(h.ctx, ss.svc.ID)
+	var dnsOK time.Time
+	h.c.checkDomain(h.ctx, rows[0], &dnsOK)
+	ds, err := h.c.ListDomains(h.ctx, testSystem, web)
+	if err != nil || ds[0].Status != apitypes.DomainWaitingForDNS || !strings.Contains(ds[0].StatusReason, "add the wildcard record *.apps.test A 203.0.113.10") {
+		t.Fatalf("generated domain: %v %+v", err, ds)
+	}
+}

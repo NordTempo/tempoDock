@@ -367,6 +367,22 @@ func (p *Panel[D]) withGrants(ctx context.Context, tg *target[D], fn func() erro
 	return fn()
 }
 
+// rereadOnMiss runs fn and, when it names a table the cached schema
+// lacks (data.ErrNoTable), has the engine read the catalog again and runs
+// fn once more: the table may be newer than the cache (a migration, a
+// restore). Engines without tables, and a cache read less than
+// data.SchemaReread ago, leave fn's error as it is.
+func rereadOnMiss[D any](tg *target[D], fn func() error) error {
+	err := fn()
+	if !errors.Is(err, data.ErrNoTable) {
+		return err
+	}
+	if t, ok := tg.eng.(data.Tables); !ok || !t.RereadSchema(tg.t.ServiceID) {
+		return err
+	}
+	return fn()
+}
+
 // Info returns the database's panel state and the caller's access; UsedBy
 // is empty for the host to fill. The database is only contacted for
 // callers with level schema or Manage; others get what the host knows
@@ -501,8 +517,10 @@ func (p *Panel[D]) Setup(ctx context.Context, a Actor, db *Database[D]) (apitype
 }
 
 // Schema returns the database's structure, sensitive columns marked.
-// Needs level schema.
-func (p *Panel[D]) Schema(ctx context.Context, a Actor, db *Database[D]) (apitypes.DataSchema, error) {
+// table, when set, is a table the caller looks for (bare or
+// schema.name): a cached schema without it is read again
+// (rereadOnMiss). Needs level schema.
+func (p *Panel[D]) Schema(ctx context.Context, a Actor, db *Database[D], table string) (apitypes.DataSchema, error) {
 	tg, err := p.ready(ctx, db, apitypes.LevelSchema, "reading the schema")
 	if err != nil {
 		return apitypes.DataSchema{}, err
@@ -520,7 +538,19 @@ func (p *Panel[D]) Schema(ctx context.Context, a Actor, db *Database[D]) (apityp
 	if err != nil {
 		return apitypes.DataSchema{}, err
 	}
-	s, err := t.Schema(ctx, tg.t, tg.call(a, false), tg.sensitive)
+	var s apitypes.DataSchema
+	err = rereadOnMiss(tg, func() (err error) {
+		if s, err = t.Schema(ctx, tg.t, tg.call(a, false), tg.sensitive); err != nil || table == "" {
+			return err
+		}
+		if !slices.ContainsFunc(s.Tables, func(tb apitypes.DataTable) bool { return tb.Name == table || tb.Schema+"."+tb.Name == table }) {
+			return data.ErrNoTable
+		}
+		return nil
+	})
+	if errors.Is(err, data.ErrNoTable) {
+		err = nil // the caller says it isn't there
+	}
 	return s, p.dataError(db, err)
 }
 
@@ -551,16 +581,21 @@ func (p *Panel[D]) Rows(ctx context.Context, a Actor, db *Database[D], req apity
 	if req.Reveal && db.Perm.Sensitive != apitypes.SensitiveVisible {
 		return apitypes.DataPage{}, forbidden("revealing sensitive columns needs sensitive visible; yours are masked (%s)", Why(db.Perm))
 	}
-	if req.Table, err = qualifyTable(ctx, t, tg, tg.call(a, false), req.Table); err != nil {
-		return apitypes.DataPage{}, p.dataError(db, err)
-	}
 	if req.After, err = p.openCursor(a, db.ID, req.After); err != nil {
 		return apitypes.DataPage{}, err
 	}
 	var page apitypes.DataPage
-	err = p.withGrants(ctx, tg, func() (err error) {
-		page, err = t.Page(ctx, tg.t, tg.call(a, req.Reveal), req)
-		return err
+	name := req.Table
+	err = rereadOnMiss(tg, func() error {
+		table, err := qualifyTable(ctx, t, tg, tg.call(a, false), name)
+		if err != nil {
+			return err
+		}
+		req.Table = table
+		return p.withGrants(ctx, tg, func() (err error) {
+			page, err = t.Page(ctx, tg.t, tg.call(a, req.Reveal), req)
+			return err
+		})
 	})
 	if err != nil {
 		return page, p.dataError(db, err)
@@ -594,9 +629,11 @@ func (p *Panel[D]) References(ctx context.Context, a Actor, db *Database[D], req
 		return nil, err
 	}
 	var refs []apitypes.DataReferences
-	err = p.withGrants(ctx, tg, func() (err error) {
-		refs, err = t.References(ctx, tg.t, tg.call(a, false), req)
-		return err
+	err = rereadOnMiss(tg, func() error {
+		return p.withGrants(ctx, tg, func() (err error) {
+			refs, err = t.References(ctx, tg.t, tg.call(a, false), req)
+			return err
+		})
 	})
 	if err != nil {
 		return nil, p.dataError(db, err)

@@ -36638,6 +36638,8 @@ export interface operations {
             query?: {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
+                /** @description A table the caller looks for (name or schema.name): a cached schema without it is read again. */
+                table?: string;
             };
             header?: {
                 /** @description Expected project identity for linked clients */

@@ -53904,6 +53904,16 @@
               "description": "Service name",
               "type": "string"
             }
+          },
+          {
+            "description": "A table the caller looks for (name or schema.name): a cached schema without it is read again.",
+            "explode": false,
+            "in": "query",
+            "name": "table",
+            "schema": {
+              "description": "A table the caller looks for (name or schema.name): a cached schema without it is read again.",
+              "type": "string"
+            }
           }
         ],
         "responses": {

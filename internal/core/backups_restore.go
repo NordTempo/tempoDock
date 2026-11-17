@@ -241,6 +241,9 @@ func (r *restore) run(ctx context.Context, to svcScope, target backup.Source, mo
 func (r *restore) finish(ctx context.Context, err error) {
 	c := r.c
 	c.releaseService(r.from.svc.ID) // before the row says finished, as in runBackup
+	// The copy's schema was cached when its first release went live,
+	// before the dump filled it: the Data panel reads it again.
+	c.panel.Forget(r.to.svc.ID)
 	if ctx.Err() != nil {
 		return // shutting down: the next start marks it failed
 	}

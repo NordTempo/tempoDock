@@ -16,6 +16,22 @@ import (
 // snapshots into a new service; an in-place restore replaces a service's
 // data and is left to a human (CLI or UI), so no tool offers it.
 
+// inPlaceOnly words RestoreSnapshot's refusal err for agents when the
+// service isn't a template database: its snapshots restore only in
+// place, which this server doesn't offer, so a person runs it. Any other
+// error is returned as it is.
+func (h *handler) inPlaceOnly(ctx context.Context, c *call, ref core.ServiceRef, snapshot int64, err error) error {
+	if core.CodeOf(err) != apitypes.CodeValidation {
+		return err
+	}
+	svc, gerr := h.core.GetService(ctx, c.Actor, ref)
+	if gerr != nil || svc.Template != apitypes.TemplateNone {
+		return err
+	}
+	return mcpkit.Invalid("%s isn't a template database, so its snapshots restore only in place, replacing its volumes, and in-place restores need a person: ask them to run `dock volume snapshot restore %d --in-place -p %s -e %s -s %s`",
+		ref, snapshot, ref.Project, ref.Environment, ref.Service)
+}
+
 // addSnapshotTools registers list_snapshots, create_snapshot and
 // restore_snapshot.
 func (h *handler) addSnapshotTools(s *mcpkit.Server[core.Actor]) {
@@ -102,7 +118,7 @@ func (h *handler) addSnapshotTools(s *mcpkit.Server[core.Actor]) {
 			}
 			res, err := h.core.RestoreSnapshot(ctx, c.Actor, ref, in.Snapshot, apitypes.RestoreSnapshotRequest{As: in.As})
 			if err != nil {
-				return mcpkit.Reply{}, err
+				return mcpkit.Reply{}, h.inPlaceOnly(ctx, c, ref, in.Snapshot, err)
 			}
 			ss, err := h.waitSnapshots(ctx, c, ref, wait, func(ss apitypes.ServiceSnapshots) bool {
 				r, ok := findRestore(ss, res.Restore.ID)

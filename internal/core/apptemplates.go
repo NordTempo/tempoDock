@@ -120,7 +120,8 @@ func (c *Core) GetAppTemplate(ctx context.Context, a Actor, name string) (apityp
 // UseAppTemplate creates a template's services in an environment, or with
 // req.Plan says what it would create. Needs deploy (read to plan), like
 // creating a service. Every service it names must be new: a name that is
-// taken is refused with the --name that avoids it. After the services
+// taken is refused with the --name that avoids it, and a hostname
+// another service has with the --domain that does. After the services
 // exist, a domain or first deploy that fails is listed in Failed rather
 // than undoing them; they deploy like any other service once it's fixed.
 func (c *Core) UseAppTemplate(ctx context.Context, a Actor, ref EnvRef, name string, req apitypes.UseTemplateRequest) (apitypes.UseTemplateResult, error) {
@@ -168,10 +169,13 @@ func (c *Core) UseAppTemplate(ctx context.Context, a Actor, ref EnvRef, name str
 		// "kept", they are just not its concern.
 		ep.kept = nil
 		for _, m := range ep.manual {
-			if m.Kind == apitypes.PlanDomain && m.Name == "" {
-				// The template's references to its domain would break the
-				// first deploy.
+			// The template's references to its domain would break the
+			// first deploy.
+			switch {
+			case m.Kind == apitypes.PlanDomain && m.Name == "":
 				return nil, ep, invalid("%s's server has no base domain to generate a hostname for %s from; give it a hostname (--domain)", es, ex.Main)
+			case m.Kind == apitypes.PlanDomain:
+				return nil, ep, errf(apitypes.CodeHostnameTaken, "%s; give %s another hostname with --domain", strings.TrimSuffix(m.Note, "; use another hostname"), ex.Main)
 			}
 		}
 		return le, ep, err

@@ -140,7 +140,7 @@ type Stream[T any] func(ctx context.Context, ready func(), send func(...T) error
 type Ops[A, R any] interface {
 	DataInfo(ctx context.Context, a A, ref R) (apitypes.DataInfo, error)
 	SetupData(ctx context.Context, a A, ref R) (apitypes.DataInfo, error)
-	DataSchema(ctx context.Context, a A, ref R) (apitypes.DataSchema, error)
+	DataSchema(ctx context.Context, a A, ref R, table string) (apitypes.DataSchema, error)
 	DataRows(ctx context.Context, a A, ref R, req apitypes.DataPageRequest) (apitypes.DataPage, error)
 	DataReferences(ctx context.Context, a A, ref R, req apitypes.DataReferencesRequest) ([]apitypes.DataReferences, error)
 	DataQuery(ctx context.Context, a A, ref R, req apitypes.DataQueryRequest) (Stream[apitypes.DataQueryFrame], error)

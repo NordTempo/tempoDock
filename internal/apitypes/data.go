@@ -382,8 +382,9 @@ const (
 )
 
 // DataSchema is a database's structure (GET /data/schema), from one catalog
-// query cached for 60 s. Tables are sorted by schema, then name; system
-// schemas are left out.
+// query cached for 60 s (read again for a table a caller names that it
+// lacks). Tables are sorted by schema, then name; system schemas are left
+// out.
 type DataSchema struct {
 	Tables []DataTable `json:"tables"`
 	// Keyspace is a key-value database's logical databases (Redis), in

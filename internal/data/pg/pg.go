@@ -163,6 +163,17 @@ func unsupported(info data.ServerInfo) error {
 	return fmt.Errorf("%w: Postgres %s is older than 14; the data panel needs Postgres 14 or later", data.ErrUnsupported, info.Version)
 }
 
+// RereadSchema implements data.Tables.
+func (e *Engine) RereadSchema(serviceID int64) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if cat := e.schemas[serviceID]; cat != nil && time.Since(cat.readAt) < data.SchemaReread {
+		return false
+	}
+	delete(e.schemas, serviceID)
+	return true
+}
+
 // Forget closes the service's idle connections (busy ones close when
 // released) and drops its cached schema.
 func (e *Engine) Forget(serviceID int64) {

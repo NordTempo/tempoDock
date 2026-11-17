@@ -86,6 +86,32 @@ func (c *Core) domainsOf(ctx context.Context, ss svcScope) ([]apitypes.Domain, e
 	return out, nil
 }
 
+// maxRedirectHops bounds how far checkRedirectLoop follows redirects.
+const maxRedirectHops = 8
+
+// checkRedirectLoop refuses host redirecting to target when Dock's own
+// redirects lead from target back to host: browsers would bounce between
+// them until they give up. It follows routing (verified) domains, at most
+// maxRedirectHops queries.
+func (c *Core) checkRedirectLoop(ctx context.Context, host, target string) error {
+	next := target
+	for range maxRedirectHops {
+		d, err := c.store.GetDomainByHostname(ctx, next)
+		switch {
+		case store.IsNotFound(err):
+			return nil
+		case err != nil:
+			return err
+		case d.RedirectTo == "":
+			return nil
+		case d.RedirectTo == host:
+			return invalid("redirecting %s to %s would loop: %s redirects back to %s. Remove that redirect first, or redirect to another hostname", host, target, d.Hostname, host)
+		}
+		next = d.RedirectTo
+	}
+	return nil
+}
+
 // envIngress is the ingress of the server an environment runs on.
 func (c *Core) envIngress(ctx context.Context, es envScope) (serverIngress, error) {
 	srv, err := c.store.GetServer(ctx, es.env.ServerID)
@@ -115,6 +141,9 @@ func (c *Core) AddDomain(ctx context.Context, a Actor, ref ServiceRef, req apity
 		}
 		if redirect == host {
 			return apitypes.DomainChange{}, invalid("a domain can't redirect to itself")
+		}
+		if err := c.checkRedirectLoop(ctx, host, redirect); err != nil {
+			return apitypes.DomainChange{}, err
 		}
 	}
 	if req.Analytics != "" && req.Analytics != "keep" && req.Analytics != "new" {
@@ -155,7 +184,7 @@ func (c *Core) cloudflareZoneFor(ctx context.Context, a Actor, ss svcScope, host
 	if err != nil {
 		return nil, err
 	}
-	if err := checkClaims(claims, ss, host); err != nil {
+	if err := checkClaims(claims, ss.project.OrgID, host); err != nil {
 		return nil, err
 	}
 	srv, err := c.store.GetServer(ctx, ss.env.ServerID)
@@ -214,11 +243,18 @@ func (c *Core) GenerateDomain(ctx context.Context, a Actor, ref ServiceRef) (api
 }
 
 // checkNewDomain refuses host for a service before anything is set up
-// for it: an archived service, the webhook hostname, Dock's address.
+// for it: an archived service, or one of Dock's own names (checkOwnHost).
 func (c *Core) checkNewDomain(ss svcScope, host string) error {
-	switch {
-	case ss.svc.ArchivedAt != nil:
+	if ss.svc.ArchivedAt != nil {
 		return invalid("service %s is archived", ss)
+	}
+	return c.checkOwnHost(host)
+}
+
+// checkOwnHost refuses a hostname Dock answers itself: the webhook
+// hostname, Dock's address, a public analytics dashboard or a status page.
+func (c *Core) checkOwnHost(host string) error {
+	switch {
 	case host == c.cfg.Hooks.PublicHost:
 		return errf(apitypes.CodeHostnameTaken, "%s is this server's webhook hostname ([hooks] public_host); use another hostname", host)
 	case host == c.publicHost():
@@ -259,7 +295,7 @@ func (c *Core) addDomain(ctx context.Context, a Actor, ss svcScope, host, redire
 		if err != nil {
 			return err
 		}
-		if err := checkClaims(claims, ss, host); err != nil {
+		if err := checkClaims(claims, ss.project.OrgID, host); err != nil {
 			return err
 		}
 		if redirect, err := q.RedirectHostnameExists(ctx, host); err != nil {
@@ -456,7 +492,7 @@ func (c *Core) toDomain(ss svcScope, d store.Domain, siblings []store.Domain, in
 		out.CheckedAt, out.ResolvedIPs = &check.at, check.resolved
 	}
 	c.checksMu.Unlock()
-	if d.Generated && ing.baseDomain != "" && strings.HasSuffix(d.Hostname, "."+ing.baseDomain) {
+	if d.Generated && underBase(d.Hostname, ing.baseDomain) {
 		return out // covered by the wildcard record for the base domain
 	}
 	if ing.mode == apitypes.IngressCloudflareTunnel {
@@ -478,6 +514,20 @@ func (c *Core) toDomain(ss svcScope, d store.Domain, siblings []store.Domain, in
 		}
 	}
 	return out
+}
+
+// wildcardRecords is the wildcard DNS record a server's generated domains
+// need, as text: "*.apps.example.com A 203.0.113.10", one per public IP.
+func wildcardRecords(ing serverIngress) string {
+	name := "*." + ing.baseDomain
+	if len(ing.publicIPs) == 0 {
+		return name + " pointing at this server"
+	}
+	recs := make([]string, len(ing.publicIPs))
+	for i, ip := range ing.publicIPs {
+		recs[i] = name + " " + ipRecordType(ip) + " " + ip
+	}
+	return strings.Join(recs, " and ")
 }
 
 func (c *Core) kickDomains() {
@@ -680,6 +730,10 @@ func (c *Core) checkDomain(ctx context.Context, d store.Domain, dnsOK *time.Time
 			// The node's advice is for records to its IP; this one goes
 			// through the tunnel.
 			reason = fmt.Sprintf("%s doesn't reach this server through its Cloudflare tunnel yet; DNS can take a minute, else check that dock-cloudflared runs on it", d.Hostname)
+		case len(check.ResolvedIPs) == 0 && underBase(d.Hostname, ing.baseDomain):
+			// The node's advice is a record per hostname; under the base
+			// domain one wildcard serves them all.
+			reason = fmt.Sprintf("%s has no DNS records yet; add the wildcard record %s, which covers every generated domain on this server", d.Hostname, wildcardRecords(ing))
 		case reason == "":
 			reason = fmt.Sprintf("%s resolves to %v; expected %v", d.Hostname, check.ResolvedIPs, check.ExpectedIPs)
 		}

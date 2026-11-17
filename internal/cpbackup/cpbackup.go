@@ -116,12 +116,22 @@ type Source struct {
 
 // skipData are data dir entries never archived: the live database (the
 // snapshot replaces it), transient uploads and build contexts, Railpack's
-// tool cache, the moved marker, staged updates (ADR 0028), and a node's
-// own identity.
+// tool cache, the moved marker, staged updates (ADR 0028), the health
+// probe and volume copier dock unpacks from itself (ADR 0043, 0063), and
+// a node's own identity. Syft binaries copied out of the scanner image
+// (scanTool) are left out too; SBOMs and an imported vulnerability
+// database are kept, an operator's upload can't be fetched again.
 var skipData = map[string]bool{
 	DBFile: true, DBFile + "-wal": true, DBFile + "-shm": true, DBFile + "-journal": true,
-	"uploads": true, "railpack": true, "builds/work": true, MovedFile: true, "update": true,
+	"uploads": true, "railpack": true, "builds/work": true, MovedFile: true, "update": true, "probe": true,
 	remote.NodeKeyFile: true, remote.NodeKeyFile + ".next": true, remote.StateFile: true,
+}
+
+// scanTool reports whether rel is a scanner binary in the data dir
+// (scan/syft-<hash>, internal/node/docker's syftBinary): about 90 MB,
+// copied out of the scanner image again on the next scan.
+func scanTool(rel string) bool {
+	return strings.HasPrefix(rel, "scan/syft-")
 }
 
 // Write writes an archive of src to w: the manifest, the config, the data
@@ -168,7 +178,7 @@ func Write(ctx context.Context, w io.Writer, src Source) (Manifest, error) {
 		return m, err
 	}
 	if err := addTree(ctx, tw, src.DataDir, dataPrefix, func(rel string) bool {
-		return skipData[rel] || rel == AnalyticsFile || rel == AnalyticsInfoFile || strings.HasPrefix(path.Base(rel), ".")
+		return skipData[rel] || scanTool(rel) || rel == AnalyticsFile || rel == AnalyticsInfoFile || strings.HasPrefix(path.Base(rel), ".")
 	}); err != nil {
 		return m, err
 	}
