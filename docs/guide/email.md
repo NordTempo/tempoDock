@@ -56,7 +56,11 @@ With email set up and a public address, **Forgot password?** on the
 sign-in page emails a link that sets a new password. It works once, for
 an hour; the answer is the same whether or not the address has an
 account. Setting the password signs the person out everywhere and keeps
-their second factors. Without email, the page says to ask an operator
+their second factors. On an account made from an invite link, which
+never proved its email (whoever held the link set it up), the first
+reset link is the email's owner taking the account: the second factors,
+recovery codes and tokens set up before are removed too, as a first
+single sign-on does. Without email, the page says to ask an operator
 (`dock user reset-password`).
 
 ## Security notices

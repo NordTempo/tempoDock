@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -16,8 +17,11 @@ import (
 // bearer secret kept only as its SHA-256; it works once, for an hour, and
 // a newer one replaces it. Setting the password ends every session and
 // `dock login` token, keeps the account's second factors, and sends a
-// security notice. It proves the account's email (ssoUser). Offered only while passwords sign in and email can
-// carry a link (canEmailLinks).
+// security notice. It proves the account's email (ssoUser): on an account
+// whose email was never proven (made from an invite, by whoever held its
+// code) the link is its owner taking it, so what was set up on it goes
+// too, as a single sign-on's takeOver removes it. Offered only while
+// passwords sign in and email can carry a link (canEmailLinks).
 
 // PasswordResetTTL is how long a reset link works.
 const PasswordResetTTL = time.Hour
@@ -92,7 +96,9 @@ func (c *Core) PasswordReset(ctx context.Context, code, clientIP string) (apityp
 // ResetPasswordWithLink sets a new password with a reset link's code,
 // spending it, and ends every session and `dock login` token of the
 // account. It doesn't sign in: the person signs in with the new
-// password, and their second factor if they have one.
+// password, and their second factor if they have one. An account whose
+// email it proves for the first time loses the second factors, recovery
+// codes and tokens set up on it before (dropSetUp).
 func (c *Core) ResetPasswordWithLink(ctx context.Context, code string, req apitypes.PasswordResetRequest, clientIP string) error {
 	if !c.loginLimit.AllowIP(clientIP, now()) {
 		return errf(apitypes.CodeRateLimited, "too many attempts; wait a minute and try again")
@@ -116,7 +122,8 @@ func (c *Core) ResetPasswordWithLink(ctx context.Context, code string, req apity
 		return err
 	}
 	u := row.User
-	var revoked int64
+	var revoked, factors, tokens int64
+	took := false
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		if _, err := q.UsePasswordReset(ctx, store.UsePasswordResetParams{UsedAt: ptr(now()), ID: row.PasswordReset.ID}); store.IsNotFound(err) {
 			return errResetGone
@@ -130,8 +137,16 @@ func (c *Core) ResetPasswordWithLink(ctx context.Context, code string, req apity
 			return err
 		}
 		// The link reached the mailbox: its owner holds the account now.
-		if _, err := q.ProveUserEmail(ctx, u.ID); err != nil {
+		n, err := q.ProveUserEmail(ctx, u.ID)
+		if err != nil {
 			return err
+		}
+		if took = n > 0; took {
+			// Proven for the first time: whoever set the account up
+			// before keeps no way in.
+			if factors, tokens, err = dropSetUp(ctx, q, u.ID); err != nil {
+				return err
+			}
 		}
 		revoked, err = endUserAccess(ctx, q, u.ID, 0)
 		return err
@@ -140,7 +155,11 @@ func (c *Core) ResetPasswordWithLink(ctx context.Context, code string, req apity
 		return err
 	}
 	c.endOrphanedRequests(ctx)
-	c.audit(ctx, userActor(u), "user.password_reset", nil, nil, u.Email, "set a new password with an emailed link from "+clientIP+"; sessions ended"+revokedNote(revoked))
+	summary := "set a new password with an emailed link from " + clientIP + "; sessions ended" + revokedNote(revoked)
+	if took {
+		summary += fmt.Sprintf("; the link proved the account's email for the first time, so the %d second factors, the recovery codes and the %d tokens set up on it before were removed", factors, tokens)
+	}
+	c.audit(ctx, userActor(u), "user.password_reset", nil, nil, u.Email, summary)
 	c.securityNotice(ctx, u, "Your Tempo Dock password was changed", "")
 	return nil
 }

@@ -82,7 +82,7 @@ apps: Dock receives nothing.
 | Offered | While passwords sign in, email is set up and Dock has a public address (`GET /auth/methods` says `password_reset`); otherwise "Forgot password?" says who resets passwords |
 | Asking | `POST /auth/password-reset {email}`, public, rate limited like logins. The answer is the same whether or not the address has an account; a disabled account gets nothing. Audited `user.password_reset_sent` |
 | The link | `<public address>/reset-password/dpr_...`, 256 random bits kept as SHA-256 in `password_resets`; it works once, for an hour, and a newer link, a password change or an operator's reset replaces it. Links go a day after they expire |
-| Using it | `POST /auth/password-reset/{code} {password}` sets the password (the usual rule), spends the link, ends every session and `dock login` token, keeps second factors, sends a notice. It doesn't sign in: the person signs in with the new password and their second factor |
+| Using it | `POST /auth/password-reset/{code} {password}` sets the password (the usual rule), spends the link, ends every session and `dock login` token, keeps second factors, sends a notice. It doesn't sign in: the person signs in with the new password and their second factor. Amended 2026-11-17: on an account whose email the link proves for the first time (made from an invite), what was set up before goes too: second factors, recovery codes and tokens, as a single sign-on's takeover removes them ([0065](0065-sign-in-is-the-platforms.md)) |
 | Limits | Reset links count against the per-address limit (10 an hour); security notices and alerts don't |
 
 ### Security notices and access requests

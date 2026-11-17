@@ -594,19 +594,13 @@ func (c *Core) takeOver(ctx context.Context, p store.SsoProvider, who ssoPerson,
 		if err := q.SetUserPassword(ctx, store.SetUserPasswordParams{PasswordHash: hash, ID: u.ID}); err != nil {
 			return err
 		}
-		if factors, err = q.DeleteUserFactors(ctx, u.ID); err != nil {
-			return err
-		}
-		if err := q.DeleteRecoveryCodes(ctx, u.ID); err != nil {
-			return err
-		}
 		if err := q.DeleteUnusedPasswordResets(ctx, u.ID); err != nil {
 			return err
 		}
 		if logins, err = endUserAccess(ctx, q, u.ID, 0); err != nil {
 			return err
 		}
-		if tokens, err = q.RevokeUserTokens(ctx, store.RevokeUserTokensParams{Now: ptr(now()), UserID: &u.ID}); err != nil {
+		if factors, tokens, err = dropSetUp(ctx, q, u.ID); err != nil {
 			return err
 		}
 		err = q.CreateSSOIdentity(ctx, store.CreateSSOIdentityParams{ProviderID: p.ID, Subject: who.subject, UserID: u.ID, Email: who.email, CreatedAt: now()})
@@ -627,6 +621,26 @@ func (c *Core) takeOver(ctx context.Context, p store.SsoProvider, who ssoPerson,
 		"gave %s to the owner of its email, who signed in through %s (%s): the account was made from an invite and its email never proven, so its sessions ended, its password was replaced, %d second factors and its recovery codes were removed and %d tokens revoked%s",
 		u.Email, p.Label, p.Name, factors, tokens, revokedNote(logins)))
 	return u, nil
+}
+
+// dropSetUp removes what whoever set up an account whose email was never
+// proven may have left on it, in q's transaction, when its email's owner
+// takes it (a single sign-on, takeOver; a reset link, which reached the
+// mailbox): its second factors and recovery codes, and the tokens made
+// from it. It returns how many factors and tokens. Sessions and `dock
+// login` tokens are the caller's to end (endUserAccess).
+func dropSetUp(ctx context.Context, q *store.Queries, userID int64) (factors, tokens int64, err error) {
+	if factors, err = q.DeleteUserFactors(ctx, userID); err != nil {
+		return 0, 0, err
+	}
+	if err := q.DeleteRecoveryCodes(ctx, userID); err != nil {
+		return 0, 0, err
+	}
+	if err := q.ClearFactorFailures(ctx, userID); err != nil {
+		return 0, 0, err
+	}
+	tokens, err = q.RevokeUserTokens(ctx, store.RevokeUserTokensParams{Now: ptr(now()), UserID: &userID})
+	return factors, tokens, err
 }
 
 // ssoNewUser creates the account of a person p vouched for, with an

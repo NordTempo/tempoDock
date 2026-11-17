@@ -166,3 +166,82 @@ func countEmail(t *testing.T, h *harness, kind string) int {
 	}
 	return n
 }
+
+// resetWithLink asks for a reset link for email, reads it from the mail
+// that brings it (other mail to the address aside) and sets password
+// with it.
+func resetWithLink(t *testing.T, h *harness, srv *mailtest.Server, email, password string) {
+	t.Helper()
+	before := len(srv.Messages())
+	if err := h.c.RequestPasswordReset(h.ctx, email, "198.51.100.1"); err != nil {
+		t.Fatal(err)
+	}
+	link := regexp.MustCompile(`/reset-password/(dpr_[A-Za-z0-9_-]+)`)
+	var code []string
+	waitFor(t, func() bool {
+		for _, m := range srv.Messages()[before:] {
+			if code = link.FindStringSubmatch(strings.ReplaceAll(m.Data, "=\r\n", "")); code != nil {
+				return true
+			}
+		}
+		return false
+	})
+	if err := h.c.ResetPasswordWithLink(h.ctx, code[1], apitypes.PasswordResetRequest{Password: password}, "198.51.100.1"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// An account made from an invite never proved its email: whoever held
+// the invite's code set it up. A reset link reaches the mailbox, so the
+// first one is the email's owner taking the account, as a single sign-on
+// does (takeOver): the second factors, recovery codes and tokens set up
+// before go with the sessions. A proven account's reset keeps its
+// factors, as it always did.
+func TestResetLinkTakesAnUnprovenAccount(t *testing.T) {
+	h, srv, _ := emailHarness(t)
+	freshLimits(h)
+	admin := h.in(h.member("ann@x", map[string]apitypes.Scope{"test": apitypes.ScopeAdmin}), "test")
+	inv, err := h.c.CreateInvite(h.ctx, admin, apitypes.CreateInviteRequest{Email: "vic@example.com", Role: apitypes.ScopeAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := h.c.SignUpWithInvite(h.ctx, inv.Code, apitypes.InviteSignUpRequest{Name: "Vic", Password: "the inviter's password"}, testClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	early := session(t, h, res.Secret)
+	addTOTP(t, h, early)
+	early = session(t, h, early.secret)
+	tok, err := h.c.CreateToken(h.ctx, h.in(early.a, "test"), apitypes.CreateTokenRequest{Name: "kept", Scope: apitypes.ScopeDeploy})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resetWithLink(t, h, srv, "vic@example.com", "the owner's own password")
+	if n, err := h.store.CountUserFactors(h.ctx, early.a.UserID); err != nil || n != 0 {
+		t.Fatalf("second factors left on the account: %d, %v", n, err)
+	}
+	if n, err := h.store.CountRecoveryCodes(h.ctx, early.a.UserID); err != nil || n != 0 {
+		t.Fatalf("recovery codes left on the account: %d, %v", n, err)
+	}
+	if _, err := h.c.AuthenticateToken(h.ctx, tok.Secret, ""); CodeOf(err) != apitypes.CodeUnauthorized {
+		t.Fatalf("a token made before the reset: %v", err)
+	}
+	if _, err := h.c.AuthenticateSession(h.ctx, early.secret, "", false); CodeOf(err) != apitypes.CodeUnauthorized {
+		t.Fatalf("a session from before the reset: %v", err)
+	}
+	if in, err := h.c.Login(h.ctx, "vic@example.com", "the owner's own password", testClient); err != nil || in.Pending {
+		t.Fatalf("the owner signing in: pending %v, %v", in.Pending, err)
+	}
+
+	// Proven now: the owner's own second factor survives their next reset.
+	owner, err := h.c.Login(h.ctx, "vic@example.com", "the owner's own password", testClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	addTOTP(t, h, session(t, h, owner.Secret))
+	resetWithLink(t, h, srv, "vic@example.com", "the owner's next password")
+	if in, err := h.c.Login(h.ctx, "vic@example.com", "the owner's next password", testClient); err != nil || !in.Pending {
+		t.Fatalf("a proven account's second factor after a reset: pending %v, %v", in.Pending, err)
+	}
+}
