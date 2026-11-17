@@ -17,7 +17,9 @@ import (
 // to its active release's host port, with the service's access protection
 // (ADR 0030), its requests counted (ADR 0033) and, for hostnames of an
 // analytics site, /_dock/a/* sent to the server's ingest tagged with the
-// site, service and release (ADR 0037); redirect domains redirect, and
+// site, service and release (ADR 0037); services that moved away are
+// forwarded with their domains, except generated ones under another
+// server's base (ADR 0063); redirect domains redirect, and
 // those of a stopped service answer 503 saying so (ADR 0050). Those of an
 // asleep environment ask the wake check first, and in environments that
 // sleep Dock's uptime probes aren't counted (sleep.go). On a direct
@@ -53,7 +55,22 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 	}
 	held := c.heldServices()
 	holdPorts := c.holdPorts(serverID)
+	var base string
+	if len(fwd) > 0 {
+		srv, err := c.store.GetServer(ctx, serverID)
+		if err != nil {
+			return err
+		}
+		base = c.ingressOf(srv).baseDomain
+	}
 	for _, f := range fwd {
+		// A generated name under another server's base never reaches
+		// this one. Routing it would only change this config when a move
+		// makes one (a later move's hold then reloads Caddy, and a reload
+		// drops requests on idle keep-alive connections).
+		if f.Generated && !underBase(f.Hostname, base) {
+			continue
+		}
 		held[f.ServiceID] = true
 		rows = append(rows, store.ListRoutableDomainsRow(f))
 	}

@@ -1142,30 +1142,38 @@ func (c *Core) moveStop(ctx context.Context, es envScope, m store.EnvironmentMov
 }
 
 // moveCopy copies what changed since the last live pass, with every
-// service stopped, and checks that each copy now equals its source.
+// service stopped, and checks that each copy now equals its source. The
+// services copy side by side (a service's volumes one after another):
+// requests are held for the slowest copy, not their sum.
 func (c *Core) moveCopy(ctx context.Context, es envScope, m store.EnvironmentMove, svcs []movingService) error {
 	src, dst, err := c.moveRuntimes(m)
 	if err != nil {
 		return err
 	}
+	var wg sync.WaitGroup
+	errs := make([]error, len(svcs))
 	for i := range svcs {
 		s := &svcs[i]
 		if !s.stateful() {
 			continue
 		}
-		for _, v := range s.vols {
-			for _, mode := range []syncMode{syncFinal, syncCheck} {
-				rep, err := c.syncVolume(ctx, s.ss, m, src, dst, v.DockerName, syncVolRoot, mode)
-				s.row.CopiedBytes += rep.bytes
-				if err != nil {
-					c.setMoveService(ctx, es, m, s, "failed", "", s.row.CopiedBytes, err.Error())
-					return fmt.Errorf("copy %s's volume %s: %w", s.ss.svc.Name, v.Name, err)
+		wg.Go(func() {
+			for _, v := range s.vols {
+				for _, mode := range []syncMode{syncFinal, syncCheck} {
+					rep, err := c.syncVolume(ctx, s.ss, m, src, dst, v.DockerName, syncVolRoot, mode)
+					s.row.CopiedBytes += rep.bytes
+					if err != nil {
+						c.setMoveService(ctx, es, m, s, "failed", "", s.row.CopiedBytes, err.Error())
+						errs[i] = fmt.Errorf("copy %s's volume %s: %w", s.ss.svc.Name, v.Name, err)
+						return
+					}
 				}
 			}
-		}
-		c.setMoveService(ctx, es, m, s, "copied", "", s.row.CopiedBytes, "")
+			c.setMoveService(ctx, es, m, s, "copied", "", s.row.CopiedBytes, "")
+		})
 	}
-	return nil
+	wg.Wait()
+	return errors.Join(errs...)
 }
 
 // tail keeps the last 4 KB written to it: a job's report and errors, safe
@@ -1191,29 +1199,27 @@ func (t *tail) String() string {
 	return string(t.b)
 }
 
-// moveStart starts every service's active release on the target, the
-// stateful ones first, each through its release's health check.
+// moveStart starts every service's active release on the target, each
+// through its release's health check: the stateful ones first, then the
+// rest. A tier's services start side by side, so the hold waits for the
+// slowest start of each tier, not the sum of them all.
 func (c *Core) moveStart(ctx context.Context, es envScope, m store.EnvironmentMove, svcs []movingService) error {
 	_, dst, err := c.moveRuntimes(m)
 	if err != nil {
 		return err
 	}
-	order := slices.Clone(svcs)
-	slices.SortStableFunc(order, func(a, b movingService) int {
-		switch {
-		case a.stateful() == b.stateful():
-			return 0
-		case a.stateful():
-			return -1
+	for _, stateful := range []bool{true, false} {
+		var wg sync.WaitGroup
+		errs := make([]error, len(svcs))
+		for i := range svcs {
+			s := &svcs[i]
+			if s.stateful() != stateful || !s.runs() {
+				continue
+			}
+			wg.Go(func() { errs[i] = c.startOnTarget(ctx, es, m, dst, s) })
 		}
-		return 1
-	})
-	for _, s := range order {
-		if !s.runs() {
-			continue
-		}
-		i := slices.IndexFunc(svcs, func(x movingService) bool { return x.ss.svc.ID == s.ss.svc.ID })
-		if err := c.startOnTarget(ctx, es, m, dst, &svcs[i]); err != nil {
+		wg.Wait()
+		if err := errors.Join(errs...); err != nil {
 			return err
 		}
 	}

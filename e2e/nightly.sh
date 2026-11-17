@@ -49,7 +49,8 @@ MAX_RUNTIME=${NIGHTLY_MAX_RUNTIME:-4h} # the whole cycle, teardown excluded
 LOCK_WAIT=${NIGHTLY_LOCK_WAIT:-5400}   # seconds to wait for /tmp/dock-heavy.lock
 SCENARIO_TIMEOUT=45m
 # SUITE is every scenario a night runs, in order: run.sh's, features.sh's,
-# release.sh's, then each app template (templates/*, listed at run time).
+# release.sh's, then each app template (templates/*, listed at run time),
+# and last drain.sh, which drains node2 with whatever the others left there.
 # Left out: traces.sh and metrics.sh (they start their own servers; release.sh's
 # traces covers tracing), analytics-*.sh (fixed container names and a
 # headless browser) and upgrade/run.sh (the update step here is the upgrade test).
@@ -60,6 +61,7 @@ SUITE=(
 	features/nodedown features/backup
 	release/traces release/status release/vulns release/data release/diagnose release/sleep
 	templates/all
+	drain/node2
 )
 
 say() { printf '[%s] %s\n' "$(date '+%F %T')" "$*"; }

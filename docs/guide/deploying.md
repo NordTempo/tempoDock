@@ -622,14 +622,18 @@ Cloudflare tunnels. Then:
 | prepare | Images, network and volumes are made on the target |
 | sync | Volumes and snapshots copy while the services keep running, in passes that each send only what changed |
 | stop | Caddy holds the environment's requests and its containers stop cleanly on the source |
-| copy | A last exact pass, then a check pass that must find no difference |
-| start | Every service starts on the target and passes its health check |
+| copy | A last exact pass, then a check pass that must find no difference; the services copy side by side |
+| start | Every service starts on the target and passes its health check: the ones with volumes first, each group side by side |
 | switch | The environment, routes, domains and placement point at the target, in one go; the hold ends |
 | cleanup | The source's containers go |
 
 Requests wait during the hold instead of failing. `--max-hold` (default
 30 s, 5 to 600) bounds it: a move whose final copy would not fit fails
-during sync, before anything stopped. A failure before the switch rolls
+during sync, before anything stopped. A pass sends a changed file whole,
+so the hold grows with the files written during the move, not with the
+volume: a settled 400 MB Postgres taking writes to a small table held
+requests for about 4 s on e2e servers, a freshly loaded one (autovacuum
+rewriting its new 400 MB table) for 13 s. A failure before the switch rolls
 back: the environment stays where it was, its data untouched. After the
 switch the source keeps forwarding the services' domains to the target
 until the source server is removed, so DNS can catch up; Cloudflare

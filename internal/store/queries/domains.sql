@@ -52,7 +52,7 @@ DELETE FROM domains WHERE id = +?;
 -- (0 if none), the service's access protection (mode '' when public), and
 -- its name and whether it is stopped (ADR 0050), and its environment,
 -- whether that is asleep and whether it may sleep (ADR 0070).
-SELECT domains.hostname, domains.redirect_to, domains.service_id,
+SELECT domains.hostname, domains.redirect_to, domains.service_id, domains.generated,
        services.name AS service_name,
        CAST(services.stopped_at IS NOT NULL AS BOOLEAN) AS stopped,
        environments.id AS environment_id, environments.project_id, projects.org_id,

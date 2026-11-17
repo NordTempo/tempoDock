@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -732,5 +733,95 @@ func TestMoveWithNestedBaseDomains(t *testing.T) {
 	slices.Sort(bases)
 	if want := []string{"example.dev", "lab.example.dev"}; !slices.Equal(bases, want) {
 		t.Errorf("generated domains under %v, want one under each of %v", bases, want)
+	}
+}
+
+// TestMoveCopiesServicesSideBySide: in the hold, the final copies of an
+// environment's stateful services run at the same time, so requests wait
+// for the slowest copy rather than the sum of them.
+func TestMoveCopiesServicesSideBySide(t *testing.T) {
+	p, lab, db, _, data := movePool(t)
+	cache := p.createService("staging", "cache", apitypes.CreateServiceRequest{Port: 6379})
+	if _, err := p.c.AddVolume(p.ctx, testSystem, cache, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
+		t.Fatal(err)
+	}
+	p.deploy(cache, "redis:8")
+	both := make(chan struct{})
+	var mu sync.Mutex
+	finals, together := 0, false
+	lab.OnJob(func(spec node.JobSpec) (node.JobResult, error) {
+		if spec.Script == moveSizeScript {
+			return node.JobResult{Output: "dock-move: kib 4\n"}, nil
+		}
+		// A final pass's sender: the first waits for the second.
+		if strings.Contains(spec.Script, " send ") && !strings.Contains(spec.Script, string(syncLive)) && !strings.Contains(spec.Script, string(syncCheck)) {
+			mu.Lock()
+			finals++
+			if finals == 2 {
+				together = true
+				close(both)
+			}
+			mu.Unlock()
+			select {
+			case <-both:
+			case <-time.After(2 * time.Second):
+			}
+		}
+		return node.JobResult{}, fake.ErrDefault
+	})
+	staging := EnvRef{"shop", "staging"}
+	if _, err := p.c.MoveEnvironment(p.ctx, testSystem, staging, apitypes.MoveEnvironmentRequest{To: p.ids2name("cp")}); err != nil {
+		t.Fatal(err)
+	}
+	if m := p.waitMove(staging); m.Status != apitypes.MoveSucceeded {
+		t.Fatalf("move = %+v", m)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !together {
+		t.Error("db's and cache's final copies ran one after the other")
+	}
+	if got := p.rt.VolumeData(p.volume(db, "data")); !bytes.Equal(got, data) {
+		t.Errorf("db's data on cp = %q", got)
+	}
+}
+
+// TestForwardLeavesOutOtherServersNames: the server a service moved away
+// from forwards its own generated name and its custom domains, not the
+// name the move made under the target's base: that would change its
+// config, and the next move's hold would reload its Caddy.
+func TestForwardLeavesOutOtherServersNames(t *testing.T) {
+	p, lab, _, web, _ := movePool(t)
+	cp := p.ids2name("cp")
+	for name, base := range map[string]string{"homelab": "lab.example.dev", cp: "cp.example.dev"} {
+		if _, err := p.c.UpdateServer(p.ctx, testSystem, name, apitypes.UpdateServerRequest{BaseDomain: ptr(base)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := p.c.GenerateDomain(p.ctx, testSystem, web); err != nil {
+		t.Fatal(err)
+	}
+	staging := EnvRef{"shop", "staging"}
+	if _, err := p.c.MoveEnvironment(p.ctx, testSystem, staging, apitypes.MoveEnvironmentRequest{To: cp}); err != nil {
+		t.Fatal(err)
+	}
+	if m := p.waitMove(staging); m.Status != apitypes.MoveSucceeded {
+		t.Fatalf("move = %+v", m)
+	}
+	// The next change on homelab (the hold of another move) renders its
+	// routes again.
+	if err := p.c.applyRoutes(p.ctx, p.ids["homelab"]); err != nil {
+		t.Fatal(err)
+	}
+	i := slices.IndexFunc(lab.Routes(), func(r node.Route) bool { return slices.Contains(r.Hostnames, "shop.example.com") })
+	if i < 0 {
+		t.Fatalf("homelab doesn't forward web: %+v", lab.Routes())
+	}
+	hosts := lab.Routes()[i].Hostnames
+	if !slices.ContainsFunc(hosts, generatedLike("web-shop-staging", "lab.example.dev").MatchString) {
+		t.Errorf("homelab forwards %v, without web's name under its own base", hosts)
+	}
+	if slices.ContainsFunc(hosts, generatedLike("web-shop-staging", "cp.example.dev").MatchString) {
+		t.Errorf("homelab forwards %v, with web's name under cp's base", hosts)
 	}
 }

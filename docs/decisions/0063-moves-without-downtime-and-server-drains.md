@@ -94,3 +94,25 @@ and the plan readable.
   with it when it is removed.
 - One migration: `server_drains`, `server_drain_items`, `server_forwards`,
   and the rebuilt `environment_moves` and `environment_move_services`.
+
+## Measured, and follow-ups (2026-11-17)
+
+A real drain on e2e servers (`e2e/drain.sh`: Postgres, Redis, a volume
+and stateless apps under GET and POST load) lost no request and no
+write. The final copies and the starts in the hold now run side by side
+per service. The hold follows the files written during the move,
+because a pass sends a changed file whole: a settled 400 MB Postgres
+taking writes to a small table held for about 4 s, and a freshly loaded
+one held for 13 s (autovacuum rewrote its new table, 1.6 GB copied). A
+busy database whose big tables or indexes take writes throughout fails
+in sync ("keeps changing faster"). That is safe, but it keeps it from
+moving. Two ways out, neither built:
+
+- **Block-level deltas in dock-sync:** the target sends each large
+  file's block hashes, and the source sends only the blocks that differ
+  (rsync's idea). It works for any engine, at the cost of a dock-sync
+  protocol change and reading every changed file on both sides.
+- **Postgres WAL catch-up:** a base copy, then WAL replay on the target
+  (the archiving of ADR 0093's point-in-time recovery), then a hold just
+  long enough to replay the tail. It is the escape hatch "Why this
+  shape" names, and the better path for Postgres.
