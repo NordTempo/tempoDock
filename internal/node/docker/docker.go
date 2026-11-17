@@ -17,6 +17,7 @@ import (
 	"maps"
 	"math"
 	"net/netip"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -446,6 +447,9 @@ func (r *Runtime) Start(ctx context.Context, spec node.ContainerSpec) (node.Cont
 	}
 	anon := node.AnonymousPaths(declared, spec.Mounts)
 	opts := createOptions(spec, r.Probe, anon)
+	if img.Config == nil || !ownInit(img.Config.Entrypoint, opts.Config.Cmd, img.Config.Cmd) {
+		opts.HostConfig.Init = new(true)
+	}
 	created, err := r.cli.ContainerCreate(ctx, opts)
 	if cerrdefs.IsConflict(err) {
 		return node.Container{}, fmt.Errorf("container name %q is already in use", spec.Name)
@@ -522,6 +526,36 @@ func NoSwap(memory int64) int64 {
 		return 0
 	}
 	return memory + 1
+}
+
+// ownInit reports whether a container's PID 1 is an init system of the
+// image's own, so it runs without Docker's init (HostConfig.Init): one
+// that must be PID 1 (s6-overlay's /init, systemd) or that already passes
+// signals on (tini, dumb-init). PID 1 is the entrypoint's first word, or
+// with none the command's: cmd as Dock runs it, else the image's.
+//
+// Every other app container runs under Docker's init, so a stop's SIGTERM
+// reaches the app: an app that is PID 1 itself (node, a shell's start
+// command) gets none of the kernel's default signal handling and ignores
+// SIGTERM, and each stop then waited the whole stop timeout, inside a
+// move's hold too (ADR 0063).
+func ownInit(entrypoint, cmd, imageCmd []string) bool {
+	first := entrypoint
+	switch {
+	case len(first) > 0:
+	case len(cmd) > 0:
+		first = cmd
+	default:
+		first = imageCmd
+	}
+	if len(first) == 0 {
+		return false
+	}
+	switch path.Base(first[0]) {
+	case "init", "systemd", "tini", "tini-static", "dumb-init", "docker-init", "catatonit", "s6-svscan":
+		return true
+	}
+	return false
 }
 
 // createOptions translates spec into Docker's create request. probe is the

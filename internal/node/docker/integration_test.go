@@ -865,3 +865,19 @@ func TestRemoveNetwork(t *testing.T) {
 		t.Fatalf("removing an unmanaged network: %v", err)
 	}
 }
+
+// An app that is PID 1 gets no default signal handling, so `sleep` as a
+// container's command ignores SIGTERM: under Docker's init it gets the
+// signal and stops at once instead of after the whole timeout.
+func TestStopReachesTheApp(t *testing.T) {
+	e := newEnv(t)
+	ctx := ctxTimeout(t, time.Minute)
+	c := e.start(node.ContainerSpec{Name: e.name("pid1"), Image: shellImage, Args: []string{"sleep", "600"}})
+	began := time.Now()
+	if err := e.Stop(ctx, c.ID, 20*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if d := time.Since(began); d > 5*time.Second {
+		t.Errorf("stop took %s: SIGTERM never reached the app", d)
+	}
+}
