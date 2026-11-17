@@ -16,11 +16,12 @@ import {
   useValidation,
 } from "../create/form";
 import { useRestoreSnapshot } from "./data";
-import { pointName, type RestorePoint, restoredName } from "./points";
+import { isEmpty, pointName, type RestorePoint, restoredName } from "./points";
 
 /**
  * The one restore dialog (ADR 0061), for a backup or a snapshot alike. It
- * names the point by kind, age and size. A template database restores
+ * names the point by kind, age and size, and warns when the point is
+ * empty (failed ones never get here). A template database restores
  * into a new service (the name is editable) and the live one is not
  * touched; any other service restores a snapshot in place, with a safety
  * snapshot first. Loaded when it opens.
@@ -90,12 +91,22 @@ export default function RestoreDialog({
       >
         <p className="text-sec">
           The {point.kind} from {ago(point.at)} ({day(point.at)}{" "}
-          {clock(point.at)}), {size(point.size)}, {point.where}
+          {clock(point.at)}), {isEmpty(point) ? "empty" : size(point.size)},{" "}
+          {point.server ? `server ${point.server}` : point.where}
           {point.kind === "snapshot" && point.snapshot.note
             ? `: ${point.snapshot.note}`
             : ""}
           .
         </p>
+        {isEmpty(point) && (
+          <p className="text-warn">
+            This {point.kind} holds no data (0 B):{" "}
+            {intoNew
+              ? "the new service would start empty."
+              : `${ref.service} would be left empty.`}{" "}
+            Pick a point with a size instead.
+          </p>
+        )}
         {intoNew ? (
           <>
             {/* Two steps, said before the first: nothing live changes yet. */}
