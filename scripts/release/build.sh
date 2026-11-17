@@ -5,6 +5,8 @@
 #   dock-linux-{amd64,arm64}            server binary with the UI, dock-probe and dock-sync embedded
 #   dock-cli-{darwin,linux}-{arm64,amd64}  CLI only (-tags dockcli)
 #   dock-install-VERSION.tar.gz         deploy/ (install.sh, systemd units, VERSION)
+#   install.sh                          deploy/install.sh on its own, for `curl | sudo bash`:
+#                                       it fetches and checks the rest of its release
 #   install-cli.sh                      CLI installer for laptops and CI
 #   tempobase-linux-{amd64,arm64}       tempoBase with its UI embedded (ADR 0024);
 #                                       the release workflow builds its image from them
@@ -75,5 +77,8 @@ tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owne
   --mode='u+rwX,go+rX,go-w' -C "$stage" -cf - deploy | gzip -9n > "dist/dock-install-$version.tar.gz"
 
 cp scripts/release/install-cli.sh dist/
+sed "s/^RELEASE_VERSION=\"\"\$/RELEASE_VERSION=\"$version\"/" deploy/install.sh > dist/install.sh
+grep -q "^RELEASE_VERSION=\"$version\"\$" dist/install.sh || { echo "error: could not pin install.sh to $version" >&2; exit 1; }
+chmod 0755 dist/install.sh
 (cd dist && sha256sum -- * > SHA256SUMS)
 echo "dist/SHA256SUMS"

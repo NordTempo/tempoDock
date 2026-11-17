@@ -17,6 +17,16 @@
 		file_server
 	}
 
+	# The one-line installs (README, install.sh, the console): the latest
+	# release's scripts, which check everything they download against the
+	# release's signed SHA256SUMS. 302, so a new release takes over at once.
+	handle /install.sh {
+		redir https://github.com/NordTempo/tempoDock/releases/latest/download/install.sh 302
+	}
+	handle /cli.sh {
+		redir https://github.com/NordTempo/tempoDock/releases/latest/download/install-cli.sh 302
+	}
+
 	handle {
 		redir {$CONSOLE_URL:https://console.nordtempo.com}{uri} 308
 	}
