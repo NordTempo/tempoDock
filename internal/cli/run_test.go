@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/cli/output"
@@ -117,5 +118,19 @@ func TestRunExitWithoutAShell(t *testing.T) {
 	var oe *output.Error
 	if !errors.As(err, &oe) || !strings.Contains(oe.Hint, "no /bin/sh") {
 		t.Fatalf("err = %#v", err)
+	}
+}
+
+// Right after a daemon restart a service on a server that hasn't
+// reconnected has no state yet: unknown, not "none (last known)".
+func TestServiceStateBeforeItsServerReconnects(t *testing.T) {
+	never := apitypes.Service{Status: apitypes.ServiceStatus{State: apitypes.ServiceNone, ServerOffline: true, ServerStatus: apitypes.ServerOffline}}
+	if got := serviceState(never); got != "unknown" {
+		t.Errorf("never reported: %q", got)
+	}
+	at := time.Now()
+	seen := apitypes.Service{Status: apitypes.ServiceStatus{State: apitypes.ServiceRunning, ServerOffline: true, UpdatedAt: &at}}
+	if got := serviceState(seen); got != "running (last known)" {
+		t.Errorf("reported before: %q", got)
 	}
 }

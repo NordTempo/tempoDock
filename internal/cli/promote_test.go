@@ -105,3 +105,18 @@ func TestRollbackSkipsCopiesOfTheLiveRelease(t *testing.T) {
 		t.Fatalf("rollback copied release %d (%s), want 1", back.FromRelease, back.ImageRef)
 	}
 }
+
+// A validation error the API answers names the flag, not the request
+// field behind it.
+func TestValidationErrorsNameFlags(t *testing.T) {
+	setup(t)
+	srv := newTestServer(t)
+	t.Setenv(clientconfig.EnvURL, srv.url)
+	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeDeploy])
+	exec(t, "project", "create", "shop")
+	exec(t, "service", "create", "web", "-p", "shop", "-e", "production", "--image", "web:1")
+	code, _, stderr := exec(t, "service", "update", "web", "-p", "shop", "-e", "production", "--pre-deploy-timeout", "2h")
+	if code != int(output.ExitUsage) || !strings.Contains(stderr, "--pre-deploy-timeout (in seconds): expected number <= 3600") || strings.Contains(stderr, "body.") {
+		t.Fatalf("exit %d: %s", code, stderr)
+	}
+}

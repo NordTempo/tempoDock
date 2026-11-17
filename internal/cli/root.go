@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
 
+	"github.com/NordTempo/tempoDock/internal/cli/apiclient"
 	"github.com/NordTempo/tempoDock/internal/cli/output"
 	"github.com/NordTempo/tempoDock/internal/clientconfig"
 	"github.com/NordTempo/tempoDock/internal/version"
@@ -62,11 +64,39 @@ func run(ctx context.Context, args []string, io *output.IO) int {
 		return int(code) // `dock run`: the command's own status, nothing to print
 	}
 	io.JSON = g.json
+	if p, ok := errors.AsType[*apiclient.Problem](err); ok {
+		flagLocations(cmd, p)
+	}
 	if _, ok := errors.AsType[*output.Error](err); !ok && !g.started {
 		err = &output.Error{Exit: output.ExitUsage, Err: err, Hint: fmt.Sprintf("Run `%s --help` for usage.", cmd.CommandPath())}
 	}
 	io.PrintError(err)
 	return int(output.ExitCodeOf(err))
+}
+
+// flagLocations names the command's flags in p's validation errors where
+// a request field is one ("body.pre_deploy_timeout_seconds" is
+// --pre-deploy-timeout, in seconds): the API's field names mean nothing
+// to someone who typed flags.
+func flagLocations(cmd *cobra.Command, p *apiclient.Problem) {
+	for i, d := range p.Errors {
+		_, field, ok := strings.Cut(d.Location, ".")
+		if !ok || strings.Contains(field, ".") {
+			continue
+		}
+		name := strings.ReplaceAll(field, "_", "-")
+		for _, suffix := range []string{"", "-seconds", "-mb"} {
+			base, cut := strings.CutSuffix(name, suffix)
+			if !cut || cmd.Flags().Lookup(base) == nil {
+				continue
+			}
+			p.Errors[i].Location = "--" + base
+			if unit := strings.TrimPrefix(suffix, "-"); unit != "" {
+				p.Errors[i].Location += " (in " + map[string]string{"seconds": "seconds", "mb": "MB"}[unit] + ")"
+			}
+			break
+		}
+	}
 }
 
 // newRoot is the `dock` command with every subcommand, sharing g.

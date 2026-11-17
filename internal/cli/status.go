@@ -68,6 +68,8 @@ func serviceState(svc apitypes.Service) string {
 	switch {
 	case svc.ArchivedAt != nil:
 		return "archived"
+	case svc.Status.ServerOffline && svc.Status.UpdatedAt == nil:
+		return "unknown" // nothing reported since the daemon started
 	case svc.Status.ServerOffline:
 		return runState(svc.Status) + " (last known)"
 	}
@@ -108,6 +110,9 @@ func serverNote(svc apitypes.Service) string {
 	s := svc.Status
 	if !s.ServerOffline || svc.ArchivedAt != nil {
 		return ""
+	}
+	if s.UpdatedAt == nil {
+		return fmt.Sprintf("%s is %s: its state is unknown until it reconnects", serverWords(s.Server), s.ServerStatus)
 	}
 	return fmt.Sprintf("%s is %s: last known %s", serverWords(s.Server), s.ServerStatus, runState(s))
 }
