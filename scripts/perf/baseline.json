@@ -355,6 +355,11 @@
       "bytes_op": 2152,
       "allocs_op": 25
     },
+    "node/caddy.BenchmarkApplyRoutesSwitch/routes=500,io=disk": {
+      "ns_op": 14503972,
+      "bytes_op": 1596616,
+      "allocs_op": 4210
+    },
     "node/caddy.BenchmarkRender/routes=500,tls=false": {
       "ns_op": 573079,
       "bytes_op": 546623,
@@ -364,6 +369,11 @@
       "ns_op": 601109,
       "bytes_op": 577046,
       "allocs_op": 2591
+    },
+    "node/caddy.BenchmarkRender/routes=500,tls=true,keyed": {
+      "ns_op": 724605,
+      "bytes_op": 642704,
+      "allocs_op": 3027
     },
     "node/docker.BenchmarkLineWriter": {
       "ns_op": 6354,

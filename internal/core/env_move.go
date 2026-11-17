@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -1045,13 +1046,20 @@ func (c *Core) runningRuns(svcs []movingService) int {
 // still run in the environment to end.
 const moveRunsWait = 5 * time.Minute
 
+// moveDrain is how long a hold lets requests already sent to the source's
+// containers finish before they stop, once the routes point at the hold's
+// ports: one timer per move. It counts toward the hold's time.
+const moveDrain = time.Second
+
 // moveStop starts the hold, the fence after which nothing writes to the
 // source: new commands are refused (moveHolds), the ones running end
-// first, Caddy holds the environment's requests, and every service stops
-// cleanly on the source, stateless ones first so no request is in
-// flight when the databases stop. A stopped service with a domain has
-// its port listened on, where its requests wait for the switch
-// (holdPort).
+// first, the routes of services with domains point at fresh ports the
+// source listens on, where their requests wait for the switch
+// (holdFreshPort, ADR 0091), and every service stops cleanly on the
+// source once the requests sent before that finished (moveDrain),
+// stateless ones first so no request is in flight when the databases
+// stop. A service that got no fresh port has its own port listened on
+// once it stopped (holdPort).
 func (c *Core) moveStop(ctx context.Context, es envScope, m store.EnvironmentMove, svcs []movingService) error {
 	if _, _, err := c.moveRuntimes(m); err != nil {
 		return err
@@ -1068,6 +1076,23 @@ func (c *Core) moveStop(ctx context.Context, es envScope, m store.EnvironmentMov
 			return ctx.Err()
 		}
 	}
+	routed, err := c.routedServices(ctx, es)
+	if err != nil {
+		return err
+	}
+	// Services with domains wait on fresh ports, which their routes point
+	// at before anything stops (forwards.go).
+	fresh := map[int64]bool{}
+	for _, s := range svcs {
+		if !s.runs() || !routed[s.ss.svc.ID] || s.rel.HostPort == 0 {
+			continue
+		}
+		if _, err := c.holdFreshPort(ctx, m.FromServerID, s.ss.svc.ID); err != nil {
+			c.log.Warn("hold a moving service on a fresh port; it waits on its own port once stopped", "move", m.ID, "service", s.ss.svc.ID, "err", err)
+			continue
+		}
+		fresh[s.ss.svc.ID] = true
+	}
 	c.hold(svcs, true)
 	if err := c.applyRoutes(ctx, m.FromServerID); err != nil {
 		c.log.Warn("hold a moving environment's routes", "move", m.ID, "err", err)
@@ -1075,9 +1100,13 @@ func (c *Core) moveStop(ctx context.Context, es envScope, m store.EnvironmentMov
 	if err := c.store.SetEnvironmentMoveDowntime(ctx, store.SetEnvironmentMoveDowntimeParams{DowntimeFrom: ptr(now()), ID: m.ID}); err != nil {
 		return err
 	}
-	routed, err := c.routedServices(ctx, es)
-	if err != nil {
-		return err
+	if len(fresh) > 0 {
+		// Requests sent before the routes moved finish first.
+		select {
+		case <-time.After(moveDrain):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 	// Each tier's services stop side by side: a stop can take the whole
 	// stop timeout (an app that ignores SIGTERM, from before Docker's
@@ -1095,8 +1124,9 @@ func (c *Core) moveStop(ctx context.Context, es envScope, m store.EnvironmentMov
 					errs[i] = fmt.Errorf("stop %s: %w", s.ss.svc.Name, c.nodeErr(m.FromServerID, err))
 					return
 				}
-				// Its requests wait on its port from here on (forwards.go).
-				if routed[s.ss.svc.ID] && s.rel.HostPort > 0 {
+				// Without a fresh port its requests wait on its own
+				// port from here on (forwards.go).
+				if routed[s.ss.svc.ID] && s.rel.HostPort > 0 && !fresh[s.ss.svc.ID] {
 					c.holdPort(ctx, m.FromServerID, s.rel.HostPort, s.ss.svc.ID)
 				}
 				c.setStatus(s.ss, apitypes.ServiceStatus{State: apitypes.ServiceStopped})
@@ -1265,8 +1295,8 @@ func serviceIDs(svcs []movingService) []int64 {
 // moveSwitch points the environment at the target in one transaction:
 // the environment's server, each active release's container and host
 // port there, the project's placement for the kind, Dock's Cloudflare
-// records and the snapshots; the source's old ports become forwards to
-// the target, and forwards the target had of the environment (it moved
+// records and the snapshots; the ports the source held its services on
+// become forwards to the target, and forwards the target had of the environment (it moved
 // back) end; the move goes on to its clean-up. Then the forwards listen,
 // both servers' routes are applied and the hold ends: requests it held
 // on the source go through the forward.
@@ -1274,12 +1304,15 @@ func (c *Core) moveSwitch(ctx context.Context, es envScope, m store.EnvironmentM
 	if _, _, err := c.moveRuntimes(m); err != nil {
 		return err
 	}
-	// Services with domains keep their old port as a forward: that is
-	// what Caddy on the source still sends their requests to.
+	// Services with domains keep the port they were held on as a
+	// forward: that is what Caddy on the source still sends their
+	// requests to.
 	routed, err := c.routedServices(ctx, es)
 	if err != nil {
 		return err
 	}
+	// A hold's fresh port is the forward; without one, the old port is.
+	holdPorts := c.holdPorts(m.FromServerID)
 	var retargeted []string
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		if err := q.SetEnvironmentServer(ctx, store.SetEnvironmentServerParams{ServerID: m.ToServerID, ID: es.env.ID}); err != nil {
@@ -1293,8 +1326,9 @@ func (c *Core) moveSwitch(ctx context.Context, es envScope, m store.EnvironmentM
 				continue
 			}
 			if s.runs() && s.rel.HostPort > 0 && routed[s.ss.svc.ID] {
+				port := cmp.Or(holdPorts[s.ss.svc.ID], s.rel.HostPort)
 				if err := q.CreateServerForward(ctx, store.CreateServerForwardParams{
-					ServerID: m.FromServerID, HostPort: s.rel.HostPort, ServiceID: s.ss.svc.ID, MoveID: m.ID, CreatedAt: now(),
+					ServerID: m.FromServerID, HostPort: port, ServiceID: s.ss.svc.ID, MoveID: m.ID, CreatedAt: now(),
 				}); err != nil {
 					return err
 				}
@@ -1325,7 +1359,7 @@ func (c *Core) moveSwitch(ctx context.Context, es envScope, m store.EnvironmentM
 		return err
 	}
 	// The ports the hold listened on are forwards now.
-	c.endPortHolds(m.FromServerID, serviceIDs(svcs), false)
+	c.endPortHolds(m.FromServerID, serviceIDs(svcs), nil)
 	// Sleep follows the environment to its server: its wake checks and
 	// node wake requests are the target's from here on.
 	c.reloadSleep(ctx)
@@ -1598,9 +1632,17 @@ func (c *Core) rollbackMove(ctx context.Context, es envScope, m store.Environmen
 	// The source's services start again at once, even with the target
 	// offline: their data never left the source's volumes, and the
 	// target's copy is another volume on another server, so no volume is
-	// ever mounted twice. The target is cleaned up once it is back. The
-	// ports the hold listened on are theirs again first.
-	c.endPortHolds(m.FromServerID, serviceIDs(svcs), true)
+	// ever mounted twice. The target is cleaned up once it is back. A
+	// hold on a service's own port ends first, so its container can take
+	// the port again; a fresh one ends once the routes point back.
+	ids := serviceIDs(svcs)
+	own := map[int64]int64{}
+	for _, s := range svcs {
+		if s.rel != nil {
+			own[s.ss.svc.ID] = s.rel.HostPort
+		}
+	}
+	c.endPortHolds(m.FromServerID, ids, func(svcID, port int64) bool { return own[svcID] == port })
 	var errs []error
 	for _, s := range svcs {
 		if !s.runs() {
@@ -1618,6 +1660,7 @@ func (c *Core) rollbackMove(ctx context.Context, es envScope, m store.Environmen
 	if err := c.applyRoutes(ctx, m.FromServerID); err != nil {
 		c.log.Warn("end a rolled back move's hold", "move", m.ID, "err", err)
 	}
+	c.endPortHolds(m.FromServerID, ids, func(int64, int64) bool { return true })
 	dst := c.connected(m.ToServerID)
 	if dst == nil {
 		return errMoveWaits // the target's containers go when it reconnects

@@ -141,8 +141,9 @@ queued → building → starting → health_checking → active → superseded
    after a snapshot when asked. Then the new container starts next to the
    old one, on the environment's network, with resource limits.
 4. **health_checking:** HTTP path or TCP port until it passes or times out.
-5. **active:** switch the Caddy route, drain the old container for 12 s
-   and stop it (the old release becomes `superseded`). From here Docker
+5. **active:** switch the Caddy route (the service's upstream file, so
+   Caddy doesn't reload, [ADR 0091](decisions/0091-switches-without-reloads.md)),
+   drain the old container for 12 s and stop it (the old release becomes `superseded`). From here Docker
    runs `dock-probe` inside the container as the ongoing health check;
    core restarts the service when it keeps failing
    ([ADR 0043](decisions/0043-ongoing-health-checks.md)).
@@ -236,7 +237,9 @@ Details in [ADR 0015](decisions/0015-server-pools-and-placement.md).
 - Each (project, environment) gets its own Docker network, with addresses
   from a dedicated pool. Services reach each other by service name.
 - Services with a domain publish their port on `127.0.0.1` only. Caddy proxies
-  to it, so app containers are never directly exposed.
+  to it, so app containers are never directly exposed. The address is in a
+  file per service (`/var/lib/dock-upstreams`) that Caddy reads per
+  request, so a switch changes the file, not Caddy's config.
 - A root-installed firewall (`dock-firewall.service`) keeps apps and builds
   off private networks and the host ([safety model](safety-model.md#network-isolation)).
 - Public firewall: 22, 80, 443. The daemon's API and UI listen on a private

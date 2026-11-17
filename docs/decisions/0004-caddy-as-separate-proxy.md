@@ -1,6 +1,8 @@
 # 0004: Caddy as a separate proxy process
 
-Status: accepted
+Status: accepted. Amended by
+[0091](0091-switches-without-reloads.md): a route reads its upstream from
+a file, so a traffic switch reloads no config.
 
 ## Context
 

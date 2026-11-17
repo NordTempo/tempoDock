@@ -990,6 +990,12 @@ type Certificate struct {
 type Route struct {
 	Hostnames []string
 	Upstream  string
+	// Key, when set, names what the route serves across releases: a
+	// service's routes have "s<service id>". A proxy that can keeps such
+	// a route's Upstream, and the release of its Analytics tags, out of
+	// its config, so a switch to another release or port changes no
+	// config (ADR 0091). Routes with the same Key have the same Upstream.
+	Key string
 	// RedirectTo, when set, permanently redirects to this hostname instead
 	// of proxying.
 	RedirectTo string

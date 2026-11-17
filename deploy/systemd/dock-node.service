@@ -26,6 +26,9 @@ ProtectHome=true
 # The node key and link state (node.key, node.toml) live here, so `trust`
 # and `rotate` can rewrite them.
 ReadWritePaths=/var/lib/dock
+# Services' upstream addresses, which Caddy reads per request (ADR 0091).
+# "-": without it dock keeps upstreams in Caddy's config.
+ReadWritePaths=-/var/lib/dock-upstreams
 PrivateTmp=true
 # Railpack keeps its tool cache (~150 MB) in /tmp/railpack. On disk it
 # survives restarts and isn't charged to this unit's memory as tmpfs.

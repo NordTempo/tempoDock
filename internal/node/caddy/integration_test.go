@@ -318,15 +318,37 @@ func TestIntegrationRoutingWithoutTLS(t *testing.T) {
 // socket unless net.ipv4.tcp_migrate_req=1. Clients see EOF or a reset on
 // a fresh connection. So the test allows rare connection drops, never a
 // bad response.
+//
+// A keyed route (ADR 0091) swaps by rewriting its upstream file and loads
+// the running config again, which Caddy answers without a reload, so its
+// swaps drop nothing at all.
 func TestIntegrationSwapUnderTraffic(t *testing.T) {
+	t.Run("reload", func(t *testing.T) { swapUnderTraffic(t, false) })
+	t.Run("keyed", func(t *testing.T) { swapUnderTraffic(t, true) })
+}
+
+func swapUnderTraffic(t *testing.T, keyed bool) {
 	const proto = "HTTP/1.1"
 	ask := newAskServer(t, "app.test")
-	tc := startCaddy(t, ask.url, false)
+	var upstreams string
+	if keyed {
+		dir, err := os.MkdirTemp("", "dockup")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(dir) })
+		upstreams = dir
+	}
+	tc := startCaddyWith(t, func(o *Options) { o.AskURL, o.UpstreamsDir = ask.url, upstreams })
 	tc.client.Transport.(*http.Transport).ForceAttemptHTTP2 = false
 	ctx := context.Background()
 	backends := []string{backend(t, "A"), backend(t, "B")}
 	routes := func(up string) []node.Route {
-		return []node.Route{{Hostnames: []string{"app.test"}, Upstream: up}}
+		r := node.Route{Hostnames: []string{"app.test"}, Upstream: up}
+		if keyed {
+			r.Key = "s1"
+		}
+		return []node.Route{r}
 	}
 	tc.applyRoutes(t, routes(backends[0]))
 	tc.trustInternalCA(t)
@@ -400,8 +422,8 @@ func TestIntegrationSwapUnderTraffic(t *testing.T) {
 	if !lastStale.IsZero() {
 		stale = lastStale.Sub(swapped).Round(time.Millisecond)
 	}
-	t.Logf("%s: %d workers, %d swaps, %d requests %v, %d connection drops, %d bad responses; reload latency p50=%v p95=%v max=%v; old upstreams still reached %v after the final swap",
-		proto, workers, swaps, total.Load(), seen, dropped.Load(), bad.Load(), pct(50), pct(95), latencies[len(latencies)-1], stale)
+	t.Logf("keyed=%v %s: %d workers, %d swaps, %d requests %v, %d connection drops, %d bad responses; reload latency p50=%v p95=%v max=%v; old upstreams still reached %v after the final swap",
+		keyed, proto, workers, swaps, total.Load(), seen, dropped.Load(), bad.Load(), pct(50), pct(95), latencies[len(latencies)-1], stale)
 
 	if bad.Load() != 0 {
 		t.Errorf("%d requests got a bad response", bad.Load())
@@ -410,7 +432,10 @@ func TestIntegrationSwapUnderTraffic(t *testing.T) {
 	// on shared CI runners). Strict mode (DOCK_STRICT_PERF=1) holds
 	// the measured bound; otherwise only gross regressions fail.
 	limit := total.Load() / 100
-	if os.Getenv("DOCK_STRICT_PERF") == "" {
+	switch {
+	case keyed:
+		limit = 0
+	case os.Getenv("DOCK_STRICT_PERF") == "":
 		limit = total.Load() / 5
 	}
 	if dropped.Load() > limit {

@@ -420,7 +420,15 @@ func Render(opts Options, routes []node.Route, certs []node.Certificate) ([]byte
 			Upstreams:        []upstream{{Dial: r.Upstream}},
 			StreamCloseDelay: streamCloseDelay.String(),
 		}
-		if r.Hold {
+		isKeyed := keyed(opts, r)
+		switch {
+		case isKeyed:
+			// The upstream comes from its file, and refused connections
+			// are tried again in every state, a hold's too: nothing about
+			// it changes with a release (ADR 0091).
+			h.Upstreams[0].Dial = keyedDial(opts.UpstreamsDir, r.Key)
+			h.LoadBalancing = keyedRetry
+		case r.Hold:
 			// A refused connection is tried again, every request held
 			// until the upstream answers or HoldFor passes (ADR 0063).
 			h.LoadBalancing = &loadBalancing{TryDuration: node.HoldFor.String(), TryInterval: holdInterval.String()}
@@ -487,6 +495,9 @@ func Render(opts Options, routes []node.Route, certs []node.Certificate) ([]byte
 		// that serves the route: tunnel visitors are counted too.
 		if r.RedirectTo == "" && opts.AnalyticsAddr != "" {
 			for _, an := range r.Analytics {
+				if isKeyed {
+					an.Tag = keyedTag(opts.UpstreamsDir, r.Key, an.Tag)
+				}
 				if public {
 					main = append(main, analyticsRoute(an, opts.AnalyticsAddr))
 				}
@@ -919,6 +930,9 @@ func validateRoutes(opts Options, routes []node.Route) error {
 					return fmt.Errorf("route for %s: analytics hostname %s isn't one of the route's", r.Hostnames[0], h)
 				}
 			}
+		}
+		if r.Key != "" && !validKey(r.Key) {
+			return fmt.Errorf("route for %s: key %q must be lower-case letters and digits", r.Hostnames[0], r.Key)
 		}
 		if r.Upstream == "" && r.RedirectTo == "" && r.Stopped == "" {
 			return fmt.Errorf("route for %s needs an upstream or a redirect target", r.Hostnames[0])

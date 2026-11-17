@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
@@ -21,16 +22,18 @@ import (
 // piped to the service's container on the server it is on now
 // (node.Containers.Dial).
 //
-// A move's hold waits here too, not in Caddy: Caddy's retries of a held
-// route end when its config reloads (any deploy on the server), each
-// with a 502, while a connection Caddy made survives a reload. So once
-// a service's container stopped in a hold, the source listens on its
-// port (holdPort) and the connections wait for the hold to end
-// (waitHold), as do those of a forward on the target when the
-// environment moves back to a server that was forwarding it. The
-// switch turns the source's listener into the forward, so nothing
-// there changes; a rollback closes it before the containers start
-// again on their ports.
+// A move's hold waits here too, not in Caddy. Before a service's
+// container stops, the source listens on a fresh port for it
+// (holdFreshPort) and its route points there (ADR 0091: a file, no
+// reload), so no request meets the dying container, whose port Docker's
+// proxy still accepts on and resets. Its connections wait for the hold
+// to end (waitHold), as do those of a forward on the target when the
+// environment moves back to a server that was forwarding it. The switch
+// turns the hold's listener into the forward, so nothing there changes;
+// a rollback points the route back at the started container before it
+// closes the listener. When no fresh port can be had, the source listens
+// on the service's own port once its container freed it (holdPort), as
+// before ADR 0091.
 //
 // Listeners exist while their server is connected: ensureForwards opens
 // them at start, after a switch and when a server reconnects, and closes
@@ -40,8 +43,13 @@ import (
 type forwardState struct {
 	mu   sync.Mutex
 	open map[forwardKey]net.Listener
-	// holding are the listeners of a move's hold that have no forward row
-	// (yet): the service each one's connections are for.
+	// holdMu guards holding. It is its own lock, taken after mu or alone,
+	// never before it: host port allocation reads holding inside a write
+	// transaction, and mu is held across a node's forward-listen call.
+	holdMu sync.Mutex
+	// holding are the ports of a move's hold that have no forward row
+	// (yet): the service each one's connections are for. They are taken
+	// for allocation (allocateHostPort) from the moment one is picked.
 	holding map[forwardKey]int64
 }
 
@@ -73,11 +81,13 @@ func (c *Core) ensureForwards(ctx context.Context, serverID int64) {
 	}
 	c.fwd.mu.Lock()
 	defer c.fwd.mu.Unlock()
+	c.fwd.holdMu.Lock()
 	for k := range c.fwd.holding {
 		if k.server == serverID {
 			want[k.port] = true
 		}
 	}
+	c.fwd.holdMu.Unlock()
 	for k, ln := range c.fwd.open {
 		if k.server == serverID && !want[k.port] {
 			_ = ln.Close()
@@ -174,9 +184,9 @@ const dialTimeout = 10 * time.Second
 // hold's (holdPort), or its forward row's. It is read before the
 // connection waits, since a switch ends the target's forward rows.
 func (c *Core) forwardedService(k forwardKey) (int64, error) {
-	c.fwd.mu.Lock()
+	c.fwd.holdMu.Lock()
 	id, ok := c.fwd.holding[k]
-	c.fwd.mu.Unlock()
+	c.fwd.holdMu.Unlock()
 	if ok {
 		return id, nil
 	}
@@ -237,9 +247,51 @@ func (c *Core) waitHold(svcID int64) {
 	}
 }
 
+// holdFreshPort listens on a fresh host port of a server for a service
+// of a move about to enter its hold, before its container stops: its
+// route points there while the hold lasts (applyRoutesLocked), and the
+// switch keeps it as the service's forward. The port is taken from the
+// host port range in a write transaction, as releases' ports are, so the
+// two never collide.
+func (c *Core) holdFreshPort(ctx context.Context, serverID, svcID int64) (int64, error) {
+	rt := c.connected(serverID)
+	if rt == nil {
+		return 0, errf(apitypes.CodeServerOffline, "server %d is offline", serverID)
+	}
+	var port int64
+	err := c.store.Tx(ctx, func(q *store.Queries) error {
+		p, err := c.allocateHostPort(ctx, q, serverID)
+		if err != nil {
+			return err
+		}
+		port = p
+		c.fwd.holdMu.Lock()
+		c.fwd.holding[forwardKey{serverID, p}] = svcID
+		c.fwd.holdMu.Unlock()
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	k := forwardKey{serverID, port}
+	ln, err := rt.Forward(ctx, int(port))
+	if err != nil {
+		c.fwd.holdMu.Lock()
+		delete(c.fwd.holding, k)
+		c.fwd.holdMu.Unlock()
+		return 0, c.nodeErr(serverID, err)
+	}
+	c.fwd.mu.Lock()
+	c.fwd.open[k] = ln
+	c.fwd.mu.Unlock()
+	c.wg.Go(func() { c.serveForward(k, ln) })
+	return port, nil
+}
+
 // holdPort listens on a server's port for a service of a move in its
-// hold, once the service's container there stopped and freed it. When
-// that fails, Caddy's retries still hold the requests.
+// hold, once the service's container there stopped and freed it: the
+// hold of a service that got no fresh port. When that fails too, Caddy's
+// retries still hold the requests for a while.
 func (c *Core) holdPort(ctx context.Context, serverID, port, svcID int64) {
 	rt := c.connected(serverID)
 	if rt == nil {
@@ -257,22 +309,58 @@ func (c *Core) holdPort(ctx context.Context, serverID, port, svcID int64) {
 		return
 	}
 	c.fwd.open[k] = ln
+	c.fwd.holdMu.Lock()
 	c.fwd.holding[k] = svcID
+	c.fwd.holdMu.Unlock()
 	c.wg.Go(func() { c.serveForward(k, ln) })
 }
 
-// endPortHolds forgets the ports a server holds for services. After a
-// switch their listeners stay, as forwards; a rollback closes them
-// (closing), so the services' containers can take their ports again.
-func (c *Core) endPortHolds(serverID int64, svcIDs []int64, closing bool) {
+// holdPorts are the ports a server holds for services in a move's hold,
+// by service.
+func (c *Core) holdPorts(serverID int64) map[int64]int64 {
+	c.fwd.holdMu.Lock()
+	defer c.fwd.holdMu.Unlock()
+	out := map[int64]int64{}
+	for k, id := range c.fwd.holding {
+		if k.server == serverID {
+			out[id] = k.port
+		}
+	}
+	return out
+}
+
+// heldPortsOn are the ports of a server that holds have taken, for host
+// port allocation.
+func (c *Core) heldPortsOn(serverID int64) []int64 {
+	c.fwd.holdMu.Lock()
+	defer c.fwd.holdMu.Unlock()
+	var out []int64
+	for k := range c.fwd.holding {
+		if k.server == serverID {
+			out = append(out, k.port)
+		}
+	}
+	return out
+}
+
+// endPortHolds forgets the ports a server holds for services, those
+// closing selects (all when it is nil) closing their listeners too. After
+// a switch their listeners stay, as forwards (closing returns false); a
+// rollback closes them.
+func (c *Core) endPortHolds(serverID int64, svcIDs []int64, closing func(svcID, port int64) bool) {
 	c.fwd.mu.Lock()
 	defer c.fwd.mu.Unlock()
+	c.fwd.holdMu.Lock()
+	defer c.fwd.holdMu.Unlock()
 	for k, id := range c.fwd.holding {
 		if k.server != serverID || !slices.Contains(svcIDs, id) {
 			continue
 		}
+		if closing != nil && !closing(id, k.port) {
+			continue
+		}
 		delete(c.fwd.holding, k)
-		if ln, ok := c.fwd.open[k]; ok && closing {
+		if ln, ok := c.fwd.open[k]; ok && closing != nil {
 			_ = ln.Close()
 			delete(c.fwd.open, k)
 		}
