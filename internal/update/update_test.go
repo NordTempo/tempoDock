@@ -17,7 +17,8 @@ import (
 )
 
 // fakeRelease writes release v into dir (a DirSource) with a binary for
-// each arch, an install tarball and their SHA256SUMS.
+// each arch, an install tarball, their SHA256SUMS and its signature by a
+// key trusted for the test.
 func fakeRelease(t *testing.T, dir, v string, archs ...string) map[string][]byte {
 	t.Helper()
 	files := map[string][]byte{InstallAsset(v): []byte("tarball " + v)}
@@ -31,6 +32,7 @@ func fakeRelease(t *testing.T, dir, v string, archs ...string) map[string][]byte
 		fmt.Fprintf(&sums, "%s  %s\n", hex.EncodeToString(h[:]), name)
 	}
 	files[SumsAsset] = []byte(sums.String())
+	files[SigAsset] = []byte(Sign(trustedTestKey(t), files[SumsAsset]))
 	rel := filepath.Join(dir, v)
 	if err := os.MkdirAll(rel, 0o755); err != nil {
 		t.Fatal(err)
@@ -139,6 +141,24 @@ func TestStageRefusesMismatch(t *testing.T) {
 	}
 }
 
+// A release from FirstSignedRelease on is refused without its signature;
+// an older one stages without.
+func TestStageNeedsSignature(t *testing.T) {
+	src, data := t.TempDir(), t.TempDir()
+	for _, v := range []string{"v1.2.0", "v0.55.0"} {
+		fakeRelease(t, src, v, "amd64")
+		if err := os.Remove(filepath.Join(src, v, SigAsset)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := Stage(context.Background(), DirSource{Path: src}, data, "v1.2.0", "amd64"); !errors.Is(err, ErrUnsigned) {
+		t.Fatalf("an unsigned v1.2.0: err = %v, want ErrUnsigned", err)
+	}
+	if _, err := Stage(context.Background(), DirSource{Path: src}, data, "v0.55.0", "amd64"); err != nil {
+		t.Fatalf("v0.55.0 predates signing: %v", err)
+	}
+}
+
 func TestGitHubSource(t *testing.T) {
 	var auth []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -200,10 +220,10 @@ func TestGitHubSource(t *testing.T) {
 
 func TestReceiveChecksEachFile(t *testing.T) {
 	data := t.TempDir()
-	body := map[string][]byte{SumsAsset: []byte("s"), InstallAsset("v1.2.0"): []byte("tar"), BinaryAsset("arm64"): []byte("bin")}
+	body := map[string][]byte{SumsAsset: []byte("s"), SigAsset: []byte("sig"), InstallAsset("v1.2.0"): []byte("tar"), BinaryAsset("arm64"): []byte("bin")}
 	var files []File
 	var all bytes.Buffer
-	for _, name := range Assets("v1.2.0", "arm64") {
+	for _, name := range []string{SumsAsset, SigAsset, InstallAsset("v1.2.0"), BinaryAsset("arm64")} {
 		h := sha256.Sum256(body[name])
 		files = append(files, File{Name: name, Size: int64(len(body[name])), SHA256: hex.EncodeToString(h[:])})
 		all.Write(body[name])
@@ -215,7 +235,7 @@ func TestReceiveChecksEachFile(t *testing.T) {
 		t.Errorf("received binary %q", b)
 	}
 
-	files[2].SHA256 = files[1].SHA256
+	files[3].SHA256 = files[2].SHA256
 	err := Receive(data, "v1.2.0", "arm64", files, bytes.NewReader(all.Bytes()))
 	if err == nil || !strings.Contains(err.Error(), "refusing") {
 		t.Errorf("a binary that doesn't match: err = %v", err)

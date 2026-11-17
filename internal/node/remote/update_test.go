@@ -39,12 +39,13 @@ func TestUpdateNode(t *testing.T) {
 
 	staged := t.TempDir()
 	sums := update.Sums{}
-	for _, name := range update.Assets("v9.9.9", runtime.GOARCH) {
+	// The signature goes along; the node's updater checks it.
+	for _, name := range append(update.Assets("v9.9.9", runtime.GOARCH), update.SigAsset) {
 		b := []byte(strings.Repeat(name, 1000))
 		if err := os.WriteFile(filepath.Join(staged, name), b, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if name != update.SumsAsset { // as Stage returns them
+		if name != update.SumsAsset && name != update.SigAsset { // as Stage returns them
 			sum := sha256.Sum256(b)
 			sums[name] = hex.EncodeToString(sum[:])
 		}
@@ -93,6 +94,9 @@ func TestUpdateNode(t *testing.T) {
 	got, err := update.HashFile(filepath.Join(update.ReleaseDir(h.dataDir, "v9.9.9"), update.BinaryAsset(runtime.GOARCH)))
 	if err != nil || got != sums[update.BinaryAsset(runtime.GOARCH)] {
 		t.Errorf("received binary %s, %v", got, err)
+	}
+	if !update.Exists(update.ReleaseDir(h.dataDir, "v9.9.9"), update.SigAsset) {
+		t.Errorf("the node didn't get %s", update.SigAsset)
 	}
 	var c update.Connected
 	waitFor(t, "the connected file", func() bool {

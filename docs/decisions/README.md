@@ -41,7 +41,7 @@ line means a later record added to it without changing what it decided.
 | [0025](0025-platform-console.md) | The platform console is Dock's admin panel | superseded in part by [0027](0027-organizations.md), [0038](0038-own-tokens.md), [0062](0062-org-alerts-and-operators.md) |
 | [0026](0026-ui-cli-parity.md) | Everything the CLI does, the UI does | accepted |
 | [0027](0027-organizations.md) | Organizations and the platform operator | superseded in part by [0062](0062-org-alerts-and-operators.md), [0064](0064-changing-an-org-slug.md), [0065](0065-sign-in-is-the-platforms.md), [0080](0080-permissions-roles-groups-and-agents.md) |
-| [0028](0028-updates-from-the-console.md) | Updating Dock from the console | accepted |
+| [0028](0028-updates-from-the-console.md) | Updating Dock from the console | accepted; amended by [0088](0088-signed-releases.md) |
 | [0029](0029-public-address.md) | Dock's public address | accepted |
 | [0030](0030-access-protection.md) | Access protection for a service's domains | accepted |
 | [0031](0031-github-app.md) | Dock's GitHub App | superseded in part by [0062](0062-org-alerts-and-operators.md), [0066](0066-github-apps-for-many-orgs.md) |
@@ -100,6 +100,7 @@ line means a later record added to it without changing what it decided.
 | [0084](0084-registry-storage-gateway.md) | The registry's storage gateway: pushes land on local disk first and upload to the bucket in the background; bucket health from real traffic, stuck blobs repaired by the next push | accepted |
 | [0085](0085-analytics-consent.md) | Analytics consent: replay waits for `dock.consent(true)` by default, a privacy status per site, policy text to copy | accepted |
 | [0086](0086-cancel-a-deploy.md) | Cancel a deploy: any step before the cutover, the serving release keeps serving, `canceled` is no failure | accepted |
+| [0088](0088-signed-releases.md) | Signed releases: Ed25519 over `SHA256SUMS`, keys built into dock, checked on every download path from v0.56.0; build-provenance attestations | accepted |
 
 ## Template
 

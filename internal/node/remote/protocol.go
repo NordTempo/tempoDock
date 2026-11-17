@@ -89,8 +89,9 @@ const (
 	// and the build's base image (ADR 0074 phase 3, BaseProtocol). 28
 	// adds the metrics spool: app metrics over OTLP (ADR 0075 phase 6,
 	// MetricsProtocol). 29 adds the container spec's args: start commands
-	// in exec form (ADR 0083, ExecFormProtocol).
-	Protocol = 29
+	// in exec form (ADR 0083, ExecFormProtocol). 30 sends a release's
+	// signature with an update (ADR 0088, SignedUpdateProtocol).
+	Protocol = 30
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1

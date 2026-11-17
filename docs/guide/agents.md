@@ -416,7 +416,9 @@ them.
 
 The runner needs the CLI: download `dock-cli-linux-amd64` from the release
 the server runs (`dock version` shows it) and check it against
-`SHA256SUMS`. The deploy itself only uses `DOCK_URL` and `DOCK_TOKEN`.
+`SHA256SUMS`, and the file against its build provenance with `gh
+attestation verify` (releases from v0.56.0 on). The deploy itself only
+uses `DOCK_URL` and `DOCK_TOKEN`.
 
 ```yaml
 # .github/workflows/deploy.yml (excerpt)
@@ -426,6 +428,7 @@ the server runs (`dock version` shows it) and check it against
       curl -fsSLO "https://github.com/NordTempo/tempoDock/releases/download/v0.1.0/$f"
     done
     grep ' dock-cli-linux-amd64$' SHA256SUMS | sha256sum --check
+    gh attestation verify dock-cli-linux-amd64 --repo NordTempo/tempoDock
     sudo install -m 0755 dock-cli-linux-amd64 /usr/local/bin/dock
 - name: Deploy to staging
   env:

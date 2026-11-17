@@ -53,11 +53,16 @@ func sourceErr(detail, format string, args ...any) error {
 	return &SourceError{Plain: fmt.Sprintf(format, args...), Detail: detail}
 }
 
+// ErrNoAsset is a release without the asset asked for, as opposed to a
+// source that failed to answer.
+var ErrNoAsset = errors.New("no such asset")
+
 // Source is where releases come from: GitHub, or a directory.
 type Source interface {
 	// Releases lists the published releases, newest first.
 	Releases(ctx context.Context) ([]Release, error)
-	// Open streams one asset of a release.
+	// Open streams one asset of a release; ErrNoAsset when the release
+	// has none by that name.
 	Open(ctx context.Context, version, asset string) (io.ReadCloser, error)
 	// String names the source for messages: "github.com/OWNER/REPO" or
 	// the directory.
@@ -175,7 +180,7 @@ func (g *GitHub) Open(ctx context.Context, version, asset string) (io.ReadCloser
 	}
 	u, ok := urls[asset]
 	if !ok {
-		return nil, fmt.Errorf("release %s of %s has no %s", version, g, asset)
+		return nil, fmt.Errorf("release %s of %s has no %s: %w", version, g, asset, ErrNoAsset)
 	}
 	resp, err := g.do(ctx, u, "application/octet-stream")
 	if err != nil {
@@ -306,7 +311,7 @@ func (d DirSource) Open(_ context.Context, version, asset string) (io.ReadCloser
 	}
 	f, err := os.Open(filepath.Join(d.Path, version, asset))
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("release %s in %s has no %s", version, d.Path, asset)
+		return nil, fmt.Errorf("release %s in %s has no %s: %w", version, d.Path, asset, ErrNoAsset)
 	}
 	return f, err
 }
