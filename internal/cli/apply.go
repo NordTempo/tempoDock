@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -89,10 +90,21 @@ func (g *globals) applyFile(ctx context.Context, f targetFlags, path string, o a
 	if !o.deploy {
 		return g.io.Print(res, func() error {
 			printPlan(g, res.Plan)
+			pending := false
 			for _, p := range res.Staged {
-				g.io.Successf("%s staged in %s/%s", plural(p.Count, "change"), p.Project, p.Environment)
+				pending = pending || p.Count > 0
+				switch {
+				case !slices.Contains(res.Unchanged, p.Environment):
+					g.io.Successf("%s staged in %s/%s", plural(p.Count, "change"), p.Project, p.Environment)
+				case p.Count > 0:
+					g.io.Successf("No new changes in %s/%s (%s staged already)", p.Project, p.Environment, plural(p.Count, "change"))
+				default:
+					g.io.Successf("Nothing staged in %s/%s", p.Project, p.Environment)
+				}
 			}
-			g.io.Progressf("Review with `dock changes -e <environment>`, apply with `dock apply -e <environment>`, or drop with `dock discard`.")
+			if pending {
+				g.io.Progressf("Review with `dock changes -e <environment>`, apply with `dock apply -e <environment>`, or drop with `dock discard`.")
+			}
 			return nil
 		})
 	}

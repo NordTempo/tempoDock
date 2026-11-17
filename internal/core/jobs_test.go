@@ -313,12 +313,8 @@ func TestRepoJobs(t *testing.T) {
 	}
 	h.setJob(web, "mine", apitypes.SetJobRequest{Schedule: "@daily", Command: "ui"})
 	deploy("[[jobs]]\nname = \"cleanup\"\nschedule = \"0 3 * * *\"\ntimezone = \"Europe/Oslo\"\ncommand = \"bin/cleanup\"\n")
-	var jobs []apitypes.Job
-	var err error
-	eventually(t, "the file job", func() bool {
-		jobs, err = h.c.ListJobs(h.ctx, testSystem, web)
-		return len(jobs) == 2
-	})
+	// The jobs are there once the release reads as active.
+	jobs, err := h.c.ListJobs(h.ctx, testSystem, web)
 	if err != nil || len(jobs) != 2 || jobs[0].Name != "cleanup" || jobs[0].Source != apitypes.JobFromRepo || jobs[0].Timezone != "Europe/Oslo" {
 		t.Fatalf("jobs = %+v %v", jobs, err)
 	}
@@ -332,11 +328,9 @@ func TestRepoJobs(t *testing.T) {
 		t.Fatalf("disable a file job: %v", err)
 	}
 	deploy("[deploy]\nport = 8080\n")
-	// The sync follows the release going active.
-	eventually(t, "the file job to go", func() bool {
-		jobs, _ = h.c.ListJobs(h.ctx, testSystem, web)
-		return len(jobs) == 1 && jobs[0].Name == "mine"
-	})
+	if jobs, _ = h.c.ListJobs(h.ctx, testSystem, web); len(jobs) != 1 || jobs[0].Name != "mine" {
+		t.Fatalf("after a file without jobs: %+v", jobs)
+	}
 }
 
 // TestJobRunNowRace: run now and the schedule racing for a job with

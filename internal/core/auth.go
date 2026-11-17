@@ -543,13 +543,23 @@ func (c *Core) ListTokens(ctx context.Context, a Actor) ([]apitypes.Token, error
 	if err != nil {
 		return nil, err
 	}
-	slices.SortFunc(rows, func(x, y store.Token) int { return cmp.Compare(x.ID, y.ID) })
+	slices.SortFunc(rows, func(x, y store.ListOrgTokensRow) int { return cmp.Compare(x.Token.ID, y.Token.ID) })
 	names := newNames(c.store)
 	out := make([]apitypes.Token, 0, len(rows))
-	for _, t := range rows {
-		out = append(out, toToken(ctx, names, t))
+	for _, r := range rows {
+		out = append(out, loginScope(toToken(ctx, names, r.Token), r.MemberRole))
 	}
 	return out, nil
+}
+
+// loginScope shows a `dock login` token with the scope it acts with in
+// an org: its person's role there, which caps it (tokenActor), not the
+// admin ceiling it is stored with. Other tokens are as they are.
+func loginScope(t apitypes.Token, role string) apitypes.Token {
+	if t.Origin == "cli_login" && role != "" {
+		t.Scope = apitypes.Scope(role)
+	}
+	return t
 }
 
 // CreateToken creates a token and returns its secret, shown only once.
@@ -671,10 +681,14 @@ func (c *Core) ListOwnTokens(ctx context.Context, a Actor) ([]apitypes.Token, er
 	if err != nil {
 		return nil, err
 	}
+	role, err := c.store.GetMemberRole(ctx, store.GetMemberRoleParams{OrgID: a.OrgID, UserID: a.UserID})
+	if err != nil && !store.IsNotFound(err) {
+		return nil, err
+	}
 	names := newNames(c.store)
 	out := make([]apitypes.Token, 0, len(rows))
 	for _, t := range rows {
-		out = append(out, toToken(ctx, names, t))
+		out = append(out, loginScope(toToken(ctx, names, t), role))
 	}
 	return out, nil
 }

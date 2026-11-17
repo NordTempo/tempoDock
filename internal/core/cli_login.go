@@ -274,7 +274,7 @@ func (c *Core) issueCLIToken(ctx context.Context, l store.CliLogin) (apitypes.CL
 		return apitypes.CLILoginWait{}, err
 	}
 	c.audit(ctx, userActor(u), "token.cli_login", nil, nil, "token "+tok.Name,
-		fmt.Sprintf("approved dock login from %s (%s, %s); created %s token %q (id %d)", l.Ip, l.Hostname, l.Os, tok.Scope, tok.Name, tok.ID))
+		fmt.Sprintf("approved dock login from %s (%s, %s); created token %q (id %d), acting with their role", l.Ip, l.Hostname, l.Os, tok.Name, tok.ID))
 	out := apitypes.CLILoginWait{Status: "approved", Token: secret, User: u.Email}
 	if l.Platform {
 		out.Platform = apitypes.PlatformRole(deref(u.PlatformRole))

@@ -7277,6 +7277,7 @@ export interface components {
             applied?: components["schemas"]["EnvironmentApplied"][] | null;
             plan: components["schemas"]["ApplyPlan"];
             staged: components["schemas"]["PendingChanges"][] | null;
+            unchanged?: string[] | null;
         };
         AreaRole: {
             /** @example deploy */

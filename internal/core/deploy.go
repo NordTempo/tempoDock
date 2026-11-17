@@ -93,7 +93,6 @@ func (c *Core) deploy(ctx context.Context, run *deployRun, ss svcScope, rel stor
 		d.fail(ctx, err)
 	} else {
 		c.afterActive(ctx, d.ss)
-		c.syncRepoJobs(ctx, d.ss, d.cfg)
 		c.kickBackups() // it may be newly stateful
 	}
 	if spec.done != nil {
@@ -543,6 +542,11 @@ func (d *deployment) cutover(ctx context.Context) error {
 	if err != nil {
 		ct = node.Container{}
 	}
+	// The release's dock.toml jobs, before it reads as active, so whoever
+	// sees it live (`dock deploy`, MCP, a script) sees its jobs too; not
+	// after the old release's drain, 12 s later. A cutover that fails
+	// after this leaves them as the file says; the next deploy syncs again.
+	c.syncRepoJobs(ctx, d.ss, d.cfg)
 	c.routesMu.Lock()
 	routeErr := c.applyRoutesLocked(ctx, serverID, map[int64]routeOverride{d.ss.svc.ID: {port: d.rel.HostPort, release: d.rel.ID}})
 	if routeErr != nil && canFallBack {

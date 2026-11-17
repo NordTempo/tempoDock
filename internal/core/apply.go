@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"path"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -112,8 +113,23 @@ func (c *Core) ApplyProject(ctx context.Context, a Actor, project string, req ap
 					return err
 				}
 			}
+			// The plan is against live values, so a file staged before plans
+			// the same changes again: staging it once more is a no-op, which
+			// says so and audits nothing. Revealed, so a new secret value
+			// counts as a change.
+			before, _, _, err := c.stagedChanges(ctx, q, es, true)
+			if err != nil {
+				return err
+			}
 			if err := c.stageEnv(ctx, q, es, le, ep); err != nil {
 				return err
+			}
+			after, _, _, err := c.stagedChanges(ctx, q, es, true)
+			if err != nil {
+				return err
+			}
+			if reflect.DeepEqual(before, after) {
+				ep.staged = 0
 			}
 			jobs, err = c.setFileJobs(ctx, q, a, es, le.svcs, ep.jobs)
 			return err
@@ -123,7 +139,9 @@ func (c *Core) ApplyProject(ctx context.Context, a Actor, project string, req ap
 		}
 		jobs.finish(ctx, c, a, es)
 		addPlan(&out.Plan, ep)
-		if ep.staged > 0 {
+		if ep.staged == 0 {
+			out.Unchanged = append(out.Unchanged, fe.Name)
+		} else {
 			c.audit(ctx, a, "changes.stage_file", &es.project, &es.env, es.String(),
 				fmt.Sprintf("staged %s from a project file%s", count(ep.staged, "change"), map[bool]string{true: " (with --prune)"}[req.Prune]))
 		}

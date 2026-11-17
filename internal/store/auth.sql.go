@@ -607,47 +607,54 @@ func (q *Queries) ListOrgMembers(ctx context.Context, arg ListOrgMembersParams) 
 }
 
 const listOrgTokens = `-- name: ListOrgTokens :many
-SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor, platform, granted, own_grants, rules_bypass FROM tokens WHERE tokens.org_id = +?1
+SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, tokens.two_factor, tokens.platform, tokens.granted, tokens.own_grants, tokens.rules_bypass, '' AS member_role FROM tokens WHERE tokens.org_id = +?1
 UNION ALL
-SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, tokens.two_factor, tokens.platform, tokens.granted, tokens.own_grants, tokens.rules_bypass FROM org_members JOIN tokens ON tokens.user_id = org_members.user_id
+SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, tokens.two_factor, tokens.platform, tokens.granted, tokens.own_grants, tokens.rules_bypass, org_members.role FROM org_members JOIN tokens ON tokens.user_id = org_members.user_id
 WHERE org_members.org_id = +?1 AND tokens.origin = 'cli_login' AND tokens.platform IS NULL
 `
 
+type ListOrgTokensRow struct {
+	Token      Token
+	MemberRole string
+}
+
 // ListOrgTokens is an org's manual tokens, then its members' `dock
-// login` tokens (which have no org), each through an index.
-func (q *Queries) ListOrgTokens(ctx context.Context, orgID *int64) ([]Token, error) {
+// login` tokens (which have no org) with the member's role, each through
+// an index.
+func (q *Queries) ListOrgTokens(ctx context.Context, orgID *int64) ([]ListOrgTokensRow, error) {
 	rows, err := q.db.QueryContext(ctx, listOrgTokens, orgID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Token
+	var items []ListOrgTokensRow
 	for rows.Next() {
-		var i Token
+		var i ListOrgTokensRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Hash,
-			&i.Scope,
-			&i.ProjectID,
-			&i.EnvironmentID,
-			&i.CreatedBy,
-			&i.CreatedAt,
-			&i.ExpiresAt,
-			&i.LastUsedAt,
-			&i.RevokedAt,
-			&i.Origin,
-			&i.DataProduction,
-			&i.DataNonProduction,
-			&i.DataSensitive,
-			&i.UserID,
-			&i.OrgID,
-			&i.Operator,
-			&i.TwoFactor,
-			&i.Platform,
-			&i.Granted,
-			&i.OwnGrants,
-			&i.RulesBypass,
+			&i.Token.ID,
+			&i.Token.Name,
+			&i.Token.Hash,
+			&i.Token.Scope,
+			&i.Token.ProjectID,
+			&i.Token.EnvironmentID,
+			&i.Token.CreatedBy,
+			&i.Token.CreatedAt,
+			&i.Token.ExpiresAt,
+			&i.Token.LastUsedAt,
+			&i.Token.RevokedAt,
+			&i.Token.Origin,
+			&i.Token.DataProduction,
+			&i.Token.DataNonProduction,
+			&i.Token.DataSensitive,
+			&i.Token.UserID,
+			&i.Token.OrgID,
+			&i.Token.Operator,
+			&i.Token.TwoFactor,
+			&i.Token.Platform,
+			&i.Token.Granted,
+			&i.Token.OwnGrants,
+			&i.Token.RulesBypass,
+			&i.MemberRole,
 		); err != nil {
 			return nil, err
 		}

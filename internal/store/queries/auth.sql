@@ -58,11 +58,12 @@ WHERE tokens.id = +?;
 SELECT * FROM tokens WHERE id = +?;
 
 -- ListOrgTokens is an org's manual tokens, then its members' `dock
--- login` tokens (which have no org), each through an index.
+-- login` tokens (which have no org) with the member's role, each through
+-- an index.
 -- name: ListOrgTokens :many
-SELECT * FROM tokens WHERE tokens.org_id = +sqlc.arg(org_id)
+SELECT sqlc.embed(tokens), '' AS member_role FROM tokens WHERE tokens.org_id = +sqlc.arg(org_id)
 UNION ALL
-SELECT tokens.* FROM org_members JOIN tokens ON tokens.user_id = org_members.user_id
+SELECT sqlc.embed(tokens), org_members.role FROM org_members JOIN tokens ON tokens.user_id = org_members.user_id
 WHERE org_members.org_id = +sqlc.arg(org_id) AND tokens.origin = 'cli_login' AND tokens.platform IS NULL;
 
 -- ListUserTokens is a user's own tokens: their `dock login` tokens and
