@@ -292,7 +292,9 @@ export function LockForm({
 }) {
   const lock = useLock();
   const [reason, setReason] = useState("");
-  const [people, setPeople] = useState(false);
+  // A full freeze by default: people read "lock" as a code freeze (ADR
+  // 0044, amended 2026-11-17). The CLI keeps tokens-only as its default.
+  const [people, setPeople] = useState(true);
   // Opened by clicking Lock: the reason is the first thing to type, and the
   // whole form (with what locking does) is on screen.
   const form = useRef<HTMLFormElement>(null);

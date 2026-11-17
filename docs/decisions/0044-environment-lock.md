@@ -2,7 +2,9 @@
 
 Status: accepted (asked by Saile, 2026-11-03; designed by the agent); superseded
 in part by [0080](0080-permissions-roles-groups-and-agents.md) (approvers, not only admins, decide requests and loosen a
-lock; `--people` holds people's changes too)
+lock; `--people` holds people's changes too). Amended 2026-11-17: the web
+UI's lock bar defaults to a full freeze, people's changes held too (blind
+reviewers read "lock" as a code freeze); `dock environment lock` keeps its default.
 
 ## Context
 
