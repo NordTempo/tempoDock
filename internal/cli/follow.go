@@ -337,9 +337,15 @@ func (g *globals) finishRelease(ctx context.Context, s *session, r apitypes.Rele
 // printLive says that r is live and lists the URLs it serves.
 func (g *globals) printLive(ctx context.Context, s *session, r apitypes.Release) {
 	g.io.Successf("Release %d of %s is live", r.Number, r.Service)
-	domains, err := get[[]apitypes.Domain](ctx, s, releaseTarget(r).servicePath()+"/domains")
+	g.printURLs(ctx, s, releaseTarget(r))
+}
+
+// printURLs lists the URLs service t serves, one per line, leaving out
+// hostnames that only redirect. Nice to have: errors print nothing.
+func (g *globals) printURLs(ctx context.Context, s *session, t target) {
+	domains, err := get[[]apitypes.Domain](ctx, s, t.servicePath()+"/domains")
 	if err != nil {
-		return // nice to have
+		return
 	}
 	for _, d := range domains {
 		if d.RedirectTo == "" {

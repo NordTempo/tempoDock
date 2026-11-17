@@ -161,7 +161,8 @@ func TestDeployFlow(t *testing.T) {
 	if code != 0 || !strings.Contains(stderr, "Uploading ") || !strings.Contains(stderr, "Uploaded ") {
 		t.Fatalf("deploy: exit %d\n%s%s", code, stdout, stderr)
 	}
-	rel := ok[apitypes.Release](t, "release", "show", "1", "-p", "shop", "-e", "production", "-s", "web")
+	// The project's only environment needs no -e.
+	rel := ok[apitypes.Release](t, "release", "show", "1", "-p", "shop", "-s", "web")
 	if rel.Number != 1 || rel.Status != apitypes.ReleaseActive || rel.Source != apitypes.SourceUpload || len(rel.Events) == 0 {
 		t.Fatalf("deploy = %+v", rel)
 	}

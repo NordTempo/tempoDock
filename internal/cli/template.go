@@ -315,6 +315,10 @@ edit and apply with ` + "`dock apply`" + `.`,
 			}
 			err = g.io.Print(res, func() error {
 				g.io.Successf("Created %s in %s/%s", strings.Join(res.Services, ", "), t.Project, t.Environment)
+				if len(res.Services) > 0 && !detach {
+					t.Service = res.Services[0]
+					g.printURLs(cmd.Context(), s, t)
+				}
 				for _, r := range res.Releases {
 					g.printNotLive(r.Service, r)
 				}

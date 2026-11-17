@@ -173,7 +173,7 @@ func (c *Core) UseAppTemplate(ctx context.Context, a Actor, ref EnvRef, name str
 			// first deploy.
 			switch {
 			case m.Kind == apitypes.PlanDomain && m.Name == "":
-				return nil, ep, invalid("%s's server has no base domain to generate a hostname for %s from; give it a hostname (--domain)", es, ex.Main)
+				return nil, ep, invalid("%s's server has no base domain to generate a hostname for %s from; give it a hostname (--domain app.example.com, with an A record to the server), or give the server a base domain with wildcard DNS for every app (`dock server update <server> --base-domain apps.example.com`)", es, ex.Main)
 			case m.Kind == apitypes.PlanDomain:
 				return nil, ep, errf(apitypes.CodeHostnameTaken, "%s; give %s another hostname with --domain", strings.TrimSuffix(m.Note, "; use another hostname"), ex.Main)
 			}

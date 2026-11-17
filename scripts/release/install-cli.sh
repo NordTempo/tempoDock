@@ -3,10 +3,14 @@
 # on macOS or Linux from a GitHub release, checked against its SHA256SUMS
 # and that file's signature (ADR 0088).
 #
-#   curl -fsSL https://github.com/NordTempo/tempoDock/releases/latest/download/install-cli.sh | sh
+#   curl -fsSL https://dock.nordtempo.com/cli.sh | sh
+#   curl -fsSL https://dock.nordtempo.com/cli.sh | sh -s -- https://dock.example.com
 #   curl -fsSL https://github.com/NordTempo/tempoDock/releases/download/v0.2.0/install-cli.sh | DOCK_VERSION=v0.2.0 sh
 #
-# Once installed, `dock self-update` keeps it in step with your server.
+# With a server's address it installs the version that server runs and
+# then signs in to it (`dock login`), which is the line the console and
+# install.sh print. Once installed, `dock self-update` keeps it in step
+# with your server. Windows: run it in WSL.
 #
 # Environment:
 #   DOCK_VERSION      release tag, e.g. v0.2.0 (default: the latest release)
@@ -18,6 +22,8 @@ set -eu
 
 repo=NordTempo/tempoDock
 version="${DOCK_VERSION:-latest}"
+# The server to install for and sign in to, if given.
+server="${1:-}"
 # Dock's release signing keys, as in internal/update/sign.go: "<key id>
 # <raw Ed25519 public key, base64>". Releases from first_signed on are signed.
 release_keys='bc6c45a08a65c136 8uQjZq1kO37ezVv7EzN8eyrqOYXRGK2nsCRL/d3RSdU='
@@ -63,6 +69,7 @@ verify_sums() {
 case "$(uname -s)" in
   Darwin) os=darwin ;;
   Linux) os=linux ;;
+  MINGW* | MSYS* | CYGWIN*) die "dock runs on Windows in WSL: open a WSL terminal (wsl --install) and run this there" ;;
   *) die "no dock-cli build for $(uname -s); build from source: make build-cli" ;;
 esac
 case "$(uname -m)" in
@@ -82,6 +89,26 @@ fi
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
+
+# A server's version, from its health endpoint, unless DOCK_VERSION says
+# otherwise. Development builds have no release: the latest is used then.
+if [ -n "$server" ]; then
+  server="${server%/}"
+  case "$server" in
+    http://* | https://*) ;;
+    *) server="https://$server" ;;
+  esac
+  if [ -z "${DOCK_VERSION:-}" ]; then
+    health="$(curl -fsS --max-time 10 "$server/api/v1/health")" \
+      || die "could not reach $server; check the address (and the SSH tunnel, if the console is on localhost)"
+    v="$(printf '%s' "$health" | sed -n 's/.*"version" *: *"\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][^"]*\)".*/\1/p')"
+    if [ -n "$v" ]; then
+      version="$v"
+    else
+      warn "$server runs a development build; installing the latest release"
+    fi
+  fi
+fi
 
 if [ "$version" = latest ]; then
   # .../releases/latest redirects to .../releases/tag/<version>.
@@ -116,5 +143,21 @@ install -m 0755 "$tmp/$asset" "$dir/dock"
 printf 'Installed %s to %s/dock\n' "$("$dir/dock" --version)" "$dir"
 case ":$PATH:" in
   *":$dir:"*) ;;
-  *) printf 'Add %s to your PATH.\n' "$dir" ;;
+  *)
+    case "${SHELL:-}" in
+      */zsh) rc="$HOME/.zshrc" ;;
+      */bash) rc="$HOME/.bashrc" ;;
+      *) rc='your shell profile' ;;
+    esac
+    printf '%s is not in your PATH. Add it (to %s too, for new terminals):\n  export PATH="%s:$PATH"\n' "$dir" "$rc" "$dir"
+    ;;
 esac
+
+# Sign in to the server, on the terminal: stdin is this script when piped.
+if [ -n "$server" ]; then
+  if (: < /dev/tty) 2> /dev/null; then
+    "$dir/dock" login "$server" < /dev/tty
+  else
+    printf 'Sign in with: dock login %s\n' "$server"
+  fi
+fi

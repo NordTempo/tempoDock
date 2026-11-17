@@ -200,7 +200,7 @@ func (f targetFlags) resolve(link *clientconfig.Link, s scope) (target, error) {
 	}
 	switch {
 	case t.Project == "":
-		return t, noTarget("project", "Pass --project, or link this directory with `dock link`.")
+		return t, noTarget("project", "Pass --project, or link this directory with `dock link`. No project yet? `dock project create <name>`.")
 	case s >= needEnvironment && t.Environment == "":
 		return t, noTarget("environment", "Pass --environment, or link this directory with `dock link`.")
 	case s >= needService && t.Service == "":
@@ -229,7 +229,26 @@ func (g *globals) open(f targetFlags, s scope) (*session, target, error) {
 		}
 	}
 	t, err := f.resolve(sess.link, s)
+	// A project with a single environment needs no --environment: most
+	// first projects have only production.
+	if err != nil && s >= needEnvironment && t.Project != "" && t.Environment == "" {
+		if env := sess.onlyEnvironment(g.ctx, t); env != "" {
+			f.environment = env
+			t, err = f.resolve(sess.link, s)
+		}
+	}
 	return sess, t, err
+}
+
+// onlyEnvironment is the name of t's project's environment when it has
+// exactly one, else "" (also when the project can't be read: the caller's
+// own error then stands).
+func (s *session) onlyEnvironment(ctx context.Context, t target) string {
+	envs, err := get[[]apitypes.Environment](ctx, s, t.projectPath()+"/environments")
+	if err != nil || len(envs) != 1 {
+		return ""
+	}
+	return envs[0].Name
 }
 
 // refreshLinkedProject resolves a directory by stable ID, never by its cached

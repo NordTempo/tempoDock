@@ -216,3 +216,21 @@ func TestSelfUpdateUnwritableDir(t *testing.T) {
 		t.Fatalf("%d after %d downloads: %s; want the hint %q", code, *downloads, stderr, want)
 	}
 }
+
+// A dock from Homebrew is left to brew, before anything is downloaded.
+func TestSelfUpdateHomebrew(t *testing.T) {
+	setup(t)
+	_, downloads := fakeCLIReleases(t)
+	exe := filepath.Join(t.TempDir(), "Cellar", "dock", "0.56.0", "bin", "dock")
+	if err := os.MkdirAll(filepath.Dir(exe), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(exe, []byte("dock old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	selfUpdateHost.executable = func() (string, error) { return exe, nil }
+	code, _, stderr := selfUpdate(t, "--to", "v1.2.0")
+	if code == 0 || !strings.Contains(stderr, "brew upgrade dock") || *downloads != 0 {
+		t.Fatalf("%d after %d downloads: %s", code, *downloads, stderr)
+	}
+}
