@@ -744,3 +744,42 @@ func TestRerootTar(t *testing.T) {
 		t.Fatalf("missing dir: %v", err)
 	}
 }
+
+// A pushed dock.toml that can't be read (here a job schedule whose step
+// is past any field) fails that push with the reason: the push is no
+// longer queued, so it isn't tried again at the next start, and the
+// service's next push deploys.
+func TestPushWithUnreadableDockTomlIsNotQueuedAgain(t *testing.T) {
+	h, gh := gitHarness(t)
+	gh.mu.Lock()
+	gh.files["apps/web/dock.toml"] = "[[jobs]]\nname = \"x\"\nschedule = \"1/9223372036854775807 * * * *\"\ncommand = \"true\"\n"
+	gh.mu.Unlock()
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	token := "github_pat_secret"
+	k := h.connect(web, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main", Dir: "apps/web", Token: &token})
+	if msg, err := h.push(k, pushBody("refs/heads/main", shaA, "apps/web/dock.toml")); err != nil || msg != "push aaaaaaa: queued" {
+		t.Fatalf("push: %q, %v", msg, err)
+	}
+	var src apitypes.GitSource
+	eventually(t, "the push to be refused", func() bool {
+		var err error
+		src, err = h.c.GitStatus(h.ctx, testSystem, web)
+		return err == nil && src.Connection != nil && strings.Contains(src.Connection.LastEvent, "not deployed")
+	})
+	if !strings.Contains(src.Connection.LastEvent, "step") || src.Connection.Pending != nil {
+		t.Fatalf("status: last event %q, pending %+v", src.Connection.LastEvent, src.Connection.Pending)
+	}
+	if ids, err := h.c.store.ListGitPendingServices(h.ctx); err != nil || len(ids) != 0 {
+		t.Fatalf("pushes still queued for the next start: %v, %v", ids, err)
+	}
+
+	gh.mu.Lock()
+	delete(gh.files, "apps/web/dock.toml")
+	gh.mu.Unlock()
+	if _, err := h.push(k, pushBody("refs/heads/main", shaB, "apps/web/server.js")); err != nil {
+		t.Fatal(err)
+	}
+	if r := h.wait(web, h.waitReleases(web, 1)[0].Number); r.Status != apitypes.ReleaseActive {
+		t.Fatalf("the next push's release: %+v", r)
+	}
+}
