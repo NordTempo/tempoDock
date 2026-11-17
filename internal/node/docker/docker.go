@@ -130,6 +130,15 @@ func (e notFoundError) Is(target error) bool {
 // fall through to ImagePull then: with containerd's image store (the
 // default on new Docker installs) pulling a digest whose content is
 // already here doesn't ask the registry at all.
+//
+// A tag is no different once its registry has named a digest: content
+// with that digest that is on the server is not fetched, so a registry
+// that holds nothing can answer a tag with the digest of an image that
+// is here. So when a pull fetched nothing and still gave the reference
+// an image it didn't have before, the registry is asked for it the same
+// way (mayPull: it has to serve the manifest), and without that the
+// name the pull made is taken away again and the pull fails. A pull that
+// downloads, or finds the reference as it was, costs no extra request.
 func (r *Runtime) Pull(ctx context.Context, ref string, logs io.Writer, opts ...node.PullOptions) (string, error) {
 	if logs == nil {
 		logs = io.Discard
@@ -155,6 +164,13 @@ func (r *Runtime) Pull(ctx context.Context, ref string, logs io.Writer, opts ...
 			return img.ID, nil
 		}
 	}
+	// What the reference names before the pull, if anything.
+	before := ""
+	if !platform {
+		if img, err := r.cli.ImageInspect(ctx, ref); err == nil {
+			before = img.ID
+		}
+	}
 	resp, err := r.cli.ImagePull(ctx, ref, pull)
 	if err != nil {
 		return "", err
@@ -162,6 +178,7 @@ func (r *Runtime) Pull(ctx context.Context, ref string, logs io.Writer, opts ...
 	defer func() { _ = resp.Close() }()
 
 	seen := map[string]string{}
+	fetched := false
 	for msg, err := range resp.JSONMessages(ctx) {
 		if err != nil {
 			return "", err
@@ -169,6 +186,7 @@ func (r *Runtime) Pull(ctx context.Context, ref string, logs io.Writer, opts ...
 		if msg.Error != nil {
 			return "", errors.New(msg.Error.Message)
 		}
+		fetched = fetched || fetchedLayer(msg)
 		if line, ok := pullLine(msg, seen); ok {
 			_, _ = fmt.Fprintln(logs, line)
 		}
@@ -178,7 +196,21 @@ func (r *Runtime) Pull(ctx context.Context, ref string, logs io.Writer, opts ...
 	if err != nil {
 		return "", fmt.Errorf("inspect pulled image %s: %w", ref, err)
 	}
+	if !platform && !fetched && img.ID != before {
+		if err := r.mayPull(ctx, ref, pull.RegistryAuth); err != nil {
+			if _, rerr := r.cli.ImageRemove(ctx, ref, client.ImageRemoveOptions{}); rerr != nil && !cerrdefs.IsNotFound(rerr) {
+				return "", fmt.Errorf("%s's registry does not serve the image it named, and the name could not be taken off the server: %w", ref, errors.Join(err, rerr))
+			}
+			return "", fmt.Errorf("%s's registry does not serve the image it named: %w", ref, err)
+		}
+	}
 	return img.ID, nil
+}
+
+// fetchedLayer reports whether a pull progress message says a layer came
+// from the registry, rather than being on the server already.
+func fetchedLayer(msg jsonstream.Message) bool {
+	return msg.ID != "" && (strings.HasPrefix(msg.Status, "Download") || msg.Status == "Pull complete")
 }
 
 // mayPull asks ref's registry for its manifest with auth: nil if it gives
