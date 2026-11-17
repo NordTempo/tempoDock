@@ -757,6 +757,24 @@ func TestSnapshotTools(t *testing.T) {
 	if c.isError || res.Restore.InPlace || res.Restore.To != "pg-old" || res.Restore.Status != apitypes.BackupSucceeded {
 		t.Fatalf("restore_snapshot = %q %+v", c.summary, res.Restore)
 	}
+
+	// Another service's snapshots restore only in place: the agent is
+	// told to ask a person, not to pass an argument the tool doesn't have.
+	files := core.ServiceRef{Project: "shop", Environment: "staging", Service: "files"}
+	if _, err := f.core.CreateService(ctx, sys, files.Env(), apitypes.CreateServiceRequest{Name: "files", Image: "app:1", Port: 8080}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.core.AddVolume(ctx, sys, files, apitypes.AddVolumeRequest{Name: "files", MountPath: "/files"}); err != nil {
+		t.Fatal(err)
+	}
+	if c := call(t, s, "deploy_image", map[string]any{"service": "files"}); c.isError {
+		t.Fatalf("deploy_image = %q", c.summary)
+	}
+	call(t, s, "create_snapshot", map[string]any{"service": "files"}).decode(t, &snap)
+	c = call(t, s, "restore_snapshot", map[string]any{"service": "files", "snapshot": snap.ID})
+	if !c.isError || !strings.Contains(c.summary, "need a person") || !strings.Contains(c.summary, "--in-place") || strings.Contains(c.summary, "in_place") {
+		t.Fatalf("restore_snapshot of a volume = %q", c.summary)
+	}
 }
 
 // The logs tool's grep and stderr filter on the server.
