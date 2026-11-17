@@ -36,9 +36,12 @@ func (h *harness) previewLive(env string) {
 }
 
 // envSnapshot is what a change to an environment would show: each
-// service's releases and the environment's variables, revealed.
+// service's releases and the environment's variables, revealed. It waits
+// for env's deploys to settle first, so a release still health checking
+// doesn't read as a change.
 func (h *harness) envSnapshot(env string) string {
 	h.t.Helper()
+	h.settled(env)
 	var b strings.Builder
 	for _, svc := range []string{"web", "api", "db"} {
 		rels, err := h.c.ListReleases(h.ctx, testSystem, ServiceRef{"shop", env, svc}, 50)
