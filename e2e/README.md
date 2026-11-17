@@ -13,6 +13,7 @@ the CLI and real traffic through the proxy.
 | `analytics-*.sh` | Dock Analytics with a headless browser, on their own containers |
 | `drain.sh` | `dock server drain` of a node under load: Postgres, Redis, a volume and stateless apps move with no failed request and every acknowledged write kept |
 | `upgrade/run.sh` | one published release updated to another, with data checks |
+| `sso.sh` | single sign-on through a real Keycloak over HTTPS (its own CA, in the slot): the oidc kind and the keycloak preset, invites, refusals, step-ups, logout |
 | `fresh-install.sh` | the README's install on bare Debian 12/13 and Ubuntu 22.04/24.04: piped install with Docker, CLI login, a template, re-run, uninstall |
 | `nightly.sh` | all of the above that fits one cycle, every night (below) |
 | `repeat.sh` | one scenario N times, a line per run, for failures too rare for one run |
