@@ -75,6 +75,22 @@ type signInVia struct {
 	ssoProviderID int64
 	ssoProvider   string
 	ssoLabel      string
+	// authAt is when an identity provider last had the person sign in
+	// (the ID token's auth_time): the session counts as confirmed then,
+	// not now, so reusing an old provider session is no step-up. Zero
+	// for now.
+	authAt time.Time
+	// idToken is the provider's ID token, kept (sealed) with the session
+	// for signing out at the provider too (endSessionURL); "" for none.
+	idToken string
+}
+
+// sealIDToken seals via's ID token for the session with hash; nil for none.
+func (c *Core) sealIDToken(via signInVia, hash string) ([]byte, error) {
+	if via.idToken == "" {
+		return nil, nil
+	}
+	return c.box.Seal([]byte(via.idToken), sealedSessionIDToken.AAD(hash))
 }
 
 // ssoProviderIDPtr is ssoProviderID for the store, nil for none.
@@ -159,7 +175,11 @@ func (c *Core) startSecondFactor(ctx context.Context, u store.User, via signInVi
 	}
 	secret, hash := newSecret(sessionPrefix)
 	expires := now().Add(pendingTTL)
-	if _, err := c.store.CreateSession(ctx, store.CreateSessionParams{UserID: u.ID, Hash: hash, ExpiresAt: expires, Pending: true, SsoProviderID: via.ssoProviderIDPtr()}); err != nil {
+	idToken, err := c.sealIDToken(via, hash)
+	if err != nil {
+		return LoginResult{}, err
+	}
+	if _, err := c.store.CreateSession(ctx, store.CreateSessionParams{UserID: u.ID, Hash: hash, ExpiresAt: expires, Pending: true, SsoProviderID: via.ssoProviderIDPtr(), SsoIDToken: idToken}); err != nil {
 		return LoginResult{}, err
 	}
 	return LoginResult{Secret: secret, Expires: expires, Pending: true, Factors: kinds}, nil
@@ -215,6 +235,7 @@ func (c *Core) LoginSecondFactor(ctx context.Context, pendingSecret string, v ap
 	via := signInVia{factor: kind}
 	if s.SsoProviderID != nil && row.SsoName != nil && row.SsoLabel != nil {
 		via.ssoProviderID, via.ssoProvider, via.ssoLabel = *s.SsoProviderID, *row.SsoName, *row.SsoLabel
+		via.idToken = c.openIDToken(s)
 	}
 	return c.signIn(ctx, u, via, clientIP)
 }

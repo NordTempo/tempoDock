@@ -41,10 +41,16 @@ import (
 //  3. ssoUser maps the person to a Dock account (see there). The session
 //     then starts as after a password, with factor sso and the provider
 //     recorded, and a user with an authenticator app still gives a code.
+//     It counts as confirmed when the provider last had the person sign
+//     in (auth_time), so a step-up (SSOStartRequest.Confirm) asks the
+//     provider to sign them in again.
 
 const (
 	// ssoTimeout bounds each request to an identity provider.
 	ssoTimeout = 10 * time.Second
+	// ssoLogoutTimeout bounds reading a provider's discovery when signing
+	// out: past it, the person is signed out of Dock only.
+	ssoLogoutTimeout = 3 * time.Second
 	// ssoMaxResponse bounds what Dock reads of a provider's answer.
 	ssoMaxResponse = 1 << 20
 )
@@ -167,9 +173,87 @@ func (c *Core) StartSSO(ctx context.Context, req apitypes.SSOStartRequest, clien
 	opts := []oauth2.AuthCodeOption{oauth2.S256ChallengeOption(verifier)}
 	if prov != nil {
 		opts = append(opts, oidc.Nonce(nonce))
+		if req.Confirm {
+			opts = append(opts, ssoConfirmOptions(p.Kind))
+		}
 	}
 	authURL := c.oauthConfig(p, prov, "").AuthCodeURL(state, opts...)
 	return SSOStart{SSOStart: apitypes.SSOStart{URL: authURL}, Binding: binding}, nil
+}
+
+// ssoConfirmOptions asks an OpenID Connect provider to have the person
+// sign in again even with a live session of its own, for a step-up:
+// prompt=login, which Google refuses, so it gets max_age=0 instead. The
+// session then counts as confirmed at the ID token's auth_time
+// (signInVia.authAt), so a provider that ignores the request confirms
+// nothing. GitHub's OAuth has neither; its step-ups reuse its session.
+func ssoConfirmOptions(kind string) oauth2.AuthCodeOption {
+	if kind == string(apitypes.SSOGoogle) {
+		return oauth2.SetAuthURLParam("max_age", "0")
+	}
+	return oauth2.SetAuthURLParam("prompt", "login")
+}
+
+// SSOLogoutRedirectPath is where a provider sends the browser after
+// signing out there (post_logout_redirect_uri): Dock's sign-in page.
+const SSOLogoutRedirectPath = "/login"
+
+// ssoLogoutRedirectURL is the post-logout redirect URI operators register
+// at each provider.
+func (c *Core) ssoLogoutRedirectURL() string { return c.dockURL() + SSOLogoutRedirectPath }
+
+// endSessionURL is where the browser ends its session at provider id
+// after signing out of Dock (OpenID Connect RP-Initiated Logout 1.0): the
+// provider's end_session_endpoint with the session's ID token as
+// id_token_hint (when kept), Dock's client_id, and Dock's sign-in page to
+// come back to. "" when there is nothing to end there: GitHub, a provider
+// without the endpoint (Google), one that is gone or doesn't answer in
+// time. The person is signed out of Dock either way.
+func (c *Core) endSessionURL(ctx context.Context, providerID int64, idToken string) string {
+	p, err := c.store.GetSSOProvider(ctx, providerID)
+	if err != nil || p.Kind == string(apitypes.SSOGitHub) {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(ctx, ssoLogoutTimeout)
+	defer cancel()
+	prov, err := c.sso.discover(ctx, c.log, p.Issuer)
+	if err != nil {
+		return ""
+	}
+	var doc struct {
+		EndSession string `json:"end_session_endpoint"`
+	}
+	if err := prov.Claims(&doc); err != nil || doc.EndSession == "" {
+		return ""
+	}
+	// The browser is sent there: never anything but a web page.
+	u, err := url.Parse(doc.EndSession)
+	if err != nil || u.Host == "" || u.Scheme != "https" && (u.Scheme != "http" || !loopbackHost(u.Hostname())) {
+		c.log.Warn("sso: end_session_endpoint is not an https URL", "provider", p.Name, "endpoint", doc.EndSession)
+		return ""
+	}
+	q := u.Query()
+	if idToken != "" {
+		q.Set("id_token_hint", idToken)
+	}
+	q.Set("client_id", p.ClientID)
+	q.Set("post_logout_redirect_uri", c.ssoLogoutRedirectURL())
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+// openIDToken opens the ID token sealed with session s; "" for none, or
+// one that doesn't open (logged): logout then sends client_id alone.
+func (c *Core) openIDToken(s store.Session) string {
+	if len(s.SsoIDToken) == 0 {
+		return ""
+	}
+	b, err := c.box.Open(s.SsoIDToken, sealedSessionIDToken.AAD(s.Hash))
+	if err != nil {
+		c.log.Warn("sso: session ID token doesn't open", "session", s.ID, "err", err)
+		return ""
+	}
+	return string(b)
 }
 
 // oauthConfig is the OAuth 2.0 client Dock is at provider p; prov is its
@@ -272,9 +356,14 @@ func errSSOAnswer(label string) error {
 	return errf(apitypes.CodeUnauthorized, "%s's answer didn't check out; try again, or ask an operator to check the %s provider in the console", label, label)
 }
 
-// ssoPerson is who a provider says signed in.
+// ssoPerson is who a provider says signed in, and when the provider last
+// had them sign in (auth_time; zero when it doesn't say).
 type ssoPerson struct {
 	subject, email, name string
+	authAt               time.Time
+	// idToken is the raw ID token, kept for signing out at the provider;
+	// "" for GitHub.
+	idToken string
 }
 
 // finishSSO checks the provider's answer for flow f and signs the person
@@ -317,7 +406,7 @@ func (c *Core) finishSSO(ctx context.Context, p store.SsoProvider, f *ssoFlow, c
 	if err != nil {
 		return LoginResult{}, err
 	}
-	via := signInVia{factor: factorSSO, ssoProviderID: p.ID, ssoProvider: p.Name, ssoLabel: p.Label}
+	via := signInVia{factor: factorSSO, ssoProviderID: p.ID, ssoProvider: p.Name, ssoLabel: p.Label, authAt: who.authAt, idToken: who.idToken}
 	n, err := c.store.CountUserFactors(ctx, u.ID)
 	if err != nil {
 		return LoginResult{}, err
@@ -354,12 +443,18 @@ func oidcPerson(ctx context.Context, log *slog.Logger, p store.SsoProvider, f *s
 		EmailDomainVerified any    `json:"xms_edov"`
 		Name                string `json:"name"`
 		PreferredUsername   string `json:"preferred_username"`
+		// AuthTime is when the person last signed in at the provider,
+		// in seconds since 1970.
+		AuthTime float64 `json:"auth_time"`
 	}
 	if err := idt.Claims(&claims); err != nil {
 		log.Warn("sso: ID token claims", "err", err)
 		return ssoPerson{}, errSSOAnswer(p.Label)
 	}
-	who := ssoPerson{subject: idt.Subject, email: strings.TrimSpace(claims.Email)}
+	who := ssoPerson{subject: idt.Subject, email: strings.TrimSpace(claims.Email), idToken: raw}
+	if claims.AuthTime > 0 {
+		who.authAt = time.Unix(int64(claims.AuthTime), 0)
+	}
 	if who.email == "" {
 		return who, errf(apitypes.CodeForbidden, "%s sent no email address; ask an operator to let Dock read it (the email scope)", p.Label)
 	}

@@ -71,7 +71,7 @@ func TestSessionCookieOverHTTPS(t *testing.T) {
 		t.Fatalf("a session from before the prefix: %d", r.StatusCode)
 	}
 	logout := f.https("POST", "/api/v1/auth/logout", nil, session)
-	if r := f.https("GET", "/api/v1/me", nil, session); logout.StatusCode != 204 || r.StatusCode != 401 {
+	if r := f.https("GET", "/api/v1/me", nil, session); logout.StatusCode != 200 || r.StatusCode != 401 {
 		t.Fatalf("logout %d, then %d", logout.StatusCode, r.StatusCode)
 	}
 }

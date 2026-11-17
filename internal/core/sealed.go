@@ -54,6 +54,9 @@ var (
 	sealedUserFactor = secrets.Column{Table: "user_factors", Name: "secret", Key: []string{"user_id", "kind", "coalesce(hex(credential_id), '')"}}
 	// sealedSSOSecret is an identity provider's client secret (ADR 0065).
 	sealedSSOSecret = secrets.Column{Table: "sso_providers", Name: "client_secret", Key: []string{"name"}}
+	// sealedSessionIDToken is the ID token a single sign-on session signed
+	// in with, for its logout's id_token_hint, bound to the session.
+	sealedSessionIDToken = secrets.Column{Table: "sessions", Name: "sso_id_token", Key: []string{"hash"}}
 	// sealedEmailPassword is the platform's SMTP password, and
 	// sealedEmailBody a queued mail, bound to its row's nonce (ADR 0079).
 	sealedEmailPassword = secrets.Column{Table: "email_settings", Name: "password"}
@@ -65,7 +68,7 @@ var (
 		sealedCloudflareToken, sealedTunnelToken, sealedAnalyticsSalt, sealedBackupKeys,
 		sealedBackupPassword, sealedAnalyticsToken, sealedAppKey, sealedAppWebhookSecret, sealedAppClientSecret,
 		sealedDataReader, sealedDataWriter, sealedRequestArgs, sealedLogDrain, sealedRegistrySecret, sealedUserFactor,
-		sealedSSOSecret, sealedStatusHook, sealedEmailPassword, sealedEmailBody, sealedWildcardKey, sealedACMEKey,
+		sealedSSOSecret, sealedSessionIDToken, sealedStatusHook, sealedEmailPassword, sealedEmailBody, sealedWildcardKey, sealedACMEKey,
 	}
 )
 

@@ -41,7 +41,9 @@ func (c *Core) ListSSOProviders(ctx context.Context, a Actor) (apitypes.SSOProvi
 	if err != nil {
 		return apitypes.SSOProviders{}, err
 	}
-	out := apitypes.SSOProviders{Providers: make([]apitypes.SSOProvider, len(rows)), RedirectURL: c.ssoRedirectURL()}
+	out := apitypes.SSOProviders{
+		Providers: make([]apitypes.SSOProvider, len(rows)), RedirectURL: c.ssoRedirectURL(), LogoutRedirectURL: c.ssoLogoutRedirectURL(),
+	}
 	for i, r := range rows {
 		out.Providers[i] = c.toSSOProvider(r.SsoProvider, r.Linked)
 	}

@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -387,6 +388,84 @@ func TestSSOWithSecondFactor(t *testing.T) {
 	if s := session(t, h, done.Secret); s.a.SSOProvider != "corp" || s.a.Factor != factorTOTP {
 		t.Fatalf("finished session = %+v", s.a)
 	}
+}
+
+// A session counts as confirmed when the provider last had the person
+// sign in, so signing in again on the provider's old session is no
+// step-up; a step-up asks the provider to sign them in again.
+func TestSSOStepUpNeedsAFreshSignIn(t *testing.T) {
+	h, idp := ssoHarness(t)
+	h.cliUser(adaEmail, apitypes.ScopeDeploy)
+	signedInAt := func(at time.Time) func(map[string]any) {
+		return func(c map[string]any) { c["auth_time"] = at.Unix() }
+	}
+
+	res, err := h.ssoSignIn(idp, "ada-sub", adaEmail, signedInAt(now().Add(-time.Hour)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := session(t, h, res.Secret)
+	wantCode(t, "step-up on an hour-old provider sign-in", stale.a.requireRecent("revealing a secret"), apitypes.CodeReauthRequired)
+
+	start, err := h.c.StartSSO(h.ctx, apitypes.SSOStartRequest{Provider: "corp", To: "/test/shop", Confirm: true}, testClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u, _ := url.Parse(start.URL); u.Query().Get("prompt") != "login" {
+		t.Fatalf("a step-up doesn't ask the provider to sign in again: %s", start.URL)
+	}
+	req := oidctest.Read(t, start.URL)
+	claims := idp.Claims(req, "ada-sub", adaEmail)
+	signedInAt(now())(claims)
+	res, err = h.c.FinishSSO(h.ctx, SSOCallback{State: req.State, Code: idp.Authorize(req, claims), Binding: start.Binding}, testClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session(t, h, res.Secret).a.requireRecent("revealing a secret"); err != nil {
+		t.Fatalf("a fresh sign-in at the provider doesn't confirm: %v", err)
+	}
+}
+
+// Signing out of a provider's session also signs out at the provider
+// (RP-initiated logout): Logout answers with its end-session URL, with
+// the ID token the session kept (sealed), through a second factor too.
+func TestSSOLogoutEndsTheProviderSession(t *testing.T) {
+	h, idp := ssoHarness(t)
+	password := adaSession(t, h)
+	// A password session has no provider to sign out of.
+	if end, err := h.c.Logout(h.ctx, password.secret); end != "" || err != nil {
+		t.Fatalf("password logout = %q, %v", end, err)
+	}
+	wantLogout := func(secret string) {
+		t.Helper()
+		end, err := h.c.Logout(h.ctx, secret)
+		if err != nil {
+			t.Fatal(err)
+		}
+		u, _ := url.Parse(end)
+		q := u.Query()
+		hint := strings.Split(q.Get("id_token_hint"), ".")
+		if !strings.HasPrefix(end, idp.Issuer+"/logout?") || len(hint) != 3 || q.Get("client_id") != oidctest.ClientID ||
+			q.Get("post_logout_redirect_uri") != h.c.dockURL()+"/login" {
+			t.Fatalf("end-session URL %q", end)
+		}
+		if _, err := h.c.AuthenticateSession(h.ctx, secret, "", false); CodeOf(err) != apitypes.CodeUnauthorized {
+			t.Fatalf("session outlived its logout: %v", err)
+		}
+	}
+	wantLogout(h.ssoSession(idp, "ada-sub", adaEmail).secret)
+
+	// The pending sign-in keeps the token for the session after it.
+	key, _ := addTOTP(t, h, passwordLogin(t, h))
+	res, err := h.ssoSignIn(idp, "ada-sub", adaEmail, nil)
+	if err != nil || !res.Pending {
+		t.Fatalf("sso with an authenticator app: %+v, %v", res, err)
+	}
+	done, err := h.c.LoginSecondFactor(h.ctx, res.Secret, apitypes.Verification{Code: totpCode(key, totpStep(now()))}, testClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantLogout(done.Secret)
 }
 
 // A client secret an org's provider sealed (bound to its org and old

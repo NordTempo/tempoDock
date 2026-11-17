@@ -1105,6 +1105,7 @@ type Session struct {
 	VerifiedAt    *time.Time
 	SsoProviderID *int64
 	LegacyCookie  bool
+	SsoIDToken    []byte
 }
 
 type Site struct {

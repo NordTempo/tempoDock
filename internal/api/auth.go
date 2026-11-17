@@ -155,6 +155,7 @@ func (in *logoutInput) Resolve(ctx huma.Context) []error {
 
 type logoutOutput struct {
 	SetCookie []http.Cookie `header:"Set-Cookie"`
+	Body      apitypes.LoggedOut
 }
 
 func registerAuth(s *Server, a huma.API) {
@@ -187,14 +188,19 @@ func registerAuth(s *Server, a huma.API) {
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "logout", Method: http.MethodPost, Path: Prefix + "/auth/logout",
-		Summary: "End the UI session", Tags: []string{"auth"}, DefaultStatus: http.StatusNoContent,
+		Summary: "End the UI session",
+		Description: "A session that signed in through an OpenID Connect provider with an end-session endpoint answers with end_session_url: " +
+			"send the browser there to sign out of the provider too; it comes back to the sign-in page.",
+		Tags: []string{"auth"},
 	}, func(ctx context.Context, _ core.Actor, in *logoutInput) (*logoutOutput, error) {
+		out := &logoutOutput{SetCookie: in.client.sessionCookies("", time.Time{})}
 		if in.session != "" {
-			if err := s.core.Logout(ctx, in.session); err != nil {
+			var err error
+			if out.Body.EndSessionURL, err = s.core.Logout(ctx, in.session); err != nil {
 				return nil, err
 			}
 		}
-		return &logoutOutput{SetCookie: in.client.sessionCookies("", time.Time{})}, nil
+		return out, nil
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "update-me", Method: http.MethodPatch, Path: Prefix + "/me",

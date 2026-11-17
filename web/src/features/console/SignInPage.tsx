@@ -27,9 +27,10 @@ import {
 
 // The console's Sign-in page (ADR 0065, `dock sso`): the platform's
 // identity providers as a list beside the open one, under a strip with
-// the two switches (password sign-in, invite only) and the one redirect
-// URL every provider sends people back to. Chosen layout C of the
-// 2026-11-07 mocks.
+// the two switches (password sign-in, invite only), the one redirect URL
+// every provider sends people back to and the sign-out URL providers
+// return to after signing out there. Chosen layout C of the 2026-11-07
+// mocks.
 
 type Kind = Provider["kind"];
 
@@ -43,6 +44,7 @@ export function SignInPage() {
   const data = useSuspenseQuery(ssoProvidersQuery()).data;
   const providers = data.providers ?? [];
   const redirect = data.redirect_url;
+  const signOut = data.logout_redirect_url;
   const [pane, setPane] = useState<Pane | undefined>();
   useShortcuts([
     { key: "n", label: "add a provider", run: () => setPane({ mode: "add" }) },
@@ -74,7 +76,11 @@ export function SignInPage() {
         }
       />
       <Page gap="gap-0">
-        <Switches redirect={redirect} hasProviders={providers.length > 0} />
+        <Switches
+          redirect={redirect}
+          signOut={signOut}
+          hasProviders={providers.length > 0}
+        />
         <div className="flex flex-col lg:flex-row">
           {providers.length > 0 && (
             <ul
@@ -138,13 +144,16 @@ export function SignInPage() {
 
 /**
  * The strip under the bar: password sign-in and invite only, each with
- * its state and the one button that flips it, and the redirect URL.
+ * its state and the one button that flips it, the redirect URL and the
+ * sign-out URL.
  */
 function Switches({
   redirect,
+  signOut,
   hasProviders,
 }: {
   redirect: string;
+  signOut: string;
   hasProviders: boolean;
 }) {
   const set = useSuspenseQuery(signInSettingsQuery()).data;
@@ -207,6 +216,13 @@ function Switches({
             {redirect}
           </code>
           <CopyButton text={redirect} />
+        </dd>
+        <dt>Sign-out URL</dt>
+        <dd className="flex min-w-0 flex-wrap items-center gap-2">
+          <code className="min-w-0 font-mono text-xs text-sec [overflow-wrap:anywhere]">
+            {signOut}
+          </code>
+          <CopyButton text={signOut} />
         </dd>
       </dl>
       <p className="text-xs text-mut">
@@ -280,17 +296,17 @@ const setupHint: Record<Kind, string> = {
   github:
     "At GitHub: Settings, Developer settings, OAuth Apps, New OAuth App. The redirect URL is its authorization callback URL. Dock signs people in with the account's primary verified email.",
   microsoft:
-    "In Entra ID: App registrations, New registration, single tenant, with the redirect URL as a Web redirect URI; then a client secret, and in Token configuration the optional ID token claims email and xms_edov. Dock signs in only people whose email xms_edov vouches for.",
+    "In Entra ID: App registrations, New registration, single tenant, with the redirect URL and the sign-out URL as Web redirect URIs; then a client secret, and in Token configuration the optional ID token claims email and xms_edov. Dock signs in only people whose email xms_edov vouches for.",
   gitlab:
     "In GitLab: Edit profile (or a group, or the instance's Admin area), Applications, with the scopes openid, email and profile and the redirect URL.",
-  okta: "In Okta: Applications, Create App Integration, OIDC, Web Application, with the redirect URL as a sign-in redirect URI.",
+  okta: "In Okta: Applications, Create App Integration, OIDC, Web Application, with the redirect URL as a sign-in redirect URI and the sign-out URL as a sign-out redirect URI.",
   auth0:
-    "In Auth0: Applications, Create Application, Regular Web Application. Add the redirect URL to its Allowed Callback URLs.",
+    "In Auth0: Applications, Create Application, Regular Web Application. Add the redirect URL to its Allowed Callback URLs and the sign-out URL to its Allowed Logout URLs; signing out of Auth0 too needs RP-Initiated Logout End Session Endpoint Discovery on in the tenant's Advanced settings.",
   keycloak:
-    "In the realm: Clients, Create client, OpenID Connect, Client authentication on, with the redirect URL as a valid redirect URI.",
+    "In the realm: Clients, Create client, OpenID Connect, Client authentication on, with the redirect URL as a valid redirect URI and the sign-out URL as a valid post logout redirect URI.",
   authentik:
-    "In authentik: Applications, Create with provider, OAuth2/OpenID, Confidential, with the redirect URL. The realm is the application's slug.",
-  oidc: "Register a web application with the scopes openid, email and profile and the redirect URL. The issuer must match the provider's tokens exactly, trailing slash included.",
+    "In authentik: Applications, Create with provider, OAuth2/OpenID, Confidential, with the redirect URL and the sign-out URL as a post logout redirect URI. The realm is the application's slug.",
+  oidc: "Register a web application with the scopes openid, email and profile and the redirect URL, and the sign-out URL as its post-logout redirect URI if it has an end-session endpoint. The issuer must match the provider's tokens exactly, trailing slash included.",
 };
 
 /** The open provider: its facts, its button, Edit and Remove. */

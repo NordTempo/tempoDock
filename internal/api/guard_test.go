@@ -82,7 +82,7 @@ func TestCookieRequestsRefuseCrossSite(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusNoContent {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("logout: %d", resp.StatusCode)
 	}
 }

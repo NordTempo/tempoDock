@@ -343,19 +343,30 @@ func (c *Core) checkPassword(ctx context.Context, email, password string) (store
 }
 
 // newSession starts a UI session for u, signed in via (a password alone
-// when empty), verified now. It returns the session's secret and the
-// actor it authenticates, in no org yet.
+// when empty), verified now, or when the identity provider last had the
+// person sign in (via.authAt) if that was earlier. It returns the
+// session's secret and the actor it authenticates, in no org yet.
 func (c *Core) newSession(ctx context.Context, u store.User, via signInVia) (secret string, expires time.Time, a Actor, err error) {
 	secret, hash := newSecret(sessionPrefix)
 	t := now()
 	expires = t.Add(SessionTTL)
-	id, err := c.store.CreateSession(ctx, store.CreateSessionParams{UserID: u.ID, Hash: hash, ExpiresAt: expires, Factor: via.factor, VerifiedAt: &t, SsoProviderID: via.ssoProviderIDPtr()})
+	verified := t
+	if !via.authAt.IsZero() && via.authAt.Before(t) {
+		verified = via.authAt.UTC()
+	}
+	idToken, err := c.sealIDToken(via, hash)
+	if err != nil {
+		return "", time.Time{}, Actor{}, err
+	}
+	id, err := c.store.CreateSession(ctx, store.CreateSessionParams{
+		UserID: u.ID, Hash: hash, ExpiresAt: expires, Factor: via.factor, VerifiedAt: &verified, SsoProviderID: via.ssoProviderIDPtr(), SsoIDToken: idToken,
+	})
 	if err != nil {
 		return "", time.Time{}, Actor{}, err
 	}
 	_ = c.store.DeleteExpiredSessions(ctx, now())
 	a = userActor(u)
-	a.SessionID, a.Factor, a.VerifiedAt = id, via.factor, t
+	a.SessionID, a.Factor, a.VerifiedAt = id, via.factor, verified
 	a.SSOProviderID, a.SSOProvider, a.SSOLabel = via.ssoProviderID, via.ssoProvider, via.ssoLabel
 	return secret, expires, c.gateOperator(a), nil
 }
@@ -528,9 +539,27 @@ func revokedNote(n int64) string {
 	return fmt.Sprintf("; revoked their %d dock login tokens", n)
 }
 
-// Logout ends a session. Unknown sessions are ignored.
-func (c *Core) Logout(ctx context.Context, secret string) error {
-	return c.store.DeleteSession(ctx, hashSecret(secret))
+// Logout ends a session; unknown sessions are ignored. For a session that
+// signed in through an OpenID Connect provider it returns the URL that
+// ends the provider's session too (endSessionURL), for the browser to
+// visit; "" otherwise.
+func (c *Core) Logout(ctx context.Context, secret string) (endSession string, err error) {
+	hash := hashSecret(secret)
+	row, err := c.store.GetSessionUser(ctx, hash)
+	if store.IsNotFound(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if err := c.store.DeleteSession(ctx, hash); err != nil {
+		return "", err
+	}
+	s := row.Session
+	if s.Pending || s.SsoProviderID == nil {
+		return "", nil
+	}
+	return c.endSessionURL(ctx, *s.SsoProviderID, c.openIDToken(s)), nil
 }
 
 // ListTokens returns the org's tokens and its members' `dock login`
