@@ -740,6 +740,9 @@ func (e *alertEngine) channelSettings(req apitypes.CreateAlertChannelRequest, or
 		if len(req.To) == 0 {
 			return cfg, "", "", invalid("an email channel needs at least one recipient")
 		}
+		if len(req.To) > maxChannelRecipients {
+			return cfg, "", "", invalid("an email channel takes at most %d recipients; send to a list's address for more", maxChannelRecipients)
+		}
 		if req.URL != "" || req.Secret != "" {
 			return cfg, "", "", invalid("email channels take recipients, not a URL or secret")
 		}
@@ -776,6 +779,13 @@ func (c *Core) RemoveAlertChannel(ctx context.Context, a Actor, platform bool, n
 	return nil
 }
 
+// maxChannelRecipients caps an email channel's recipients, in core as in
+// the API's schema: every alert and every test mails each of them.
+const maxChannelRecipients = 20
+
+// emailTestEvery is how often an organization may test an email channel.
+const emailTestEvery = time.Minute
+
 // TestAlertChannel sends a test notification to one of the org's channels
 // (with platform, the platform's) once, without retries, and reports how
 // it went; the outcome is recorded on the channel like any delivery.
@@ -789,6 +799,25 @@ func (c *Core) TestAlertChannel(ctx context.Context, a Actor, platform bool, nam
 		return apitypes.AlertChannelTest{}, err
 	}
 	t := now()
+	if apitypes.AlertChannelKind(ch.Kind) == apitypes.ChannelEmail {
+		// A test mails the channel's recipients at once, past the outbox
+		// and its limits, to addresses nobody confirmed: one a minute an
+		// organization, so testing can't be used to send mail in bulk.
+		c.alerts.mu.Lock()
+		if c.alerts.mailTested == nil {
+			c.alerts.mailTested = map[int64]time.Time{}
+		}
+		last, tested := c.alerts.mailTested[org]
+		wait := emailTestEvery - t.Sub(last)
+		if !tested || wait <= 0 {
+			c.alerts.mailTested[org] = t
+		}
+		c.alerts.mu.Unlock()
+		if tested && wait > 0 {
+			return apitypes.AlertChannelTest{}, errf(apitypes.CodeRateLimited, "an email channel was tested less than a minute ago; try again in %d seconds", int(wait.Seconds())+1)
+		}
+	}
+	c.audit(ctx, channelAudit(a, org), "alert.channel_test", nil, nil, "alert channel "+name, "sent a test alert to channel "+name)
 	n := apitypes.AlertNotification{Event: "test", SentAt: t, Alert: apitypes.Alert{
 		Kind: "test", Severity: apitypes.SeverityWarning, Title: "Test alert from dock",
 		Message: "Channel " + name + " works. Alerts at " + ch.MinSeverity + " and up come here.", OpenedAt: t, UpdatedAt: t,
