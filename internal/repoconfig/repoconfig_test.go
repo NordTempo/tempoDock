@@ -239,3 +239,27 @@ name = "x"
 		}
 	}
 }
+
+// FuzzParse: a dock.toml from anyone's repository gets a config or an
+// error, never a panic. The seeds hold each section and the schedules
+// that once went wrong.
+func FuzzParse(f *testing.F) {
+	for _, seed := range []string{
+		"",
+		"[build]\ndockerfile = \"docker/Dockerfile\"\n",
+		"[deploy]\nstart_command = \"node server.js\"\nport = 3000\nhealth_check_path = \"/up\"\nhealth_check_interval = \"off\"\nhealth_check_timeout = \"30s\"\n",
+		"[[jobs]]\nname = \"sweep\"\nschedule = \"*/15 * * * *\"\ntimezone = \"Europe/Oslo\"\ncommand = \"bin/sweep\"\noverlap = \"skip\"\ntimeout = \"5m\"\n",
+		"[[jobs]]\nname = \"x\"\nschedule = \"1/9223372036854775807 * * * *\"\ncommand = \"true\"\n",
+		"[[jobs]]\nname = \"x\"\nschedule = \"@daily\"\ntimezone = \"../../etc/passwd\"\ncommand = \"true\"\n",
+		"[deploy]\nport = 99999999999999999999\n",
+		"[deploy\n",
+	} {
+		f.Add([]byte(seed))
+	}
+	f.Fuzz(func(t *testing.T, b []byte) {
+		cfg, err := Parse(b)
+		if err != nil && !reflect.DeepEqual(cfg, Config{}) {
+			t.Errorf("an error came with a config: %v, %+v", err, cfg)
+		}
+	})
+}

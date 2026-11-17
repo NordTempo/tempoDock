@@ -700,7 +700,13 @@ func (c *Core) gitStep(serviceID int64, w *gitWorker) gitStep {
 	}
 	actor := Actor{Kind: "system", Name: conn.PendingBy, Scope: apitypes.ScopeDeploy}
 	open := func() (io.ReadCloser, error) { return c.git.github.tarball(fctx, conn.Repo, sha, cred, conn.Dir) }
-	rel, err := c.deploySource(fctx, actor, ss, open, int64(c.cfg.MaxUploadMB)<<20, commit)
+	// What the repository holds is read here, in a goroutine nothing
+	// recovers: a panic on it is this push's failure (caught), and the
+	// push is cleared below like any other that can't be deployed, so it
+	// isn't tried again on every start.
+	rel, err := caught(c.log, "deploying a push", func() (store.Release, error) {
+		return c.deploySource(fctx, actor, ss, open, int64(c.cfg.MaxUploadMB)<<20, commit)
+	})
 	switch {
 	case err == nil:
 		// gitDeployStart cleared the push and recorded its release; this

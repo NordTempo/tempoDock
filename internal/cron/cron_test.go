@@ -75,13 +75,18 @@ func TestDaylightSaving(t *testing.T) {
 // TestParseErrors: what's wrong is said per field.
 func TestParseErrors(t *testing.T) {
 	for expr, want := range map[string]string{
-		"* * * *":      "5 fields",
-		"60 * * * *":   "minute: 60 is outside 0-59",
-		"* * * foo *":  "month: \"foo\" is not a number",
-		"*/0 * * * *":  "step",
-		"5-1 * * * *":  "backwards",
-		"0 0 31 2 *":   "never happens",
-		"0 0 30 2 mon": "", // a weekday still matches
+		"* * * *":                        "5 fields",
+		"60 * * * *":                     "minute: 60 is outside 0-59",
+		"* * * foo *":                    "month: \"foo\" is not a number",
+		"*/0 * * * *":                    "step",
+		"*/61 * * * *":                   "minute: step \"61\" must be a number from 1 to 60",
+		"* 1/25 * * *":                   "hour: step \"25\" must be a number from 1 to 24",
+		"1/9223372036854775807 * * * *":  "step",
+		"1/99999999999999999999 * * * *": "step",
+		"*/60 */24 * * *":                "", // the whole field: its first value
+		"5-1 * * * *":                    "backwards",
+		"0 0 31 2 *":                     "never happens",
+		"0 0 30 2 mon":                   "", // a weekday still matches
 	} {
 		_, err := Parse(expr)
 		switch {
@@ -91,4 +96,26 @@ func TestParseErrors(t *testing.T) {
 			t.Errorf("%q: %v, want %q", expr, err, want)
 		}
 	}
+}
+
+// FuzzParse: an expression from a repository's dock.toml gets a schedule
+// or an error, never a panic, and a schedule that parsed has a next time
+// within Next's bound.
+func FuzzParse(f *testing.F) {
+	for _, seed := range []string{
+		"0 3 * * *", "*/15 9-17 * jan-jun mon-fri", "@daily", "0 0 29 2 *", "0,30 */2 1,15 * 0-7/2",
+		"1/9223372036854775807 * * * *", "*/-1 * * * *", "1-/2 * * * *", "-,/ * * * *", "0 0 31 2 *", "7/7 * * * 7/7",
+	} {
+		f.Add(seed)
+	}
+	from := time.Date(2026, 1, 31, 23, 59, 0, 0, time.UTC)
+	f.Fuzz(func(t *testing.T, expr string) {
+		s, err := Parse(expr)
+		if err != nil {
+			return
+		}
+		if next := s.Next(from); next.IsZero() || !next.After(from) {
+			t.Errorf("%q parsed but is next due at %v", expr, next)
+		}
+	})
 }
