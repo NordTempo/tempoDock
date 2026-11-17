@@ -134,10 +134,19 @@ func (c *Core) DeleteOrg(ctx context.Context, a Actor) error {
 }
 
 // LeaveOrg takes the calling user out of the org. The last admin can't
-// leave; another member becomes admin first.
+// leave; another member becomes admin first. A person does it signed in:
+// a token that acts for them (`dock login`, an agent's) doesn't end
+// their membership.
 func (c *Core) LeaveOrg(ctx context.Context, a Actor) error {
 	if a.UserID == 0 {
 		return errf(apitypes.CodeForbidden, "%s isn't a member; only users leave organizations", a)
+	}
+	if a.Kind != "user" {
+		return a.refuse(apitypes.Refusal{
+			DecidedBy: apitypes.RefusedPerson, Action: "leaving the organization", Need: "person",
+			Reason: fmt.Sprintf("leaving an organization is for the person themselves, signed in, not %s acting for them", a),
+			Fix:    "leave in the web UI: the organization's Settings › General",
+		})
 	}
 	if err := a.require(apitypes.ScopeRead, "leaving the organization"); err != nil {
 		return err
@@ -145,14 +154,18 @@ func (c *Core) LeaveOrg(ctx context.Context, a Actor) error {
 	if err := c.keepAnAdmin(ctx, a.OrgID, a.UserID, ""); err != nil {
 		return err
 	}
-	if err := c.leaveOrgMember(ctx, a.OrgID, a.UserID); err != nil {
+	invites, err := c.leaveOrgMember(ctx, a.OrgID, a.UserID)
+	if err != nil {
 		return err
 	}
-	c.audit(ctx, a, "org.leave", nil, nil, a.Email, a.Email+" left the organization")
+	c.audit(ctx, a, "org.leave", nil, nil, a.Email, a.Email+" left the organization"+invitesNote(invites))
 	return nil
 }
 
-// SetMemberRole changes a member's role. The org always keeps an admin.
+// SetMemberRole changes a member's role: out of their role's seeded group
+// and into the new one's. The caller must hold what both groups hold now
+// (roleGive): what they give and what they take away. The org always
+// keeps an admin.
 func (c *Core) SetMemberRole(ctx context.Context, a Actor, userID int64, req apitypes.SetMemberRoleRequest) (apitypes.User, error) {
 	u, err := c.member(ctx, a, userID, "changing roles")
 	if err != nil {
@@ -164,31 +177,49 @@ func (c *Core) SetMemberRole(ctx context.Context, a Actor, userID int64, req api
 	if !validScope(req.Role) {
 		return apitypes.User{}, invalid("role must be read, deploy or admin")
 	}
-	if err := a.scopeGive(req.Role, 0, 0, uint8(allKinds), "role "+string(req.Role)); err != nil {
+	if err := c.roleGive(ctx, a, req.Role, false); err != nil {
 		return apitypes.User{}, err
+	}
+	was, err := c.store.GetMemberRole(ctx, store.GetMemberRoleParams{OrgID: a.OrgID, UserID: userID})
+	if err != nil {
+		return apitypes.User{}, err
+	}
+	if was != string(req.Role) && validScope(apitypes.Scope(was)) {
+		if err := c.roleGive(ctx, a, apitypes.Scope(was), true); err != nil {
+			return apitypes.User{}, err
+		}
 	}
 	if err := c.keepAnAdmin(ctx, a.OrgID, userID, req.Role); err != nil {
 		return apitypes.User{}, err
 	}
 	// The role is the member's seeded group (ADR 0080): Admins,
 	// Developers or Viewers.
+	var invites int64
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		if _, err := q.SetMemberRole(ctx, store.SetMemberRoleParams{Role: string(req.Role), OrgID: a.OrgID, UserID: userID}); err != nil {
 			return err
 		}
-		return placeInRoleGroup(ctx, q, a.OrgID, userID, req.Role, a.Name)
+		if err := placeInRoleGroup(ctx, q, a.OrgID, userID, req.Role, a.Name); err != nil {
+			return err
+		}
+		if rank(req.Role) < rank(apitypes.Scope(was)) {
+			// The invites they made offered roles they may not give now.
+			invites, err = endInvitesBy(ctx, q, a.OrgID, userID)
+		}
+		return err
 	})
 	if err != nil {
 		return apitypes.User{}, err
 	}
-	c.audit(ctx, a, "org.member_role", nil, nil, u.Email, fmt.Sprintf("made %s %s", u.Email, req.Role))
+	c.audit(ctx, a, "org.member_role", nil, nil, u.Email, fmt.Sprintf("made %s %s", u.Email, req.Role)+invitesNote(invites))
 	return c.memberView(ctx, a.OrgID, u.ID)
 }
 
 // RemoveMember takes a member out of the org; their account stays. Use
-// LeaveOrg for yourself. Taking a role away is like giving it: the
-// caller must hold what the member's role gives, and the org keeps an
-// admin and someone with Full access.
+// LeaveOrg for yourself. Taking access away is like giving it: the
+// caller must hold everything the member holds, through their groups and
+// their own grants (mayTakeMember), and the org keeps an admin and
+// someone with Full access.
 func (c *Core) RemoveMember(ctx context.Context, a Actor, userID int64) error {
 	u, err := c.member(ctx, a, userID, "removing members")
 	if err != nil {
@@ -197,16 +228,13 @@ func (c *Core) RemoveMember(ctx context.Context, a Actor, userID int64) error {
 	if userID == a.UserID {
 		return invalid("to take yourself out of the organization, leave it")
 	}
-	role, err := c.store.GetMemberRole(ctx, store.GetMemberRoleParams{OrgID: a.OrgID, UserID: userID})
-	if err != nil {
-		return err
-	}
-	if err := a.scopeGive(apitypes.Scope(role), 0, 0, uint8(allKinds), "role "+role+" (removing "+u.Email+" takes it away)"); err != nil {
+	if err := c.mayTakeMember(ctx, a, u); err != nil {
 		return err
 	}
 	if err := c.keepAnAdmin(ctx, a.OrgID, userID, ""); err != nil {
 		return err
 	}
+	var invites int64
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		if _, err := q.RemoveOrgMember(ctx, store.RemoveOrgMemberParams{OrgID: a.OrgID, UserID: userID}); err != nil {
 			return err
@@ -214,12 +242,15 @@ func (c *Core) RemoveMember(ctx context.Context, a Actor, userID int64) error {
 		if err := leaveOrgAccess(ctx, q, a.OrgID, userID); err != nil {
 			return err
 		}
+		if invites, err = endInvitesBy(ctx, q, a.OrgID, userID); err != nil {
+			return err
+		}
 		return keepFullAccess(ctx, q, a)
 	})
 	if err != nil {
 		return err
 	}
-	c.audit(ctx, a, "org.member_remove", nil, nil, u.Email, "removed "+u.Email+" from the organization")
+	c.audit(ctx, a, "org.member_remove", nil, nil, u.Email, "removed "+u.Email+" from the organization"+invitesNote(invites))
 	return nil
 }
 
@@ -283,7 +314,7 @@ func (c *Core) CreateInvite(ctx context.Context, a Actor, req apitypes.CreateInv
 	if !validScope(req.Role) {
 		return apitypes.CreatedInvite{}, invalid("role must be read, deploy or admin")
 	}
-	if err := a.scopeGive(req.Role, 0, 0, uint8(allKinds), "role "+string(req.Role)); err != nil {
+	if err := c.roleGive(ctx, a, req.Role, false); err != nil {
 		return apitypes.CreatedInvite{}, err
 	}
 	if _, err := c.store.GetMemberRoleByEmail(ctx, store.GetMemberRoleByEmailParams{OrgID: a.OrgID, Email: email}); err == nil {

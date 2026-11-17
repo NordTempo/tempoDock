@@ -61,6 +61,22 @@ func levelRank(r areaRole, level string) int {
 	return slices.IndexFunc(r.levels, func(l roleLevel) bool { return l.name == level }) + 1
 }
 
+// askAreas are the area roles whose changes can ask first: those made
+// inside an environment, which checkEnv decides (asksOwner,
+// asksApprover). The others have nothing that asks: the Data panel's
+// changes are proposals already, an incident or an alert is decided per
+// item, the org's areas change nothing in an environment, and agents
+// never approve. Asking is refused there rather than kept and ignored.
+var askAreas = map[string]bool{"deploy": true, "variables": true, "logs": true, "domains": true, "analytics": true, "projects": true}
+
+// checkAsk refuses asking first in an area that has nothing to ask for.
+func checkAsk(s apitypes.AgentSetting) error {
+	if s.Ask && !askAreas[s.Area] {
+		return invalid("%s can't ask first: asking is for changes inside an environment (deploy, variables, logs, domains, analytics, projects). Lower its level instead; off keeps agents from it", s.Area)
+	}
+	return nil
+}
+
 // agentDefault is a level with no setting: everything, but approving.
 func agentDefault(area string) string {
 	if area == "approver" {
@@ -101,7 +117,7 @@ func capOf(settings []store.AgentSetting, rules []store.AgentRule, personal bool
 					if row.TokenID == nil {
 						level = row.Level
 					}
-					ask = ask || row.Ask
+					ask = ask || row.Ask && askAreas[r.key]
 				}
 			}
 			for _, row := range settings {
@@ -112,7 +128,7 @@ func capOf(settings []store.AgentSetting, rules []store.AgentRule, personal bool
 			for _, row := range rules {
 				if row.Area == r.key && uint8(row.Kind) == k {
 					lower(row.Level)
-					ruleAsk = row.Ask
+					ruleAsk = row.Ask && askAreas[r.key]
 				}
 			}
 			held := levelPerms(r, level)
@@ -187,9 +203,9 @@ func (a Actor) isPersonalAgent() bool {
 
 // asksOwner reports whether a personal agent's change in e waits for its
 // person: the check's permission is one they asked to approve first in
-// e's kind, and no approved request lets this call through.
+// e's kind, and neither they nor an approver approved this call.
 func (a Actor) asksOwner(need apitypes.Scope, action string, e store.Environment) bool {
-	return a.agent != nil && a.asks(a.agent.ask, need, action, e)
+	return a.agent != nil && a.ownerApproved != e.ID && a.asks(a.agent.ask, need, action, e)
 }
 
 // asksApprover reports whether an agent's change in e waits for an
@@ -198,7 +214,8 @@ func (a Actor) asksApprover(need apitypes.Scope, action string, e store.Environm
 	return a.agent != nil && a.asks(a.agent.ruleAsk, need, action, e)
 }
 
-// asks reports whether a check's permission in e is in an ask set.
+// asks reports whether a check's permission in e is in an ask set, and no
+// approver's decision lets this call through.
 func (a Actor) asks(set [3]Perms, need apitypes.Scope, action string, e store.Environment) bool {
 	// Only while grants decide: in shadow mode the role still does.
 	if !a.hasGrants || set == ([3]Perms{}) || a.granted == e.ID {

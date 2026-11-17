@@ -75,26 +75,7 @@ type scannedCheck struct {
 // action, and the call sites it can't resolve.
 func scanChecks(t *testing.T) ([]scannedCheck, []string) {
 	t.Helper()
-	files, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	fset := token.NewFileSet()
-	var funcs []*ast.FuncDecl
-	for _, name := range files {
-		if strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		f, err := parser.ParseFile(fset, name, nil, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, d := range f.Decls {
-			if fd, ok := d.(*ast.FuncDecl); ok && fd.Body != nil {
-				funcs = append(funcs, fd)
-			}
-		}
-	}
+	fset, funcs := coreFuncs(t)
 	sigs := map[string][]checkSig{}
 	for _, name := range baseChecks {
 		sigs[name] = []checkSig{{scope: 0, action: 1, base: name}}
@@ -417,4 +398,198 @@ func TestEnvPermsCheckedAtTheirPlace(t *testing.T) {
 			t.Errorf("orgChecksOfEnvPerms names %s, which checks no such permission at the org now", in)
 		}
 	}
+}
+
+// Every operation checks its caller (internal/core/AGENTS.md): an
+// exported Core method that takes an Actor reaches one of the Actor's
+// checks, itself or through what it hands the actor to, or acts on the
+// caller's own account and may refuse (it reads who the actor is: their
+// user, session or token). TestEveryCheckHasAPermission only sees checks
+// that exist; this finds the operation that has none, which would serve
+// anyone the middleware placed in the org. The few that need none are
+// listed with why.
+func TestEveryOperationChecksItsActor(t *testing.T) {
+	_, funcs := coreFuncs(t)
+	// checks holds the functions that reach a check, by name, grown until
+	// none joins: the Actor's own checks first.
+	checks := map[string]bool{}
+	for _, name := range actorChecks {
+		checks[name] = true
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, fd := range funcs {
+			if !checks[fd.Name.Name] && reachesCheck(fd, checks, returnsError(fd)) {
+				checks[fd.Name.Name], changed = true, true
+			}
+		}
+	}
+	seen := map[string]bool{}
+	for _, fd := range funcs {
+		name := fd.Name.Name
+		if !fd.Name.IsExported() || !onCore(fd) || len(actorNames(fd)) == 0 && !takesActor(fd) {
+			continue
+		}
+		if why, ok := uncheckedOperations[name]; ok {
+			seen[name] = true
+			if why == "" {
+				t.Errorf("uncheckedOperations lists %s without saying why", name)
+			}
+			if reachesCheck(fd, checks, true) {
+				t.Errorf("%s checks its actor now: take it off uncheckedOperations", name)
+			}
+			continue
+		}
+		if !reachesCheck(fd, checks, true) {
+			t.Errorf("Core.%s takes an Actor and never checks it: start with a.require, a loader (envFor, serviceFor, projectFor) or requirePlatform, or list it in uncheckedOperations with the reason", name)
+		}
+	}
+	for name := range uncheckedOperations {
+		if !seen[name] {
+			t.Errorf("uncheckedOperations names %s, which is no operation now", name)
+		}
+	}
+	if len(checks) < 300 {
+		t.Fatalf("only %d functions reach a check; the scan is broken", len(checks))
+	}
+}
+
+// actorChecks are the Actor's checks an operation ends in: the org's
+// (baseChecks) and the platform's.
+var actorChecks = append(slices.Clone(baseChecks), "requirePlatform", "requireAccountManager")
+
+// ownFields are the Actor's fields that say who the caller is. A
+// function that reads one and returns an error acts on the caller's own
+// account and may refuse: their password, factors, tokens, memberships.
+// OrgID isn't one: it says where the middleware placed the caller, not
+// that they hold anything there.
+var ownFields = []string{"UserID", "SessionID", "TokenID", "Kind"}
+
+// uncheckedOperations are the operations that take an Actor and check
+// nothing, each with why that is right.
+var uncheckedOperations = map[string]string{
+	"Explain":        "completes a refusal a check already made; it decides nothing",
+	"ListTemplates":  "the database templates Dock ships, the same for every caller, an Actor only by convention",
+	"SnapshotBefore": "core's own step of a deploy or a run: it takes the service its caller loaded and checked (a svcScope)",
+}
+
+// coreFuncs parses the package's code (tests left out) and returns its
+// functions with bodies.
+func coreFuncs(t *testing.T) (*token.FileSet, []*ast.FuncDecl) {
+	t.Helper()
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	var funcs []*ast.FuncDecl
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range f.Decls {
+			if fd, ok := d.(*ast.FuncDecl); ok && fd.Body != nil {
+				funcs = append(funcs, fd)
+			}
+		}
+	}
+	return fset, funcs
+}
+
+// isActor reports whether a parameter's or receiver's type is Actor.
+func isActor(e ast.Expr) bool {
+	id, ok := e.(*ast.Ident)
+	return ok && id.Name == "Actor"
+}
+
+// actorNames are the names fd knows an Actor by: its parameters and its
+// receiver of that type.
+func actorNames(fd *ast.FuncDecl) []string {
+	var out []string
+	lists := []*ast.FieldList{fd.Type.Params}
+	if fd.Recv != nil {
+		lists = append(lists, fd.Recv)
+	}
+	for _, l := range lists {
+		for _, f := range l.List {
+			if isActor(f.Type) {
+				for _, n := range f.Names {
+					out = append(out, n.Name)
+				}
+			}
+		}
+	}
+	return out
+}
+
+// takesActor reports whether fd has an Actor parameter, named or not.
+func takesActor(fd *ast.FuncDecl) bool {
+	for _, f := range fd.Type.Params.List {
+		if isActor(f.Type) {
+			return true
+		}
+	}
+	return false
+}
+
+// onCore reports whether fd is a method of *Core.
+func onCore(fd *ast.FuncDecl) bool {
+	if fd.Recv == nil || len(fd.Recv.List) != 1 {
+		return false
+	}
+	star, ok := fd.Recv.List[0].Type.(*ast.StarExpr)
+	if !ok {
+		return false
+	}
+	id, ok := star.X.(*ast.Ident)
+	return ok && id.Name == "Core"
+}
+
+// returnsError reports whether fd's last result is an error: only then
+// can it refuse.
+func returnsError(fd *ast.FuncDecl) bool {
+	if fd.Type.Results == nil || len(fd.Type.Results.List) == 0 {
+		return false
+	}
+	last := fd.Type.Results.List[len(fd.Type.Results.List)-1]
+	id, ok := last.Type.(*ast.Ident)
+	return ok && id.Name == "error"
+}
+
+// reachesCheck reports whether fd checks an Actor it knows: it calls a
+// function in checks on it (or takes one as a value, a.require) or with
+// it (also as a.InOrg(...), a derived actor), or, when own counts (fd
+// may refuse), reads who it is (ownFields).
+func reachesCheck(fd *ast.FuncDecl, checks map[string]bool, own bool) bool {
+	names := actorNames(fd)
+	if len(names) == 0 {
+		return false
+	}
+	isActorExpr := func(e ast.Expr) bool {
+		if call, ok := e.(*ast.CallExpr); ok {
+			if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+				e = sel.X // a.operatorIn(o), a.platform()
+			}
+		}
+		return slices.Contains(names, identName(e))
+	}
+	found := false
+	ast.Inspect(fd.Body, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.SelectorExpr:
+			if isActorExpr(n.X) && (checks[n.Sel.Name] || own && slices.Contains(ownFields, n.Sel.Name)) {
+				found = true
+			}
+		case *ast.CallExpr:
+			if checks[calleeName(n)] && slices.ContainsFunc(n.Args, isActorExpr) {
+				found = true
+			}
+		}
+		return !found
+	})
+	return found
 }

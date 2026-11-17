@@ -157,15 +157,40 @@ func joinOrgMember(ctx context.Context, q *store.Queries, orgID, userID int64, r
 	return placeInRoleGroup(ctx, q, orgID, userID, role, "system")
 }
 
-// leaveOrgMember ends a person's membership of an org and what they held
-// there, in one transaction.
-func (c *Core) leaveOrgMember(ctx context.Context, orgID, userID int64) error {
-	return c.store.Tx(ctx, func(q *store.Queries) error {
+// leaveOrgMember ends a person's membership of an org, what they held
+// there and the open invites they made, in one transaction; it returns
+// how many invites that ended.
+func (c *Core) leaveOrgMember(ctx context.Context, orgID, userID int64) (invites int64, err error) {
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		if _, err := q.RemoveOrgMember(ctx, store.RemoveOrgMemberParams{OrgID: orgID, UserID: userID}); err != nil {
 			return err
 		}
-		return leaveOrgAccess(ctx, q, orgID, userID)
+		if err := leaveOrgAccess(ctx, q, orgID, userID); err != nil {
+			return err
+		}
+		invites, err = endInvitesBy(ctx, q, orgID, userID)
+		return err
 	})
+	return invites, err
+}
+
+// endInvitesBy ends the open invites a member made in an org, in q's
+// transaction: whoever leaves, is removed or holds a lower role now is no
+// longer there to vouch for the roles they offered. It returns how many.
+func endInvitesBy(ctx context.Context, q *store.Queries, orgID, userID int64) (int64, error) {
+	return q.RevokeOrgInvitesBy(ctx, store.RevokeOrgInvitesByParams{Now: ptr(now()), OrgID: orgID, UserID: userID})
+}
+
+// invitesNote tells the audit log how many of a member's open invites a
+// change to their membership ended.
+func invitesNote(n int64) string {
+	switch n {
+	case 0:
+		return ""
+	case 1:
+		return "; the open invite they made ended"
+	}
+	return fmt.Sprintf("; the %d open invites they made ended", n)
 }
 
 // leaveOrgAccess ends what a person held in an org they left: their

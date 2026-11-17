@@ -29,7 +29,7 @@ func agentMatrix(rows []store.AgentSetting, agent int64) []apitypes.AgentSetting
 			}
 			for _, row := range rows {
 				if row.Area == r.key && uint8(row.Kind) == k && derefOr(row.TokenID) == agent {
-					s.Level, s.Ask = row.Level, row.Ask
+					s.Level, s.Ask = row.Level, row.Ask && askAreas[r.key]
 				}
 			}
 			out = append(out, s)
@@ -86,6 +86,9 @@ func (c *Core) SetAgentSettings(ctx context.Context, a Actor, req apitypes.Agent
 		}
 		if s.Level != agentAll && s.Level != agentOff && levelRank(areas[ai], s.Level) <= 0 {
 			return cur, invalid("%s has no level %q; pick off, all or one of its own (`dock role list`)", s.Area, s.Level)
+		}
+		if err := checkAsk(s); err != nil {
+			return cur, err
 		}
 		next[ai*3+ki] = s
 	}
@@ -157,7 +160,7 @@ func (c *Core) AgentRules(ctx context.Context, a Actor) (apitypes.AgentSettings,
 			s := apitypes.AgentSetting{Area: r.key, Kind: agentKindNames[i], Level: agentAll}
 			for _, row := range rows {
 				if row.Area == r.key && uint8(row.Kind) == k {
-					s.Level, s.Ask = row.Level, row.Ask
+					s.Level, s.Ask = row.Level, row.Ask && askAreas[r.key]
 				}
 			}
 			out.Settings = append(out.Settings, s)
@@ -190,6 +193,9 @@ func (c *Core) SetAgentRules(ctx context.Context, a Actor, req apitypes.AgentSet
 		}
 		if s.Level != agentAll && s.Level != agentOff && levelRank(areas[ai], s.Level) <= 0 {
 			return cur, invalid("%s has no level %q; pick off, all or one of its own (`dock role list`)", s.Area, s.Level)
+		}
+		if err := checkAsk(s); err != nil {
+			return cur, err
 		}
 		next[ai*3+ki] = s
 	}
@@ -236,8 +242,14 @@ func (c *Core) SetAgentRulesBypass(ctx context.Context, a Actor, ref string, byp
 	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing agent rules"); err != nil {
 		return apitypes.AgentAccess{}, err
 	}
-	if bypass && a.Kind == "token" && a.TokenID == t.ID {
-		return apitypes.AgentAccess{}, errf(apitypes.CodeForbidden, "a token can't exempt itself from the agent rules that cap it: an admin does it with their own `dock login`")
+	// The rules cap every agent, so none lifts them, for itself or for a
+	// token it made: a person does. Ending an exemption only tightens.
+	if bypass && a.Kind == "token" {
+		return apitypes.AgentAccess{}, a.refuse(apitypes.Refusal{
+			DecidedBy: apitypes.RefusedPerson, Action: "exempting a token from the agent rules", Need: "person",
+			Reason: fmt.Sprintf("exempting a token from the organization's agent rules is for a person, not %s: the rules cap agents", a),
+			Fix:    "an admin does it from a signed-in session in the web UI, in the token's menu",
+		})
 	}
 	if err := a.requireRecent("managing agent rules"); err != nil {
 		return apitypes.AgentAccess{}, err

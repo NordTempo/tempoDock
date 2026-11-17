@@ -82,6 +82,9 @@ type AreaRole struct {
 	Key    string      `json:"key" example:"deploy"`
 	Name   string      `json:"name" example:"Deploy"`
 	Levels []RoleLevel `json:"levels"`
+	// Asks says agents can be made to ask first for this area's changes
+	// (an agent setting's or agent rule's ask): those inside an environment.
+	Asks bool `json:"asks"`
 }
 
 // RoleLevel is one level of an area role; Role is how grants name it.

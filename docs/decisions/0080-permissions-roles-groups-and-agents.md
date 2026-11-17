@@ -245,3 +245,41 @@ one decides.
 - `--role read|deploy|admin`, `--scope`, `--project`, `--environment`,
   `dock env lock|unlock` and `dock db policy` keep working on the new
   model.
+
+## Amended 2026-11-17
+
+Settled after reviewing phases 6 and 7 as a whole:
+
+- **An approval lifts what its decider may lift.** A person approving
+  their own agent's "ask me first" request lifts that asking and nothing
+  else: a lock set, or an agent rule made, while the request waited stops
+  its run as it would a new call, and the request ends failed, saying so.
+  An approver's decision lifts the lock, the agent rules and the asking.
+- **What an agent asks first for isn't its to give.** "Nobody gives more
+  than they hold" counts asking: an agent that asks first before it uses
+  a permission somewhere (its person's agent setting, the org's agent
+  rules) makes no token, grant, group membership, invite, role change or
+  custom role with it there, since what it gave wouldn't ask. A person
+  does. Exempting a token from the agent rules is a person's too, whoever
+  the token is (`dock token bypass NAME off` still ends one).
+- **Asking first is for changes inside an environment**, which
+  `checkEnv` decides: the Deploy, Variables, Logs, Domains, Analytics
+  and Projects areas. The other areas refuse `ask` (lower the level
+  instead) rather than keep a setting nothing reads; the role list says
+  which ask (`asks`).
+- **A token's own grants decide its scope.** Phase 6b kept a token's
+  scope for what still speaks in scopes (the data policy's subject, whose
+  access requests it lists). Once an admin changes a token's grants or
+  groups, its scope is what they amount to at its limit's place: the
+  highest of admin and deploy whose seeded roles it still holds there,
+  read otherwise. A token narrowed to viewing has a reader's Data panel
+  access; one given Full access an admin's.
+- **A role is its seeded group as it is now, and taking away is held to
+  the giving rule.** A role change or an invite gives what the role's
+  seeded group holds today (the org may have changed it), so that is what
+  the giver must hold, not the built-in roles the group started with.
+  And whoever takes access away must hold it: demoting a member, taking
+  someone or a token out of a group, ending a grant, removing a group or
+  a member, and taking parts out of a custom role all ask what giving
+  them would. Managing members without Full access is no way to strip
+  those who hold more.

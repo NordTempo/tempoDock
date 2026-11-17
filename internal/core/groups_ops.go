@@ -22,7 +22,7 @@ import (
 func AreaRoles() []apitypes.AreaRole {
 	out := make([]apitypes.AreaRole, 0, len(areaRoles))
 	for _, r := range areaRoles {
-		ar := apitypes.AreaRole{Key: r.key, Name: r.name}
+		ar := apitypes.AreaRole{Key: r.key, Name: r.name, Asks: askAreas[r.key]}
 		var held Perms
 		for _, l := range r.levels {
 			held |= l.adds
@@ -253,6 +253,9 @@ func (c *Core) DeleteGroup(ctx context.Context, a Actor, ref string) error {
 	if err != nil {
 		return err
 	}
+	if err := c.mayTakeGroup(ctx, a, g); err != nil {
+		return err
+	}
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		if err := q.DeleteGroup(ctx, store.DeleteGroupParams{ID: g.ID, OrgID: a.OrgID}); err != nil {
 			return err
@@ -315,6 +318,9 @@ func (c *Core) RemoveGroupMember(ctx context.Context, a Actor, ref, who string) 
 	}
 	u, err := c.memberByRef(ctx, a, who)
 	if err != nil {
+		return apitypes.Group{}, err
+	}
+	if err := c.mayTakeGroup(ctx, a, g); err != nil {
 		return apitypes.Group{}, err
 	}
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
@@ -410,7 +416,8 @@ func (c *Core) GrantGroup(ctx context.Context, a Actor, ref string, req apitypes
 	return c.group(ctx, a, g.ID)
 }
 
-// RevokeGrant ends a grant, a group's or a person's.
+// RevokeGrant ends a grant, a group's, a person's or a token's. Ending
+// one takes it away, so the caller must hold what it gave (mayGive).
 func (c *Core) RevokeGrant(ctx context.Context, a Actor, id int64) error {
 	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing groups"); err != nil {
 		return err
@@ -423,6 +430,9 @@ func (c *Core) RevokeGrant(ctx context.Context, a Actor, id int64) error {
 		return notFound("grant %d not found in %s", id, a.OrgSlug)
 	}
 	if err != nil {
+		return err
+	}
+	if err := c.mayGiveGrants(ctx, a, g.RoleName+" (ending the grant takes it away)", func(gr store.ListOrgGrantsRow) bool { return gr.ID == id }); err != nil {
 		return err
 	}
 	err = c.store.Tx(ctx, func(q *store.Queries) error {

@@ -21,7 +21,10 @@ func (c *Core) DoThing(ctx context.Context, a Actor, req apitypes.DoThingRequest
 ```
 
 - Every exported operation takes the `Actor` and checks it itself. Never
-  rely on the API to have checked.
+  rely on the API to have checked, and never on `a.OrgID` alone: it says
+  where the middleware placed the caller (a platform credential too), not
+  that they hold anything there. `TestEveryOperationChecksItsActor` fails
+  for an operation that reaches no check.
 - A check's scope and action name a permission (ADR 0080): add the pair
   to `actionPerms` (shadow.go) with the check, or people are refused it.
   Write the action as a literal or a constant (a loader may pass it on);

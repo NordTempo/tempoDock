@@ -168,3 +168,66 @@ func TestDeleteOrg(t *testing.T) {
 		t.Fatalf("membership after delete: %v", err)
 	}
 }
+
+// Leaving an organization is the person's own act, signed in: a token
+// that acts for them (their `dock login`, which an agent runs with)
+// doesn't end their membership.
+func TestOnlyThePersonLeaves(t *testing.T) {
+	h := newHarness(t)
+	h.user("ada@example.com", apitypes.ScopeAdmin)
+	dev := h.cliUser("dev@example.com", apitypes.ScopeRead)
+	bot, err := h.c.AuthenticateToken(h.ctx, h.cliToken(dev), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := refusalOf(t, h.c.LeaveOrg(h.ctx, bot)); r.DecidedBy != apitypes.RefusedPerson {
+		t.Fatalf("their `dock login` leaving for them: %+v", r)
+	}
+	if err := h.c.LeaveOrg(h.ctx, dev); err != nil {
+		t.Fatalf("the person leaving: %v", err)
+	}
+}
+
+// The open invites a member made end when they leave, are removed or
+// hold a lower role: nobody is left to vouch for the roles they offered.
+func TestInvitesEndWithTheirMakersRole(t *testing.T) {
+	h := newHarness(t)
+	root := h.user("root@example.com", apitypes.ScopeAdmin)
+	open := func() []string {
+		t.Helper()
+		invs, err := h.c.ListInvites(h.ctx, root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, i := range invs {
+			out = append(out, i.Email)
+		}
+		return out
+	}
+	if _, err := h.c.CreateInvite(h.ctx, root, apitypes.CreateInviteRequest{Email: "kept@example.com", Role: apitypes.ScopeRead}); err != nil {
+		t.Fatal(err)
+	}
+	for name, end := range map[string]func(a Actor) error{
+		"leaving": func(a Actor) error { return h.c.LeaveOrg(h.ctx, a) },
+		"removed": func(a Actor) error { return h.c.RemoveMember(h.ctx, root, a.UserID) },
+		"demoted": func(a Actor) error {
+			_, err := h.c.SetMemberRole(h.ctx, root, a.UserID, apitypes.SetMemberRoleRequest{Role: apitypes.ScopeDeploy})
+			return err
+		},
+	} {
+		admin := h.user(name+"@example.com", apitypes.ScopeAdmin)
+		if _, err := h.c.CreateInvite(h.ctx, admin, apitypes.CreateInviteRequest{Email: "friend-of-" + name + "@example.com", Role: apitypes.ScopeAdmin}); err != nil {
+			t.Fatal(err)
+		}
+		if got := open(); len(got) != 2 {
+			t.Fatalf("%s: open invites before = %v", name, got)
+		}
+		if err := end(admin); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got := open(); len(got) != 1 || got[0] != "kept@example.com" {
+			t.Fatalf("%s: open invites after = %v; want only root's", name, got)
+		}
+	}
+}

@@ -325,7 +325,10 @@ func newTokenAccessCmds(g *globals) []*cobra.Command {
 	}
 	gf.add(grant)
 	bypass := &cobra.Command{
-		Use: "bypass <name|id> on|off", Short: "Exempt an org token from the agent rules, or stop (admin)", Args: cobra.ExactArgs(2),
+		Use: "bypass <name|id> on|off", Short: "Stop exempting an org token from the agent rules (admin)", Args: cobra.ExactArgs(2),
+		Long: "Ends a token's exemption from the organization's agent rules (off).\n\n" +
+			"Exempting one (on) is for a person signed in to the web UI, in Settings › Agent rules:\n" +
+			"the rules cap every agent, and the CLI acts with a token too.",
 		ValidArgs: []string{"on", "off"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if args[1] != "on" && args[1] != "off" {

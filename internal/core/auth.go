@@ -143,6 +143,7 @@ func (c *Core) tokenActor(ctx context.Context, row store.GetTokenByIDWithOwnerRo
 	}
 	a.OrgID, a.OrgSlug, a.orgs = *t.OrgID, *row.OrgSlug, 1
 	a.suspended = row.OrgSuspendedAt != nil
+	reach := uint8(allKinds)
 	if t.ProjectID != nil {
 		p, err := c.store.GetProject(ctx, *t.ProjectID)
 		if err != nil {
@@ -156,10 +157,11 @@ func (c *Core) tokenActor(ctx context.Context, row store.GetTokenByIDWithOwnerRo
 			return Actor{}, err
 		}
 		a.EnvironmentID, a.EnvironmentName = e.ID, e.Name
+		reach = envKind(e)
 	}
 	if t.Granted {
 		// An org agent: its grants (org_agents.go).
-		return c.loadTokenAccess(ctx, a, t)
+		return c.loadTokenAccess(ctx, a, t, reach)
 	}
 	return a, nil
 }

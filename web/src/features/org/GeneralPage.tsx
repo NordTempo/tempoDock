@@ -542,7 +542,6 @@ function Leave({ name, admin }: { name: string; admin: boolean }) {
       <Act
         danger
         small
-        cli="dock org leave"
         disabled={last}
         reason="You're its only admin. Make someone else admin first."
         onClick={() => setAsking(true)}
@@ -552,7 +551,6 @@ function Leave({ name, admin }: { name: string; admin: boolean }) {
       {asking && (
         <Confirm
           action={`Leave ${name}`}
-          cli="dock org leave"
           pending={leave.isPending}
           error={leave.error}
           onConfirm={() => leave.mutate(undefined, { onSuccess: gone })}

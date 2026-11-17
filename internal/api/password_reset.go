@@ -40,7 +40,7 @@ func registerPasswordReset(s *Server, a huma.API) {
 	public(a, huma.Operation{
 		OperationID: "reset-password-with-link", Method: http.MethodPost, Path: Prefix + "/auth/password-reset/{code}",
 		Summary: "Set a new password with a reset link", Tags: tags,
-		Description:   "Sets the account's password (at least 12 characters), spends the link and ends every session and `dock login` token of the account; second factors stay. It doesn't sign in. Rate limited per client IP.",
+		Description:   "Sets the account's password (at least 12 characters), spends the link and ends every session and `dock login` token of the account; second factors stay, except on an account made from an invite whose email this link proves for the first time: what was set up on it before (second factors, recovery codes, tokens) is removed. It doesn't sign in. Rate limited per client IP.",
 		DefaultStatus: http.StatusNoContent,
 		Errors:        []int{http.StatusBadRequest, http.StatusForbidden, http.StatusNotFound, http.StatusTooManyRequests},
 	}, func(ctx context.Context, in *resetSetInput) (*struct{}, error) {

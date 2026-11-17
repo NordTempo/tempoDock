@@ -695,7 +695,7 @@ export interface paths {
         put?: never;
         /**
          * Set a new password with a reset link
-         * @description Sets the account's password (at least 12 characters), spends the link and ends every session and `dock login` token of the account; second factors stay. It doesn't sign in. Rate limited per client IP.
+         * @description Sets the account's password (at least 12 characters), spends the link and ends every session and `dock login` token of the account; second factors stay, except on an account made from an invite whose email this link proves for the first time: what was set up on it before (second factors, recovery codes, tokens) is removed. It doesn't sign in. Rate limited per client IP.
          */
         post: operations["reset-password-with-link"];
         delete?: never;
@@ -7323,6 +7323,7 @@ export interface components {
             unchanged?: string[] | null;
         };
         AreaRole: {
+            asks: boolean;
             /** @example deploy */
             key: string;
             levels: components["schemas"]["RoleLevel"][] | null;

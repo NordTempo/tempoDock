@@ -66,6 +66,11 @@ type Actor struct {
 	// approval for the audit log.
 	granted  int64
 	approval *approval
+	// ownerApproved is the environment where the actor's person approved
+	// this one call, which their agent asked them first (their agent
+	// setting): it skips asking them again and nothing else. The lock and
+	// the org's agent rules are the approvers' to lift (granted).
+	ownerApproved int64
 	// checkOnly is CheckRequest's replay: every lock stops it (lockedOut),
 	// so the call runs its own checks up to its lock and nothing after.
 	checkOnly bool

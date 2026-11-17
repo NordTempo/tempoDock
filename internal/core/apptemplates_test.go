@@ -186,6 +186,30 @@ func TestOrgTemplates(t *testing.T) {
 	if list[0].Name != "shop-stack" {
 		t.Fatalf("first listed: %s", list[0].Name)
 	}
+	// The catalog with the org's own templates is for those who act in
+	// the org: its token reads it; a platform credential, which the API
+	// places in the install's only org and which holds nothing there,
+	// doesn't.
+	pt, err := h.c.CreatePlatformToken(h.ctx, System, apitypes.CreatePlatformTokenRequest{Name: "console", Role: apitypes.PlatformViewer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	platform, err := h.c.AuthenticateToken(h.ctx, pt.Secret, "")
+	if err != nil || platform.OrgID != 1 {
+		t.Fatalf("a platform token in the only org: %+v, %v", platform.Me(), err)
+	}
+	for name, read := range map[string]func(Actor) error{
+		"listing":  func(a Actor) error { _, err := h.c.ListAppTemplates(h.ctx, a); return err },
+		"one":      func(a Actor) error { _, err := h.c.GetAppTemplate(h.ctx, a, "shop-stack"); return err },
+		"its file": func(a Actor) error { _, err := h.c.AppTemplateFile(h.ctx, a, "shop-stack"); return err },
+	} {
+		if err := read(reader); err != nil {
+			t.Errorf("the org's token reading templates (%s): %v", name, err)
+		}
+		if err := read(platform); CodeOf(err) != apitypes.CodeForbidden {
+			t.Errorf("a platform credential reading the org's templates (%s): %v", name, err)
+		}
+	}
 
 	if _, err := h.c.CreateEnvironment(h.ctx, testSystem, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
 		t.Fatal(err)

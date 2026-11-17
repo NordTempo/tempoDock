@@ -73,7 +73,8 @@ func TestRemoveMemberTakesNoMoreThanItHolds(t *testing.T) {
 }
 
 // A token may tighten the org's agent rules, which cap it, but never
-// loosen them or exempt itself (another token, yes).
+// loosen them or exempt a token from them, itself or another: a person
+// does that.
 func TestTokensOnlyTightenAgentRules(t *testing.T) {
 	h := newHarness(t)
 	h.enforce()
@@ -90,8 +91,8 @@ func TestTokensOnlyTightenAgentRules(t *testing.T) {
 		t.Errorf("exempting itself: %v, want forbidden", err)
 	}
 	h.token(testSystem, apitypes.CreateTokenRequest{Name: "deployer", Scope: apitypes.ScopeDeploy})
-	if _, err := h.c.SetAgentRulesBypass(h.ctx, tok, "deployer", true); err != nil {
-		t.Errorf("exempting another token: %v", err)
+	if _, err := h.c.SetAgentRulesBypass(h.ctx, tok, "deployer", true); CodeOf(err) != apitypes.CodeForbidden {
+		t.Errorf("exempting another token: %v, want forbidden", err)
 	}
 }
 

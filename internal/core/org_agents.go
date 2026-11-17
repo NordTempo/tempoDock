@@ -53,9 +53,12 @@ func (c *Core) grantTokens(ctx context.Context) error {
 // what it holds (one query); capped by the org's agent rules unless it
 // bypasses them (orgRules, kept in memory); and makes it
 // its access while grants decide; in shadow mode the shadow answers from
-// it. Its Scope stays the token's own, for what still speaks in scopes
-// (the data policy).
-func (c *Core) loadTokenAccess(ctx context.Context, a Actor, t store.Token) (Actor, error) {
+// it. Its Scope, for what still speaks in scopes (the data policy, whose
+// requests it lists), stays the token's own until its grants are its own:
+// then, while grants decide, it is what they amount to at its limit's
+// place (ownScope), so narrowing a token narrows that too. reach is the
+// environment kinds its limit covers (an environment's own).
+func (c *Core) loadTokenAccess(ctx context.Context, a Actor, t store.Token, reach uint8) (Actor, error) {
 	var entries []grantEntry
 	if t.OwnGrants {
 		rows, err := c.store.ListTokenGrants(ctx, store.ListTokenGrantsParams{TokenID: &a.TokenID, Now: ptr(now().Unix())})
@@ -67,6 +70,9 @@ func (c *Core) loadTokenAccess(ctx context.Context, a Actor, t store.Token) (Act
 			if perms, ok := grantPerms(r.Role, r.Parts); ok {
 				entries = append(entries, grantEntry{project: deref(r.ProjectID), env: deref(r.EnvironmentID), kinds: uint8(r.Kinds), perms: perms})
 			}
+		}
+		if c.enforceGrants.Load() {
+			a.Scope = ownScope(entries, a.ProjectID, a.EnvironmentID, reach)
 		}
 	} else {
 		// Its grants are still its scope's at its limit (grantToken):
@@ -91,6 +97,20 @@ func (c *Core) loadTokenAccess(ctx context.Context, a Actor, t store.Token) (Act
 		a.watchGrants = true
 	}
 	return a, nil
+}
+
+// ownScope is the scope a token's own grants amount to at its limit's
+// place (project 0 the org, env 0 a project; kinds as covers takes them):
+// the highest whose seeded roles they hold there, read when neither. The
+// Data panel's permissions don't count, as for a person's summary
+// (loadAccess): the data policy decides them, from this.
+func ownScope(grants []grantEntry, project, env int64, kinds uint8) apitypes.Scope {
+	for _, s := range []apitypes.Scope{apitypes.ScopeAdmin, apitypes.ScopeDeploy} {
+		if entriesCover(grants, scopePerms(s)&^dataPerms, project, env, kinds) {
+			return s
+		}
+	}
+	return apitypes.ScopeRead
 }
 
 // agentToken loads one of the org's tokens by name or ID, for an admin
@@ -201,6 +221,9 @@ func (c *Core) SetGroupAgent(ctx context.Context, a Actor, groupRef, tokenRef st
 			return q.SetTokenOwnGrants(ctx, t.ID)
 		})
 	} else {
+		if err := c.mayTakeGroup(ctx, a, g); err != nil {
+			return apitypes.Group{}, err
+		}
 		var n int64
 		if n, err = c.store.RemoveGroupAgent(ctx, store.RemoveGroupAgentParams{GroupID: g.ID, TokenID: t.ID}); err == nil && n == 0 {
 			err = notFound("token %s isn't in group %s", t.Name, g.Name)

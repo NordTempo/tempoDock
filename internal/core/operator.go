@@ -27,6 +27,9 @@ func (a Actor) operatorIn(o store.Org) Actor {
 	a.OrgID, a.OrgSlug, a.orgs, a.Scope = o.ID, o.Slug, 1, apitypes.ScopeAdmin
 	a.ProjectID, a.EnvironmentID, a.ProjectName, a.EnvironmentName = 0, 0, "", ""
 	a.suspended = false
+	// What they hold in their own org (their grants there, their agent
+	// setting) says nothing here: the admin scope decides.
+	a.grants, a.hasGrants, a.watchGrants, a.agent = nil, false, false, nil
 	return a
 }
 
@@ -239,10 +242,18 @@ func (c *Core) OperatorMembers(ctx context.Context, a Actor, slug string) ([]api
 }
 
 // OperatorAddMember adds an existing user to an org with a role: how an
-// org without an admin gets one. Operators only.
+// org without an admin gets one. Operators only, recently signed in like
+// the org's own member changes; a token doesn't while an environment of
+// the org is locked (checkAccountLock).
 func (c *Core) OperatorAddMember(ctx context.Context, a Actor, slug string, req apitypes.OperatorMemberRequest) (apitypes.User, error) {
 	o, err := c.operatorOrg(ctx, a, slug, "managing organizations' members")
 	if err != nil {
+		return apitypes.User{}, err
+	}
+	if err := a.requireRecent("adding a member to an organization"); err != nil {
+		return apitypes.User{}, err
+	}
+	if err := c.checkAccountLock(ctx, a.operatorIn(o), "adding members", false); err != nil {
 		return apitypes.User{}, err
 	}
 	if !validScope(req.Role) {
@@ -305,10 +316,11 @@ func (c *Core) OperatorRemoveMember(ctx context.Context, a Actor, slug string, u
 	if err != nil {
 		return err
 	}
-	if err := c.leaveOrgMember(ctx, o.ID, userID); err != nil {
+	invites, err := c.leaveOrgMember(ctx, o.ID, userID)
+	if err != nil {
 		return err
 	}
-	c.auditBoth(ctx, a, o, "org.member_remove", "the platform's operator removed "+u.Email+" from the organization")
+	c.auditBoth(ctx, a, o, "org.member_remove", "the platform's operator removed "+u.Email+" from the organization"+invitesNote(invites))
 	return nil
 }
 
@@ -379,10 +391,13 @@ func (c *Core) OperatorRevokeInvite(ctx context.Context, a Actor, slug string, i
 
 // SuspendOrg suspends an org (suspend) or lifts it: while suspended its
 // apps keep running, but every deploy and change in it is refused, its
-// members and tokens may only read. Operators only.
+// members and tokens may only read. Operators only, recently signed in.
 func (c *Core) SuspendOrg(ctx context.Context, a Actor, slug string, suspend bool) (apitypes.OperatorOrg, error) {
 	o, err := c.operatorOrg(ctx, a, slug, "suspending organizations")
 	if err != nil {
+		return apitypes.OperatorOrg{}, err
+	}
+	if err := a.requireRecent("suspending an organization"); err != nil {
 		return apitypes.OperatorOrg{}, err
 	}
 	params := store.SuspendOrgParams{ID: o.ID}
@@ -451,10 +466,13 @@ func (c *Core) StopOrgServices(ctx context.Context, a Actor, slug string) (apity
 // their history: every project is archived (containers stopped, routes
 // removed, volumes and releases kept), its members, invites, variables,
 // credentials and policy removed, its tokens revoked, and the org itself
-// stays hidden from every list. Operators only.
+// stays hidden from every list. Operators only, recently signed in.
 func (c *Core) OperatorDeleteOrg(ctx context.Context, a Actor, slug, confirm string) error {
 	o, err := c.operatorOrg(ctx, a, slug, "deleting organizations")
 	if err != nil {
+		return err
+	}
+	if err := a.requireRecent("deleting an organization"); err != nil {
 		return err
 	}
 	if confirm != o.Slug {
@@ -521,7 +539,8 @@ const maxJoinHours = 24
 // when 0, at most maxJoinHours): the audited way to see an org's content
 // when that is needed. The membership ends by itself: lookups ignore it
 // after expires_at, and the retention pass removes it. An operator who is
-// a member already doesn't need it. People only, not tokens.
+// a member already doesn't need it. People only, not tokens, and
+// recently signed in: it reaches an org's content.
 func (c *Core) JoinOrgAsOperator(ctx context.Context, a Actor, slug string, req apitypes.JoinOrgRequest) (apitypes.OrgMembershipGrant, error) {
 	o, err := c.operatorOrg(ctx, a, slug, "joining organizations as operator")
 	if err != nil {
@@ -529,6 +548,9 @@ func (c *Core) JoinOrgAsOperator(ctx context.Context, a Actor, slug string, req 
 	}
 	if a.UserID == 0 {
 		return apitypes.OrgMembershipGrant{}, errf(apitypes.CodeForbidden, "joining an organization is for a person, not %s; sign in to the console", a)
+	}
+	if err := a.requireRecent("joining an organization as operator"); err != nil {
+		return apitypes.OrgMembershipGrant{}, err
 	}
 	hours := cmp.Or(req.Hours, 1)
 	if hours < 1 || hours > maxJoinHours {

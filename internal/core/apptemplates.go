@@ -83,8 +83,12 @@ func appTemplateInfo(t apptemplates.Template) apitypes.AppTemplate {
 }
 
 // ListAppTemplates lists the app templates: the organization's own, then
-// Dock's apps by title, then the databases. Any member may list them.
+// Dock's apps by title, then the databases. Anyone who sees something of
+// the organization may list them (readTemplates).
 func (c *Core) ListAppTemplates(ctx context.Context, a Actor) ([]apitypes.AppTemplate, error) {
+	if err := a.readTemplates(); err != nil {
+		return nil, err
+	}
 	cat, err := apptemplates.Catalog()
 	if err != nil {
 		return nil, err
@@ -106,8 +110,19 @@ func (c *Core) ListAppTemplates(ctx context.Context, a Actor) ([]apitypes.AppTem
 	return out, nil
 }
 
+// readTemplates checks the actor may read the catalog with the
+// organization's own templates in it: the same as seeing any of its
+// environments, so a credential that acts in no organization, or holds
+// nothing in this one, doesn't read what its admins saved.
+func (a Actor) readTemplates() error {
+	return a.require(apitypes.ScopeRead, "reading templates")
+}
+
 // GetAppTemplate describes one app template.
 func (c *Core) GetAppTemplate(ctx context.Context, a Actor, name string) (apitypes.AppTemplate, error) {
+	if err := a.readTemplates(); err != nil {
+		return apitypes.AppTemplate{}, err
+	}
 	t, org, err := c.appTemplate(ctx, a.OrgID, name)
 	if err != nil {
 		return apitypes.AppTemplate{}, err
