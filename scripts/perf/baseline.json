@@ -12,8 +12,8 @@
     },
     "analytics.BenchmarkClientDashboard/store=old": {
       "ns_op": 1181730,
-      "bytes_op": 357691,
-      "allocs_op": 1813
+      "bytes_op": 587444,
+      "allocs_op": 1989
     },
     "analytics/ingest.BenchmarkIngestError": {
       "ns_op": 7736,
@@ -57,8 +57,8 @@
     },
     "api.BenchmarkNewAPI": {
       "ns_op": 29381792,
-      "bytes_op": 12495392,
-      "allocs_op": 127076
+      "bytes_op": 13417718,
+      "allocs_op": 138183
     },
     "api.BenchmarkPublicPage": {
       "ns_op": 4753,
@@ -127,13 +127,13 @@
     },
     "core.BenchmarkCoreReads/Changes/services=20,staged": {
       "ns_op": 1421748,
-      "bytes_op": 439681,
-      "allocs_op": 6884
+      "bytes_op": 400988,
+      "allocs_op": 5005
     },
     "core.BenchmarkCoreReads/GetRelease": {
       "ns_op": 96473,
-      "bytes_op": 20758,
-      "allocs_op": 427
+      "bytes_op": 22684,
+      "allocs_op": 479
     },
     "core.BenchmarkCoreReads/ListAudit/action,limit=100": {
       "ns_op": 131801,
@@ -172,38 +172,38 @@
     },
     "core.BenchmarkCoreReads/ListReleases/limit=20": {
       "ns_op": 459116,
-      "bytes_op": 168937,
-      "allocs_op": 1367
+      "bytes_op": 174517,
+      "allocs_op": 1420
     },
     "core.BenchmarkCoreReads/ListServices/services=20": {
       "ns_op": 419730,
-      "bytes_op": 118041,
-      "allocs_op": 1447
+      "bytes_op": 119712,
+      "allocs_op": 1467
     },
     "core.BenchmarkCoreReads/ListVariables/services=20": {
       "ns_op": 372595,
-      "bytes_op": 114385,
-      "allocs_op": 1278
+      "bytes_op": 116056,
+      "allocs_op": 1298
     },
     "core.BenchmarkCoreReads/Overview/services=60": {
       "ns_op": 2985093,
-      "bytes_op": 957746,
-      "allocs_op": 9081
+      "bytes_op": 990774,
+      "allocs_op": 9239
     },
     "core.BenchmarkCoreReads/Overview/services=60,parallel=8": {
       "ns_op": 1265047,
-      "bytes_op": 957500,
-      "allocs_op": 9081
+      "bytes_op": 994055,
+      "allocs_op": 9313
     },
     "core.BenchmarkCoreReads/Overview/services=60,staged": {
       "ns_op": 3283241,
-      "bytes_op": 957895,
-      "allocs_op": 9086
+      "bytes_op": 990991,
+      "allocs_op": 9245
     },
     "core.BenchmarkCoreReads/ResolveVariables/services=20": {
       "ns_op": 746278,
-      "bytes_op": 276706,
-      "allocs_op": 4122
+      "bytes_op": 254500,
+      "allocs_op": 3141
     },
     "core.BenchmarkDiagnoseRules": {
       "ns_op": 14543,
@@ -252,8 +252,8 @@
     },
     "core.BenchmarkListImages": {
       "ns_op": 192857.1,
-      "bytes_op": 70882,
-      "allocs_op": 1399
+      "bytes_op": 73168,
+      "allocs_op": 1450
     },
     "core.BenchmarkListImagesIgnored": {
       "ns_op": 447894,
@@ -272,8 +272,8 @@
     },
     "core.BenchmarkRetentionPass": {
       "ns_op": 152505,
-      "bytes_op": 5810,
-      "allocs_op": 224
+      "bytes_op": 6976,
+      "allocs_op": 237
     },
     "core.BenchmarkScanBusy": {
       "ns_op": 51.2,
@@ -342,13 +342,13 @@
     },
     "mcp.BenchmarkToolCall/tool=service_status": {
       "ns_op": 204636,
-      "bytes_op": 51898,
-      "allocs_op": 1088
+      "bytes_op": 57082,
+      "allocs_op": 1202
     },
     "mcp.BenchmarkToolCall/tool=whoami": {
       "ns_op": 46004,
-      "bytes_op": 17807,
-      "allocs_op": 273
+      "bytes_op": 19342,
+      "allocs_op": 295
     },
     "node/caddy.BenchmarkAccessHandler": {
       "ns_op": 2007,
