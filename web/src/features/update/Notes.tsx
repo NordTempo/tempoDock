@@ -124,16 +124,20 @@ const tidy = (s: string) =>
     .trim()
     .replace(/[.:;,]+$/, "");
 
-/** One line of Markdown: bold, code and links as elements. */
-export function Inline({ text }: { text: string }) {
-  return <>{inline(text)}</>;
+/**
+ * One line of Markdown: bold, code and links as elements. `plain` keeps
+ * links as their words, for a line inside a <summary>, which may hold
+ * no other control.
+ */
+export function Inline({ text, plain }: { text: string; plain?: boolean }) {
+  return <>{inline(text, plain)}</>;
 }
 
 const token =
   /\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s)]+)/g;
 
-/** Bold, code and links in one line; the rest is text. */
-function inline(s: string): ReactNode[] {
+/** Bold, code and links in one line (links as words when `plain`); the rest is text. */
+function inline(s: string, plain = false): ReactNode[] {
   const out: ReactNode[] = [];
   let last = 0;
   for (const m of s.matchAll(token)) {
@@ -141,8 +145,9 @@ function inline(s: string): ReactNode[] {
     if (i > last) out.push(s.slice(last, i));
     const [, bold, code, label, href, bare] = m;
     // Bold may hold code: **`[updates] trusted_keys`**.
-    if (bold) out.push(<strong key={i}>{inline(bold)}</strong>);
+    if (bold) out.push(<strong key={i}>{inline(bold, plain)}</strong>);
     else if (code) out.push(<code key={i}>{code}</code>);
+    else if (plain) out.push(label ?? shortLink(href ?? bare ?? ""));
     else {
       const url = href ?? bare ?? "";
       out.push(

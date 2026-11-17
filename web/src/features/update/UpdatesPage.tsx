@@ -296,7 +296,7 @@ function Release({
           {r.prerelease && " · pre-release"}
         </span>
         <span className="min-w-0 flex-1 truncate text-xs text-sec group-open:hidden">
-          <Inline text={line} />
+          <Inline text={line} plain />
         </span>
       </summary>
       <div className="flex flex-col gap-2 pt-2 pl-4 text-xs">
