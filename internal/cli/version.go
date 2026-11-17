@@ -12,6 +12,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/cli/apiclient"
 	"github.com/NordTempo/tempoDock/internal/clientconfig"
+	"github.com/NordTempo/tempoDock/internal/update"
 	"github.com/NordTempo/tempoDock/internal/version"
 )
 
@@ -104,17 +105,20 @@ func isPublished(v string) bool {
 }
 
 // upgradeHint is one line that gets the CLI to serverVersion: `dock
-// self-update` (pinned to it with pin, for a server that isn't the
-// context's yet) with the install script as the fallback for a published
-// release, or a build from source otherwise.
+// self-update` with the install script as the fallback for a published
+// release, or a build from source otherwise. self-update is pinned to the
+// version (--to) with pin, for a server that isn't the context's yet, and
+// whenever a plain self-update would refuse it: a version older than this
+// CLI, or one from before signed releases.
 func upgradeHint(serverVersion string, pin bool) string {
 	if !isPublished(serverVersion) {
 		return "The server isn't a release; build the CLI from its commit (make build-cli)."
 	}
+	older := update.IsRelease(version.Version) && update.Newer(version.Version, serverVersion)
 	cmd := "dock self-update"
-	if pin {
+	if pin || older || !update.SignatureRequired(serverVersion) {
 		cmd += " --to " + serverVersion
 	}
-	return fmt.Sprintf("Run `%s` to install the matching CLI, or: curl -fsSL https://github.com/%s/releases/download/%s/install-cli.sh | DOCK_VERSION=%s sh",
-		cmd, releaseRepo, serverVersion, serverVersion)
+	return fmt.Sprintf("Run `%s` to install the matching CLI, or: curl -fsSL https://dock.nordtempo.com/cli.sh | DOCK_VERSION=%s sh",
+		cmd, serverVersion)
 }

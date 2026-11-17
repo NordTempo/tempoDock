@@ -117,8 +117,10 @@ inner() {
 	cd "$dir" || exit 2
 	sha=$(git rev-parse HEAD)
 	# The latest release (no drafts or pre-releases), anonymously.
-	latest=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | jq -er .tag_name) ||
+	latest=$(curl --proto '=https' --proto-redir '=https' -fsSL "https://api.github.com/repos/$REPO/releases/latest" | jq -er .tag_name) ||
 		die "can't read the latest release"
+	# It goes into versions, URLs and paths: vX.Y.Z, nothing else.
+	[[ $latest =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "the latest release's tag isn't vX.Y.Z"
 	# A version newer than the latest release, so `dock update` takes it:
 	# v0.54.2 -> v0.54.3-nightly.20261117.g3c5dc9a.
 	nv=$(awk -F. -v d="$(date +%Y%m%d)" -v s="${sha:0:7}" '{printf "%s.%s.%d-nightly.%s.g%s", $1, $2, $3 + 1, d, s}' <<<"$latest")

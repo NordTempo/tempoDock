@@ -16,6 +16,22 @@ die() {
 output() { printf '%s=%s\n' "$1" "$2" >> "${GITHUB_OUTPUT:-/dev/null}"; }
 summary() { printf '%s\n' "$@" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"; }
 
+# shown TEXT prints TEXT for a message: printable characters only, on one
+# line, at most 80 of them, so a server's answer can't write its own lines
+# into the job's log.
+shown() { printf '%s' "$1" | LC_ALL=C tr -c '[:print:]' '?' | cut -c1-80; }
+
+# release_version V: is V a release version, vX.Y.Z with an optional
+# pre-release (v1.2.3-rc.1)? Versions end up in URLs and file names, so
+# nothing else is accepted, wherever V came from. The same strings as
+# dock's update.IsRelease: TestScriptsShareVersionGrammar runs a table
+# through both, and keeps this function the same in every script.
+release_version() (
+  export LC_ALL=C
+  case "$1" in '' | *[!0-9A-Za-z.-]*) exit 1 ;; esac
+  printf '%s\n' "$1" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?$'
+)
+
 command -v jq > /dev/null || die "jq is needed and not on this runner; install it in an earlier step"
 
 server="${INPUT_SERVER:-}"
@@ -47,23 +63,32 @@ trap 'rm -rf "$work"' EXIT
 
 # The CLI: the given binary, or the release the server runs (or the pinned
 # one), checked against its signature by the installer this action carries.
+# Only signed releases install here (DOCK_REQUIRE_SIGNATURE=1): for a
+# server from before signing, the cli input takes a binary.
 if [ -n "${INPUT_CLI:-}" ]; then
   dock="$INPUT_CLI"
   [ -x "$dock" ] || die "cli $dock is not an executable file"
 else
   version="${INPUT_VERSION:-}"
+  from="the version input"
   if [ -z "$version" ]; then
     health="$(curl -fsS --max-time 20 --retry 2 "$server/api/v1/health")" \
       || die "could not reach $server/api/v1/health: check the server input, and that this runner can reach it"
-    version="$(jq -r '.version // empty' <<< "$health")"
+    # The dot keeps a newline at the end of the answer from being dropped.
+    version="$(jq -r '((.version // "") | tostring) + "."' <<< "$health")"
+    version="${version%.}"
+    from="the version $server runs"
     case "$version" in
       v[0-9]*) ;;
       *)
-        echo "::warning title=$title::$server runs a development build ($version); installing the latest dock release"
+        echo "::warning title=$title::$server runs a development build ($(shown "$version")); installing the latest dock release"
         version=""
         ;;
     esac
   fi
+  # A version is a release version, whoever named it, or nothing is fetched.
+  [ -z "$version" ] || [ "$version" = latest ] || release_version "$version" \
+    || die "\"$(shown "$version")\" ($from) is not a release version like v0.58.0, so no CLI was installed. Pin a release with the version input (version: v0.58.0), or pass a dock binary with the cli input"
   # The signature check needs OpenSSL 3; macOS's own openssl is LibreSSL.
   for d in /opt/homebrew/opt/openssl@3/bin /usr/local/opt/openssl@3/bin; do
     if [ -x "$d/openssl" ]; then
@@ -74,7 +99,10 @@ else
   # Kept for the job's later steps, which find it on PATH.
   bin="${RUNNER_TEMP:-$work}/dock-cli"
   PATH="$bin:$PATH" DOCK_VERSION="$version" DOCK_INSTALL_DIR="$bin" DOCK_REQUIRE_SIGNATURE=1 \
-    sh "$GITHUB_ACTION_PATH/install-cli.sh" || exit 1
+    sh "$GITHUB_ACTION_PATH/install-cli.sh" || {
+      echo "::error title=$title::the dock CLI was not installed; the installer's error is above. The action installs signed releases only (v0.56.0 and later): for an older server, pass a dock binary you checked yourself with the cli input"
+      exit 1
+    }
   echo "$bin" >> "${GITHUB_PATH:-/dev/null}"
   dock="$bin/dock"
 fi

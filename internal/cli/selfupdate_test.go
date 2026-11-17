@@ -180,7 +180,8 @@ func TestSelfUpdateRefusesMismatch(t *testing.T) {
 }
 
 // A release from update.FirstSignedRelease on whose signature isn't
-// Dock's is refused; an older, unsigned one installs with a warning.
+// Dock's is refused; an older, unsigned one installs with a warning when
+// --to names it.
 func TestSelfUpdateChecksSignature(t *testing.T) {
 	setup(t)
 	link, _ := fakeCLIReleases(t)
@@ -194,6 +195,53 @@ func TestSelfUpdateChecksSignature(t *testing.T) {
 	code, v, stderr := selfUpdate(t, "--to", "v0.55.2")
 	if code != 0 || !v.Updated || !v.Unsigned || binary(t, link) != "dock v0.55.2" {
 		t.Fatalf("an unsigned v0.55.2: %d %+v %s", code, v, stderr)
+	}
+}
+
+// A server on an older release than this CLI doesn't take the CLI back:
+// the refusal names both versions and the --to that goes there, which
+// then does.
+func TestSelfUpdateGoesBackOnlyWhenAsked(t *testing.T) {
+	setup(t)
+	link, downloads := fakeCLIReleases(t, "v1.3.0", "v1.2.0")
+	version.Version = "v1.3.0" // restored by fakeCLIReleases' cleanup
+	newFakeAPI(t, map[string]http.HandlerFunc{
+		"GET /api/v1/version": jsonReply(apitypes.Version{Version: "v1.2.0", APIVersion: apitypes.APIVersion}),
+	})
+	for _, args := range [][]string{nil, {"--dry-run"}} {
+		code, _, stderr := selfUpdate(t, args...)
+		if code == 0 || !strings.Contains(stderr, "runs v1.2.0, older than this CLI (v1.3.0)") || !strings.Contains(stderr, "`dock self-update --to v1.2.0`") {
+			t.Fatalf("%v: %d %s", args, code, stderr)
+		}
+	}
+	if got := binary(t, link); got != "dock old" || *downloads != 0 {
+		t.Fatalf("binary holds %q after %d downloads", got, *downloads)
+	}
+	code, v, stderr := selfUpdate(t, "--to", "v1.2.0")
+	if code != 0 || !v.Updated || v.Target != "pinned" || binary(t, link) != "dock v1.2.0" {
+		t.Fatalf("--to v1.2.0: %d %+v %s", code, v, stderr)
+	}
+}
+
+// A release from before signing isn't installed because a server runs it
+// or because it is the newest there is: only --to installs one
+// (TestSelfUpdateChecksSignature).
+func TestSelfUpdateUnsignedOnlyWhenAsked(t *testing.T) {
+	setup(t)
+	link, downloads := fakeCLIReleases(t, "v0.55.2", "v0.55.1")
+	code, _, stderr := selfUpdate(t) // no server: the latest release
+	if code == 0 || !strings.Contains(stderr, "the latest release is v0.55.2, from before releases were signed") || !strings.Contains(stderr, "`dock self-update --to v0.55.2`") {
+		t.Fatalf("the latest release: %d %s", code, stderr)
+	}
+	newFakeAPI(t, map[string]http.HandlerFunc{
+		"GET /api/v1/version": jsonReply(apitypes.Version{Version: "v0.55.1", APIVersion: apitypes.APIVersion}),
+	})
+	code, _, stderr = selfUpdate(t)
+	if code == 0 || !strings.Contains(stderr, "runs v0.55.1, from before releases were signed") || !strings.Contains(stderr, "this CLI is v0.3.0") || !strings.Contains(stderr, "`dock self-update --to v0.55.1`") {
+		t.Fatalf("the server's version: %d %s", code, stderr)
+	}
+	if got := binary(t, link); got != "dock old" || *downloads != 0 {
+		t.Fatalf("binary holds %q after %d downloads", got, *downloads)
 	}
 }
 

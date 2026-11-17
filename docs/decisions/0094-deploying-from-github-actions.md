@@ -43,6 +43,11 @@ Workflows use `NordTempo/deploy-action@v0`.
   test keeps the copy equal to `scripts/release/install-cli.sh`, whose
   keys are tested against `internal/update/sign.go`. A development build
   gets the latest release; `version` pins one, `cli` skips installing.
+  *Amended 2026-11-17:* the version, from the server or from `version`,
+  is a release version or the step fails before any download, and
+  `DOCK_REQUIRE_SIGNATURE=1` installs no release without a signature
+  ([0088](0088-signed-releases.md)'s amendment): only v0.56.0 and later
+  install here, and a server older than that takes a binary through `cli`.
 - **Exit codes are the job's.** The step exits with `dock`'s code
   ([cli](../cli.md#exit-codes)): 6 for a failed release, 10 for a
   canceled one, 3 for a refusal. An error becomes an annotation and the

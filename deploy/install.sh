@@ -43,9 +43,12 @@
 # Environment:
 #   DOCK_BINARY   path to a dock binary (a release's dock-linux-<arch>, or make build)
 #   DOCK_VERSION  without DOCK_BINARY: the release to download, checked against its
-#                 signed SHA256SUMS (default: this release tarball's version, else the latest)
-#   DOCK_REQUIRE_SIGNATURE  "1" fails that download when its signature can't be
-#                 checked here (it needs OpenSSL 3: Debian 12, Ubuntu 22.04 and later).
+#                 signed SHA256SUMS (default: this release tarball's version, else the
+#                 latest). A release from before signing (v0.56.0) is taken on its
+#                 SHA256SUMS alone only when named here, never as the default
+#   DOCK_REQUIRE_SIGNATURE  "1" fails that download without a signature checked
+#                 here: no release from before signing, and none when the check can't
+#                 run (it needs OpenSSL 3: Debian 12, Ubuntu 22.04 and later).
 #                 Piped, it defaults to 1; "0" accepts SHA256SUMS alone
 #   DOCK_ADMIN_EMAIL  the first admin's email, the console login (asked on a fresh
 #                 install with a terminal; default admin@localhost)
@@ -140,15 +143,38 @@ bootstrap_err=""
 cleanup() { rm -rf ${staged:+"$staged"} ${download_dir:+"$download_dir"} ${old_config:+"$old_config"} ${merged:+"$merged"} ${bootstrap_err:+"$bootstrap_err"}; }
 trap cleanup EXIT
 
-# github CURL-ARGS... runs curl against the GitHub API, with GITHUB_TOKEN if set.
-# The token goes to curl as a config on stdin (printf is a builtin), never in
-# its arguments, which any user could read in the process list.
+# github CURL-ARGS... runs curl against GitHub, https only (redirects
+# included), with GITHUB_TOKEN if set. The token goes to curl as a config on
+# stdin (printf is a builtin), never in its arguments, which any user could
+# read in the process list.
 github() {
   if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-    printf 'header = "Authorization: Bearer %s"\n' "$GITHUB_TOKEN" | curl -K - -fsSL "$@"
+    printf 'header = "Authorization: Bearer %s"\n' "$GITHUB_TOKEN" | curl -K - --proto '=https' --proto-redir '=https' -fsSL "$@"
   else
-    curl -fsSL "$@"
+    curl --proto '=https' --proto-redir '=https' -fsSL "$@"
   fi
+}
+
+# shown TEXT prints TEXT for a message: printable characters only, on one
+# line, at most 80 of them.
+shown() { printf '%s' "$1" | LC_ALL=C tr -c '[:print:]' '?' | cut -c1-80; }
+
+# release_version V: is V a release version, vX.Y.Z with an optional
+# pre-release (v1.2.3-rc.1)? Versions end up in URLs and file names, so
+# nothing else is accepted, wherever V came from. The same strings as
+# dock's update.IsRelease: TestScriptsShareVersionGrammar runs a table
+# through both, and keeps this function the same in every script.
+release_version() (
+  export LC_ALL=C
+  case "$1" in '' | *[!0-9A-Za-z.-]*) exit 1 ;; esac
+  printf '%s\n' "$1" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?$'
+)
+
+# check_version V FROM dies unless V is a release version; FROM says where
+# it came from.
+check_version() {
+  release_version "$1" \
+    || die "\"$(shown "$1")\" ($2) is not a release version like v0.58.0, so nothing was downloaded. To install a release you choose, set DOCK_VERSION: sudo DOCK_VERSION=v0.58.0 bash"
 }
 
 # signature_required VERSION: is VERSION (vX.Y.Z, pre-releases as their
@@ -161,12 +187,18 @@ signature_required() {
 }
 
 # verify_sums DIR VERSION checks DIR/SHA256SUMS against DIR/SHA256SUMS.sig
-# (missing when the release has none) with openssl, as dock does.
+# (missing when the release has none) with openssl, as dock does. A release
+# from before signing passes on its SHA256SUMS alone only when the person
+# named it with DOCK_VERSION and DOCK_REQUIRE_SIGNATURE isn't 1.
 verify_sums() {
   local dir=$1 version=$2 id key line keys
   if [[ ! -s "$dir/SHA256SUMS.sig" ]]; then
     ! signature_required "$version" \
       || die "release $version has no SHA256SUMS.sig; releases from $FIRST_SIGNED on are signed, so don't install this one: it may have been tampered with"
+    [[ "${DOCK_REQUIRE_SIGNATURE:-}" != 1 ]] \
+      || die "release $version predates signed releases ($FIRST_SIGNED) and has no signature to check. Install $FIRST_SIGNED or later, or set DOCK_REQUIRE_SIGNATURE=0 with DOCK_VERSION=$version to take it on its SHA256SUMS alone"
+    [[ -n "${DOCK_VERSION:-}" && "$DOCK_VERSION" != latest ]] \
+      || die "release $version predates signed releases ($FIRST_SIGNED) and has no signature to check, so it isn't installed unasked. To install it anyway, checked against its SHA256SUMS alone, name it yourself: DOCK_VERSION=$version"
     warn "release $version predates signed releases ($FIRST_SIGNED); checked against its SHA256SUMS only"
     return 0
   fi
@@ -194,13 +226,17 @@ verify_sums() {
 
 # release_info VERSION DIR reads release VERSION ("latest" for the newest)
 # from GitHub's API into DIR/release.json and prints its tag. Through the
-# API, because release download links don't take a token.
+# API, because release download links don't take a token. The one place a
+# version becomes part of a URL or a file name: the version asked for and
+# the one found are both release versions (check_version), or it dies.
 release_info() {
   local version=$1 dir=$2 path
+  [[ "$version" == latest ]] || check_version "$version" "the version asked for"
   if [[ -n "${DOCK_RELEASE_DIR:-}" ]]; then
     if [[ "$version" == latest ]]; then
       path="$(cd "$DOCK_RELEASE_DIR" && ls dock-install-*.tar.gz 2> /dev/null | head -n1)"
       version="${path#dock-install-}" version="${version%.tar.gz}"
+      [[ -z "$version" ]] || check_version "$version" "the release in $DOCK_RELEASE_DIR"
     fi
     [[ -n "$version" && -f "$DOCK_RELEASE_DIR/dock-install-$version.tar.gz" ]] \
       || die "$DOCK_RELEASE_DIR has no dock-install-<version>.tar.gz${DOCK_VERSION:+ for $DOCK_VERSION}"
@@ -213,6 +249,7 @@ release_info() {
     || die "could not read release $version of $RELEASE_REPO; set GITHUB_TOKEN to a token that can read it (sudo --preserve-env=GITHUB_TOKEN), or download it yourself and set DOCK_BINARY"
   version="$(grep -o '"tag_name": *"[^"]*"' "$dir/release.json" | head -n1 | sed 's/.*"\([^"]*\)"$/\1/')"
   [[ -n "$version" ]] || die "GitHub's answer for the release names no version"
+  check_version "$version" "the release GitHub answered with"
   printf '%s\n' "$version"
 }
 
@@ -813,8 +850,8 @@ main() {
     tmp="$(mktemp -d)"
     base="https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}"
     tarball="caddy_${CADDY_VERSION}_linux_${ARCH}.tar.gz"
-    curl -fsSLo "$tmp/$tarball" "$base/$tarball"
-    curl -fsSLo "$tmp/checksums.txt" "$base/caddy_${CADDY_VERSION}_checksums.txt"
+    curl --proto '=https' --proto-redir '=https' -fsSLo "$tmp/$tarball" "$base/$tarball"
+    curl --proto '=https' --proto-redir '=https' -fsSLo "$tmp/checksums.txt" "$base/caddy_${CADDY_VERSION}_checksums.txt"
     (cd "$tmp" && grep -E "  ${tarball}\$" checksums.txt | sha512sum --check --quiet --strict) \
       || die "$tarball does not match Caddy's published checksum"
     tar -xzf "$tmp/$tarball" -C "$tmp" caddy
@@ -828,7 +865,7 @@ main() {
     say "==> cloudflared $CLOUDFLARED_VERSION"
     if ! /usr/local/bin/cloudflared --version 2>/dev/null | grep -q "version $CLOUDFLARED_VERSION "; then
       tmp="$(mktemp -d)"
-      curl -fsSLo "$tmp/cloudflared" \
+      curl --proto '=https' --proto-redir '=https' -fsSLo "$tmp/cloudflared" \
         "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-${ARCH}"
       # Cloudflare publishes checksums only in the release notes, so the
       # default version's are pinned above.

@@ -73,6 +73,50 @@ check '[ $code -eq 3 ] && [ "$out_exit_code" = 3 ] && [ -z "${out_release:-}" ]'
 step bad-input INPUT_MODE=image INPUT_CLI="$dock"
 check '[ $code -eq 2 ]'
 
+# The CLI's version, offline: a stand-in curl (fake-curl.sh) answers for
+# the server and for GitHub, whose "release" v0.52.0 has a dock-cli and
+# its SHA256SUMS but, as releases before v0.56.0, no signature.
+mkdir -p "$work/fake" "$work/github/NordTempo/tempoDock/releases/download/v0.52.0"
+cp "$here/fake-curl.sh" "$work/fake/curl"
+case "$(uname -m)" in x86_64 | amd64) arch=amd64 ;; *) arch=arm64 ;; esac
+asset="dock-cli-$(uname -s | tr '[:upper:]' '[:lower:]')-$arch"
+(
+  cd "$work/github/NordTempo/tempoDock/releases/download/v0.52.0"
+  printf '#!/bin/sh\necho ran >> "%s"\n' "$work/unsigned-ran" > "$asset"
+  { sha256sum "$asset" 2> /dev/null || shasum -a 256 "$asset"; } > SHA256SUMS
+)
+# version NAME INPUT=value...: an image deploy that installs its CLI, with
+# the stand-in curl.
+version() {
+  local name="$1"
+  shift
+  : > "$work/curl.log"
+  step "$name" PATH="$work/fake:$PATH" FAKE_GITHUB="$work/github" FAKE_CURL_LOG="$work/curl.log" \
+    INPUT_MODE=image INPUT_IMAGE=busybox:1.37 INPUT_SERVICE=api "$@"
+}
+nothing_fetched='! grep -q github.com "$work/curl.log" && [ ! -e "$work/runner/dock-cli" ]'
+
+# Only a release version reaches GitHub, whether the server or the
+# workflow names it.
+n=0
+for v in 'v0.52.0/../../../../../other/repo/releases/download/v1' 'v0.52.0/../x' 'v0.52.0 x' 'v0.52.0\n' 'v0.52.0\"x'; do
+  n=$((n + 1))
+  version "server-version-$n" FAKE_HEALTH="{\"version\":\"$v\"}"
+  check "[ \$code -eq 2 ] && $nothing_fetched"
+done
+version input-version INPUT_VERSION='v0.52.0/../x'
+check "[ \$code -eq 2 ] && $nothing_fetched"
+version input-version-newline INPUT_VERSION=$'v0.52.0\n'
+check "[ \$code -eq 2 ] && $nothing_fetched"
+
+# A release from before signing isn't installed, whoever names it: the
+# cli input takes a binary for such a server.
+version server-unsigned FAKE_HEALTH='{"version":"v0.52.0"}'
+check '[ $code -eq 1 ] && grep -q "=https https://github.com/NordTempo/tempoDock/releases/download/v0.52.0/SHA256SUMS$" "$work/curl.log"'
+check '[ ! -e "$work/runner/dock-cli" ] && [ ! -e "$work/unsigned-ran" ]'
+version input-unsigned INPUT_VERSION=v0.52.0
+check '[ $code -eq 1 ] && [ ! -e "$work/runner/dock-cli" ] && [ ! -e "$work/unsigned-ran" ]'
+
 # The installer: the latest release (the fake runs a development build),
 # its signature checked.
 step install INPUT_MODE=image INPUT_IMAGE=busybox:1.37 INPUT_SERVICE=api

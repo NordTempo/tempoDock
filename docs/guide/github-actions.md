@@ -147,7 +147,7 @@ Nothing is removed by an apply from the action; removals stay a person's
 | `path` | `.`, or `dock.project.toml` for `apply` | The directory or the project file |
 | `image` | | The image, for `mode: image` |
 | `wait` | `true` | Follow the release until it is live or failed. `false` returns once it is queued |
-| `version` | the server's | The `dock` release to install, like `v0.56.0` |
+| `version` | the server's | The `dock` release to install, like `v0.56.0`: a signed one, v0.56.0 or later |
 | `cli` | | A `dock` binary to use instead of installing one |
 
 | Output | Means |
@@ -197,6 +197,12 @@ against Dock's release key, which the action carries itself
 ([ADR 0088](../decisions/0088-signed-releases.md)): a release swapped on
 GitHub doesn't install. A server on a development build gets the latest
 release. `version` pins one.
+
+Only a signed release installs, v0.56.0 or later, whether the server or
+`version` names it, and only a release version (`v0.58.0`,
+`v0.58.0-rc.1`) is looked up at all: anything else fails the step
+before a download. For a server older than v0.56.0, pass a `dock` binary
+you checked yourself with `cli`.
 
 The action needs `jq`, which GitHub's runners have. On macOS the
 signature check uses Homebrew's OpenSSL 3; on a runner without it, run

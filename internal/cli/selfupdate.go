@@ -67,11 +67,14 @@ func newSelfUpdateCmd(g *globals) *cobra.Command {
 		Short: "Install the CLI that matches your server",
 		Long: `Replace this CLI with the release's dock-cli build for this machine,
 checked against the release's SHA256SUMS and its signature (releases
-from ` + update.FirstSignedRelease + ` on are signed; older ones are installed
-with a warning). By default the release is the
+from ` + update.FirstSignedRelease + ` on are signed). By default the release is the
 version the current context's server runs, so the CLI and the server
 match; with no server reachable, the latest release. --latest takes the
 newest release, --to a given one.
+
+It goes to an older release than this CLI, or to one from before signing
+(checked against its SHA256SUMS alone, with a warning), only when you name
+it with --to: a server's answer doesn't take the CLI back.
 
 The binary is replaced in place (symlinks followed) through a rename, so
 a failed download leaves it as it was. When its directory isn't writable,
@@ -113,6 +116,9 @@ This updates the CLI only; ` + "`dock update`" + ` updates the platform.`,
 				return err
 			}
 			if v.From != v.To {
+				if err := v.unasked(); err != nil {
+					return err
+				}
 				if err := notHomebrew(exe, v.To); err != nil {
 					return err
 				}
@@ -159,6 +165,36 @@ func (v selfUpdateView) why() string {
 		return ", the latest release"
 	}
 	return ""
+}
+
+// unasked refuses a target nobody named with --to (the server's version
+// or the latest release) when it is older than this CLI or predates
+// signed releases: what a server or a release list says may move the CLI
+// forward, to a signed release, and nowhere else. The error names the
+// command that goes there anyway.
+func (v selfUpdateView) unasked() error {
+	if v.Target == "pinned" {
+		return nil
+	}
+	what := "the latest release is " + v.To
+	if v.Target == "server" {
+		what = fmt.Sprintf("%s runs %s", v.Server, v.To)
+	}
+	switch {
+	case update.IsRelease(v.From) && update.Newer(v.From, v.To):
+		return &output.Error{
+			Exit:    output.ExitError,
+			Message: fmt.Sprintf("%s, older than this CLI (%s); self-update goes back to an older release only when asked", what, v.From),
+			Hint:    fmt.Sprintf("dock is unchanged. To install the older CLI anyway: `dock self-update --to %s`.", v.To),
+		}
+	case !update.SignatureRequired(v.To):
+		return &output.Error{
+			Exit:    output.ExitError,
+			Message: fmt.Sprintf("%s, from before releases were signed (%s), and this CLI is %s; self-update installs an unsigned release only when asked", what, update.FirstSignedRelease, v.From),
+			Hint:    fmt.Sprintf("dock is unchanged. To install it anyway, checked against its SHA256SUMS alone: `dock self-update --to %s`.", v.To),
+		}
+	}
+	return nil
 }
 
 // selfUpdateTarget fills in v.To and how it was picked: to when given,
