@@ -32,6 +32,9 @@ type Client struct {
 	// HTTP makes the requests; nil is http.DefaultClient. A store on
 	// another server gets one that dials over the node link.
 	HTTP *http.Client
+	// Limits go with every write (StoreLimits); the zero value leaves
+	// the store on its defaults.
+	Limits StoreLimits
 }
 
 var _ Store = (*Client)(nil)
@@ -46,6 +49,7 @@ func (c *Client) Write(ctx context.Context, source string, position uint64, even
 		body.WriteByte('\n')
 	}
 	q := url.Values{"source": {source}, "position": {strconv.FormatUint(position, 10)}}
+	c.Limits.query(q)
 	var res WriteResult
 	err := c.do(ctx, http.MethodPost, WritePath+"?"+q.Encode(), &body, &res)
 	return res.Written, err
@@ -56,6 +60,7 @@ func (c *Client) Write(ctx context.Context, source string, position uint64, even
 // lines it can't read.
 func (c *Client) WriteLines(ctx context.Context, source string, position uint64, lines []byte) (WriteResult, error) {
 	q := url.Values{"source": {source}, "position": {strconv.FormatUint(position, 10)}}
+	c.Limits.query(q)
 	var res WriteResult
 	err := c.do(ctx, http.MethodPost, WritePath+"?"+q.Encode(), bytes.NewReader(lines), &res)
 	return res, err
@@ -184,6 +189,7 @@ func (c *Client) Traffic(ctx context.Context, q TrafficQuery) ([]TrafficRow, err
 // the replay spool holds them, from source up to position.
 func (c *Client) WriteReplayLines(ctx context.Context, source string, position uint64, lines []byte) (WriteResult, error) {
 	q := url.Values{"source": {source}, "position": {strconv.FormatUint(position, 10)}}
+	c.Limits.query(q)
 	var res WriteResult
 	err := c.do(ctx, http.MethodPost, ReplayWritePath+"?"+q.Encode(), bytes.NewReader(lines), &res)
 	return res, err

@@ -11,6 +11,19 @@ exemption for the cookieless basics either.
 Amended by [0087](0087-unguessable-generated-hostnames.md): new sites'
 public addresses are `stats-<site>-<random>`, fixed when the site is
 made; a rename no longer moves them.
+Amended 2026-11-17: the store bounds what it keeps. The ingest limits
+rates, and anyone can send to a site's ingest all day, so a site keeps
+at most `[analytics] site_day_events` events and `site_day_replay_mb` of
+replay recordings per UTC day of arrival (1,000,000 and 1024 MB unless
+set); the rest of that day's is dropped, counted and logged once a day
+per site. The database and replay files together stay within
+`[analytics] max_gb` (unless set, the smaller of 10 GB and a tenth of
+the store's disk): past it the oldest days of replays go early, then the
+oldest days of raw events, whose daily totals are in the rollups and
+stay; never today's. The size is checked every 100 writes and on a
+day's first, without a timer. An install whose store is already over
+the default loses its oldest replays, then raw events, at the first
+write after the update: set `max_gb` before updating to keep them.
 
 ## Context
 

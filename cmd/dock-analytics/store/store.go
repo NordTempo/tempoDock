@@ -79,6 +79,10 @@ type Store struct {
 	// newGroups those the open write adds once it commits.
 	known     map[groupKey]struct{}
 	newGroups []groupKey
+	// budget is what each site has used today (budget.go).
+	budget budgets
+	// sizing is held by the one keepWithin that runs.
+	sizing sync.Mutex
 
 	// rollMu guards rolledTo: every site is rolled up (but for stale
 	// days) up to that day.
@@ -242,21 +246,54 @@ type Locator func(ipPrefix string) Location
 // lost acknowledgement); the result says how many events were written.
 // locate may be nil (no locations). Errors and Web Vitals go to their own
 // tables (errors.go); news are the error groups seen for the first time.
+// It applies no budgets: for seeding, benchmarks and tests.
 func (s *Store) Write(ctx context.Context, source string, position uint64, events []analytics.Event, locate Locator) (written int, news []analytics.NewError, err error) {
+	res, err := s.WriteLimited(ctx, source, position, events, locate, noLimits)
+	return res.Written, res.NewErrors, err
+}
+
+// WriteLimited is Write within lim (budget.go): events past their site's
+// budget for the day are dropped and counted in the result, which names
+// the sites this write took over it, and the store's size is checked
+// when it is due. The batch's position is written either way.
+func (s *Store) WriteLimited(ctx context.Context, source string, position uint64, events []analytics.Event, locate Locator, lim analytics.StoreLimits) (analytics.WriteResult, error) {
+	lim = s.limits(lim)
+	res, today, due, err := s.write(ctx, source, position, events, locate, lim)
+	if err != nil || !due {
+		return res, err
+	}
+	if err := s.keepWithin(ctx, lim.MaxBytes, today); err != nil {
+		return res, fmt.Errorf("the events are written; keeping the store within its size: %w", err)
+	}
+	return res, nil
+}
+
+// write is WriteLimited's transaction; due says the store's size is to
+// be checked now, with the locks let go.
+func (s *Store) write(ctx context.Context, source string, position uint64, events []analytics.Event, locate Locator, lim analytics.StoreLimits) (res analytics.WriteResult, today time.Time, due bool, err error) {
 	s.gate.RLock()
 	defer s.gate.RUnlock()
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
+	now := s.now()
+	today = utcDay(now)
+	if err := s.budgetFor(ctx, today); err != nil {
+		return res, today, false, fmt.Errorf("write analytics events: %w", err)
+	}
+	sp := &spend{used: s.budget.events, limit: lim.SiteDayEvents}
+	events = eventsWithin(events, sp)
+
 	conn, err := s.db.Conn(ctx)
 	if err != nil {
-		return 0, nil, err
+		return res, today, false, err
 	}
 	defer func() { _ = conn.Close() }()
 
 	var stale bool
+	var written int
+	var news []analytics.NewError
 	regular, errs, vitals := splitKinds(events)
-	now := s.now()
 	err = conn.Raw(func(dc any) error {
 		c := dc.(driver.Conn)
 		ex := dc.(driver.ExecerContext)
@@ -319,16 +356,18 @@ func (s *Store) Write(ctx context.Context, source string, position uint64, event
 			s.known[k] = struct{}{}
 		}
 		written = len(events)
+		res.Rejected, res.OverBudget = sp.rejected, s.commit(sp)
 		return nil
 	})
 	if err != nil {
 		// A stale mark counted for nothing only costs a rebuild.
-		return 0, nil, fmt.Errorf("write analytics events: %w", err)
+		return analytics.WriteResult{}, today, false, fmt.Errorf("write analytics events: %w", err)
 	}
 	if len(regular) > 0 && written > 0 {
 		s.kickRollups(now, stale)
 	}
-	return written, news, nil
+	res.Written, res.NewErrors = written, news
+	return res, today, s.sizeDue(), nil
 }
 
 // cursorOf reads source's position, 0 for a new source.

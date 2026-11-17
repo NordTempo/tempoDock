@@ -3,6 +3,8 @@ package analytics
 import (
 	"context"
 	"io"
+	"net/url"
+	"strconv"
 )
 
 // Store is the analytics store as Dock uses it: Client over HTTP to the
@@ -81,11 +83,42 @@ type Health struct {
 	GeoIP string `json:"geoip,omitempty"`
 }
 
+// StoreLimits cap what the store keeps of events and replays, which
+// anyone can send to a site's ingest. A write carries them (the control
+// plane's [analytics] settings); a zero field is the store's own default
+// and a negative one no cap.
+type StoreLimits struct {
+	// SiteDayEvents caps the events a site keeps per UTC day of arrival;
+	// past it the day's later events are dropped and counted.
+	SiteDayEvents int64
+	// SiteDayReplayBytes caps a site's replay chunks per UTC day, in
+	// bytes as the store keeps them.
+	SiteDayReplayBytes int64
+	// MaxBytes caps the store's database and replay files together.
+	// Past it the oldest days of replays go, then the oldest days of raw
+	// events (their daily totals stay), never today's.
+	MaxBytes int64
+}
+
+// query adds the limits that are set to a write's query.
+func (l StoreLimits) query(q url.Values) {
+	for name, v := range map[string]int64{"site_day_events": l.SiteDayEvents, "site_day_replay_bytes": l.SiteDayReplayBytes, "max_bytes": l.MaxBytes} {
+		if v != 0 {
+			q.Set(name, strconv.FormatInt(v, 10))
+		}
+	}
+}
+
 // WriteResult answers a write.
 type WriteResult struct {
 	Written int `json:"written"`
 	// Skipped counts lines that weren't events.
 	Skipped int `json:"skipped,omitempty"`
+	// Rejected counts events or chunks past their site's budget for the
+	// day (StoreLimits), and OverBudget the sites this write took over
+	// it: each is named once a day.
+	Rejected   int     `json:"rejected,omitempty"`
+	OverBudget []int64 `json:"over_budget,omitempty"`
 	// NewErrors are the error groups the write saw for the first time:
 	// what the "new error" alert is raised for.
 	NewErrors []NewError `json:"new_errors,omitempty"`

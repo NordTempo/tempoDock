@@ -156,6 +156,17 @@ type Analytics struct {
 	StoreBinary string `toml:"store_binary"`
 	// StoreMemoryMB is the store container's memory limit.
 	StoreMemoryMB int `toml:"store_memory_mb"`
+	// SiteDayEvents and SiteDayReplayMB cap what a site keeps a UTC day,
+	// of events and of replay chunks: anyone can send a site's ingest
+	// more, and the rest of that day's is dropped. MaxGB caps the store's
+	// database and replay files together; past it the oldest days of
+	// replays go early, then the oldest days of raw events (their daily
+	// totals stay). 0 for any of them is the store's default: 1,000,000
+	// events, 1024 MB, and the smaller of 10 GB and a tenth of the
+	// store's disk.
+	SiteDayEvents   int64 `toml:"site_day_events"`
+	SiteDayReplayMB int64 `toml:"site_day_replay_mb"`
+	MaxGB           int64 `toml:"max_gb"`
 	// StatsListen is the loopback address the control plane's Caddy
 	// sends sites' public dashboards to (ADR 0037, A4). Its own listener,
 	// serving nothing but those pages, so no other part of Dock is
@@ -673,6 +684,8 @@ func (c *Config) validate() error {
 		return fmt.Errorf("[traces] metrics_spool_max_mb is %d; it must be at least 16", c.Traces.MetricsSpoolMaxMB)
 	case c.Traces.MetricSeries < 1 || c.Traces.MetricNames < 1:
 		return fmt.Errorf("[traces] metric_series and metric_names must be at least 1")
+	case c.Analytics.SiteDayEvents < 0 || c.Analytics.SiteDayReplayMB < 0 || c.Analytics.MaxGB < 0:
+		return errors.New("[analytics] site_day_events, site_day_replay_mb and max_gb can't be negative (0 picks the store's default)")
 	case c.Traces.ServiceDaySpans < 1 || c.Traces.OrgDaySpans < 1 || c.Traces.ErrorDaySpans < 1 || c.Traces.MaxGB < 1:
 		return errors.New("[traces] service_day_spans, org_day_spans, error_day_spans and max_gb must be at least 1")
 	}

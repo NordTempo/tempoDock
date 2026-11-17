@@ -180,6 +180,11 @@ func (c *Core) storeClient(serverID int64, token string) *analytics.Client {
 	return &analytics.Client{
 		BaseURL: "http://analytics",
 		Token:   token,
+		Limits: analytics.StoreLimits{
+			SiteDayEvents:      c.cfg.Analytics.SiteDayEvents,
+			SiteDayReplayBytes: c.cfg.Analytics.SiteDayReplayMB << 20,
+			MaxBytes:           c.cfg.Analytics.MaxGB << 30,
+		},
 		HTTP: &http.Client{Transport: &http.Transport{
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				return c.runtime(serverID).DialAnalyticsStore(ctx, node.StoreAnalytics)
@@ -591,14 +596,17 @@ func (c *Core) forwardOnce(sp spoolOf) error {
 			c.log.Warn("analytics: a server's spool was full and dropped events before they reached the store", "server", serverID)
 		}
 		if sp.spool == node.SpoolReplay {
-			if _, err := cl.WriteReplayLines(ctx, source, b.Position, b.Events); err != nil {
+			res, err := cl.WriteReplayLines(ctx, source, b.Position, b.Events)
+			if err != nil {
 				return err
 			}
+			c.overBudget(res, "replay recordings", "site_day_replay_mb")
 		} else {
 			res, err := cl.WriteLines(ctx, source, b.Position, b.Events)
 			if err != nil {
 				return err
 			}
+			c.overBudget(res, "events", "site_day_events")
 			c.observeLive(b.Events)
 			c.analyticsWritten(ctx, res, b.Events)
 			c.frontendErrors(serverID, b.Events)
@@ -656,4 +664,13 @@ func (c *Core) enableAnalytics(ctx context.Context, by string, serverID *int64) 
 		return err
 	}
 	return c.runAnalytics(ctx, st)
+}
+
+// overBudget logs the sites a write took past their budget for the day
+// (analytics.StoreLimits): the store names each once a day, so this is
+// one line a site a day, however much arrives.
+func (c *Core) overBudget(res analytics.WriteResult, what, setting string) {
+	for _, site := range res.OverBudget {
+		c.log.Warn("analytics: a site is past its "+what+" for today; the rest of today's are dropped. If that is real traffic, raise [analytics] "+setting, "site", site)
+	}
 }

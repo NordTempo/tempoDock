@@ -13,6 +13,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -282,6 +283,11 @@ func (a *api) write(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "source and position are required", http.StatusBadRequest)
 		return
 	}
+	lim, err := storeLimits(r.URL.Query())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	events, skipped, err := readEvents(r.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -290,13 +296,33 @@ func (a *api) write(w http.ResponseWriter, r *http.Request) {
 	if skipped > 0 {
 		a.log.Warn("write: lines that aren't events were skipped", "source", source, "skipped", skipped)
 	}
-	n, news, err := a.s.Write(r.Context(), source, pos, events, a.locate)
+	res, err := a.s.WriteLimited(r.Context(), source, pos, events, a.locate, lim)
 	if err != nil {
 		a.log.Error("write", "source", source, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	reply(w, analytics.WriteResult{Written: n, Skipped: skipped, NewErrors: news})
+	if len(res.OverBudget) > 0 {
+		a.log.Warn("write: sites are past their events for today; their later events are dropped until midnight UTC", "sites", res.OverBudget)
+	}
+	res.Skipped = skipped
+	reply(w, res)
+}
+
+// storeLimits reads a write's limits from its query (analytics.StoreLimits):
+// one left out is the store's default.
+func storeLimits(q url.Values) (analytics.StoreLimits, error) {
+	var lim analytics.StoreLimits
+	for name, v := range map[string]*int64{"site_day_events": &lim.SiteDayEvents, "site_day_replay_bytes": &lim.SiteDayReplayBytes, "max_bytes": &lim.MaxBytes} {
+		if s := q.Get(name); s != "" {
+			n, err := strconv.ParseInt(s, 10, 64)
+			if err != nil {
+				return lim, fmt.Errorf("%s must be a number", name)
+			}
+			*v = n
+		}
+	}
+	return lim, nil
 }
 
 // readEvents decodes up to analytics.MaxWriteBatch JSON-line events.
@@ -335,6 +361,11 @@ func (a *api) writeReplay(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "source and position are required", http.StatusBadRequest)
 		return
 	}
+	lim, err := storeLimits(r.URL.Query())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	sc := bufio.NewScanner(r.Body)
 	sc.Buffer(make([]byte, 0, 64<<10), analytics.MaxReplayLine)
 	var chunks []analytics.ReplayChunk
@@ -358,16 +389,20 @@ func (a *api) writeReplay(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	n, bad, err := a.s.WriteReplay(r.Context(), source, pos, chunks, a.locate)
+	res, err := a.s.WriteReplayLimited(r.Context(), source, pos, chunks, a.locate, lim)
 	if err != nil {
 		a.log.Error("write replay", "source", source, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if skipped+bad > 0 {
-		a.log.Warn("write replay: lines that aren't chunks were skipped", "source", source, "skipped", skipped+bad)
+	res.Skipped += skipped
+	if res.Skipped > 0 {
+		a.log.Warn("write replay: lines that aren't chunks were skipped", "source", source, "skipped", res.Skipped)
 	}
-	reply(w, analytics.WriteResult{Written: n, Skipped: skipped + bad})
+	if len(res.OverBudget) > 0 {
+		a.log.Warn("write replay: sites are past their replay bytes for today; their later recordings are dropped until midnight UTC", "sites", res.OverBudget)
+	}
+	reply(w, res)
 }
 
 // replayData streams segments' rrweb events (analytics.ReplayDataPath),

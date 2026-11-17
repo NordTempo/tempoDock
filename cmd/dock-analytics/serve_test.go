@@ -255,3 +255,31 @@ func TestAPIMovesTheDatabase(t *testing.T) {
 		t.Errorf("restore into a store with events = %v; want a 409", err)
 	}
 }
+
+// A write's limits travel with it: the client's reach the store, which
+// answers what it dropped and which site went over; and a limit that
+// isn't a number is the caller's error.
+func TestAPIAppliesAWritesLimits(t *testing.T) {
+	c, srv := server(t)
+	c.Limits = analytics.StoreLimits{SiteDayEvents: 2, SiteDayReplayBytes: -1, MaxBytes: -1}
+	now := time.Now().UnixMilli()
+	var lines []byte
+	for i := range 5 {
+		b, _ := json.Marshal(analytics.Event{Time: now, Site: 7, Service: 1, Kind: analytics.KindPageview, Path: "/", Visitor: uint64(i + 1)})
+		lines = append(append(lines, b...), '\n')
+	}
+	res, err := c.WriteLines(context.Background(), "server-1", 1, lines)
+	if err != nil || res.Written != 2 || res.Rejected != 3 || len(res.OverBudget) != 1 || res.OverBudget[0] != 7 {
+		t.Fatalf("5 events with a budget of 2: %+v, %v", res, err)
+	}
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+analytics.WritePath+"?source=s&position=9&max_bytes=lots", nil)
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("a limit that isn't a number: %d", resp.StatusCode)
+	}
+}
