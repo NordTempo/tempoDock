@@ -16,6 +16,10 @@
 # (e2e2 has 10.250.250.0/24) so it never touches another slot's servers;
 # e2e/nightly.sh uses E2E_SLOT=e2e-nightly.
 #
+# E2E_TLS=1 installs with TLS (Caddy on 80 and 443, certificates from a
+# real CA) instead of plain HTTP, for wildcard certificates (ADR 0090);
+# set [caddy] acme_directory to Let's Encrypt's staging directory first.
+#
 # E2E_VM_MEMORY caps each server container's memory (docker --memory, e.g.
 # 5g), so a runaway test can't take the host down; unset means no cap.
 #
@@ -33,6 +37,8 @@ SUBNET=${E2E_SUBNET:-10.250.250.0/24}
 PREFIX=${SUBNET%.*}
 BASE_DOMAIN=${BASE_DOMAIN:-$SLOT.test}
 STATE=/tmp/$SLOT
+TLS_OFF=true
+[[ ${E2E_TLS:-} != 1 ]] || TLS_OFF=false
 mkdir -p "$STATE"
 
 say() { printf '\033[1m==> %s\033[0m\n' "$*"; }
@@ -85,7 +91,7 @@ start "$CP" "$CP_IP"
 wait_docker "$CP"
 copy "$CP"
 # Apps may reach $SLOT-net (log sinks, registries, S3 on the host side).
-docker exec -e DOCK_BINARY=/root/dock/dock -e DISABLE_TLS=true -e BASE_DOMAIN="$BASE_DOMAIN" \
+docker exec -e DOCK_BINARY=/root/dock/dock -e DISABLE_TLS=$TLS_OFF -e BASE_DOMAIN="$BASE_DOMAIN" \
 	-e PUBLIC_IP="$CP_IP" -e LISTEN="$CP_IP:7070" -e NODE_LISTEN="$CP_IP:7443" -e REGISTRY=1 \
 	"$CP" /root/dock/deploy/install.sh >"$STATE/install-cp.log" 2>&1 ||
 	{ tail -30 "$STATE/install-cp.log"; exit 1; }
@@ -121,7 +127,7 @@ for i in $(seq "$NODES"); do
 	if ! docker exec "$name" test -f /var/lib/dock/node.toml; then
 		join=$("$BIN" server add "$name" --production --non-production --builder --json | jq -r '.token // .join_token')
 	fi
-	docker exec -e DOCK_BINARY=/root/dock/dock -e DISABLE_TLS=true -e BASE_DOMAIN="node$i.$BASE_DOMAIN" \
+	docker exec -e DOCK_BINARY=/root/dock/dock -e DISABLE_TLS=$TLS_OFF -e BASE_DOMAIN="node$i.$BASE_DOMAIN" \
 		-e PUBLIC_IP="$ip" ${join:+-e NODE_JOIN_TOKEN="$join"} \
 		"$name" /root/dock/deploy/install.sh --node >"$STATE/install-$name.log" 2>&1 ||
 		{ tail -30 "$STATE/install-$name.log"; exit 1; }
