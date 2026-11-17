@@ -19,6 +19,9 @@
 #   apply       dock apply --dry-run, then apply; a Compose import (0049)
 #   health      ongoing health checks restart a hung service; a node going
 #               down raises an alert and clears when it is back (0043)
+#   alerts      a Slack channel (a mock of Slack's webhooks on the slot's
+#               network) gets a crash loop and a failed deploy, escaped,
+#               waits out a 429's Retry-After, then gets both resolved (0020)
 #
 # Projects are e2e2-<scenario>-<run>, <run> being E2E_RUN (default: the
 # time), so runs are repeatable. E2E_NODE_CONTAINER names the node's
@@ -603,8 +606,94 @@ scenario_backup() {
 	check "dock backup list shows it succeeded" out_has 'succeeded|done|ok' dk backup list -s db $(pe $p)
 }
 
+# slack_start starts $SLOT-slack on $SLOT-net, a mock of Slack's incoming
+# webhooks: a POST whose JSON has a "text" answers 200 "ok" (400
+# invalid_payload otherwise), or 429 with Retry-After while
+# POST /_mode?m=429&ra=SECONDS is set (m=ok ends it). GET /got returns a
+# JSON line per request: when, status and text.
+SLACK_IP=${E2E_SLACK_IP:-$SUBNET_PREFIX.21}
+slack_start() {
+	docker rm -fv "$SLOT-slack" >/dev/null 2>&1
+	docker run -d --name "$SLOT-slack" --network "$SLOT-net" --ip "$SLACK_IP" python:3.13-alpine python -c '
+import http.server, json, time, urllib.parse
+mode = {"m": "ok", "ra": "0"}
+class H(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def do_POST(self):
+        u = urllib.parse.urlparse(self.path)
+        if u.path == "/_mode":
+            mode.update({k: v[0] for k, v in urllib.parse.parse_qs(u.query).items()})
+            self.send_response(204); self.end_headers(); return
+        body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        try: text = json.loads(body).get("text")
+        except Exception: text = None
+        status = 400 if not isinstance(text, str) or not text else 429 if mode["m"] == "429" else 200
+        open("/tmp/got", "a").write(json.dumps({"at": time.time(), "status": status, "text": text}) + "\n")
+        self.send_response(status)
+        if status == 429: self.send_header("Retry-After", mode["ra"])
+        self.end_headers()
+        self.wfile.write({200: b"ok", 400: b"invalid_payload", 429: b"rate_limited"}[status])
+    def do_GET(self):
+        self.send_response(200); self.end_headers()
+        try: self.wfile.write(open("/tmp/got", "rb").read())
+        except FileNotFoundError: pass
+http.server.ThreadingHTTPServer(("", 8080), H).serve_forever()' >/dev/null
+	wait_for 30 curl -fsS -o /dev/null "http://$SLACK_IP:8080/got" 2>/dev/null
+}
+
+# slack_has PATTERN: Slack got a message, answered 200, matching PATTERN.
+slack_has() { curl -fsS "http://$SLACK_IP:8080/got" | jq -r 'select(.status == 200) | .text' | grep -qE -- "$1"; }
+
+# slack_mode MODE [RETRY_AFTER] switches the mock's answer.
+slack_mode() { curl -fsS -X POST "http://$SLACK_IP:8080/_mode?m=$1&ra=${2:-0}"; }
+
+# slack_gap PATTERN prints the seconds between the first two attempts at
+# the message matching PATTERN.
+slack_gap() {
+	curl -fsS "http://$SLACK_IP:8080/got" | jq -rs --arg re "$1" '[.[] | select(.text // "" | test($re)) | .at] | if length < 2 then -1 else (.[1] - .[0] | floor) end'
+}
+
+scenario_alerts() {
+	local p=e2e2-alerts-$RUN ch=e2e-slack-$RUN n gap
+	fresh $p || return
+	slack_start || { fail "slack mock didn't start"; return; }
+	check "an org Slack channel is added" dk alerts channel add $ch --slack "http://$SLACK_IP:8080/services/T0/B0/$RUN" --renotify 0
+	check "its test message arrives" bash -c "'${DOCK_BIN:-$E2E_DIR/../bin/dock}' alerts channel test $ch >/dev/null && curl -fsS http://$SLACK_IP:8080/got | grep -q 'Test alert'"
+
+	# A service that serves, then exits every 25 s: a crash loop.
+	ensure_service $p lab '{"health_check_path":"/healthz"}'
+	set_vars $p lab '{"CRASH_AFTER":"25s"}'
+	n=$(deploy_source $p lab "$APPS/go-lab" 2>/dev/null)
+	expect_release $p lab "$n" active
+	check "the crash loop reaches Slack, naming the service" wait_for 300 slack_has "^\[critical\] $p/$ENV_NAME/lab is crash looping"
+
+	# Slack rate limits the next message: the retry waits as long as asked.
+	slack_mode 429 30
+	mkdir -p "$TMP/badbuild"
+	printf 'FROM alpine:3.22\nRUN echo "<!channel> & <https://evil.example|x>" && exit 7\n' >"$TMP/badbuild/Dockerfile"
+	n=$(deploy_source $p lab "$TMP/badbuild" 2>/dev/null)
+	expect_release $p lab "$n" failed
+	check "Slack refused the failed deploy's message" wait_for 60 bash -c "curl -fsS http://$SLACK_IP:8080/got | grep -q '\"status\": 429'"
+	slack_mode ok
+	check "the failed deploy reaches Slack after the rate limit" wait_for 90 slack_has "^\[warning\] Deploy of $p/$ENV_NAME/lab failed"
+	gap=$(slack_gap "Deploy of $p")
+	((gap >= 28)) && pass "the retry waited for Retry-After (${gap}s)" || fail "the retry came ${gap}s after a 429 asking for 30 s"
+	check "build output is escaped for Slack" slack_has '&lt;!channel&gt; &amp; &lt;https://evil.example\|x&gt;'
+	check "no raw mention or link of the build's reaches Slack" bash -c "! curl -fsS http://$SLACK_IP:8080/got | grep -q '<!channel>'"
+
+	# A release that stays up resolves both alerts.
+	api PATCH "/projects/$p/environments/$ENV_NAME/variables" '{"service":"lab","unset":["CRASH_AFTER"],"apply":false}' >/dev/null
+	n=$(deploy_source $p lab "$APPS/go-lab" 2>/dev/null)
+	expect_release $p lab "$n" active
+	check "the crash loop's resolution reaches Slack" wait_for 60 slack_has "^\[resolved\] $p/$ENV_NAME/lab is crash looping"
+	check "the failed deploy's resolution reaches Slack" wait_for 60 slack_has "^\[resolved\] Deploy of $p/$ENV_NAME/lab failed"
+
+	dk alerts channel remove $ch --yes >/dev/null
+	docker rm -fv "$SLOT-slack" >/dev/null 2>&1
+}
+
 main() {
-	local all=(predeploy stopstart stopnode run lock logs snapshot move apply health nodedown backup)
+	local all=(predeploy stopstart stopnode run lock logs snapshot move apply health nodedown backup alerts)
 	for s in "${@:-${all[@]}}"; do
 		log "scenario $s"
 		"scenario_$s"

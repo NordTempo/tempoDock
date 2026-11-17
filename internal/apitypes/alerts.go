@@ -31,7 +31,7 @@ const (
 	// AlertCrashLoop: a service's container keeps restarting.
 	AlertCrashLoop AlertKind = "crash_loop"
 	// AlertDeployFailed: a service's newest release failed; the release
-	// before it keeps serving.
+	// before it, if there is one, keeps serving.
 	AlertDeployFailed AlertKind = "deploy_failed"
 	// AlertDomain: a domain is in error: its certificate wasn't issued
 	// although its DNS is right.
@@ -80,8 +80,9 @@ const (
 	// AlertConnection: one of the platform's connections failed when Dock
 	// used it: a Cloudflare token refused, the GitHub App's key or
 	// installation tokens rejected, backup storage unreachable, the
-	// registry's prune or a push failing. The next call that works
-	// resolves it.
+	// registry's prune or a push failing; or an alert channel got an
+	// answer retrying can't change (a removed Slack webhook). The next
+	// call that works resolves it.
 	AlertConnection AlertKind = "connection_failed"
 	// AlertNewVulnerability: a live release's image has critical (or,
 	// as the org chose, high) vulnerabilities it didn't have (ADR 0074).
@@ -137,8 +138,9 @@ type AlertTarget struct {
 	// error_regressed alert is about (GET /errors/{id}).
 	ErrorIssue int64 `json:"error_issue,omitempty"`
 	// Connection names the connection of connection_failed:
-	// cloudflare:<name>, github:app, storage:<repository> or
-	// registry:prune, registry:push and registry:bucket.
+	// cloudflare:<name>, github:app, storage:<repository>,
+	// registry:prune, registry:push and registry:bucket, or
+	// alert_channel:<name>.
 	Connection string `json:"connection,omitempty"`
 	// Image is the image scan of new_vulnerability (GET /org/images/{id}),
 	// Vulnerabilities the IDs it is about.

@@ -11,10 +11,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -135,6 +137,36 @@ func (h *harness) addChannel(platform bool, req apitypes.CreateAlertChannelReque
 		h.t.Fatal(err)
 	}
 	return ch
+}
+
+// A failed deploy's alert says the release before it keeps serving only
+// when one does, from the bus event and from reconcileAlerts alike.
+func TestDeployFailureSaysWhatServes(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	h.deploy(web, "app:1")
+	api := h.service("api", apitypes.CreateServiceRequest{})
+	h.rt.FailPull(errors.New("manifest unknown"))
+	h.deploy(web, "app:2")
+	h.deploy(api, "app:2")
+	webKey, apiKey := "deploy:service:"+itoa(h.serviceID(web)), "deploy:service:"+itoa(h.serviceID(api))
+	check := func(from string) {
+		t.Helper()
+		if m := h.openAlert(webKey, true).Message; !strings.Contains(m, "The release before it keeps serving.") {
+			t.Errorf("%s: web's alert = %q", from, m)
+		}
+		if m := h.openAlert(apiKey, true).Message; !strings.Contains(m, "Nothing served before it, so the service has no running release.") {
+			t.Errorf("%s: api's alert = %q", from, m)
+		}
+	}
+	check("bus event")
+	for _, key := range []string{webKey, apiKey} {
+		if _, err := h.c.ResolveAlert(h.ctx, testSystem, h.openAlert(key, true).ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.c.reconcileAlerts(h.ctx, time.Now())
+	check("reconcile")
 }
 
 // A failed deploy opens one alert however often the service fails again,
@@ -308,13 +340,149 @@ func TestWebhookSignedAtAttempt(t *testing.T) {
 }
 
 // Alert text can quote build output; Slack must show it, not act on it.
+// The one link is Dock's own, to the UI.
 func TestSlackTextIsEscaped(t *testing.T) {
 	got := slackText(apitypes.AlertNotification{Event: "opened", Alert: apitypes.Alert{
 		Severity: apitypes.SeverityWarning, Title: "Deploy of a/b/c failed", Message: "<!channel> <https://evil.example|log in> & retry",
-	}})
-	if want := "[warning] Deploy of a/b/c failed\n&lt;!channel&gt; &lt;https://evil.example|log in&gt; &amp; retry"; got != want {
+	}}, "https://dock.example.com/a&b")
+	if want := "[warning] Deploy of a/b/c failed\n&lt;!channel&gt; &lt;https://evil.example|log in&gt; &amp; retry\n<https://dock.example.com/a&amp;b|Open in Dock>"; got != want {
 		t.Fatalf("slack text = %q", got)
 	}
+}
+
+// Slack alerts link to the page that shows them, once Dock knows its UI's
+// address: the release a deploy alert names, a platform alert's server,
+// else the alerts page.
+func TestAlertLinks(t *testing.T) {
+	h := newHarness(t)
+	org := int64(1)
+	deploy := apitypes.Alert{Project: "shop", Environment: "production", Service: "web", Target: &apitypes.AlertTarget{Release: 7}}
+	if got := h.c.alertLink(h.ctx, &org, deploy); got != "" {
+		t.Fatalf("link without a UI address = %q", got)
+	}
+	h.opts.Config.Hooks.UIURL = "https://dock.example.com"
+	h.restart()
+	o, err := h.store.GetOrg(h.ctx, org)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ui := "https://dock.example.com"
+	for _, tc := range []struct {
+		org  *int64
+		a    apitypes.Alert
+		want string
+	}{
+		{&org, deploy, ui + "/" + o.Slug + "/shop/production/web/releases/7"},
+		{&org, apitypes.Alert{Project: "shop", Environment: "production", Service: "web"}, ui + "/" + o.Slug + "/shop/production/web"},
+		{&org, apitypes.Alert{Title: "Cloudflare connection cf is failing"}, ui + "/" + o.Slug + "/alerts"},
+		{nil, apitypes.Alert{Server: "edge"}, ui + "/console/servers/edge"},
+		{nil, apitypes.Alert{Title: "Registry push failing"}, ui + "/console/alerts"},
+	} {
+		if got := h.c.alertLink(h.ctx, tc.org, tc.a); got != tc.want {
+			t.Errorf("link for %+v = %q, want %q", tc.a, got, tc.want)
+		}
+	}
+}
+
+// A channel that gets a final answer (Slack's 404 for a removed webhook,
+// 410 for an archived channel) is marked broken: its error says so in
+// Slack's words and an alert of its org stays open until a test works or
+// the channel is removed. The channel is never removed by Dock.
+func TestFinalAnswerMarksChannelBroken(t *testing.T) {
+	saved := deliveryBackoff
+	deliveryBackoff = []time.Duration{0, time.Millisecond}
+	t.Cleanup(func() { deliveryBackoff = saved })
+	h := newHarness(t)
+	h.c.AllowLoopbackAlertChannels(true)
+	var mu sync.Mutex
+	status, answer := http.StatusNotFound, "no_service"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		w.WriteHeader(status)
+		_, _ = io.WriteString(w, answer)
+	}))
+	t.Cleanup(srv.Close)
+	answers := func(s int, a string) {
+		mu.Lock()
+		status, answer = s, a
+		mu.Unlock()
+	}
+	h.channel(apitypes.CreateAlertChannelRequest{Name: "team", Kind: apitypes.ChannelSlack, URL: srv.URL})
+	ch, err := h.store.GetAlertChannel(h.ctx, store.GetAlertChannelParams{Org: 1, Name: "team"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := channelAlertKey(ch.ID)
+
+	h.c.signalAlert(h.ctx, alertSignal{Key: "x", Kind: "test", Severity: apitypes.SeverityWarning, Title: "Something broke", orgID: 1})
+	a := h.openAlert(key, true)
+	if a.Kind != string(apitypes.AlertConnection) || alertOrgID(a) != 1 || a.Title != "Alert channel team is broken" ||
+		!strings.Contains(a.Message, "Slack says this webhook no longer exists (404 no_service)") || a.Command != "dock alerts channel test team" {
+		t.Fatalf("broken channel alert = %+v", a)
+	}
+	chs, err := h.c.ListAlertChannels(h.ctx, testSystem, false)
+	if err != nil || len(chs) != 1 || !strings.HasPrefix(chs[0].LastError, "Slack says this webhook no longer exists") {
+		t.Fatalf("channels = %+v, %v", chs, err)
+	}
+
+	answers(http.StatusOK, "ok")
+	if res, err := h.c.TestAlertChannel(h.ctx, testSystem, false, "team"); err != nil || !res.OK {
+		t.Fatalf("test = %+v, %v", res, err)
+	}
+	h.openAlert(key, false)
+
+	answers(http.StatusGone, "channel_is_archived")
+	h.c.signalAlert(h.ctx, alertSignal{Key: "y", Kind: "test", Severity: apitypes.SeverityWarning, Title: "Something else", orgID: 1})
+	if a := h.openAlert(key, true); !strings.Contains(a.Message, "Slack channel is archived (410 channel_is_archived)") {
+		t.Fatalf("archived channel alert = %+v", a)
+	}
+	if err := h.c.RemoveAlertChannel(h.ctx, testSystem, false, "team"); err != nil {
+		t.Fatal(err)
+	}
+	h.openAlert(key, false)
+}
+
+// Slack's rate limit (429 with Retry-After) makes the next attempt wait as
+// long as it asks; an answer retrying can't change (404 no_service for a
+// removed webhook, 410 channel_is_archived) ends the retries at once.
+func TestDeliveryRetryAfterAndFinalAnswers(t *testing.T) {
+	h := newHarness(t)
+	h.c.AllowLoopbackAlertChannels(true)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "30")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = io.WriteString(w, "rate_limited")
+	}))
+	t.Cleanup(srv.Close)
+	err := h.c.alerts.post(h.ctx, true, srv.URL, []byte(`{"text":"x"}`), nil)
+	if de, ok := errors.AsType[*deliveryError](err); !ok || de.retryAfter != 30*time.Second || de.final() || !strings.Contains(de.Error(), "429") {
+		t.Fatalf("post to a rate limited webhook = %v", err)
+	}
+
+	synctest.Test(t, func(t *testing.T) {
+		c := &Core{ctx: t.Context()}
+		start := time.Now()
+		var at []time.Duration
+		answers := []error{&deliveryError{status: http.StatusTooManyRequests, retryAfter: 2 * time.Minute}, &deliveryError{status: http.StatusServiceUnavailable}, nil}
+		err := c.withRetries(func() error {
+			at = append(at, time.Since(start))
+			e := answers[0]
+			answers = answers[1:]
+			return e
+		})
+		// The 10 s backoff stretched to the 2 minutes asked, then 1 minute.
+		if want := []time.Duration{0, 2 * time.Minute, 3 * time.Minute}; err != nil || !slices.Equal(at, want) {
+			t.Fatalf("attempts at %v (%v), want %v", at, err, want)
+		}
+		for _, status := range []int{400, 403, 404, 410} {
+			calls := 0
+			err := c.withRetries(func() error { calls++; return &deliveryError{status: status} })
+			if calls != 1 || err == nil {
+				t.Errorf("a %d answer was tried %d times (%v)", status, calls, err)
+			}
+		}
+	})
 }
 
 // Channels never reach the server itself (its loopback-only internal

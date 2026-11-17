@@ -59,6 +59,16 @@ wait for an admin ([locked environments](agents.md#locked-environments-and-acces
 Alert channels send them on: a webhook, Slack or email, each with a
 minimum severity, when an alert opens, while it stays open (`--renotify`)
 and when it resolves. Admins add them under Organization settings, Alerts.
+Slack messages link to the alert's release or service in the UI once Dock
+has a public address or `[hooks] ui_url`. A delivery that fails is retried
+for about 20 minutes, waiting longer when Slack asks (`Retry-After`); an
+answer that can't change, like Slack's 404 for a removed webhook, isn't
+retried and marks the channel broken: its error says what Slack said,
+and an alert stays open until a test or a delivery works again, or the
+channel is removed. Not done yet: alerts aren't batched, throttled or
+damped when they flap, a resolution dropped while a channel is backed
+up leaves Slack showing the alert open, and a service that fails to
+deploy again while its alert is open sends nothing new.
 
 ```sh
 dock alerts                                                      # open ones

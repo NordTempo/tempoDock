@@ -357,7 +357,7 @@ func (c *Core) onAlertEvent(ctx context.Context, ev LiveEvent, now time.Time) {
 			if d := r.Diagnosis; d != nil && d.Rule != "" {
 				cause = d.Summary
 			}
-			s := deployFailed(ev.Project, ev.Environment, ev.Service, r.Number, r.Error, cause, ev.serviceID)
+			s := deployFailed(ev.Project, ev.Environment, ev.Service, r.Number, r.Error, cause, ev.serviceID, c.releaseServes(ctx, ev.serviceID))
 			s.projectID = ev.projectID
 			c.raiseAlert(ctx, s, now)
 		case apitypes.ReleaseActive:
@@ -423,10 +423,15 @@ func (c *Core) onAlertEvent(ctx context.Context, ev LiveEvent, now time.Time) {
 }
 
 // deployFailed is the alert for a service whose newest release failed;
-// cause is its diagnosis's likely cause (ADR 0071), empty when none.
-func deployFailed(project, env, service string, number int64, reason, cause string, serviceID int64) alertSignal {
+// cause is its diagnosis's likely cause (ADR 0071), empty when none;
+// serving says an earlier release is active, the one a failed deploy
+// leaves serving (releaseServes).
+func deployFailed(project, env, service string, number int64, reason, cause string, serviceID int64, serving bool) alertSignal {
 	svc := serviceKey(project, env, service)
 	msg := fmt.Sprintf("Release %d failed: %s. The release before it keeps serving.", number, reason)
+	if !serving {
+		msg = fmt.Sprintf("Release %d failed: %s. Nothing served before it, so the service has no running release.", number, reason)
+	}
 	cmd := fmt.Sprintf("dock release show %d %s", number, svcFlags(project, env, service))
 	if cause != "" {
 		msg += " Likely cause: " + cause + "."
@@ -440,6 +445,17 @@ func deployFailed(project, env, service string, number int64, reason, cause stri
 		Target:  &apitypes.AlertTarget{Release: number},
 		Project: project, Environment: env, Service: service,
 	}
+}
+
+// releaseServes reports whether a service has an active release: what
+// keeps serving when its deploy fails. One indexed read (releases_one_active)
+// per failed deploy; false for events without a service (tests).
+func (c *Core) releaseServes(ctx context.Context, serviceID int64) bool {
+	if serviceID == 0 {
+		return false
+	}
+	_, err := c.store.GetActiveRelease(ctx, serviceID)
+	return err == nil
 }
 
 // backupFailed is the alert for a service's latest backup failing. The
@@ -763,7 +779,7 @@ func (c *Core) reconcileAlerts(ctx context.Context, now time.Time) {
 		return
 	}
 	for _, r := range failed {
-		s := deployFailed(r.Project, r.Environment, r.Service, r.Number, r.Error, r.Cause, r.ServiceID)
+		s := deployFailed(r.Project, r.Environment, r.Service, r.Number, r.Error, r.Cause, r.ServiceID, r.Serving)
 		s.projectID = r.ProjectID
 		want[s.Key] = s
 	}

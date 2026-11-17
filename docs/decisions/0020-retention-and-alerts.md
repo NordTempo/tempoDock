@@ -181,3 +181,55 @@ dock made, and a few neighbouring gaps are closed.
 
 No new periodic work: the prune is still a list and removals while a disk
 is full, and archives prune the registry the way deploys do.
+
+## Amendment (2026-11-17): Slack's answers, links and broken channels
+
+Decided by the agent after testing Slack channels against a mock of
+Slack's incoming webhooks on real servers.
+
+- **Retry-After is honoured.** Slack (and Discord) answer a burst with
+  429 and `Retry-After` in seconds. The next attempt waits at least that
+  long, up to 15 minutes; before, it went out after the fixed 10 s and
+  was refused again. Pacing sends to a channel ahead of a 429 isn't done:
+  it would need a timer between sends, and one channel's burst (ten
+  failed deploys at once) is rare.
+- **Final answers aren't retried.** A 4xx other than 408 and 429 means
+  the same body can't succeed: Slack's 404 `no_service` (webhook removed)
+  and 410 `channel_is_archived`, a receiver's 400 or 403. The delivery
+  fails at once and shows on the channel, instead of five attempts over
+  20 minutes that held up the channel's queue, filled it and dropped
+  later alerts, resolutions included. The channel isn't turned off: its
+  error shows in `dock alerts channel list` and the UI, and the next
+  alert tries again, one request each.
+- **Slack messages link to the UI** (`<url|Open in Dock>`) when Dock
+  knows its UI's address (`[hooks] ui_url`, else its public address): a
+  deploy alert's release, a service's page, a platform alert's server in
+  the console, else the alerts page.
+- **A final answer marks the channel broken** without removing it: its
+  last error says why in Slack's words ("Slack says this webhook no
+  longer exists (404 no_service)", "... archived (410
+  channel_is_archived)"; for other channels the status and answer) and
+  what to do, and a `connection_failed` alert of the channel's org (a
+  platform channel's: the platform's) opens, key
+  `alert_channel:<channel ID>`, target `alert_channel:<name>`, the same
+  shape as a failing Cloudflare or GitHub connection (ADR 0062). The next
+  delivery or test that works resolves it, and removing the channel does.
+  No column: the open alert is the status, and nothing checks the channel
+  on a timer.
+- **A first deploy that fails** says "Nothing served before it, so the
+  service has no running release" instead of "The release before it
+  keeps serving", from the bus event and from reconciling alike.
+
+Follow-ups, not built:
+
+- **No batching or throttling.** Ten failed deploys at once are ten
+  messages within a second; past Slack's rate the 429s are waited out
+  one by one.
+- **No flap damping.** Every open and resolve is sent, however often a
+  condition comes and goes.
+- **A dropped resolve leaves Slack showing the alert open.** A channel's
+  full queue drops notifications, resolutions too, and the record of
+  which channels heard the opening is gone by then.
+- **A second failed deploy of the same service sends nothing:** the open
+  alert is updated in place (new release number and error), and only an
+  escalation is sent.

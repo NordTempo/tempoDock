@@ -465,7 +465,9 @@ SELECT projects.id AS project_id, services.id AS service_id,
   projects.name AS project, environments.name AS environment, services.name AS service,
   releases.number, releases.error,
   -- Its diagnosis's cause, when a rule matched (ADR 0071).
-  CAST(coalesce((SELECT d.summary FROM diagnoses d WHERE d.release_id = releases.id AND d.rule <> '' ORDER BY d.id DESC LIMIT 1), '') AS TEXT) AS cause
+  CAST(coalesce((SELECT d.summary FROM diagnoses d WHERE d.release_id = releases.id AND d.rule <> '' ORDER BY d.id DESC LIMIT 1), '') AS TEXT) AS cause,
+  -- Whether an earlier release still serves (releases_one_active).
+  CAST(EXISTS (SELECT 1 FROM releases active WHERE active.service_id = services.id AND active.status = 'active') AS BOOLEAN) AS serving
 FROM services
 JOIN environments ON environments.id = services.environment_id
 JOIN projects ON projects.id = environments.project_id
@@ -484,6 +486,7 @@ type ListFailedLatestReleasesRow struct {
 	Number      int64
 	Error       string
 	Cause       string
+	Serving     bool
 }
 
 // Services whose newest release failed: what failed-deploy alerts should
@@ -509,6 +512,7 @@ func (q *Queries) ListFailedLatestReleases(ctx context.Context) ([]ListFailedLat
 			&i.Number,
 			&i.Error,
 			&i.Cause,
+			&i.Serving,
 		); err != nil {
 			return nil, err
 		}

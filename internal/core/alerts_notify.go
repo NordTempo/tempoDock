@@ -33,13 +33,19 @@ import (
 // open, escalate and resolve, and a reminder every renotify_minutes while
 // one stays open. Each channel's notifications are sent in order by a
 // goroutine that runs while it has some queued, each retried with backoff
-// (deliveryBackoff); the outcome is kept on the channel, so failures show
-// in `dock alerts channel list` and the UI. Queues live in memory only: a
-// restart drops what wasn't sent.
+// (deliveryBackoff, longer when the receiver asks with Retry-After; never
+// after an answer retrying can't change, deliveryError.final); the outcome
+// is kept on the channel, so failures show in `dock alerts channel list`
+// and the UI. Queues live in memory only: a restart drops what wasn't
+// sent.
 
 // deliveryBackoff is how long each delivery attempt waits before it runs:
 // the first right away, the last about 20 minutes after the alert.
 var deliveryBackoff = []time.Duration{0, 10 * time.Second, time.Minute, 5 * time.Minute, 15 * time.Minute}
+
+// maxRetryAfter caps how long a receiver's Retry-After makes the next
+// attempt wait: the longest backoff step.
+const maxRetryAfter = 15 * time.Minute
 
 const (
 	// maxQueued caps the notifications waiting for one channel (or status
@@ -203,12 +209,17 @@ func (q *deliveryQueue[T]) sendAll(ctx context.Context, id int64, send func(T)) 
 var errGone = errors.New("removed meanwhile")
 
 // withRetries makes up to len(deliveryBackoff) attempts, waiting between
-// them, until one succeeds, returns errGone or the daemon closes. It
-// returns the last attempt's error.
+// them, until one succeeds, returns errGone or a final deliveryError
+// (a 404 from a removed Slack webhook), or the daemon closes. A
+// deliveryError's Retry-After (Slack's and Discord's rate limits) makes
+// the next wait at least that long, up to maxRetryAfter. It returns the
+// last attempt's error.
 func (c *Core) withRetries(attempt func() error) error {
 	var err error
+	var after time.Duration
 	for _, wait := range deliveryBackoff {
 		if wait > 0 {
+			wait = max(wait, after)
 			t := time.NewTimer(wait)
 			select {
 			case <-c.ctx.Done():
@@ -220,8 +231,34 @@ func (c *Core) withRetries(attempt func() error) error {
 		if err = attempt(); err == nil || errors.Is(err, errGone) || c.ctx.Err() != nil {
 			return err
 		}
+		after = 0
+		if de, ok := errors.AsType[*deliveryError](err); ok {
+			if de.final() {
+				return err
+			}
+			after = min(de.retryAfter, maxRetryAfter)
+		}
 	}
 	return err
+}
+
+// deliveryError is a channel's or hook's answer other than 2xx.
+type deliveryError struct {
+	status int
+	// retryAfter is the answer's Retry-After in seconds, 0 without one.
+	retryAfter time.Duration
+	// answer is the start of the body, msg the whole error.
+	answer, msg string
+}
+
+func (e *deliveryError) Error() string { return e.msg }
+
+// final reports whether sending the same body again can't succeed: a
+// 4xx other than 408 (timeout) and 429 (rate limited). Slack answers 404
+// no_service for a removed webhook and 410 channel_is_archived, and
+// retrying those for 20 minutes only holds up the channel's queue.
+func (e *deliveryError) final() bool {
+	return e.status/100 == 4 && e.status != http.StatusRequestTimeout && e.status != http.StatusTooManyRequests
 }
 
 // deliver queues n for ch and starts the channel's sender if it isn't
@@ -268,20 +305,70 @@ func (c *Core) sendWithRetries(id int64, n apitypes.AlertNotification) {
 	}
 }
 
+// channelSent records a delivery that worked, which also resolves the
+// channel's broken alert (channelFailed); without one that is a map
+// lookup.
 func (c *Core) channelSent(ctx context.Context, id int64) {
 	if err := c.store.SetAlertChannelSent(ctx, store.SetAlertChannelSentParams{LastSentAt: ptr(now()), ID: id}); err != nil {
 		c.log.Error("alerts: record delivery", "err", err)
 	}
+	c.connectionWorks(ctx, channelAlertKey(id))
 }
 
+// channelFailed records a delivery that failed on the channel. One that
+// got a final answer (deliveryError.final: Slack's 404 for a removed
+// webhook, 410 for an archived channel) marks the channel broken: its
+// last error says so and what to do (brokenText), and an alert of the
+// channel's org (or the platform's) stays open until a delivery or a test
+// works or the channel is removed. The channel itself is kept.
 func (c *Core) channelFailed(ctx context.Context, id int64, cause error) {
 	msg := cause.Error()
-	if len(msg) > 500 {
-		msg = msg[:500]
+	de, final := errors.AsType[*deliveryError](cause)
+	final = final && de.final()
+	var ch store.AlertChannel
+	if final {
+		var err error
+		if ch, err = c.store.GetAlertChannelByID(ctx, id); err != nil {
+			return // removed meanwhile
+		}
+		msg = brokenText(apitypes.AlertChannelKind(ch.Kind), de)
 	}
-	if err := c.store.SetAlertChannelFailed(ctx, store.SetAlertChannelFailedParams{LastError: msg, LastErrorAt: ptr(now()), ID: id}); err != nil {
+	if err := c.store.SetAlertChannelFailed(ctx, store.SetAlertChannelFailedParams{LastError: clip(msg, 500), LastErrorAt: ptr(now()), ID: id}); err != nil {
 		c.log.Error("alerts: record delivery", "err", err)
 	}
+	if !final {
+		return
+	}
+	command := "dock alerts channel test " + ch.Name
+	if ch.OrgID == nil {
+		command += " --platform"
+	}
+	c.connectionFailedIn(ctx, channelOrg(ch), channelAlertKey(id), "alert_channel:"+ch.Name,
+		"Alert channel "+ch.Name+" is broken", msg, command)
+}
+
+// channelAlertKey names a broken channel's alert.
+func channelAlertKey(id int64) string { return "alert_channel:" + strconv.FormatInt(id, 10) }
+
+// channelOrg is a channel's org, 0 for the platform's.
+func channelOrg(ch store.AlertChannel) int64 {
+	if ch.OrgID == nil {
+		return 0
+	}
+	return *ch.OrgID
+}
+
+// brokenText says why a channel that got a final answer is broken and
+// what to do about it, in Slack's words for a Slack webhook.
+func brokenText(kind apitypes.AlertChannelKind, de *deliveryError) string {
+	switch {
+	case kind == apitypes.ChannelSlack && de.status == http.StatusNotFound:
+		return fmt.Sprintf("Slack says this webhook no longer exists (404 %s). Nothing reaches the channel: remove it and add it again with a new webhook URL.", de.answer)
+	case kind == apitypes.ChannelSlack && de.status == http.StatusGone:
+		return fmt.Sprintf("Slack says the webhook's Slack channel is archived (410 %s). Nothing reaches the channel: unarchive it in Slack, or remove the channel and add it again with a new webhook URL.", de.answer)
+	}
+	return fmt.Sprintf("The channel's URL answered %d %s: %s. Sending again can't change that, so nothing reaches the channel: fix the receiver, or remove the channel and add it again with the right URL.",
+		de.status, http.StatusText(de.status), de.answer)
 }
 
 // send makes one delivery attempt.
@@ -304,7 +391,7 @@ func (c *Core) send(ctx context.Context, ch store.AlertChannel, n apitypes.Alert
 			SignatureHeader: signWebhook(cfg.Secret, time.Now(), body), "Dock-Event": n.Event,
 		})
 	case apitypes.ChannelSlack:
-		body, err := json.Marshal(map[string]string{"text": slackText(n)})
+		body, err := json.Marshal(map[string]string{"text": slackText(n, c.alertLink(ctx, ch.OrgID, n.Alert))})
 		if err != nil {
 			return err
 		}
@@ -367,7 +454,7 @@ func (e *alertEngine) guardFor(org bool) (*egressGuard, *http.Client) {
 }
 
 // post sends a JSON body, with the org's guard (org) or the platform's
-// (guardFor); anything but a 2xx answer is an error.
+// (guardFor); anything but a 2xx answer is a *deliveryError.
 func (e *alertEngine) post(ctx context.Context, org bool, target string, body []byte, headers map[string]string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
 	if err != nil {
@@ -390,7 +477,12 @@ func (e *alertEngine) post(ctx context.Context, org bool, target string, body []
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode/100 != 2 {
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 200))
-		return fmt.Errorf("the channel's URL answered %s: %s", resp.Status, strings.TrimSpace(string(snippet)))
+		answer := strings.TrimSpace(string(snippet))
+		de := &deliveryError{status: resp.StatusCode, answer: answer, msg: fmt.Sprintf("the channel's URL answered %s: %s", resp.Status, answer)}
+		if s, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && s > 0 {
+			de.retryAfter = time.Duration(s) * time.Second
+		}
+		return de
 	}
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 	return nil
@@ -412,8 +504,9 @@ func headline(n apitypes.AlertNotification) string {
 
 // slackText is a Slack message, escaped: alert messages quote release
 // errors and build output, which must not turn into @channel mentions or
-// disguised links (<https://...|text>).
-func slackText(n apitypes.AlertNotification) string {
+// disguised links (<https://...|text>). With a link (alertLink) it ends
+// with Slack's <url|Open in Dock>, the one link Dock itself makes.
+func slackText(n apitypes.AlertNotification, link string) string {
 	text := headline(n)
 	if n.Alert.Message != "" && n.Event != "resolved" {
 		text += "\n" + n.Alert.Message
@@ -421,7 +514,40 @@ func slackText(n apitypes.AlertNotification) string {
 	if n.Alert.Command != "" && n.Event != "resolved" {
 		text += "\n`" + n.Alert.Command + "`"
 	}
-	return slackEscaper.Replace(text)
+	text = slackEscaper.Replace(text)
+	if link != "" {
+		text += "\n<" + slackEscaper.Replace(link) + "|Open in Dock>"
+	}
+	return text
+}
+
+// alertLink is the UI page of alert a for a channel of org (nil: the
+// platform's): the release it names, else its service, else its server
+// in the console, else the alerts page; "" when Dock has no UI URL
+// (uiURL). An org channel's link costs one indexed read.
+func (c *Core) alertLink(ctx context.Context, org *int64, a apitypes.Alert) string {
+	ui := c.uiURL()
+	switch {
+	case ui == "":
+		return ""
+	case org == nil && a.Server != "":
+		return ui + "/console/servers/" + url.PathEscape(a.Server)
+	case org == nil:
+		return ui + "/console/alerts"
+	}
+	o, err := c.store.GetOrg(ctx, *org)
+	if err != nil {
+		return ""
+	}
+	base := ui + "/" + url.PathEscape(o.Slug)
+	if a.Project == "" || a.Environment == "" || a.Service == "" {
+		return base + "/alerts"
+	}
+	base += "/" + url.PathEscape(a.Project) + "/" + url.PathEscape(a.Environment) + "/" + url.PathEscape(a.Service)
+	if a.Target != nil && a.Target.Release != 0 {
+		return base + "/releases/" + strconv.FormatInt(a.Target.Release, 10)
+	}
+	return base
 }
 
 // slackEscaper escapes Slack's control characters.
@@ -639,6 +765,7 @@ func (c *Core) RemoveAlertChannel(ctx context.Context, a Actor, platform bool, n
 	if err := c.store.DeleteAlertChannel(ctx, ch.ID); err != nil {
 		return err
 	}
+	c.connectionWorks(ctx, channelAlertKey(ch.ID)) // a broken channel's alert goes with it
 	c.audit(ctx, channelAudit(a, org), "alert.channel_remove", nil, nil, "alert channel "+name, "removed alert channel "+name)
 	return nil
 }

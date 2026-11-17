@@ -1,7 +1,6 @@
 package core
 
 import (
-	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -825,7 +824,7 @@ func (c *Core) postGitStatus(ss svcScope, conn store.GitConnection, rel store.Re
 	}
 	st := githubStatus{State: state, Description: desc, Context: "dock/" + ss.String()}
 	// The release's page: on [hooks] ui_url, else Dock's public address.
-	if ui := cmp.Or(c.cfg.Hooks.UIURL, c.publicURL()); ui != "" && rel.Number != 0 {
+	if ui := c.uiURL(); ui != "" && rel.Number != 0 {
 		if org, err := c.store.GetOrg(c.ctx, ss.project.OrgID); err == nil {
 			st.TargetURL = fmt.Sprintf("%s/%s/%s/releases/%d", ui, org.Slug, ss.String(), rel.Number)
 		}

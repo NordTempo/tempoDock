@@ -242,7 +242,11 @@ shown again.`,
 				if created.Secret != "" {
 					_, _ = fmt.Fprintf(g.io.Out, "\nSigning secret (shown once; check the Dock-Signature header with it):\n\n  %s\n\n", created.Secret)
 				}
-				_, _ = fmt.Fprintf(g.io.Out, "Send a test alert: dock alerts channel test %s\n", ch.Name)
+				platform := ""
+				if on, _ := cmd.Flags().GetBool("platform"); on {
+					platform = " --platform"
+				}
+				_, _ = fmt.Fprintf(g.io.Out, "Send a test alert: dock alerts channel test %s%s\n", ch.Name, platform)
 				return nil
 			})
 		},
