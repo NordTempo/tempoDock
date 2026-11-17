@@ -360,11 +360,14 @@ function InviteForm({
           primary
           type="submit"
           cli={`dock org invite ${typed || "<email>"} --role ${role ?? "<role>"}`}
-          disabled={create.isPending}
+          // No role is preselected (a wrong default invites with the wrong
+          // access), so the link waits for one, saying so.
+          disabled={create.isPending || !role}
         >
           Create invite link
         </Act>
         <Button onClick={onCancel}>Cancel</Button>
+        {!role && <span className="text-xs text-mut">Pick a role first</span>}
       </div>
       <ErrorText error={create.error} />
       {/* Before they press it, not after: whether a mail goes out depends

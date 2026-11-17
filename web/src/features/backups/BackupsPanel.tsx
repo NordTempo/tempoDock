@@ -65,8 +65,9 @@ const backupTitle: Record<ServiceBackups["kind"], string> = {
 /**
  * A stateful service's restore points (ADR 0061): how backups and
  * snapshots are made, then one table with a group per kind, newest first,
- * each group's newest usable point marked latest (never a failed or empty
- * one) and failed runs secondary. One Restore per point opens one dialog;
+ * one point marked latest: the newest usable dump, else snapshot (never a
+ * failed or empty one; two "latest" read as a choice), and failed runs
+ * secondary. One Restore per point opens one dialog;
  * the latest restores into new services offer Use.
  */
 export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
@@ -117,9 +118,11 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       latest: of.find((p) => restorable(p) && !isEmpty(p))?.key,
     };
   });
-  // The one Restore to lead with: the latest dump, else the latest
-  // snapshot. Only into a new service, which changes nothing live.
-  const lead = intoNew ? groups.find((g) => g.latest)?.latest : undefined;
+  // The one latest point, and the Restore to lead with: the latest dump,
+  // else the latest snapshot. It leads only into a new service, which
+  // changes nothing live.
+  const latest = groups.find((g) => g.latest)?.latest;
+  const lead = intoNew ? latest : undefined;
   // #backup-<id> (a failed backup's alert links there): scroll to its row
   // and open its log, once per hash.
   const hash = useLocation({ select: (l) => l.hash });
@@ -276,7 +279,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                 <PointRow
                   key={p.key}
                   point={p}
-                  latest={p.key === g.latest}
+                  latest={p.key === latest}
                   lead={p.key === lead}
                   restore={
                     restorable(p)

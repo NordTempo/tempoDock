@@ -183,7 +183,7 @@ function Strip({ series }: { series: UptimeCheck["series"] }) {
         return (
           <span
             key={b.at}
-            className={`inline-block h-3.5 w-[4px] ${color}`}
+            className={`inline-block h-3.5 w-[3px] ${color}`}
             title={`${clock(b.at)}: ${b.total ? `${b.up} of ${b.total} up` : "no probes"}`}
           />
         );
@@ -200,7 +200,7 @@ function CheckUrl({ url }: { url: string }) {
   const u = new URL(url);
   const path = `${u.pathname}${u.search}`;
   return (
-    <span className="inline-flex max-w-[400px] min-w-0 font-mono">
+    <span className="inline-flex max-w-[220px] min-w-0 font-mono">
       <span className="min-w-0 truncate text-faint">
         {u.protocol === "https:" ? u.host : u.origin}
       </span>

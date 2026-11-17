@@ -348,15 +348,15 @@ export function ApplyControl({
               <span className="dot" />
             </span>
             {/* Says what waits: "2 to apply", and which service applying
-                stops for a moment ("▲ web down a few seconds"). */}
+                stops for a moment ("▲ restarts web"), short so the header's
+                action row doesn't wrap; the title says how long. */}
             {changes.count} to apply
             {stopping.length > 0 && (
               <span className="text-warn" title={downtimes.join(" ")}>
-                ▲{" "}
+                ▲ restarts{" "}
                 {stopping.length === 1
                   ? stopping[0]
-                  : `${stopping.length} services`}{" "}
-                down a few seconds
+                  : `${stopping.length} services`}
               </span>
             )}
           </button>

@@ -344,7 +344,7 @@ export function LockForm({
         Then{" "}
         {people
           ? `${lockPeopleEffect}, people's and tokens' alike`
-          : `${lockEffect}. People still change it directly`}
+          : `${lockEffect}; people still change it directly unless you hold their changes too`}
         .
       </span>
       <ErrorText error={lock.error} />

@@ -47,7 +47,7 @@ export function Dialog({
       }}
       // A click on the backdrop lands on the <dialog> itself.
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-      className={`dlg w-full rounded-panel border border-edge bg-panel p-0 text-left whitespace-normal text-fg ${className ?? `m-auto ${wide ? "max-w-[640px]" : "max-w-[440px]"}`}`}
+      className={`dlg w-full rounded-panel border border-edge bg-panel p-0 text-left whitespace-normal text-fg ${className ?? `m-auto ${wide ? "max-w-[640px]" : "max-w-[500px]"}`}`}
     >
       {bare ? (
         children
