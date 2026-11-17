@@ -1,0 +1,19 @@
+# The workflows' actions are pinned by commit SHA (AGENTS.md), which
+# nothing else would ever move: Dependabot proposes the newer SHAs, all
+# in one pull request a week, so the pins don't age silently and CI isn't
+# spent on a pull request per action.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/setup-go
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: "chore(ci)"
