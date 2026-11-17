@@ -43,6 +43,19 @@ func (h *harness) openAlert(key string, want bool) store.Alert {
 	}
 }
 
+// channelIdle waits until alert channel id has nothing queued or being
+// sent, so what it was sent so far has had its outcome recorded.
+func (h *harness) channelIdle(id int64) {
+	h.t.Helper()
+	eventually(h.t, "the channel's queue to empty", func() bool {
+		q := &h.c.alerts.outbox
+		q.mu.Lock()
+		defer q.mu.Unlock()
+		_, busy := q.queues[id]
+		return !busy
+	})
+}
+
 // receiver is a webhook endpoint that records what it is sent. fail makes
 // the next that many deliveries answer 500.
 type receiver struct {
@@ -416,6 +429,10 @@ func TestFinalAnswerMarksChannelBroken(t *testing.T) {
 	key := channelAlertKey(ch.ID)
 
 	h.c.signalAlert(h.ctx, alertSignal{Key: "x", Kind: "test", Severity: apitypes.SeverityWarning, Title: "Something broke", orgID: 1})
+	h.openAlert(key, true)
+	// The broken alert is sent to the channel too, and answered 404: its
+	// outcome lands before the next phase's answers.
+	h.channelIdle(ch.ID)
 	a := h.openAlert(key, true)
 	if a.Kind != string(apitypes.AlertConnection) || alertOrgID(a) != 1 || a.Title != "Alert channel team is broken" ||
 		!strings.Contains(a.Message, "Slack says this webhook no longer exists (404 no_service)") || a.Command != "dock alerts channel test team" {
@@ -431,9 +448,12 @@ func TestFinalAnswerMarksChannelBroken(t *testing.T) {
 		t.Fatalf("test = %+v, %v", res, err)
 	}
 	h.openAlert(key, false)
+	h.channelIdle(ch.ID) // the resolve, sent to it
 
 	answers(http.StatusGone, "channel_is_archived")
 	h.c.signalAlert(h.ctx, alertSignal{Key: "y", Kind: "test", Severity: apitypes.SeverityWarning, Title: "Something else", orgID: 1})
+	h.openAlert(key, true)
+	h.channelIdle(ch.ID)
 	if a := h.openAlert(key, true); !strings.Contains(a.Message, "Slack channel is archived (410 channel_is_archived)") {
 		t.Fatalf("archived channel alert = %+v", a)
 	}
