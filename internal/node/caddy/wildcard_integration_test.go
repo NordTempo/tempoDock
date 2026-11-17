@@ -102,10 +102,13 @@ func TestIntegrationWildcard(t *testing.T) {
 	}
 }
 
-// getTLS GETs https://host/ and returns the status, the served
-// certificate's issuer and the body.
+// getTLS GETs https://host/ over a new connection and returns the
+// status, the served certificate's issuer and the body. A pooled one
+// would keep the certificate of its own handshake: right after a load,
+// the previous server answers on it during its shutdown grace period.
 func (tc *testCaddy) getTLS(t *testing.T, host string) (int, string, string) {
 	t.Helper()
+	tc.client.CloseIdleConnections()
 	deadline := time.Now().Add(5 * time.Second)
 	resp, err := tc.client.Get(tc.url("https", host, "/"))
 	for err != nil && time.Now().Before(deadline) {
