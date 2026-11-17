@@ -96,7 +96,7 @@ func updateBaseline(o options) error {
 		b.TempobaseBinaryBytes = st.Size()
 	}
 	if slices.Contains(o.checks, "bench") {
-		runs, calib, err := runBenchmarks(o, nil, ".")
+		runs, calib, err := runBenchmarks(o, "", nil, ".")
 		if err != nil {
 			return err
 		}
@@ -136,7 +136,7 @@ func checkBench(o options, t *table) error {
 	if err != nil {
 		return err
 	}
-	runs, calib, err := runBenchmarks(o, nil, ".")
+	runs, calib, err := runBenchmarks(o, "", nil, ".")
 	if err != nil {
 		return err
 	}
@@ -144,9 +144,15 @@ func checkBench(o options, t *table) error {
 	if base.CalibrationNs > 0 {
 		speed = calib / base.CalibrationNs
 	}
+	// atRev are the benchmarks over their timing budget, timed again at
+	// o.baseRev on this machine (benchAtRev), and revName that revision.
+	var atRev map[string]bench
+	revName := ""
 	// judge compares a benchmark with its baseline. Allocations are the
 	// same on every machine, so allocsOK always gates; nsOK is a timing
-	// budget, which -soft-timing reports as a warning.
+	// budget, which -soft-timing reports as a warning. With -soft-timing a
+	// time over its budget passes when the base revision, timed on this
+	// machine, is as slow: the change didn't make it slower.
 	judge := func(name string, r bench) (measured, budget string, allocsOK, nsOK bool) {
 		b := base.Benchmarks[name]
 		nsDelta := r.NsOp/speed/b.NsOp - 1
@@ -159,7 +165,15 @@ func checkBench(o options, t *table) error {
 		if strings.Contains(name, "parallel=") || strings.Contains(name, "io=") {
 			return measured, fmt.Sprintf("allocs +%.0f%%", o.allocsTol*100), allocsOK, true
 		}
-		return measured, fmt.Sprintf("ns +%.0f%%, allocs +%.0f%%", o.nsTol*100, o.allocsTol*100), allocsOK, nsDelta <= o.nsTol
+		budget = fmt.Sprintf("ns +%.0f%%, allocs +%.0f%%", o.nsTol*100, o.allocsTol*100)
+		nsOK = nsDelta <= o.nsTol
+		if p, ok := atRev[name]; ok && !nsOK {
+			revDelta := r.NsOp/p.NsOp - 1
+			measured += fmt.Sprintf("; %s at %s here (%+.0f%%)", nsString(p.NsOp), revName, revDelta*100)
+			budget = fmt.Sprintf("ns +%.0f%% of %s's, allocs +%.0f%%", o.nsTol*100, revName, o.allocsTol*100)
+			nsOK = revDelta <= o.nsTol
+		}
+		return measured, budget, allocsOK, nsOK
 	}
 
 	// Shared machines (CI runners, a busy laptop) have bursts of noise, and
@@ -182,8 +196,27 @@ func checkBench(o options, t *table) error {
 	}
 	if len(again) > 0 {
 		pattern := "^(" + strings.Join(funcs, "|") + ")$"
+		// One calibration number can't stand for every kind of code: a
+		// GitHub-hosted runner times the calibration about as fast as the
+		// baseline's machine but tight, allocation-free loops 1.5-2.8x
+		// slower (BenchmarkDrainEnqueue, BenchmarkScanBusy), so they read
+		// as regressions on every pull request. On shared runners
+		// (-soft-timing) the base revision, timed here, says whether this
+		// change made them slower. A local run keeps to the baseline, so
+		// a slowdown spread over several changes still shows.
+		if o.softTiming && o.baseRev != "" {
+			fmt.Fprintf(os.Stderr, "perf: timing benchmarks over budget at %s too: %s in %s\n", o.baseRev, pattern, strings.Join(again, " "))
+			br, name, err := benchAtRev(o, o.baseRev, again, pattern)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "perf: timings not compared with %s: %v\n", o.baseRev, err)
+			}
+			atRev, revName = map[string]bench{}, name
+			for n, rs := range br.byName {
+				atRev[n] = summarize(rs)
+			}
+		}
 		fmt.Fprintf(os.Stderr, "perf: re-running benchmarks over budget: %s in %s\n", pattern, strings.Join(again, " "))
-		more, _, err := runBenchmarks(o, again, pattern)
+		more, _, err := runBenchmarks(o, "", again, pattern)
 		if err != nil {
 			return err
 		}
@@ -192,7 +225,11 @@ func checkBench(o options, t *table) error {
 		}
 	}
 
-	t.add("bench machine speed vs baseline", fmt.Sprintf("%.2fx time per op", speed), "", info)
+	machine := fmt.Sprintf("%.2fx time per op", speed)
+	if runs.cpu != "" {
+		machine += " (" + runs.cpu + ")"
+	}
+	t.add("bench machine speed vs baseline", machine, "", info)
 	for _, name := range slices.Sorted(maps.Keys(runs.byName)) {
 		r := summarize(runs.byName[name])
 		if _, ok := base.Benchmarks[name]; !ok {
@@ -237,6 +274,9 @@ func nsString(ns float64) string {
 type benchRuns struct {
 	byName map[string][]bench
 	dir    map[string]string
+	// cpu is the processor go test names, so a comment's timings can be
+	// read against the machine they ran on.
+	cpu string
 }
 
 // rerecordBenchmarks re-records the benchmarks o.rerecord matches into b,
@@ -252,7 +292,7 @@ func rerecordBenchmarks(o options, b *baseline) error {
 	if b.CalibrationNs <= 0 {
 		return fmt.Errorf("the baseline has no calibration; record it whole with `make perf-baseline`")
 	}
-	runs, calib, err := runBenchmarks(o, nil, o.rerecord)
+	runs, calib, err := runBenchmarks(o, "", nil, o.rerecord)
 	if err != nil {
 		return err
 	}
@@ -293,9 +333,9 @@ func topLevel(name string) string {
 
 // runBenchmarks runs the benchmarks matching pattern (go test -bench) in
 // pkgs (default: every package with a *_bench_test.go file) o.benchCount
-// times, and returns their runs and the fastest calibration ns/op
-// measured around them.
-func runBenchmarks(o options, pkgs []string, pattern string) (benchRuns, float64, error) {
+// times, in the module at dir ("" for the current directory), and returns
+// their runs and the fastest calibration ns/op measured around them.
+func runBenchmarks(o options, dir string, pkgs []string, pattern string) (benchRuns, float64, error) {
 	if pkgs == nil {
 		err := filepath.WalkDir(".", func(p string, e fs.DirEntry, err error) error {
 			if err != nil {
@@ -319,13 +359,46 @@ func runBenchmarks(o options, pkgs []string, pattern string) (benchRuns, float64
 	fmt.Fprintf(os.Stderr, "perf: go %s\n", strings.Join(args, " "))
 	var out bytes.Buffer
 	cmd := exec.Command("go", args...)
-	cmd.Stdout, cmd.Stderr = &out, os.Stderr
+	cmd.Dir, cmd.Stdout, cmd.Stderr = dir, &out, os.Stderr
 	if err := cmd.Run(); err != nil {
 		return benchRuns{}, 0, fmt.Errorf("go test -bench: %w\n%s", err, out.String())
 	}
 	calib = append(calib, calibrate(), calibrate(), calibrate())
 	runs, err := parseBench(out.String())
 	return runs, slices.Min(calib), err
+}
+
+// benchAtRev runs the benchmarks pattern matches in pkgs, as
+// runBenchmarks does, at git revision rev, checked out in a temporary
+// worktree; packages rev doesn't have are left out. It returns their
+// runs and rev's short name. checkBench compares a time over budget with
+// it: both timed on one machine, minutes apart, which no calibration
+// matches across processors.
+func benchAtRev(o options, rev string, pkgs []string, pattern string) (benchRuns, string, error) {
+	out, err := exec.Command("git", "rev-parse", "--short", rev).Output()
+	if err != nil {
+		return benchRuns{}, rev, fmt.Errorf("git rev-parse %s: %w", rev, err)
+	}
+	name := strings.TrimSpace(string(out))
+	tmp, err := os.MkdirTemp("", "perf-base-")
+	if err != nil {
+		return benchRuns{}, name, err
+	}
+	defer func() { _ = os.RemoveAll(tmp) }()
+	dir := filepath.Join(tmp, "src")
+	if out, err := exec.Command("git", "worktree", "add", "--detach", dir, rev).CombinedOutput(); err != nil {
+		return benchRuns{}, name, fmt.Errorf("git worktree add: %w\n%s", err, out)
+	}
+	defer func() { _ = exec.Command("git", "worktree", "remove", "--force", dir).Run() }()
+	pkgs = slices.DeleteFunc(slices.Clone(pkgs), func(p string) bool {
+		_, err := os.Stat(filepath.Join(dir, p))
+		return err != nil
+	})
+	if len(pkgs) == 0 {
+		return benchRuns{}, name, nil
+	}
+	runs, _, err := runBenchmarks(o, dir, pkgs, pattern)
+	return runs, name, err
 }
 
 var procsSuffix = regexp.MustCompile(`-\d+$`)
@@ -338,6 +411,10 @@ func parseBench(out string) (benchRuns, error) {
 	sc := bufio.NewScanner(strings.NewReader(out))
 	for sc.Scan() {
 		line := sc.Text()
+		if c, ok := strings.CutPrefix(line, "cpu: "); ok {
+			runs.cpu = strings.TrimSpace(c)
+			continue
+		}
 		if p, ok := strings.CutPrefix(line, "pkg: "); ok {
 			_, rel, _ := strings.Cut(p, "tempoDock/")
 			pkg, dir = strings.TrimPrefix(rel, "internal/"), "./"+rel

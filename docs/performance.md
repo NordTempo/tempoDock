@@ -11,7 +11,9 @@ with `-soft-timing`) and posts the results as a comment on it (the
 benchmarks. On shared runners timing
 budgets only warn, while sizes, memory and allocations still fail, so a
 **warn** row in that comment is a regression to fix, or to explain in the
-PR, before merging. Timing is enforced by running `make perf` locally.
+PR, before merging: a benchmark's time warns there only when it is
+slower than the base revision's on the same runner (below). Timing is
+enforced by running `make perf` locally.
 A pull request that raises a budget (a limit here or in scripts/perf,
 or a baseline re-recorded higher, which the comment shows as a warning
 against main's) names it in its description with the reason.
@@ -272,6 +274,19 @@ masking secret values in logs (`BenchmarkRedactLine`, `BenchmarkRedactBuildLog`)
   doesn't read as a regression. The fastest of 5 runs counts (noise only
   adds time), and a benchmark over budget is run once more (alone, not
   its whole package) before it fails.
+  One number can't stand for every kind of code, though: GitHub's
+  runners time the workload about as fast as the baseline's machine but
+  tight, allocation-free loops 1.5-2.8x slower (`BenchmarkDrainEnqueue`
+  14 ns there, 5 ns on the dev VM), so after CI moved to them (#344)
+  the same nine rows warned on every pull request. So on shared runners
+  (`-soft-timing`) a benchmark still over its timing budget is also timed
+  at the base revision (`-base-rev`, CI's `HEAD^1`) in a temporary
+  worktree on the same runner, and its time is judged against that: it
+  warns only when the change made it slower. A local `make perf` keeps to
+  the baseline, and so does the nightly run on the dev VM
+  (`e2e/nightly.sh`, which reports a failure like a scenario's): a
+  slowdown spread over several changes shows within a day. The speed row
+  names the runner's CPU.
   Benchmarks named `parallel=` depend on core count, and those named
   `io=` (a `b.Run("io=files", ...)` around the loop) on the disk and
   other jobs' I/O; both are gated on allocations only. A benchmark whose
