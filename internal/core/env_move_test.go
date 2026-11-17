@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
 	"io"
 	"net"
@@ -131,11 +132,41 @@ func assertStayed(t *testing.T, p *pool, lab *fake.Runtime, db ServiceRef, data 
 		t.Errorf("running on homelab: %v", got)
 	}
 	if got := envContainers(p.rt, prefix); len(got) != 0 {
-		t.Errorf("left on cp: %v", got)
+		t.Errorf("left on cp: %v\n%s", got, p.leftoverReport(prefix))
 	}
 	if got := lab.VolumeData(p.volume(db, "data")); !bytes.Equal(got, data) {
 		t.Errorf("db's data on homelab = %q", got)
 	}
+}
+
+// leftoverReport explains containers of an environment left on cp after
+// a rolled back move, for a failure that doesn't reproduce: the latest
+// move's row and services, and each container with its ID, state and
+// start, and whether it is the one the move started (never removed) or
+// another (started again after the rollback removed it).
+func (p *pool) leftoverReport(prefix string) string {
+	var b strings.Builder
+	moved := map[string]string{}
+	if m, err := p.store.GetLatestEnvironmentMove(p.ctx, p.envID("staging")); err == nil {
+		fmt.Fprintf(&b, "move %d: status %s, step %s, error %q, finished %v\n", m.ID, m.Status, m.Step, m.Error, m.FinishedAt)
+		if rows, err := p.store.ListEnvironmentMoveServices(p.ctx, m.ID); err == nil {
+			for _, r := range rows {
+				fmt.Fprintf(&b, "  service %d: %s, target container %.12s\n", r.ServiceID, r.Status, r.ContainerID)
+				moved[r.ContainerID] = "the move's"
+			}
+		}
+	} else {
+		fmt.Fprintf(&b, "latest move: %v\n", err)
+	}
+	ctrs, _ := p.rt.List(p.ctx)
+	for _, ct := range ctrs {
+		if !strings.HasPrefix(ct.Name, prefix) {
+			continue
+		}
+		whose := cmp.Or(moved[ct.ID], "not the move's")
+		fmt.Fprintf(&b, "  %s %.12s: %s, started %s, %s\n", ct.Name, ct.ID, ct.State, ct.StartedAt.Format("15:04:05.000"), whose)
+	}
+	return b.String()
 }
 
 // envPrefix is the container name prefix of ref's environment.
