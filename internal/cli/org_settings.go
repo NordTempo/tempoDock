@@ -490,6 +490,22 @@ func (c userConfig) followSlug(server, from, to string) bool {
 
 // newOrgGoneCmd is `dock org leave` and `dock org delete`: confirmed, then
 // method on /org (path suffix).
+// newOrgLeaveMovedCmd answers `dock org leave`, which the CLI can't do:
+// a person leaves an organization signed in to the web UI, and the CLI
+// acts with a token.
+func newOrgLeaveMovedCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:                "leave",
+		Short:              "Moved: leave an organization in the web UI",
+		Hidden:             true,
+		DisableFlagParsing: true,
+		RunE: func(*cobra.Command, []string) error {
+			return usageError("leaving an organization is done signed in to the web UI, not from the CLI",
+				"Open the organization's Settings › General and choose Leave. The CLI acts with a token, which doesn't end your membership.")
+		},
+	}
+}
+
 func newOrgGoneCmd(g *globals, use, short, method, suffix, question, done string) *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{

@@ -134,10 +134,19 @@ func (c *Core) DeleteOrg(ctx context.Context, a Actor) error {
 }
 
 // LeaveOrg takes the calling user out of the org. The last admin can't
-// leave; another member becomes admin first.
+// leave; another member becomes admin first. A person does it signed in:
+// a token that acts for them (`dock login`, an agent's) doesn't end
+// their membership.
 func (c *Core) LeaveOrg(ctx context.Context, a Actor) error {
 	if a.UserID == 0 {
 		return errf(apitypes.CodeForbidden, "%s isn't a member; only users leave organizations", a)
+	}
+	if a.Kind != "user" {
+		return a.refuse(apitypes.Refusal{
+			DecidedBy: apitypes.RefusedPerson, Action: "leaving the organization", Need: "person",
+			Reason: fmt.Sprintf("leaving an organization is for the person themselves, signed in, not %s acting for them", a),
+			Fix:    "leave in the web UI: the organization's Settings › General",
+		})
 	}
 	if err := a.require(apitypes.ScopeRead, "leaving the organization"); err != nil {
 		return err

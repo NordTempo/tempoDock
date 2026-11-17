@@ -30,8 +30,7 @@ organization it was linked in.`,
 	cmd.AddCommand(newOrgListCmd(g), newOrgCreateCmd(g), newOrgUseCmd(g), newOrgLocksCmd(g),
 		newOrgMembersCmd(g), newOrgMemberCmd(g), newOrgInviteCmd(g), newOrgInvitesCmd(g), newOrgJoinCmd(g),
 		newOrgEnvCmd(g), newOrgRenameCmd(g), newOrgTwoFactorCmd(g), newOrgSSOMovedCmd("sso"), newOrgSSOMovedCmd("sso-only"),
-		newOrgGoneCmd(g, "leave", "Leave the organization; the last admin can't", "POST", "/leave",
-			"Leave %s? You lose access to its projects.", "Left %s"),
+		newOrgLeaveMovedCmd(),
 		newOrgGoneCmd(g, "delete", "Delete an organization without projects (admin)", "DELETE", "",
 			"Delete %s? Its members, invites, variables and tokens go.", "Deleted %s"))
 	return cmd

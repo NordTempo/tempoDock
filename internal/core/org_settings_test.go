@@ -168,3 +168,22 @@ func TestDeleteOrg(t *testing.T) {
 		t.Fatalf("membership after delete: %v", err)
 	}
 }
+
+// Leaving an organization is the person's own act, signed in: a token
+// that acts for them (their `dock login`, which an agent runs with)
+// doesn't end their membership.
+func TestOnlyThePersonLeaves(t *testing.T) {
+	h := newHarness(t)
+	h.user("ada@example.com", apitypes.ScopeAdmin)
+	dev := h.cliUser("dev@example.com", apitypes.ScopeRead)
+	bot, err := h.c.AuthenticateToken(h.ctx, h.cliToken(dev), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := refusalOf(t, h.c.LeaveOrg(h.ctx, bot)); r.DecidedBy != apitypes.RefusedPerson {
+		t.Fatalf("their `dock login` leaving for them: %+v", r)
+	}
+	if err := h.c.LeaveOrg(h.ctx, dev); err != nil {
+		t.Fatalf("the person leaving: %v", err)
+	}
+}
