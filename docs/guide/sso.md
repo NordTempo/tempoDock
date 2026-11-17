@@ -133,6 +133,45 @@ sudo dock admin password-sign-in on
 sudo dock admin password-sign-in on --password-for ops@example.com   # also a new password, shown once
 ```
 
+## Signing out
+
+Signing out of Dock ends the Dock session, and for a provider that
+supports it (OpenID Connect RP-Initiated Logout: its discovery document
+has an `end_session_endpoint`) the provider's session too: the browser
+goes to the provider, which comes back to Dock's sign-in page. The next
+**Continue with** then asks for the password again. Dock sends the ID
+token the session signed in with (`id_token_hint`, kept encrypted with
+the session), its client ID, and the sign-out URL,
+`https://<your Dock address>/login` (the Sign-in page and `dock sso list`
+show it). Register it at the provider, or the provider refuses to send
+the browser back:
+
+| Provider | Register the sign-out URL as |
+|---|---|
+| Keycloak | the client's Valid post logout redirect URIs |
+| Okta | the app's Sign-out redirect URIs |
+| Microsoft Entra ID | another Web redirect URI |
+| Auth0 | Allowed Logout URLs (and turn on RP-Initiated Logout End Session Endpoint Discovery in the tenant's Advanced settings) |
+| Authentik | the provider's Post logout redirect URIs |
+| Any other OpenID Connect provider | its post-logout redirect URI, if it has an end-session endpoint |
+
+Google, GitHub and GitLab have no such endpoint: signing out ends only
+the Dock session, and the provider's session stays (the next **Continue
+with** signs straight in). So do sessions whose provider doesn't answer
+within three seconds.
+
+Not built yet:
+
+- **Group or role mapping.** A provider says who someone is; membership
+  and roles come from invites and admins (ADR 0065 dropped mapping on
+  purpose).
+- **Back-channel logout.** Ending someone's session at the provider, or
+  disabling them there, doesn't end their Dock sessions: those last up
+  to 30 days. Disable the account in Dock (Console, Users) to cut them
+  off at once.
+- **Old sessions after a step-up.** Confirming through a provider signs
+  in again with a new session; the one before stays until it expires.
+
 ## Removing a provider
 
 `dock sso remove google` removes it, the links between people and their

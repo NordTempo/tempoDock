@@ -354,7 +354,13 @@ func (c *Core) newSession(ctx context.Context, u store.User, via signInVia) (sec
 	if !via.authAt.IsZero() && via.authAt.Before(t) {
 		verified = via.authAt.UTC()
 	}
-	id, err := c.store.CreateSession(ctx, store.CreateSessionParams{UserID: u.ID, Hash: hash, ExpiresAt: expires, Factor: via.factor, VerifiedAt: &verified, SsoProviderID: via.ssoProviderIDPtr()})
+	idToken, err := c.sealIDToken(via, hash)
+	if err != nil {
+		return "", time.Time{}, Actor{}, err
+	}
+	id, err := c.store.CreateSession(ctx, store.CreateSessionParams{
+		UserID: u.ID, Hash: hash, ExpiresAt: expires, Factor: via.factor, VerifiedAt: &verified, SsoProviderID: via.ssoProviderIDPtr(), SsoIDToken: idToken,
+	})
 	if err != nil {
 		return "", time.Time{}, Actor{}, err
 	}
@@ -533,9 +539,27 @@ func revokedNote(n int64) string {
 	return fmt.Sprintf("; revoked their %d dock login tokens", n)
 }
 
-// Logout ends a session. Unknown sessions are ignored.
-func (c *Core) Logout(ctx context.Context, secret string) error {
-	return c.store.DeleteSession(ctx, hashSecret(secret))
+// Logout ends a session; unknown sessions are ignored. For a session that
+// signed in through an OpenID Connect provider it returns the URL that
+// ends the provider's session too (endSessionURL), for the browser to
+// visit; "" otherwise.
+func (c *Core) Logout(ctx context.Context, secret string) (endSession string, err error) {
+	hash := hashSecret(secret)
+	row, err := c.store.GetSessionUser(ctx, hash)
+	if store.IsNotFound(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if err := c.store.DeleteSession(ctx, hash); err != nil {
+		return "", err
+	}
+	s := row.Session
+	if s.Pending || s.SsoProviderID == nil {
+		return "", nil
+	}
+	return c.endSessionURL(ctx, *s.SsoProviderID, c.openIDToken(s)), nil
 }
 
 // ListTokens returns the org's tokens and its members' `dock login`

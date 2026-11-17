@@ -168,3 +168,31 @@ unlocked browser could reach a step-up's actions.
   that ignores the request (or a sign-in on an old provider session)
   confirms nothing, and Dock asks again.
 - GitHub's OAuth has neither: its step-ups still reuse GitHub's session.
+
+## Amendment (2026-11-17): signing out at the provider too
+
+Signing out of Dock left the provider's session alive, so the next
+"Continue with" signed straight back in, on a shared computer too.
+Dock now does OpenID Connect RP-Initiated Logout 1.0:
+
+- `POST /auth/logout` ends the Dock session first, as before, and for a
+  session that came through a provider whose discovery has an
+  `end_session_endpoint` answers with `end_session_url`; the UI's sign-out
+  sends the browser there. It carries `id_token_hint`, `client_id` and
+  `post_logout_redirect_uri` = `<Dock URL>/login`, which operators
+  register at the provider (the guide lists where).
+- The ID token is kept with the session for this only:
+  `sessions.sso_id_token` (migration 0123), sealed and bound to the
+  session's hash (`sealedColumns`), carried across a second factor's
+  pending sign-in, and gone with the session. Okta and Authentik refuse a
+  logout without it, and Keycloak asks "Do you want to log out?" instead
+  of returning.
+- No `state`: Dock's sign-in page has nothing to check it against.
+- GitHub, providers without the endpoint (Google, GitLab) and providers
+  that don't answer discovery within 3 seconds sign out of Dock only.
+
+Follow-ups, not built: group or role mapping (dropped on purpose above);
+back-channel logout, so a provider ending a session or disabling a person
+ends their Dock sessions too (they last 30 days; disabling the account
+in Dock is the way today); and the session a provider step-up leaves
+behind, which stays until it expires.

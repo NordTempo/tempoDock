@@ -48,6 +48,9 @@ import (
 const (
 	// ssoTimeout bounds each request to an identity provider.
 	ssoTimeout = 10 * time.Second
+	// ssoLogoutTimeout bounds reading a provider's discovery when signing
+	// out: past it, the person is signed out of Dock only.
+	ssoLogoutTimeout = 3 * time.Second
 	// ssoMaxResponse bounds what Dock reads of a provider's answer.
 	ssoMaxResponse = 1 << 20
 )
@@ -191,6 +194,68 @@ func ssoConfirmOptions(kind string) oauth2.AuthCodeOption {
 	return oauth2.SetAuthURLParam("prompt", "login")
 }
 
+// SSOLogoutRedirectPath is where a provider sends the browser after
+// signing out there (post_logout_redirect_uri): Dock's sign-in page.
+const SSOLogoutRedirectPath = "/login"
+
+// ssoLogoutRedirectURL is the post-logout redirect URI operators register
+// at each provider.
+func (c *Core) ssoLogoutRedirectURL() string { return c.dockURL() + SSOLogoutRedirectPath }
+
+// endSessionURL is where the browser ends its session at provider id
+// after signing out of Dock (OpenID Connect RP-Initiated Logout 1.0): the
+// provider's end_session_endpoint with the session's ID token as
+// id_token_hint (when kept), Dock's client_id, and Dock's sign-in page to
+// come back to. "" when there is nothing to end there: GitHub, a provider
+// without the endpoint (Google), one that is gone or doesn't answer in
+// time. The person is signed out of Dock either way.
+func (c *Core) endSessionURL(ctx context.Context, providerID int64, idToken string) string {
+	p, err := c.store.GetSSOProvider(ctx, providerID)
+	if err != nil || p.Kind == string(apitypes.SSOGitHub) {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(ctx, ssoLogoutTimeout)
+	defer cancel()
+	prov, err := c.sso.discover(ctx, c.log, p.Issuer)
+	if err != nil {
+		return ""
+	}
+	var doc struct {
+		EndSession string `json:"end_session_endpoint"`
+	}
+	if err := prov.Claims(&doc); err != nil || doc.EndSession == "" {
+		return ""
+	}
+	// The browser is sent there: never anything but a web page.
+	u, err := url.Parse(doc.EndSession)
+	if err != nil || u.Host == "" || u.Scheme != "https" && (u.Scheme != "http" || !loopbackHost(u.Hostname())) {
+		c.log.Warn("sso: end_session_endpoint is not an https URL", "provider", p.Name, "endpoint", doc.EndSession)
+		return ""
+	}
+	q := u.Query()
+	if idToken != "" {
+		q.Set("id_token_hint", idToken)
+	}
+	q.Set("client_id", p.ClientID)
+	q.Set("post_logout_redirect_uri", c.ssoLogoutRedirectURL())
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+// openIDToken opens the ID token sealed with session s; "" for none, or
+// one that doesn't open (logged): logout then sends client_id alone.
+func (c *Core) openIDToken(s store.Session) string {
+	if len(s.SsoIDToken) == 0 {
+		return ""
+	}
+	b, err := c.box.Open(s.SsoIDToken, sealedSessionIDToken.AAD(s.Hash))
+	if err != nil {
+		c.log.Warn("sso: session ID token doesn't open", "session", s.ID, "err", err)
+		return ""
+	}
+	return string(b)
+}
+
 // oauthConfig is the OAuth 2.0 client Dock is at provider p; prov is its
 // discovery, nil for GitHub.
 func (c *Core) oauthConfig(p store.SsoProvider, prov *oidc.Provider, secret string) *oauth2.Config {
@@ -296,6 +361,9 @@ func errSSOAnswer(label string) error {
 type ssoPerson struct {
 	subject, email, name string
 	authAt               time.Time
+	// idToken is the raw ID token, kept for signing out at the provider;
+	// "" for GitHub.
+	idToken string
 }
 
 // finishSSO checks the provider's answer for flow f and signs the person
@@ -338,7 +406,7 @@ func (c *Core) finishSSO(ctx context.Context, p store.SsoProvider, f *ssoFlow, c
 	if err != nil {
 		return LoginResult{}, err
 	}
-	via := signInVia{factor: factorSSO, ssoProviderID: p.ID, ssoProvider: p.Name, ssoLabel: p.Label, authAt: who.authAt}
+	via := signInVia{factor: factorSSO, ssoProviderID: p.ID, ssoProvider: p.Name, ssoLabel: p.Label, authAt: who.authAt, idToken: who.idToken}
 	n, err := c.store.CountUserFactors(ctx, u.ID)
 	if err != nil {
 		return LoginResult{}, err
@@ -383,7 +451,7 @@ func oidcPerson(ctx context.Context, log *slog.Logger, p store.SsoProvider, f *s
 		log.Warn("sso: ID token claims", "err", err)
 		return ssoPerson{}, errSSOAnswer(p.Label)
 	}
-	who := ssoPerson{subject: idt.Subject, email: strings.TrimSpace(claims.Email)}
+	who := ssoPerson{subject: idt.Subject, email: strings.TrimSpace(claims.Email), idToken: raw}
 	if claims.AuthTime > 0 {
 		who.authAt = time.Unix(int64(claims.AuthTime), 0)
 	}

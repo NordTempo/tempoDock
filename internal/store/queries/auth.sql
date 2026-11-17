@@ -15,7 +15,7 @@ SELECT * FROM users WHERE id = +?;
 SELECT * FROM users WHERE email = +?;
 
 -- name: CreateSession :one
-INSERT INTO sessions (user_id, hash, expires_at, factor, pending, verified_at, sso_provider_id) VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO sessions (user_id, hash, expires_at, factor, pending, verified_at, sso_provider_id, sso_id_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id;
 
 -- GetSessionUser is a session with its user, pending or not: callers

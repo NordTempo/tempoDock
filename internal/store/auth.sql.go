@@ -22,7 +22,7 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 }
 
 const createSession = `-- name: CreateSession :one
-INSERT INTO sessions (user_id, hash, expires_at, factor, pending, verified_at, sso_provider_id) VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO sessions (user_id, hash, expires_at, factor, pending, verified_at, sso_provider_id, sso_id_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id
 `
 
@@ -34,6 +34,7 @@ type CreateSessionParams struct {
 	Pending       bool
 	VerifiedAt    *time.Time
 	SsoProviderID *int64
+	SsoIDToken    []byte
 }
 
 func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (int64, error) {
@@ -45,6 +46,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (i
 		arg.Pending,
 		arg.VerifiedAt,
 		arg.SsoProviderID,
+		arg.SsoIDToken,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -300,7 +302,7 @@ func (q *Queries) GetOrgTokenByName(ctx context.Context, arg GetOrgTokenByNamePa
 }
 
 const getSessionUser = `-- name: GetSessionUser :one
-SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.factor_failures, users.factor_failed_at, users.email_requests, users.platform_role, users.email_proven, sessions.id, sessions.user_id, sessions.hash, sessions.created_at, sessions.expires_at, sessions.factor, sessions.pending, sessions.attempts, sessions.verified_at, sessions.sso_provider_id, sessions.legacy_cookie, sso_providers.name AS sso_name, sso_providers.label AS sso_label
+SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.factor_failures, users.factor_failed_at, users.email_requests, users.platform_role, users.email_proven, sessions.id, sessions.user_id, sessions.hash, sessions.created_at, sessions.expires_at, sessions.factor, sessions.pending, sessions.attempts, sessions.verified_at, sessions.sso_provider_id, sessions.legacy_cookie, sessions.sso_id_token, sso_providers.name AS sso_name, sso_providers.label AS sso_label
 FROM sessions JOIN users ON users.id = sessions.user_id
 LEFT JOIN sso_providers ON sso_providers.id = sessions.sso_provider_id
 WHERE sessions.hash = +?
@@ -341,6 +343,7 @@ func (q *Queries) GetSessionUser(ctx context.Context, hash string) (GetSessionUs
 		&i.Session.VerifiedAt,
 		&i.Session.SsoProviderID,
 		&i.Session.LegacyCookie,
+		&i.Session.SsoIDToken,
 		&i.SsoName,
 		&i.SsoLabel,
 	)

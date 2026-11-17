@@ -561,12 +561,22 @@ export function useLoginVerify() {
   );
 }
 
+/**
+ * Signs out. A session that came through an identity provider with an
+ * end-session endpoint signs out there too: the browser goes to it, and
+ * it comes back to the sign-in page.
+ */
 export function useLogout() {
   const queryClient = useQueryClient();
   const router = useRouter();
   return useAction(
     async () => {
-      await done(api.POST("/api/v1/auth/logout"));
+      const res = await body(api.POST("/api/v1/auth/logout"));
+      if (res.end_session_url) {
+        // Leaving the page drops everything cached for the old session.
+        window.location.assign(res.end_session_url);
+        return;
+      }
       await signedOut(queryClient, router);
     },
     () => [],

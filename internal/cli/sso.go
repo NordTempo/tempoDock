@@ -27,7 +27,9 @@ GitHub, Microsoft Entra ID, GitLab, Okta, Auth0, Keycloak, Authentik, or any
 other OpenID Connect provider by its issuer.
 
 Register Dock at the provider as a web application with the redirect URL
-` + "`dock sso list`" + ` shows. A provider signs in people with a Dock account (by their
+` + "`dock sso list`" + ` shows, and the sign-out URL as its post-logout redirect URI
+(Keycloak's valid post logout redirect URIs, Okta's sign-out redirect URIs,
+Auth0's allowed logout URLs): signing out of Dock then signs out there too. A provider signs in people with a Dock account (by their
 verified email the first time) and creates accounts for people with an open
 invite. Unless sign-up is invite only (` + "`dock sso invite-only`" + `), it creates an
 account for anyone else it signs in, in no organization. Organizations
@@ -74,7 +76,7 @@ func newSSOListCmd(g *globals) *cobra.Command {
 					}
 					_, _ = fmt.Fprintln(g.io.Out)
 				}
-				return g.io.Fields("redirect URL", ps.RedirectURL, "password sign-in", onWord(set.PasswordSignIn), "invite only", onWord(set.InviteOnly))
+				return g.io.Fields("redirect URL", ps.RedirectURL, "sign-out URL", ps.LogoutRedirectURL, "password sign-in", onWord(set.PasswordSignIn), "invite only", onWord(set.InviteOnly))
 			})
 		},
 	}
@@ -287,6 +289,7 @@ func printSSOProvider(cmd *cobra.Command, g *globals, s *session, p apitypes.SSO
 		g.io.Successf("%s identity provider %s: the sign-in page shows Continue with %s", verb, p.Name, p.Label)
 		if ps, err := get[apitypes.SSOProviders](cmd.Context(), s, apiPrefix+"/platform/sso-providers"); err == nil {
 			g.io.Detail("Redirect URL to register at the provider: " + ps.RedirectURL)
+			g.io.Detail("Sign-out URL, its post-logout redirect URI if it signs out too: " + ps.LogoutRedirectURL)
 		}
 		return nil
 	})

@@ -589,7 +589,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** End the UI session */
+        /**
+         * End the UI session
+         * @description A session that signed in through an OpenID Connect provider with an end-session endpoint answers with end_session_url: send the browser there to sign out of the provider too; it comes back to the sign-in page.
+         */
         post: operations["logout"];
         delete?: never;
         options?: never;
@@ -9844,6 +9847,9 @@ export interface components {
             /** Format: date-time */
             time: string;
         };
+        LoggedOut: {
+            end_session_url?: string;
+        };
         LoginRequest: {
             /** Format: email */
             email: string;
@@ -10803,6 +10809,8 @@ export interface components {
             tenant?: string;
         };
         SSOProviders: {
+            /** @example https://dock.example.com/login */
+            logout_redirect_url: string;
             providers: components["schemas"]["SSOProvider"][] | null;
             /** @example https://dock.example.com/api/v1/auth/sso/callback */
             redirect_url: string;
@@ -15967,13 +15975,15 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No Content */
-            204: {
+            /** @description OK */
+            200: {
                 headers: {
                     "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["LoggedOut"];
+                };
             };
             /** @description Bad Request */
             400: {

@@ -71,6 +71,9 @@ type SSOProvider struct {
 type SSOProviders struct {
 	Providers   []SSOProvider `json:"providers"`
 	RedirectURL string        `json:"redirect_url" example:"https://dock.example.com/api/v1/auth/sso/callback"`
+	// LogoutRedirectURL is where a provider sends the browser back after
+	// signing out there (post_logout_redirect_uri); register it too.
+	LogoutRedirectURL string `json:"logout_redirect_url" example:"https://dock.example.com/login"`
 }
 
 // CreateSSOProviderRequest adds an identity provider to the platform.
@@ -143,6 +146,13 @@ type SSOStartRequest struct {
 	// Confirm is a step-up ("Confirm it's you"): the provider is asked to
 	// have the person sign in again rather than reuse its own session.
 	Confirm bool `json:"confirm,omitempty"`
+}
+
+// LoggedOut is a finished sign-out. EndSessionURL, when set, is the
+// identity provider's page that ends its own session too, for the browser
+// to visit next; it comes back to Dock's sign-in page.
+type LoggedOut struct {
+	EndSessionURL string `json:"end_session_url,omitempty"`
 }
 
 // SSOStart is the identity provider's page to send the browser to.

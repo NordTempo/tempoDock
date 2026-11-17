@@ -1,5 +1,6 @@
 // Package oidctest is a fake OpenID Connect provider for tests of single
-// sign-on (ADR 0058, 0065): discovery, an RSA key set, and a token
+// sign-on (ADR 0058, 0065): discovery (with an end_session_endpoint at
+// /logout, which only its URL matters for), an RSA key set, and a token
 // endpoint that checks the client and the PKCE verifier and returns the
 // ID token a test describes; and a fake GitHub (NewGitHub): its OAuth
 // token endpoint and the API's /user and /user/emails. Tests play the
@@ -65,7 +66,7 @@ func NewAt(t testing.TB, path string, aliases ...string) *Provider {
 		base := strings.TrimSuffix(p.Issuer, "/")
 		writeJSON(w, map[string]any{
 			"issuer": p.Issuer, "authorization_endpoint": base + "/authorize", "token_endpoint": base + "/token",
-			"jwks_uri": base + "/jwks", "response_types_supported": []string{"code"},
+			"jwks_uri": base + "/jwks", "end_session_endpoint": base + "/logout", "response_types_supported": []string{"code"},
 			"subject_types_supported": []string{"public"}, "id_token_signing_alg_values_supported": []string{"RS256"},
 		})
 	}

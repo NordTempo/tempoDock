@@ -426,6 +426,48 @@ func TestSSOStepUpNeedsAFreshSignIn(t *testing.T) {
 	}
 }
 
+// Signing out of a provider's session also signs out at the provider
+// (RP-initiated logout): Logout answers with its end-session URL, with
+// the ID token the session kept (sealed), through a second factor too.
+func TestSSOLogoutEndsTheProviderSession(t *testing.T) {
+	h, idp := ssoHarness(t)
+	password := adaSession(t, h)
+	// A password session has no provider to sign out of.
+	if end, err := h.c.Logout(h.ctx, password.secret); end != "" || err != nil {
+		t.Fatalf("password logout = %q, %v", end, err)
+	}
+	wantLogout := func(secret string) {
+		t.Helper()
+		end, err := h.c.Logout(h.ctx, secret)
+		if err != nil {
+			t.Fatal(err)
+		}
+		u, _ := url.Parse(end)
+		q := u.Query()
+		hint := strings.Split(q.Get("id_token_hint"), ".")
+		if !strings.HasPrefix(end, idp.Issuer+"/logout?") || len(hint) != 3 || q.Get("client_id") != oidctest.ClientID ||
+			q.Get("post_logout_redirect_uri") != h.c.dockURL()+"/login" {
+			t.Fatalf("end-session URL %q", end)
+		}
+		if _, err := h.c.AuthenticateSession(h.ctx, secret, "", false); CodeOf(err) != apitypes.CodeUnauthorized {
+			t.Fatalf("session outlived its logout: %v", err)
+		}
+	}
+	wantLogout(h.ssoSession(idp, "ada-sub", adaEmail).secret)
+
+	// The pending sign-in keeps the token for the session after it.
+	key, _ := addTOTP(t, h, passwordLogin(t, h))
+	res, err := h.ssoSignIn(idp, "ada-sub", adaEmail, nil)
+	if err != nil || !res.Pending {
+		t.Fatalf("sso with an authenticator app: %+v, %v", res, err)
+	}
+	done, err := h.c.LoginSecondFactor(h.ctx, res.Secret, apitypes.Verification{Code: totpCode(key, totpStep(now()))}, testClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantLogout(done.Secret)
+}
+
 // A client secret an org's provider sealed (bound to its org and old
 // name) opens as the platform provider's after the next start.
 func TestSSOSecretResealed(t *testing.T) {
