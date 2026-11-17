@@ -27,6 +27,9 @@ func (a Actor) operatorIn(o store.Org) Actor {
 	a.OrgID, a.OrgSlug, a.orgs, a.Scope = o.ID, o.Slug, 1, apitypes.ScopeAdmin
 	a.ProjectID, a.EnvironmentID, a.ProjectName, a.EnvironmentName = 0, 0, "", ""
 	a.suspended = false
+	// What they hold in their own org (their grants there, their agent
+	// setting) says nothing here: the admin scope decides.
+	a.grants, a.hasGrants, a.watchGrants, a.agent = nil, false, false, nil
 	return a
 }
 

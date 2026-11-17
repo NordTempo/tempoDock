@@ -221,6 +221,9 @@ func (c *Core) SetGroupAgent(ctx context.Context, a Actor, groupRef, tokenRef st
 			return q.SetTokenOwnGrants(ctx, t.ID)
 		})
 	} else {
+		if err := c.mayTakeGroup(ctx, a, g); err != nil {
+			return apitypes.Group{}, err
+		}
 		var n int64
 		if n, err = c.store.RemoveGroupAgent(ctx, store.RemoveGroupAgentParams{GroupID: g.ID, TokenID: t.ID}); err == nil && n == 0 {
 			err = notFound("token %s isn't in group %s", t.Name, g.Name)

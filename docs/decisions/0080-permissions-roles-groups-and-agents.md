@@ -274,3 +274,12 @@ Settled after reviewing phases 6 and 7 as a whole:
   highest of admin and deploy whose seeded roles it still holds there,
   read otherwise. A token narrowed to viewing has a reader's Data panel
   access; one given Full access an admin's.
+- **A role is its seeded group as it is now, and taking away is held to
+  the giving rule.** A role change or an invite gives what the role's
+  seeded group holds today (the org may have changed it), so that is what
+  the giver must hold, not the built-in roles the group started with.
+  And whoever takes access away must hold it: demoting a member, taking
+  someone or a token out of a group, ending a grant, removing a group or
+  a member, and taking parts out of a custom role all ask what giving
+  them would. Managing members without Full access is no way to strip
+  those who hold more.

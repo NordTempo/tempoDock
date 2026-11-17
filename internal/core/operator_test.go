@@ -231,3 +231,23 @@ func TestOperatorCreatesOrgAndInvites(t *testing.T) {
 		t.Fatalf("acme = %+v; want ada as its admin", o)
 	}
 }
+
+// An operator administers an org with the platform's permission, not
+// with what they hold as a member somewhere: one who only views their
+// own org still changes another's members.
+func TestOperatorActsWithoutTheirOwnOrgsGrants(t *testing.T) {
+	h := newHarness(t)
+	h.enforce()
+	h.member("ada@x", map[string]apitypes.Scope{"acme": apitypes.ScopeAdmin})
+	bob := h.member("bob@x", map[string]apitypes.Scope{"acme": apitypes.ScopeRead})
+	op := h.member("op@x", map[string]apitypes.Scope{"test": apitypes.ScopeRead})
+	h.exec(`UPDATE users SET platform_role = 'operator' WHERE id = ?`, op.UserID)
+	op = h.in(op.withPlatform(apitypes.PlatformOperator), "test")
+	if !op.hasGrants || op.Scope != apitypes.ScopeRead {
+		t.Fatalf("setup: the operator in their own org = %+v", op.Me())
+	}
+	u, err := h.c.OperatorSetMemberRole(h.ctx, op, "acme", bob.UserID, apitypes.OperatorMemberRequest{Role: apitypes.ScopeDeploy})
+	if err != nil || u.Role != apitypes.ScopeDeploy {
+		t.Fatalf("an operator who views their own org changing a role in another: %+v, %v", u, err)
+	}
+}

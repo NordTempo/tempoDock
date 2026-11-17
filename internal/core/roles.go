@@ -236,6 +236,12 @@ func (c *Core) UpdateRole(ctx context.Context, a Actor, name string, req apitype
 	if err := a.mayGive(partsPerms(parts), 0, 0, uint8(allKinds), "role "+newName, a.orgName()); err != nil {
 		return apitypes.Role{}, err
 	}
+	// And lose what is taken out, which its editor holds too.
+	if gone := partsPerms(r.Parts) &^ partsPerms(parts); gone != 0 {
+		if err := a.mayGive(gone, 0, 0, uint8(allKinds), "role "+r.Name+" (taking parts out of it)", a.orgName()); err != nil {
+			return apitypes.Role{}, err
+		}
+	}
 	if !strings.EqualFold(newName, r.Name) {
 		if _, err := c.store.GetRoleByName(ctx, store.GetRoleByNameParams{OrgID: a.OrgID, Name: newName}); err == nil {
 			return apitypes.Role{}, conflict("%s already has a role %q", a.orgName(), newName)
