@@ -120,18 +120,48 @@ type placed struct {
 // lines up to position are now all written; a batch at or before the
 // source's cursor was written before and is skipped. Chunks that aren't
 // gzip are skipped and counted. locate may be nil.
+// It applies no budgets: for tests.
 func (s *Store) WriteReplay(ctx context.Context, source string, position uint64, chunks []analytics.ReplayChunk, locate Locator) (written, skipped int, err error) {
+	res, err := s.WriteReplayLimited(ctx, source, position, chunks, locate, noLimits)
+	return res.Written, res.Skipped, err
+}
+
+// WriteReplayLimited is WriteReplay within lim (budget.go): chunks past
+// their site's bytes for the day are dropped and counted in the result,
+// and the store's size is checked when it is due.
+func (s *Store) WriteReplayLimited(ctx context.Context, source string, position uint64, chunks []analytics.ReplayChunk, locate Locator, lim analytics.StoreLimits) (analytics.WriteResult, error) {
+	lim = s.limits(lim)
+	res, today, due, err := s.writeReplay(ctx, source, position, chunks, locate, lim)
+	if err != nil || !due {
+		return res, err
+	}
+	if err := s.keepWithin(ctx, lim.MaxBytes, today); err != nil {
+		return res, fmt.Errorf("the chunks are written; keeping the store within its size: %w", err)
+	}
+	return res, nil
+}
+
+// writeReplay is WriteReplayLimited's transaction; due says the store's
+// size is to be checked now, with the locks let go.
+func (s *Store) writeReplay(ctx context.Context, source string, position uint64, chunks []analytics.ReplayChunk, locate Locator, lim analytics.StoreLimits) (res analytics.WriteResult, today time.Time, due bool, err error) {
 	dir := s.replayDir()
 	if dir == "" {
-		return 0, 0, errors.New("an in-memory store keeps no replays")
+		return res, today, false, errors.New("an in-memory store keeps no replays")
 	}
 	s.gate.RLock()
 	defer s.gate.RUnlock()
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
+	today = utcDay(s.now())
+	if err := s.budgetFor(ctx, today); err != nil {
+		return res, today, false, fmt.Errorf("write replay chunks: %w", err)
+	}
+	sp := &spend{used: s.budget.replay, limit: lim.SiteDayReplayBytes}
+	chunks = chunksWithin(chunks, sp)
+	var written, skipped int
 	conn, err := s.db.Conn(ctx)
 	if err != nil {
-		return 0, 0, err
+		return res, today, false, err
 	}
 	defer func() { _ = conn.Close() }()
 	err = conn.Raw(func(dc any) error {
@@ -159,6 +189,14 @@ func (s *Store) WriteReplay(ctx context.Context, source string, position uint64,
 			return err
 		}
 		skipped = n
+		// The day's use is what went to disk: the frames, not the
+		// chunks as they came (which decided what fits).
+		clear(sp.add)
+		for i, p := range places {
+			if p.length > 0 {
+				sp.add[chunks[i].Site] += int64(p.length)
+			}
+		}
 		a, err := duckdb.NewAppenderFromConn(c, "", "replay_chunks")
 		if err != nil {
 			return err
@@ -189,12 +227,14 @@ func (s *Store) WriteReplay(ctx context.Context, source string, position uint64,
 			return err
 		}
 		committed = true
+		res.Rejected, res.OverBudget = sp.rejected, s.commit(sp)
 		return nil
 	})
 	if err != nil {
-		return 0, 0, fmt.Errorf("write replay chunks: %w", err)
+		return analytics.WriteResult{}, today, false, fmt.Errorf("write replay chunks: %w", err)
 	}
-	return written, skipped, nil
+	res.Written, res.Skipped = written, skipped
+	return res, today, s.sizeDue(), nil
 }
 
 // appendFrames recompresses each chunk's events as a zstd frame and

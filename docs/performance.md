@@ -537,6 +537,20 @@ end) are not listed.
   chunk 429. The counts are a 16 KB table and an entry per site, reset
   by the first request of a new second, without a timer
   (`BenchmarkIngestEventParallel/parallel=8`).
+- Those are rates, and a rate kept up all day is a disk: one address
+  at its limits is about 14 GB of events and 157 GB of replay chunks a
+  day. So the analytics store bounds totals (`cmd/dock-analytics/store/budget.go`,
+  ADR 0037): a site keeps 1,000,000 events and 1 GB of replay chunks per
+  UTC day (`[analytics] site_day_events`, `site_day_replay_mb`), which
+  the per-site rate reaches in about two and a half minutes of events and
+  four of chunks, and the store's database and replay files stay within
+  `[analytics] max_gb` (the smaller of 10 GB and a tenth of its disk),
+  oldest replay days going first. What one site can add in a day is
+  bounded by its budgets (events of the largest size: about 2 GB), and
+  what the store holds by its size plus today's budgets. A site's use
+  today is two small maps in the store; a write past a budget costs a
+  map lookup per event, and the size check is a checkpoint and two
+  queries every 100 writes.
 - Error issues ([ADR 0062](decisions/0062-org-alerts-and-operators.md#one-place-for-errors)):
   a follower keeps at most one error being assembled (50 lines, 8 KB)
   and a reference to its last line; the sink between two ticks holds at
