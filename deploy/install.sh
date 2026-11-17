@@ -59,7 +59,8 @@
 #                 SHA256SUMS.sig, as `make release-local` or e2e/nightly.sh build them
 #   DOCK_TRUSTED_KEYS  more release keys to trust (base64 Ed25519, space separated),
 #                 as [updates] trusted_keys: for builds signed with your own key
-#   CADDY_VERSION     Caddy release to install (default below)
+#   CADDY_VERSION, CADDY_SHA256  another Caddy release and the SHA-256 of
+#                     its caddy_<version>_linux_<arch>.tar.gz
 #   PUBLIC_IP         address users point DNS at (default: auto-detect; empty on tunnel servers)
 #   BASE_DOMAIN       base for generated hostnames, needs wildcard DNS (optional; asked
 #                     on a fresh install with a terminal)
@@ -134,6 +135,23 @@ MACHINE_KEYS=(:data_dir :listen :internal_listen :public_ip
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+
+# public_address prints this server's public address for the config's
+# public_ip: $PUBLIC_IP when set, else what api.ipify.org says. Either
+# way only an address goes into root's config file: digits, hex, dots and
+# colons. A PUBLIC_IP that isn't one stops the install; an answer from
+# the service that isn't one counts as no answer.
+public_address() {
+  local ip="${PUBLIC_IP:-}" asked=false
+  if [[ -z "$ip" ]]; then
+    ip="$(curl -fsS4 --max-time 5 https://api.ipify.org || true)" asked=true
+  fi
+  if [[ "$ip" =~ ^[0-9A-Fa-f.:]{2,45}$ ]]; then
+    printf '%s\n' "$ip"
+  elif [[ "$asked" == false ]]; then
+    die "PUBLIC_IP must be this server's address, like 203.0.113.7"
+  fi
+}
 warn() { printf 'warning: %s\n' "$*" >&2; }
 
 # Temporary files, removed on exit.
@@ -850,10 +868,20 @@ main() {
     tmp="$(mktemp -d)"
     base="https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}"
     tarball="caddy_${CADDY_VERSION}_linux_${ARCH}.tar.gz"
+    # By a checksum kept here, as cloudflared's is: the release's own
+    # checksum file comes from the same place as the tarball. CI installs
+    # the same tarball by the same checksum (ci.yml; a test keeps the two
+    # in step).
+    case "$CADDY_VERSION/$ARCH" in
+      2.11.7/amd64) caddy_sha256=727b91701a392de6ebc5027509f548bf39979e5216340d0faed8fa5e69c84f8b ;;
+      2.11.7/arm64) caddy_sha256=d8fc6d179a5d283028a472a5618564f6ad8a86fed513e64f032b3b0b7cc45e42 ;;
+      *) caddy_sha256="${CADDY_SHA256:-}" ;;
+    esac
+    [[ -n "$caddy_sha256" ]] \
+      || die "set CADDY_SHA256 to the SHA-256 of $tarball from Caddy's $CADDY_VERSION release"
     curl --proto '=https' --proto-redir '=https' -fsSLo "$tmp/$tarball" "$base/$tarball"
-    curl --proto '=https' --proto-redir '=https' -fsSLo "$tmp/checksums.txt" "$base/caddy_${CADDY_VERSION}_checksums.txt"
-    (cd "$tmp" && grep -E "  ${tarball}\$" checksums.txt | sha512sum --check --quiet --strict) \
-      || die "$tarball does not match Caddy's published checksum"
+    printf '%s  %s\n' "$caddy_sha256" "$tmp/$tarball" | sha256sum --check --quiet --strict \
+      || die "$tarball does not match its checksum"
     tar -xzf "$tmp/$tarball" -C "$tmp" caddy
     install -m 0755 "$tmp/caddy" /usr/local/bin/caddy.new
     mv /usr/local/bin/caddy.new /usr/local/bin/caddy
@@ -913,7 +941,7 @@ main() {
     fresh=true
     public_ip=""
     if [[ "$tunnel" == false ]]; then
-      public_ip="${PUBLIC_IP:-$(curl -fsS4 --max-time 5 https://api.ipify.org || true)}"
+      public_ip="$(public_address)"
     fi
     if [[ -z "${BASE_DOMAIN+x}" && -z "$restore" && "$node_mode" == false ]]; then
       BASE_DOMAIN="$(ask_base_domain "$public_ip")"

@@ -201,8 +201,8 @@ the others also change an existing config, touching only their own keys.
 | `DOCK_RELEASE_DIR` | empty | Take the release from this directory instead of GitHub: its `dock-install-<version>.tar.gz`, `dock-linux-<arch>`, `SHA256SUMS` and `SHA256SUMS.sig`, as `make release-local` builds them |
 | `DOCK_TRUSTED_KEYS` | empty | More release keys to trust, base64 Ed25519, space separated, as `[updates] trusted_keys`: for builds you sign yourself |
 | `GITHUB_TOKEN` | empty | For that download, only from a private repository: a token that can read its releases (pass it with `sudo --preserve-env=GITHUB_TOKEN`) |
-| `CADDY_VERSION` | `2.11.7` | Caddy release to download from GitHub |
-| `PUBLIC_IP` | auto (`api.ipify.org`), empty on tunnel servers | Address users point DNS at → `public_ip` |
+| `CADDY_VERSION`, `CADDY_SHA256` | `2.11.7`, pinned | Caddy release to download from GitHub, checked against a SHA-256 the script holds; another release needs the SHA-256 of its `caddy_<version>_linux_<arch>.tar.gz` |
+| `PUBLIC_IP` | auto (`api.ipify.org`), empty on tunnel servers | Address users point DNS at → `public_ip`. Only an address is taken, from you or from the lookup |
 | `LISTEN` | Tailscale IPv4`:7070`, else `127.0.0.1:7070` | API and UI address → `listen`. Control plane only |
 | `BASE_DOMAIN` | asked, else empty | Base for generated hostnames → `base_domain`. Needs a wildcard DNS record. Later: `dock server update <server> --base-domain` |
 | `DISABLE_TLS` | `false` | `true` serves plain HTTP only → `[caddy] disable_tls`. For LAN/Tailscale-only setups. Ignored on tunnel servers |
@@ -934,7 +934,8 @@ matching CLI on laptops and in CI with `dock self-update` ([The CLI](#the-cli));
   such a service fails before changing anything, naming the container to
   remove. Run `docker rm -f` on the containers drift lists, then restart
   each service (`dock restart`).
-- To upgrade Caddy, re-run with `CADDY_VERSION=x.y.z`, then
+- To upgrade Caddy, re-run with `CADDY_VERSION=x.y.z` and `CADDY_SHA256`
+  (of that release's tarball for this server's architecture), then
   `sudo systemctl restart dock-caddy` (the script doesn't restart a running
   Caddy). Traffic blips briefly; `--resume` restores the routes. A
   rollback leaves an upgraded Caddy, cloudflared or BuildKit image as it
