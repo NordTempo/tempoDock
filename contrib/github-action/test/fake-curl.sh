@@ -6,6 +6,7 @@
 #   <server>/api/v1/health        $FAKE_HEALTH, as given
 #   https://github.com/PATH       the file $FAKE_GITHUB/PATH
 #   https://api.github.com/PATH   the file $FAKE_GITHUB/api/PATH
+#   https://api.ipify.org         $FAKE_IPIFY, as given (unset: no answer)
 #
 # A missing file fails as `curl -f` does on a 404 (exit 22). With -w (the
 # installer asks where .../releases/latest redirects to) the file holds
@@ -28,6 +29,11 @@ case "$url" in
   */api/v1/health)
     [ -n "${FAKE_HEALTH:-}" ] || exit 7
     printf '%s' "$FAKE_HEALTH"
+    exit 0
+    ;;
+  https://api.ipify.org)
+    [ -n "${FAKE_IPIFY+x}" ] || exit 7
+    printf '%s' "$FAKE_IPIFY"
     exit 0
     ;;
   https://github.com/*) file="${FAKE_GITHUB:-/nonexistent}/${url#https://github.com/}" ;;

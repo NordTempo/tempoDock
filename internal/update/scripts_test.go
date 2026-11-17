@@ -282,3 +282,59 @@ func TestInstallShUnsignedOnlyWhenPinned(t *testing.T) {
 		}
 	}
 }
+
+// install.sh writes this server's address into root's config file, and
+// may have it from a service's answer: only an address gets there. An
+// answer that is anything else counts as none, and a PUBLIC_IP that is
+// anything else stops the install.
+func TestInstallShTakesOnlyAnAddress(t *testing.T) {
+	o := newOffline(t)
+	for answer, want := range map[string]string{
+		"203.0.113.7":   "203.0.113.7\n",
+		"203.0.113.7\n": "203.0.113.7\n",
+		"":              "",
+		"203.0.113.7\"\n[backup]\nrestic_image = \"x/y:z\"\n[zz]\nq = \"": "",
+		"<html>busy</html>": "",
+		"203.0.113.7 # x":   "",
+	} {
+		if out, err := o.installSh(t, []string{"FAKE_IPIFY=" + answer}, "public_address"); err != nil || out != want {
+			t.Errorf("the service answering %q: %q, %v; want %q", answer, out, err, want)
+		}
+	}
+	// With no answer at all the address is left empty, as before.
+	if out, err := o.installSh(t, nil, "public_address"); err != nil || out != "" {
+		t.Errorf("the service not answering: %q, %v", out, err)
+	}
+	if out, err := o.installSh(t, []string{"PUBLIC_IP=2001:db8::7"}, "public_address"); err != nil || out != "2001:db8::7\n" {
+		t.Errorf("PUBLIC_IP set to an address: %q, %v", out, err)
+	}
+	if out, err := o.installSh(t, []string{"PUBLIC_IP=203.0.113.7\"\n[zz]"}, "public_address"); err == nil || !strings.Contains(out, "PUBLIC_IP must be") {
+		t.Errorf("PUBLIC_IP set to something else: %q, %v", out, err)
+	}
+}
+
+// install.sh and CI install the same Caddy tarball by the same checksum:
+// a version or a checksum changed in one and not the other fails here.
+func TestInstallShCaddyMatchesCI(t *testing.T) {
+	read := func(path string) string {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	ci := regexp.MustCompile(`caddyserver/caddy v([0-9.]+) caddy_[0-9.]+_linux_amd64\.tar\.gz ([0-9a-f]{64})`).FindStringSubmatch(read("../../.github/workflows/ci.yml"))
+	if ci == nil {
+		t.Fatal("ci.yml no longer installs Caddy by a checksum")
+	}
+	script := read("../../deploy/install.sh")
+	if !strings.Contains(script, `CADDY_VERSION="${CADDY_VERSION:-`+ci[1]+`}"`) {
+		t.Errorf("install.sh's default Caddy isn't CI's %s", ci[1])
+	}
+	if !strings.Contains(script, ci[1]+"/amd64) caddy_sha256="+ci[2]+" ;;") {
+		t.Errorf("install.sh has no checksum %s for Caddy %s on amd64, as CI has", ci[2], ci[1])
+	}
+	if !regexp.MustCompile(regexp.QuoteMeta(ci[1]) + `/arm64\) caddy_sha256=[0-9a-f]{64} ;;`).MatchString(script) {
+		t.Errorf("install.sh has no checksum for Caddy %s on arm64", ci[1])
+	}
+}
