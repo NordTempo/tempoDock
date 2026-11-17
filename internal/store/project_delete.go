@@ -38,6 +38,7 @@ var projectDeletes = []struct{ table, where string }{
 	// gave there is gone with it.
 	{"grants", `project_id = +?1 OR environment_id IN ` + projEnvs},
 	{"data_policy_rules", `project_id = +?1 OR environment_id IN ` + projEnvs},
+	{"preview_data", `preview_id IN (SELECT id FROM previews WHERE project_id = +?1)`},
 	{"previews", `project_id = +?1`},
 	{"service_previews", `service_id IN ` + projServices},
 	{"environment_previews", `environment_id IN ` + projEnvs},

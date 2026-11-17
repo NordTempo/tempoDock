@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -16,8 +17,8 @@ import (
 // Previews belong to services (ADR 0077). A service with a GitHub source
 // opts in (build): pull requests into its branch get a preview cloned
 // from its environment, the base. Each service also says which of its own
-// variables' literal values a preview copies and whether its volumes
-// start from its newest snapshot. The base environment holds the numbers
+// variables' literal values a preview copies and what its volumes start
+// with (data, ADR 0092: preview_data.go). The base environment holds the numbers
 // about a preview as a whole: how many may be open and when they sleep,
 // and the shared variables they copy.
 
@@ -33,14 +34,14 @@ type previewSetup struct {
 	// copyVariables are the variables whose literal values a preview
 	// copies, as service.KEY and shared.KEY.
 	copyVariables []string
-	// seed are the services whose volumes start from their newest
-	// snapshot.
-	seed []string
+	// data is what services' volumes start with, by name; a service
+	// missing starts empty.
+	data map[string]previewDataSetting
 }
 
 // previewSetupOf reads a base environment's preview setup: two queries.
 func (c *Core) previewSetupOf(ctx context.Context, envID int64) (previewSetup, error) {
-	out := previewSetup{maxPreviews: defaultMaxPreviews, sleepAfter: apitypes.SleepAfterDefault, copyVariables: []string{}, seed: []string{}}
+	out := previewSetup{maxPreviews: defaultMaxPreviews, sleepAfter: apitypes.SleepAfterDefault, copyVariables: []string{}, data: map[string]previewDataSetting{}}
 	ep, err := c.store.GetEnvironmentPreviews(ctx, envID)
 	switch {
 	case err == nil:
@@ -59,8 +60,8 @@ func (c *Core) previewSetupOf(ctx context.Context, envID int64) (previewSetup, e
 		for _, k := range copyList(r.CopyVariables) {
 			out.copyVariables = append(out.copyVariables, r.Name+"."+k)
 		}
-		if r.Seed {
-			out.seed = append(out.seed, r.Name)
+		if r.Data != string(apitypes.PreviewDataEmpty) {
+			out.data[r.Name] = previewDataSetting{mode: apitypes.PreviewData(r.Data), forks: r.DataForks}
 		}
 	}
 	slices.Sort(out.copyVariables)
@@ -154,7 +155,7 @@ func (c *Core) GetPreviews(ctx context.Context, a Actor, project string) (apityp
 		}
 		out.Services = append(out.Services, apitypes.PreviewService{
 			Service: r.Service, Environment: r.Environment, Repo: r.Repo, Branch: r.Branch, Dir: r.Dir,
-			ServicePreviews: servicePreviewsOf(store.ServicePreview{ServiceID: r.ServiceID, Build: r.Build, AllowForks: r.AllowForks, CopyVariables: r.CopyVariables, Seed: r.Seed, UpdatedBy: r.UpdatedBy, UpdatedAt: r.UpdatedAt}),
+			ServicePreviews: servicePreviewsOf(store.ServicePreview{ServiceID: r.ServiceID, Build: r.Build, AllowForks: r.AllowForks, CopyVariables: r.CopyVariables, Data: r.Data, DataForks: r.DataForks, UpdatedBy: r.UpdatedBy, UpdatedAt: r.UpdatedAt}),
 		})
 		if r.Build && !slices.Contains(bases, r.EnvironmentID) {
 			bases = append(bases, r.EnvironmentID)
@@ -180,7 +181,7 @@ func (c *Core) GetPreviews(ctx context.Context, a Actor, project string) (apityp
 			for _, k := range s.CopyVariables {
 				out.CopyVariables = append(out.CopyVariables, s.Service+"."+k)
 			}
-			if s.Seed {
+			if s.Data == apitypes.PreviewDataSnapshot {
 				out.SeedFromSnapshot = append(out.SeedFromSnapshot, s.Service)
 			}
 			out.AllowForks = out.AllowForks || s.AllowForks
@@ -203,8 +204,8 @@ func (c *Core) GetPreviews(ctx context.Context, a Actor, project string) (apityp
 func servicePreviewsOf(r store.ServicePreview) apitypes.ServicePreviews {
 	t := r.UpdatedAt
 	return apitypes.ServicePreviews{
-		Build: r.Build, AllowForks: r.AllowForks, CopyVariables: copyList(r.CopyVariables), Seed: r.Seed,
-		UpdatedBy: r.UpdatedBy, UpdatedAt: &t,
+		Build: r.Build, AllowForks: r.AllowForks, CopyVariables: copyList(r.CopyVariables),
+		Data: apitypes.PreviewData(r.Data), DataForks: r.DataForks, UpdatedBy: r.UpdatedBy, UpdatedAt: &t,
 	}
 }
 
@@ -231,14 +232,34 @@ func (c *Core) GetServicePreviews(ctx context.Context, a Actor, ref ServiceRef) 
 	if err != nil {
 		return apitypes.ServicePreviews{}, err
 	}
+	out := apitypes.ServicePreviews{CopyVariables: []string{}, Data: apitypes.PreviewDataEmpty}
 	r, err := c.store.GetServicePreviews(ctx, ss.svc.ID)
-	if store.IsNotFound(err) {
-		return apitypes.ServicePreviews{CopyVariables: []string{}}, nil
+	switch {
+	case err == nil:
+		out = servicePreviewsOf(r)
+	case !store.IsNotFound(err):
+		return out, err
 	}
-	if err != nil {
-		return apitypes.ServicePreviews{}, err
+	if _, ok := copyEngine(ss.svc); ok {
+		// What a masked copy replaces, for choosing one.
+		out.CopyMaxMB = c.copyMaxMB()
+		marks, err := c.store.ListSensitiveColumns(ctx, ss.svc.ID)
+		if err != nil {
+			return out, err
+		}
+		keys, err := c.store.ListSensitiveKeys(ctx, ss.svc.ID)
+		if err != nil {
+			return out, err
+		}
+		m := &apitypes.PreviewMasked{Columns: len(marks), Keys: len(keys)}
+		for i, mk := range marks {
+			if i == 0 || marks[i-1].SchemaName != mk.SchemaName || marks[i-1].TableName != mk.TableName {
+				m.Tables++
+			}
+		}
+		out.Masked = m
 	}
-	return servicePreviewsOf(r), nil
+	return out, nil
 }
 
 // SetServicePreviews sets what a service does in previews. Previews run
@@ -272,10 +293,9 @@ func (c *Core) SetServicePreviews(ctx context.Context, a Actor, ref ServiceRef, 
 	if req.AllowForks && !req.Build {
 		return apitypes.ServicePreviews{}, invalid("forks are previewed only when pull requests build %s; turn that on too", ss.svc.Name)
 	}
-	if req.Seed {
-		if _, _, err := c.previewSeeds(ctx, ss.envScope, []string{ss.svc.Name}); err != nil {
-			return apitypes.ServicePreviews{}, err
-		}
+	data := cmp.Or(req.Data, apitypes.PreviewDataEmpty)
+	if err := c.checkPreviewData(ctx, a, ss, data, req.DataForks); err != nil {
+		return apitypes.ServicePreviews{}, err
 	}
 	list, _ := json.Marshal(keys)
 	c.previews.mu.Lock()
@@ -286,7 +306,7 @@ func (c *Core) SetServicePreviews(ctx context.Context, a Actor, ref ServiceRef, 
 		}
 	}
 	if err := c.store.UpsertServicePreviews(ctx, store.UpsertServicePreviewsParams{
-		ServiceID: ss.svc.ID, Build: req.Build, AllowForks: req.AllowForks, CopyVariables: string(list), Seed: req.Seed,
+		ServiceID: ss.svc.ID, Build: req.Build, AllowForks: req.AllowForks, CopyVariables: string(list), Data: string(data), DataForks: req.DataForks,
 		UpdatedBy: a.Name, UpdatedAt: now(),
 	}); err != nil {
 		return apitypes.ServicePreviews{}, err
@@ -310,8 +330,16 @@ func describeServicePreviews(conn store.GitConnection, req apitypes.SetServicePr
 	if len(keys) > 0 {
 		parts = append(parts, "values copied: "+strings.Join(keys, ", "))
 	}
-	if req.Seed {
+	switch req.Data {
+	case apitypes.PreviewDataSnapshot:
 		parts = append(parts, "previews start from its newest snapshot")
+	case apitypes.PreviewDataCopy:
+		parts = append(parts, "previews start with a copy of it")
+	case apitypes.PreviewDataMasked:
+		parts = append(parts, "previews start with a copy of it, sensitive columns masked")
+	}
+	if req.DataForks {
+		parts = append(parts, "forks get the data too")
 	}
 	return "previews: " + strings.Join(parts, "; ")
 }

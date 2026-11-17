@@ -519,7 +519,7 @@ func jobLog(env map[string]string, out string) string {
 		return ""
 	}
 	secrets := map[string]string{}
-	for _, k := range []string{"RESTIC_PASSWORD", "AWS_SECRET_ACCESS_KEY", "PGPASSWORD", "REDISCLI_AUTH"} {
+	for _, k := range []string{"RESTIC_PASSWORD", "AWS_SECRET_ACCESS_KEY", "PGPASSWORD", "REDISCLI_AUTH", "MYSQL_PWD"} {
 		if v := env[k]; v != "" {
 			secrets[k] = v
 		}

@@ -61,11 +61,82 @@ type ServicePreviews struct {
 	// CopyVariables are the service's own variables whose literal values
 	// previews copy; no other literal value is ever copied.
 	CopyVariables []string `json:"copy_variables" doc:"The service's variables whose literal values previews copy, by key"`
-	// Seed: a new preview fills the service's volumes from its newest
-	// snapshot; otherwise they start empty.
-	Seed      bool       `json:"seed" doc:"New previews fill the service's volumes from its newest snapshot"`
+	// Data is what the service's volumes start with in a new preview
+	// (ADR 0092).
+	Data PreviewData `json:"data" enum:"empty,snapshot,copy,masked" doc:"What the service's volumes start with in a new preview: empty, its newest snapshot, a copy of this database, or that copy with its sensitive columns masked"`
+	// DataForks gives pull requests from forks the data too; without it
+	// their previews start empty.
+	DataForks bool `json:"data_forks" doc:"Pull requests from forks get the data too; otherwise their previews start empty"`
+	// Masked counts the sensitive columns a masked copy replaces, as the
+	// Data panel marks them; nil for a service that isn't a database.
+	Masked *PreviewMasked `json:"masked,omitempty"`
+	// CopyMaxMB is the largest database previews copy ([previews]
+	// copy_max_mb).
+	CopyMaxMB int        `json:"copy_max_mb,omitempty"`
 	UpdatedBy string     `json:"updated_by,omitempty"`
 	UpdatedAt *time.Time `json:"updated_at,omitempty"`
+}
+
+// PreviewData is what a service's volumes start with in a new preview
+// (ADR 0092).
+type PreviewData string
+
+const (
+	// PreviewDataEmpty: new, empty volumes (the default).
+	PreviewDataEmpty PreviewData = "empty"
+	// PreviewDataSnapshot: the service's newest volume snapshot (ADR
+	// 0047), any service with a volume.
+	PreviewDataSnapshot PreviewData = "snapshot"
+	// PreviewDataCopy: a copy of the base's live database, sensitive
+	// columns and all. Template databases only.
+	PreviewDataCopy PreviewData = "copy"
+	// PreviewDataMasked: that copy with the Data panel's sensitive
+	// columns replaced while it is read.
+	PreviewDataMasked PreviewData = "masked"
+)
+
+// PreviewMasked counts a database's sensitive marks.
+type PreviewMasked struct {
+	Columns int `json:"columns" doc:"Sensitive columns marked in the Data panel"`
+	Tables  int `json:"tables" doc:"Tables they are in"`
+	// Keys are a key-value database's sensitive key patterns, which a
+	// masked copy can't leave out yet: it starts empty while there are
+	// any.
+	Keys int `json:"keys,omitempty" doc:"Sensitive key patterns (Redis); a masked copy starts empty while there are any"`
+}
+
+// PreviewDataStatus is how a preview database's copy went.
+type PreviewDataStatus string
+
+const (
+	PreviewDataCopying PreviewDataStatus = "copying"
+	PreviewDataCopied  PreviewDataStatus = "copied"
+	// PreviewDataStartedEmpty: no data was copied; Message says why.
+	PreviewDataStartedEmpty PreviewDataStatus = "empty"
+)
+
+// PreviewDatabase is one preview database's copy of its base.
+type PreviewDatabase struct {
+	Service string `json:"service"`
+	// From is the base service copied, as environment/service.
+	From    string            `json:"from"`
+	Mode    PreviewData       `json:"mode" enum:"empty,snapshot,copy,masked"`
+	Status  PreviewDataStatus `json:"status" enum:"copying,copied,empty"`
+	Message string            `json:"message,omitempty" doc:"The step a copy is at, or why it started empty"`
+	Bytes   int64             `json:"bytes,omitempty" doc:"The base database's size when copied"`
+	// MaskedTables and MaskedColumns count what a masked copy replaced.
+	MaskedTables  int        `json:"masked_tables,omitempty"`
+	MaskedColumns int        `json:"masked_columns,omitempty"`
+	StartedAt     time.Time  `json:"started_at"`
+	FinishedAt    *time.Time `json:"finished_at,omitempty"`
+}
+
+// RefreshPreviewDataRequest refreshes an open preview's databases from
+// their base.
+type RefreshPreviewDataRequest struct {
+	// Services limits it to these preview services; empty: every one
+	// whose base service copies its data.
+	Services []string `json:"services,omitempty" maxItems:"50" doc:"The preview's databases to refresh; empty: every one that copies its base"`
 }
 
 // SetServicePreviewsRequest sets what a service does in previews; every
@@ -74,7 +145,9 @@ type SetServicePreviewsRequest struct {
 	Build         bool     `json:"build,omitempty" doc:"Pull requests into the service's branch get a preview that builds them"`
 	AllowForks    bool     `json:"allow_forks,omitempty" doc:"Also pull requests from forks"`
 	CopyVariables []string `json:"copy_variables,omitempty" maxItems:"100" doc:"The service's variables whose literal values previews copy, by key"`
-	Seed          bool     `json:"seed,omitempty" doc:"New previews fill the service's volumes from its newest snapshot"`
+	// Data is empty for empty.
+	Data      PreviewData `json:"data,omitempty" enum:"empty,snapshot,copy,masked" doc:"What the service's volumes start with in a new preview (default empty); copy and masked are for template databases"`
+	DataForks bool        `json:"data_forks,omitempty" doc:"Pull requests from forks get the data too"`
 }
 
 // EnvironmentPreviews are the numbers of previews cloned from an
@@ -128,10 +201,13 @@ type Preview struct {
 	// URLs are the preview's addresses, one per service with a domain.
 	URLs []PreviewURL `json:"urls"`
 	// Event says what happened last, e.g. why a comment couldn't be posted.
-	Event     string     `json:"event,omitempty"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
-	ClosedAt  *time.Time `json:"closed_at,omitempty"`
+	Event string `json:"event,omitempty"`
+	// Databases are its services that copied their base's data (ADR
+	// 0092).
+	Databases []PreviewDatabase `json:"databases"`
+	CreatedAt time.Time         `json:"created_at"`
+	UpdatedAt time.Time         `json:"updated_at"`
+	ClosedAt  *time.Time        `json:"closed_at,omitempty"`
 }
 
 // PreviewURL is a preview service's address.

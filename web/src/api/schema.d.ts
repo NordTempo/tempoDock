@@ -3467,6 +3467,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/environments/{environment}/preview/refresh-data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Copy a preview's databases from its base again
+         * @description Each database whose base service copies its data into previews is stopped, emptied and filled again as at the preview's creation (ADR 0092); then the preview's other services restart. The base is only read. Answers at once; the preview's databases show how it goes. Scope: deploy.
+         */
+        post: operations["refresh-preview-data"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/environments/{environment}/previews": {
         parameters: {
             query?: never;
@@ -10141,6 +10161,7 @@ export interface components {
             commit: string;
             /** Format: date-time */
             created_at: string;
+            databases: components["schemas"]["PreviewDatabase"][] | null;
             environment: string;
             event?: string;
             fork: boolean;
@@ -10160,6 +10181,29 @@ export interface components {
             updated_at: string;
             urls: components["schemas"]["PreviewURL"][] | null;
         };
+        PreviewDatabase: {
+            /**
+             * Format: int64
+             * @description The base database's size when copied
+             */
+            bytes?: number;
+            /** Format: date-time */
+            finished_at?: string;
+            from: string;
+            /** Format: int64 */
+            masked_columns?: number;
+            /** Format: int64 */
+            masked_tables?: number;
+            /** @description The step a copy is at, or why it started empty */
+            message?: string;
+            /** @enum {string} */
+            mode: "empty" | "snapshot" | "copy" | "masked";
+            service: string;
+            /** Format: date-time */
+            started_at: string;
+            /** @enum {string} */
+            status: "copying" | "copied" | "empty";
+        };
         PreviewEnvironment: {
             /** @description Shared variables whose literal values previews copy, by key */
             copy_shared: string[] | null;
@@ -10178,20 +10222,45 @@ export interface components {
             updated_at?: string;
             updated_by?: string;
         };
+        PreviewMasked: {
+            /**
+             * Format: int64
+             * @description Sensitive columns marked in the Data panel
+             */
+            columns: number;
+            /**
+             * Format: int64
+             * @description Sensitive key patterns (Redis); a masked copy starts empty while there are any
+             */
+            keys?: number;
+            /**
+             * Format: int64
+             * @description Tables they are in
+             */
+            tables: number;
+        };
         PreviewService: {
             /** @description Also pull requests from forks (anyone on GitHub) */
             allow_forks: boolean;
             branch?: string;
             /** @description Pull requests into the service's branch get a preview that builds them */
             build: boolean;
+            /** Format: int64 */
+            copy_max_mb?: number;
             /** @description The service's variables whose literal values previews copy, by key */
             copy_variables: string[] | null;
+            /**
+             * @description What the service's volumes start with in a new preview: empty, its newest snapshot, a copy of this database, or that copy with its sensitive columns masked
+             * @enum {string}
+             */
+            data: "empty" | "snapshot" | "copy" | "masked";
+            /** @description Pull requests from forks get the data too; otherwise their previews start empty */
+            data_forks: boolean;
             dir?: string;
             environment: string;
+            masked?: components["schemas"]["PreviewMasked"];
             /** @description owner/name */
             repo?: string;
-            /** @description New previews fill the service's volumes from its newest snapshot */
-            seed: boolean;
             service: string;
             /** Format: date-time */
             updated_at?: string;
@@ -10316,6 +10385,10 @@ export interface components {
         };
         RecoveryCodes: {
             codes: string[] | null;
+        };
+        RefreshPreviewDataRequest: {
+            /** @description The preview's databases to refresh; empty: every one that copies its base */
+            services?: string[] | null;
         };
         Refusal: {
             action: string;
@@ -11171,10 +11244,18 @@ export interface components {
             allow_forks: boolean;
             /** @description Pull requests into the service's branch get a preview that builds them */
             build: boolean;
+            /** Format: int64 */
+            copy_max_mb?: number;
             /** @description The service's variables whose literal values previews copy, by key */
             copy_variables: string[] | null;
-            /** @description New previews fill the service's volumes from its newest snapshot */
-            seed: boolean;
+            /**
+             * @description What the service's volumes start with in a new preview: empty, its newest snapshot, a copy of this database, or that copy with its sensitive columns masked
+             * @enum {string}
+             */
+            data: "empty" | "snapshot" | "copy" | "masked";
+            /** @description Pull requests from forks get the data too; otherwise their previews start empty */
+            data_forks: boolean;
+            masked?: components["schemas"]["PreviewMasked"];
             /** Format: date-time */
             updated_at?: string;
             updated_by?: string;
@@ -11423,8 +11504,13 @@ export interface components {
             build?: boolean;
             /** @description The service's variables whose literal values previews copy, by key */
             copy_variables?: string[] | null;
-            /** @description New previews fill the service's volumes from its newest snapshot */
-            seed?: boolean;
+            /**
+             * @description What the service's volumes start with in a new preview (default empty); copy and masked are for template databases
+             * @enum {string}
+             */
+            data?: "empty" | "snapshot" | "copy" | "masked";
+            /** @description Pull requests from forks get the data too */
+            data_forks?: boolean;
         };
         SetSleepRequest: {
             /**
@@ -32799,6 +32885,113 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Preview"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "refresh-preview-data": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefreshPreviewDataRequest"];
+            };
+        };
         responses: {
             /** @description OK */
             200: {

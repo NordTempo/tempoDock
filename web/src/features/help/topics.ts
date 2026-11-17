@@ -317,8 +317,12 @@ export const topics: Record<TopicId, Topic> = {
         cli: "dock service previews on -s web --copy STRIPE_KEY",
       },
       {
-        what: "Start a database from its newest snapshot",
-        cli: "dock service previews -s db --seed",
+        what: "Start its database with a masked copy of the base's",
+        cli: "dock service previews -s db --data masked",
+      },
+      {
+        what: "Copy a preview's databases from the base again",
+        cli: "dock env previews refresh pr-12 --yes",
       },
       {
         what: "Limit how many are open, and when they sleep",
@@ -331,6 +335,7 @@ export const topics: Record<TopicId, Topic> = {
       "Off until an environment admin turns them on for a service that deploys from GitHub.",
       "A pull request that changes nothing in a previewing service's directory gets no preview.",
       "Idle previews sleep and wake on the next request.",
+      "Databases start empty unless set to copy; pull requests from forks get no data unless allowed.",
     ],
     related: ["deploying", "variables", "organizations"],
     guide: "previews",

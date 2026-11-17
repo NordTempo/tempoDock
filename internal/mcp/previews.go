@@ -10,8 +10,9 @@ import (
 	"github.com/NordTempo/tempoDock/internal/mcpkit"
 )
 
-// Preview environments per pull request (ADR 0056), read only: an agent
-// working on a pull request finds its preview's address and status.
+// Preview environments per pull request (ADR 0056): an agent working on
+// a pull request finds its preview's address, status and data, and can
+// copy its databases from the base again (ADR 0092).
 
 // PreviewInput names a preview: by its environment, or by its pull
 // request's number or head branch among the project's open previews.
@@ -22,7 +23,15 @@ type PreviewInput struct {
 	Branch      string `json:"branch,omitempty"`
 }
 
-// addPreviewTools registers get_previews and get_preview.
+// RefreshPreviewDataInput names a preview and, optionally, which of its
+// databases to copy again.
+type RefreshPreviewDataInput struct {
+	PreviewInput
+	Services []string `json:"services,omitempty" doc:"The preview's databases to refresh; default every one that copies its base."`
+}
+
+// addPreviewTools registers get_previews, get_preview and
+// refresh_preview_data.
 func (h *handler) addPreviewTools(s *mcpkit.Server[core.Actor]) {
 	mcpkit.AddTool(s, "get_previews", "Preview settings and open previews",
 		"Which services build pull requests in previews, and the open previews.",
@@ -60,10 +69,31 @@ func (h *handler) addPreviewTools(s *mcpkit.Server[core.Actor]) {
 				return mcpkit.Reply{}, err
 			}
 			summary := previewLine(pv)
+			for _, d := range pv.Databases {
+				summary += "; " + d.Service + " data: " + string(d.Status) + ", " + d.Message
+			}
 			if pv.Event != "" {
 				summary += "; last: " + pv.Event
 			}
 			return mcpkit.Reply{Summary: summary + ".", Data: pv}, nil
+		})
+
+	mcpkit.AddTool(s, "refresh_preview_data", "Copy a preview's databases from its base again",
+		"Empty a preview's databases and copy them from its base again as set (masked or not), then restart its other services. The base is only read.",
+		mcpkit.Mutating, func(ctx context.Context, c *call, in RefreshPreviewDataInput) (mcpkit.Reply, error) {
+			pv, err := h.findPreview(ctx, c, in.PreviewInput)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			p, err := projectOf(c, in.ProjectInput)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			pv, err = h.core.RefreshPreviewData(ctx, c.Actor, core.EnvRef{Project: p, Environment: pv.Environment}, apitypes.RefreshPreviewDataRequest{Services: in.Services})
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			return mcpkit.Reply{Summary: fmt.Sprintf("Copying %s's databases from its base again; get_preview shows how it goes.", pv.Environment), Data: pv}, nil
 		})
 }
 

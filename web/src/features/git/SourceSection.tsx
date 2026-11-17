@@ -20,7 +20,10 @@ import {
 import { autofocus, Choice, input } from "../create/form";
 import {
   minutes,
+  type PreviewData,
+  previewDataText,
   previewQueries,
+  type ServicePreviews,
   servicePreviewsCli,
   useSetServicePreviews,
 } from "../previews/data";
@@ -972,7 +975,24 @@ function PreviewsRow({
         <span className="font-mono">{d.copy_variables.join(", ")}</span>
       </span>,
     );
-  if (d.seed) parts.push(<span key="s">starts from its newest snapshot</span>);
+  if (d.data !== "empty")
+    parts.push(
+      <span key="s">
+        {previewDataText(d.data)} of {ref.environment}/{ref.service}
+      </span>,
+    );
+  if (d.data === "masked" && d.masked?.columns)
+    parts.push(
+      <span key="m" className="text-mut">
+        {d.masked.columns} columns masked
+      </span>,
+    );
+  if (d.data !== "empty")
+    parts.push(
+      <span key="df" className="text-mut">
+        {d.data_forks ? "forks get the data" : "forks start empty"}
+      </span>,
+    );
   if (parts.length === 0)
     parts.push(
       <span key="n" className="text-mut">
@@ -1019,12 +1039,7 @@ function PreviewsEdit({
 }: {
   serviceRef: ServiceRef;
   branch: string | undefined;
-  current: {
-    build: boolean;
-    allow_forks: boolean;
-    copy_variables: string[];
-    seed: boolean;
-  };
+  current: ServicePreviews;
   onDone: () => void;
 }) {
   const org = useOrg();
@@ -1032,11 +1047,12 @@ function PreviewsEdit({
   const env = useQuery(previewQueries.environment(ref));
   const [build, setBuild] = useState(current.build);
   const [forks, setForks] = useState(current.allow_forks);
-  const [seed, setSeed] = useState(current.seed);
+  const [data, setData] = useState<PreviewData>(current.data);
+  const [dataForks, setDataForks] = useState(current.data_forks);
   const [copies, setCopies] = useState(current.copy_variables.join(", "));
   const keys = copies.split(/[\s,]+/).filter(Boolean);
   const cli = servicePreviewsCli(
-    `${build ? "on" : "off"}${build && forks ? " --forks" : ""}${keys.map((k) => ` --copy ${k}`).join("")}${seed ? " --seed" : ""}`,
+    `${build ? "on" : "off"}${build && forks ? " --forks" : ""}${keys.map((k) => ` --copy ${k}`).join("")}${data !== current.data ? ` --data ${data}` : ""}${data !== "empty" && dataForks ? " --data-forks" : ""}`,
     ref,
   );
   return (
@@ -1052,7 +1068,8 @@ function PreviewsEdit({
               build,
               allow_forks: build && forks,
               copy_variables: keys,
-              seed,
+              data,
+              data_forks: data !== "empty" && dataForks,
             },
           },
           { onSuccess: onDone },
@@ -1082,10 +1099,17 @@ function PreviewsEdit({
         disabled={!build}
         onChange={setForks}
       />
+      <PreviewDataChoice
+        serviceRef={ref}
+        current={current}
+        value={data}
+        onChange={setData}
+      />
       <Check
-        label="Start its volumes from its newest snapshot (databases)"
-        checked={seed}
-        onChange={setSeed}
+        label="Forks get the data too; otherwise their previews start empty"
+        checked={data !== "empty" && dataForks}
+        disabled={data === "empty"}
+        onChange={setDataForks}
       />
       <label className="flex flex-col gap-1">
         <span className="text-mut text-xs">
@@ -1122,6 +1146,95 @@ function PreviewsEdit({
         onCancel={onDone}
       />
     </form>
+  );
+}
+
+/**
+ * Picks what a service's volumes start with in a new preview (ADR 0092),
+ * with what that means under it: copies are for template databases (the
+ * API names their sensitive marks), and real data turns the line into a
+ * warning.
+ */
+function PreviewDataChoice({
+  serviceRef: ref,
+  current,
+  value,
+  onChange,
+}: {
+  serviceRef: ServiceRef;
+  current: ServicePreviews;
+  value: PreviewData;
+  onChange: (v: PreviewData) => void;
+}) {
+  const org = useOrg();
+  const db = current.masked;
+  const options: (readonly [PreviewData, string])[] = [
+    ["empty", "Empty"],
+    ["snapshot", "Snapshot"],
+  ];
+  if (db) options.push(["masked", "Masked copy"], ["copy", "Copy"]);
+  const base = `${ref.environment}/${ref.service}`;
+  const toData = (
+    <Link
+      to="/$org/$project/$environment/$service/data"
+      params={{ org, ...ref }}
+      className="text-info hover:underline"
+    >
+      {db?.columns ? "Mark more in Data" : "Mark them in Data"}
+    </Link>
+  );
+  let line: ReactNode = "Its volumes start empty.";
+  if (value === "snapshot")
+    line = (
+      <span className="text-warn">
+        ▲ Its newest snapshot, as it is: real data, sensitive columns included.
+      </span>
+    );
+  if (value === "copy")
+    line = (
+      <span className="text-warn">
+        ▲ Real data, sensitive columns included. Code in any pull request runs
+        against it before anyone reviews it.
+      </span>
+    );
+  if (value === "masked" && db)
+    line =
+      db.keys && db.keys > 0 ? (
+        <span className="text-warn">
+          {base} has {db.keys} sensitive key patterns, which a masked copy can't
+          leave out yet: previews start empty.
+        </span>
+      ) : db.columns > 0 ? (
+        <>
+          A fresh copy of {base} when a preview opens, with {db.columns}{" "}
+          sensitive columns in {db.tables} tables replaced as it is read.{" "}
+          {toData}
+        </>
+      ) : (
+        <>No sensitive columns are marked, so nothing is masked. {toData}</>
+      );
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-mut text-xs">Data in previews</span>
+      <Choice
+        label="Data in previews"
+        name="preview-data"
+        value={value}
+        options={options}
+        onChange={onChange}
+      />
+      <span className="text-xs">{line}</span>
+      {(value === "copy" || value === "masked") && current.copy_max_mb && (
+        <span className="text-mut text-xs">
+          Up to{" "}
+          {current.copy_max_mb >= 1024
+            ? `${current.copy_max_mb / 1024} GB`
+            : `${current.copy_max_mb} MB`}
+          ; a larger one starts empty · previews on {ref.environment}'s server
+          only
+        </span>
+      )}
+    </div>
   );
 }
 

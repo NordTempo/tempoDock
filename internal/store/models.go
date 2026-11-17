@@ -800,6 +800,20 @@ type Preview struct {
 	ClosedAt          *time.Time
 }
 
+type PreviewDatum struct {
+	ServiceID     int64
+	PreviewID     int64
+	FromServiceID int64
+	Mode          string
+	Status        string
+	Message       string
+	Bytes         int64
+	MaskedTables  int64
+	MaskedColumns int64
+	StartedAt     time.Time
+	FinishedAt    *time.Time
+}
+
 type Project struct {
 	ID         int64
 	OrgID      int64
@@ -1039,9 +1053,10 @@ type ServicePreview struct {
 	Build         bool
 	AllowForks    bool
 	CopyVariables string
-	Seed          bool
 	UpdatedBy     string
 	UpdatedAt     time.Time
+	Data          string
+	DataForks     bool
 }
 
 type ServiceRun struct {
