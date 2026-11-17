@@ -437,8 +437,12 @@ func (c *Core) loadRequest(ctx context.Context, a Actor, id int64) (store.Access
 	return r, es, nil
 }
 
-// GetRequest returns one request; admins get its arguments and how many
-// changes its environment had since it was asked.
+// GetRequest returns one request; whoever decides it gets its arguments
+// and how many changes its environment had since it was asked. Deciding
+// isn't revealing (ADR 0080: approvers approve without being admins): a
+// variables request shows its values, the current ones and the asked
+// ones, only to someone who may reveal values there; others see which
+// keys change and how.
 func (c *Core) GetRequest(ctx context.Context, a Actor, id int64) (apitypes.AccessRequest, error) {
 	if err := a.require(apitypes.ScopeRead, "reading an access request"); err != nil {
 		return apitypes.AccessRequest{}, err
@@ -457,7 +461,11 @@ func (c *Core) GetRequest(ctx context.Context, a Actor, id int64) (apitypes.Acce
 		}
 		changes := int(n)
 		out.ChangesSince = &changes
-		out.Changes = c.requestPreview(ctx, r, out.Args)
+		reveal := a.revealsIn(es)
+		out.Changes = c.requestPreview(ctx, r, out.Args, reveal)
+		if !reveal {
+			out.Args = withoutVariableValues(r.Via, r.Operation, out.Args)
+		}
 	}
 	return out, nil
 }
