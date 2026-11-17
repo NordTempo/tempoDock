@@ -42,14 +42,25 @@ func TestVersion(t *testing.T) {
 }
 
 func TestUpgradeHint(t *testing.T) {
-	if h := upgradeHint("v0.3.0-rc.1", false); !strings.Contains(h, "Run `dock self-update` ") || !strings.Contains(h, "/releases/download/v0.3.0-rc.1/install-cli.sh ") {
+	saved := version.Version
+	t.Cleanup(func() { version.Version = saved })
+	version.Version = "v1.2.0"
+	if h := upgradeHint("v1.3.0-rc.1", false); !strings.Contains(h, "Run `dock self-update` ") || !strings.Contains(h, "/cli.sh | DOCK_VERSION=v1.3.0-rc.1 sh") {
 		t.Errorf("release: %q", h)
 	}
-	if h := upgradeHint("v0.3.0", true); !strings.Contains(h, "`dock self-update --to v0.3.0`") {
+	if h := upgradeHint("v1.3.0", true); !strings.Contains(h, "`dock self-update --to v1.3.0`") {
 		t.Errorf("pinned: %q", h)
 	}
+	// What a plain self-update refuses, the hint names: a server older
+	// than this CLI, and a release from before signing.
+	for _, cli := range []string{"v1.2.0", "v0.3.0"} {
+		version.Version = cli
+		if h := upgradeHint("v0.55.0", false); !strings.Contains(h, "`dock self-update --to v0.55.0`") {
+			t.Errorf("a v0.55.0 server and a %s CLI: %q", cli, h)
+		}
+	}
 	for _, v := range []string{"dev", "v0.3.0-4-gabc1234", "v0.3.0-dirty"} {
-		if h := upgradeHint(v, false); strings.Contains(h, "/releases/download/") {
+		if h := upgradeHint(v, false); strings.Contains(h, "DOCK_VERSION=") {
 			t.Errorf("%s is not a release, got %q", v, h)
 		}
 	}
