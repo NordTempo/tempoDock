@@ -177,7 +177,11 @@ there: `internal/core`, `internal/store`, `internal/node`, `internal/cli`,
 - The body says what was wrong and how it was fixed, with numbers for
   performance changes.
 - One logical change per commit. Don't commit `bin/`, `web/dist` (except
-  `.gitkeep`) or `.data/`.
+  `.gitkeep`) or `.data/`, nor what `go build` leaves at the root (`dock`
+  and `perf` got in that way and stay in the history for good):
+  `git status` before committing, and `scripts/ci/no-binaries.sh
+  origin/main` fails on any compiled program, other binary or file over
+  1 MB, as CI does.
 - Changes reach `main` through a pull request, never a direct push. Agents
   may open and merge their own PRs: branch from the latest `main`, run the
   local checks above, open the PR (a real one, not a draft), wait for CI

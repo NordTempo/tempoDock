@@ -51,6 +51,11 @@ jobs:
         run: scripts/ci/changes.sh
         env:
           BEFORE: ${{ github.event.before }}
+      # No build outputs, other binaries or files over 1 MB: what gets in
+      # stays in the history for good, since release tags can't move.
+      - run: scripts/ci/no-binaries.sh
+        env:
+          BEFORE: ${{ github.event.before }}
 
   # The Go checks run as parallel jobs, each with only the setup it needs.
   lint:
@@ -63,6 +68,7 @@ jobs:
       # classification that picks the jobs (changes.sh).
       - run: scripts/ci/suppressions.sh
       - run: scripts/ci/changes_test.sh
+      - run: scripts/ci/no-binaries_test.sh
       - id: go
         uses: ./.github/actions/setup-go
       - name: Install golangci-lint

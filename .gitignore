@@ -1,6 +1,19 @@
 /bin/
-# `go build ./cmd/dock` at the root writes the binary here; bin/dock is make build's.
+# What `go build ./<package>` writes at the root, one name per main
+# package (go list -f '{{if eq .Name "main"}}{{.ImportPath}}{{end}}' ./...);
+# make build's binaries go to bin/. dock and perf were committed this way
+# once (#339/#340, #386); scripts/ci/no-binaries.sh catches any other.
 /dock
+/dock-cli
+/dock-probe
+/dock-sync
+/dock-analytics
+/tempobase
+/perf
+/agenteval
+/hammer
+/sign
+/templates
 /dist/
 /web/dist/*
 !/web/dist/.gitkeep
@@ -12,5 +25,3 @@
 coverage.out
 /internal/node/probe/bin/*
 !/internal/node/probe/bin/.gitkeep
-# `go build ./scripts/perf` writes its binary here (it was committed once, #386).
-/perf
