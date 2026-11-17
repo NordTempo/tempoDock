@@ -11,7 +11,8 @@
 #   failures      health check fail, crash at start, OOM, build error, build over
 #                 the BuildKit cap, missing image, bad and oversized uploads
 #   perms         a project-scoped deploy token can't escape its project
-#   daemon        stop / SIGKILL the daemon mid-deploy (needs DOCK_SSH=host with sudo)
+#   daemon        stop / SIGKILL the daemon mid-deploy (needs DOCK_SSH=host with sudo,
+#                 or e2e/vm's servers: E2E_SERVER_IPS set, the control plane's container)
 #   cleanup       archive every e2e-* project
 #
 # Apps are reached through the proxy on port 80 at their generated hostnames,
@@ -39,7 +40,7 @@ expect_release() {
 }
 
 # hammer_start URL / hammer_stop NAME: zero failed requests or it's a FAIL.
-hammer_start() { "$HAMMER" -url "$1" -c 8 -every 20ms -d 30m >"$TMPDIR_E2E/hammer.out" & HAMMER_PID=$!; sleep 1; }
+hammer_start() { "$HAMMER" -url "$1" ${E2E_PROXY:+-connect "$E2E_PROXY"} -c 8 -every 20ms -d 30m >"$TMPDIR_E2E/hammer.out" & HAMMER_PID=$!; sleep 1; }
 hammer_stop() {
 	kill -INT "$HAMMER_PID"; wait "$HAMMER_PID"
 	local line; line=$(head -1 "$TMPDIR_E2E/hammer.out")
@@ -49,7 +50,7 @@ hammer_stop() {
 # source_app P S DIR WANT [settings]: deploy DIR and check the body has WANT.
 source_app() {
 	local p=$1 s=$2 dir=$3 want=$4 settings=${5:-'{}'} h n
-	ensure_project "$p"; ensure_service "$p" "$s" "$settings"
+	ensure_project "$p"; use_proxy_of "$p"; ensure_service "$p" "$s" "$settings"
 	h=$(generate_domain "$p" "$s")
 	local t0=$SECONDS
 	n=$(deploy_source "$p" "$s" "$dir" 2>/dev/null) || { fail "$p/$s upload rejected"; return; }
@@ -68,7 +69,7 @@ scenario_apps() {
 
 scenario_pg() {
 	local p=$E2E-pg h n body
-	ensure_project $p
+	ensure_project $p; use_proxy_of $p
 	ensure_service $p postgres '{"image":"postgres:17-alpine","port":5432}'
 	set_vars $p postgres '{"POSTGRES_USER":"app","POSTGRES_PASSWORD":"e2e-not-a-secret","POSTGRES_DB":"app",
 		"DATABASE_URL":"postgresql://${{postgres.POSTGRES_USER}}:${{postgres.POSTGRES_PASSWORD}}@${{postgres.DOCK_PRIVATE_DOMAIN}}:5432/${{postgres.POSTGRES_DB}}"}'
@@ -82,12 +83,12 @@ scenario_pg() {
 	n=$(deploy_source $p api "$APPS/node-pg-api" 2>/dev/null)
 	expect_release $p api "$n" active
 	wait_http "$h" / '"db_host":"postgres"' 20 || fail "api can't reach postgres by service name: $(http_get "$h" /)"
-	curl -sS -X POST "http://$h/items?n=persist-$$" >/dev/null
+	curl -sS -X POST ${E2E_PROXY:+--connect-to "$h:80:$E2E_PROXY"} "http://$h/items?n=persist-$$" >/dev/null
 	before=$(http_get "$h" / | jq .n)
 
 	# Stateful redeploy: count running postgres containers every 100ms.
 	local count="$TMPDIR_E2E/pgcount"
-	(while :; do curl -s --max-time 1 -o /dev/null -w '%{http_code}\n' "http://$h/healthz"; sleep 0.1; done) >"$count" &
+	(while :; do curl -s --max-time 1 ${E2E_PROXY:+--connect-to "$h:80:$E2E_PROXY"} -o /dev/null -w '%{http_code}\n' "http://$h/healthz"; sleep 0.1; done) >"$count" &
 	local watcher=$!
 	n=$(api POST "$(svc_path $p postgres)/releases" '{}' | jq -r .number)
 	expect_release $p postgres "$n" active
@@ -114,7 +115,7 @@ scenario_pg() {
 
 scenario_zerodowntime() {
 	local p=$E2E-zd s=web h n first
-	ensure_project $p; ensure_service $p $s '{"health_check_path":"/healthz"}'
+	ensure_project $p; use_proxy_of $p; ensure_service $p $s '{"health_check_path":"/healthz"}'
 	h=$(generate_domain $p $s)
 	first=$(deploy_source $p $s "$APPS/go-lab" 2>/dev/null)
 	expect_release $p $s "$first" active
@@ -169,7 +170,7 @@ fail_config() {
 
 scenario_failures() {
 	local p=$E2E-fail s=lab h n
-	ensure_project $p; ensure_service $p $s '{"health_check_path":"/healthz","health_check_timeout_seconds":15}'
+	ensure_project $p; use_proxy_of $p; ensure_service $p $s '{"health_check_path":"/healthz","health_check_timeout_seconds":15}'
 	h=$(generate_domain $p $s)
 	n=$(deploy_source $p $s "$APPS/go-lab" 2>/dev/null); expect_release $p $s "$n" active
 	wait_http "$h" / go-lab 20
@@ -232,14 +233,17 @@ scenario_perms() {
 	expect_code 401 "revoked token" GET /me
 }
 
-# daemon_ssh CMD runs CMD on the server.
-daemon_ssh() { ssh "$DOCK_SSH" "$@"; }
+# daemon_ssh CMD runs CMD on the control plane: over ssh with DOCK_SSH,
+# else in e2e/vm's control plane container.
+daemon_ssh() {
+	if [[ -n ${DOCK_SSH:-} ]]; then ssh "$DOCK_SSH" "$@"; else docker exec "$SLOT-cp" bash -c "$*"; fi
+}
 wait_api() { for _ in $(seq 1 30); do curl -sf --max-time 2 "$API/health" >/dev/null && return; sleep 1; done; fail "API did not come back"; }
 
 scenario_daemon() {
-	: "${DOCK_SSH:?the daemon scenario needs DOCK_SSH=<ssh host with passwordless sudo>}"
+	[[ -n ${DOCK_SSH:-}${E2E_SERVER_IPS:-} ]] || { fail "the daemon scenario needs DOCK_SSH=<ssh host with passwordless sudo> or e2e/vm's servers"; return; }
 	local p=$E2E-node s=web h n tmp
-	ensure_project $p; ensure_service $p $s '{"health_check_path":"/healthz"}'
+	ensure_project $p; use_proxy_of $p; ensure_service $p $s '{"health_check_path":"/healthz"}'
 	h=$(generate_domain $p $s)
 	wait_http "$h" / node-express 5 || { n=$(deploy_source $p $s "$APPS/node-express" 2>/dev/null); expect_release $p $s "$n" active; }
 

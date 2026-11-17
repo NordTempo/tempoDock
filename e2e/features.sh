@@ -22,7 +22,7 @@
 #
 # Projects are e2e2-<scenario>-<run>, <run> being E2E_RUN (default: the
 # time), so runs are repeatable. E2E_NODE_CONTAINER names the node's
-# container for `health` (default e2e2-node1); needs Docker on this machine.
+# container for `health` (default $SLOT-node1); needs Docker on this machine.
 set -uo pipefail
 source "$(dirname "$0")/lib.sh"
 APPS="$E2E_DIR/apps"
@@ -295,12 +295,12 @@ scenario_lock() {
 	check "after unlock the token deploys directly" bash -c "[[ \$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Authorization: Bearer $tok' -H 'Content-Type: application/json' --data '{}' '$API$(svc_path $p web)/releases') == 20? ]]"
 }
 
-# sink_start starts e2e2-sink on e2e2-net: an HTTP server that appends
+# sink_start starts $SLOT-sink on $SLOT-net: an HTTP server that appends
 # every POST body to a file and returns them all on GET /got. Prints its URL.
-SINK_IP=${E2E_SINK_IP:-10.250.250.20}
+SINK_IP=${E2E_SINK_IP:-$SUBNET_PREFIX.20}
 sink_start() {
-	docker rm -fv e2e2-sink >/dev/null 2>&1
-	docker run -d --name e2e2-sink --network e2e2-net --ip "$SINK_IP" python:3.13-alpine python -c '
+	docker rm -fv "$SLOT-sink" >/dev/null 2>&1
+	docker run -d --name "$SLOT-sink" --network "$SLOT-net" --ip "$SINK_IP" python:3.13-alpine python -c '
 import http.server
 class H(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
@@ -348,7 +348,7 @@ scenario_logs() {
 	id=$(api GET "/projects/$p/environments/$ENV_NAME/log-drains" | jq -r '.[0].id')
 	check "drain test delivers" api POST "/projects/$p/environments/$ENV_NAME/log-drains/$id/test" '{}'
 	check "dock logs drain remove" dk logs drain remove sink --yes $(pe $p)
-	docker rm -fv e2e2-sink >/dev/null 2>&1
+	docker rm -fv "$SLOT-sink" >/dev/null 2>&1
 }
 
 # psql_in P S SQL runs SQL in service S's own database through dock run,
@@ -492,8 +492,13 @@ scenario_apply() {
 svc_status() { api GET "$(svc_path "$1" "$2")" | jq -r ".status.$3"; }
 status_is() { [[ $(svc_status "$1" "$2" "$3") == "$4" ]]; }
 
-# alert_open KIND [PROJECT|SERVER]: an open alert of KIND (naming it) exists.
-alert_open() { api GET /alerts | jq -e --arg k "$1" --arg w "${2:-}" '[.[]? // .alerts[]? | select(.kind == $k and .resolved_at == null and ($w == "" or .project == $w or .server == $w))] | length > 0' >/dev/null; }
+# alert_open KIND [PROJECT|SERVER]: an open alert of KIND (naming it) exists,
+# in the org's alerts or, for servers and Dock itself, the platform's.
+alert_open() {
+	local list=/alerts
+	[[ $1 == server_* ]] && list='/alerts?platform=true'
+	api GET "$list" | jq -e --arg k "$1" --arg w "${2:-}" '[.[]? // .alerts[]? | select(.kind == $k and .resolved_at == null and ($w == "" or .project == $w or .server == $w))] | length > 0' >/dev/null
+}
 alert_closed() { ! alert_open "$@"; }
 
 scenario_health() {
@@ -525,7 +530,7 @@ scenario_health() {
 server_is() { [[ $(api GET /servers | jq -r --arg n "$1" '.[] | select(.name == $n) | .status') == "$2" ]]; }
 
 scenario_nodedown() {
-	local p=e2e2-down-$RUN node=${E2E_NODE_CONTAINER:-e2e2-node1} h n
+	local p=e2e2-down-$RUN node=${E2E_NODE_CONTAINER:-$SLOT-node1} h n
 	fresh $p || return
 	# Its staging environment goes on the node: pinned before it exists.
 	local ENV_NAME=staging
@@ -552,7 +557,7 @@ scenario_nodedown() {
 # on_node P: put P's staging environment on the node (pinned before it
 # exists) and use it as ENV_NAME in the caller (declare `local ENV_NAME=$ENV_NAME`).
 on_node() {
-	local node=${E2E_NODE_CONTAINER:-e2e2-node1}
+	local node=${E2E_NODE_CONTAINER:-$SLOT-node1}
 	ENV_NAME=staging
 	api PUT "/projects/$1/placements/non_production" "{\"server\":\"$node\"}" >/dev/null &&
 		dk environment create staging -p "$1" >/dev/null 2>&1 &&
