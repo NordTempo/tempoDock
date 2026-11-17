@@ -100,7 +100,7 @@ func TestPreviews(t *testing.T) {
 	}
 	code, stdout, stderr = exec(t, "env", "previews", "-p", "shop")
 	if code != 0 || !strings.Contains(stdout, "staging/web") || !strings.Contains(stdout, "acme/shop@main") || !strings.Contains(stdout+stderr, "at most 2 open") ||
-		!strings.Contains(stdout, "pr-12        #12 Fix the checkout page for guests wh…") || !strings.Contains(stdout, "web-shop-pr-12.") ||
+		!strings.Contains(stdout, "pr-12        #12 Fix the checkout page for guests wh…") || !strings.Contains(stdout, "web-shop-pr-12-") ||
 		!strings.Contains(stdout, " abc1234\n") {
 		t.Fatalf("previews: exit %d\n%s%s", code, stdout, stderr)
 	}

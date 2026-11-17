@@ -68,7 +68,7 @@ func (h *harness) wakeKey(host string) string {
 func TestSleepAndWake(t *testing.T) {
 	h := newHarness(t)
 	db, web := h.sleepEnv()
-	host := "web-shop-staging.apps.test"
+	host := h.generatedHost(web)
 	staging := EnvRef{"shop", "staging"}
 	running := h.rt.Running()
 
@@ -169,7 +169,7 @@ func TestSleepWhenIdle(t *testing.T) {
 func TestWakeForRequest(t *testing.T) {
 	h := newHarness(t)
 	_, web := h.sleepEnv()
-	host := "web-shop-staging.apps.test"
+	host := h.generatedHost(web)
 	staging := EnvRef{"shop", "staging"}
 	if _, err := h.c.SetEnvironmentSleep(h.ctx, testSystem, staging, apitypes.SetSleepRequest{AfterMinutes: 30}); err != nil {
 		t.Fatal(err)

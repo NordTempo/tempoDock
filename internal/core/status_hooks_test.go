@@ -80,7 +80,7 @@ func TestStatusHooks(t *testing.T) {
 	}
 	var msg struct{ Text string }
 	if err := json.Unmarshal([]byte(strings.TrimPrefix(slack, "|")), &msg); err != nil ||
-		!strings.HasPrefix(msg.Text, "Incident on Acme: API &lt;errors&gt; (Investigating)\nAffects API\nLooking into it.\nhttps://status-acme.dock.example.net/incidents/") {
+		!strings.HasPrefix(msg.Text, "Incident on Acme: API &lt;errors&gt; (Investigating)\nAffects API\nLooking into it.\nhttps://"+h.pageAddress("acme")+"/incidents/") {
 		t.Errorf("slack post = %s (%v)", slack, err)
 	}
 	for _, private := range []string{"shop", "production", "system", "example.com"} {

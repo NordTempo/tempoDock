@@ -869,7 +869,7 @@ func (sf *siteSettingFlags) add(cmd *cobra.Command) {
 	fl.IntVar(&sf.errorsDays, "error-retention-days", 0, "days errors are kept")
 	fl.StringArrayVar(&sf.paths, "exclude-path", nil, "a path not counted, * matches anything; repeat for more (replaces the list)")
 	fl.StringArrayVar(&sf.ips, "ignore-ip", nil, "an address or CIDR range not counted; repeat for more (replaces the list)")
-	fl.StringVar(&sf.public, "public", "", "a public, read-only dashboard at stats-<site>.<base domain>: on or off")
+	fl.StringVar(&sf.public, "public", "", "a public, read-only dashboard at stats-<site>-<random>.<base domain>: on or off")
 	fl.StringVar(&sf.publicDomain, "public-domain", "", "also show the public dashboard at this domain of yours, e.g. stats.example.com (a site's own; \"\" for none)")
 	fl.StringVar(&sf.publicErrors, "public-errors", "", "show error groups on the public dashboard: on or off")
 	fl.StringArrayVar(&sf.reset, "reset", nil, "set a setting back to the default, by its JSON name (e.g. replay_sample_rate); repeat for more")

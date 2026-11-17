@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -9,10 +10,10 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// A public dashboard's address belongs to one site across every org: the
-// first to hold it keeps it, and another org can't take or shadow it by
-// naming a site the same, nor by claiming it, or the same domain of its
-// own, as a public domain.
+// A public dashboard's address belongs to one site across every org and
+// can't be guessed from its name (ADR 0087): another org's site with the
+// same name gets another, a rename keeps it, and nobody can claim it, or
+// the site's own domain, as a public domain.
 func TestPublicAddressesAreUnique(t *testing.T) {
 	h := newHarness(t)
 	h.c.cfg.BaseDomain = "dock.example.net"
@@ -26,63 +27,62 @@ func TestPublicAddressesAreUnique(t *testing.T) {
 	if _, err := h.c.CreateProject(h.ctx, them, apitypes.CreateProjectRequest{Name: "theirs"}); err != nil {
 		t.Fatal(err)
 	}
-	for svc, host := range map[string]string{"web": "blog.other.example", "api": "shop-example.com"} {
-		if _, err := h.c.CreateService(h.ctx, them, EnvRef{"theirs", "production"}, apitypes.CreateServiceRequest{Name: svc, Port: 8080}); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := h.c.AddDomain(h.ctx, them, ServiceRef{"theirs", "production", svc}, apitypes.AddDomainRequest{Hostname: host}); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := h.c.EnableHostnameAnalytics(h.ctx, them, host, apitypes.EnableAnalyticsRequest{}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	// A publishes "blog". B's shop-example.com came after A's
-	// shop.example.com, so it was made with an address of its own, and
-	// keeps it now that A's old one is free.
-	if _, err := h.c.UpdateSite(h.ctx, testSystem, "shop", "shop.example.com", apitypes.UpdateSiteRequest{
-		Name: "blog", Settings: apitypes.SiteSettings{Public: &on}}); err != nil {
+	if _, err := h.c.CreateService(h.ctx, them, EnvRef{"theirs", "production"}, apitypes.CreateServiceRequest{Name: "web", Port: 8080}); err != nil {
 		t.Fatal(err)
 	}
-
-	// Renamed to a name with A's address: it gets one of its own.
-	for _, name := range []string{"Blog", "blog"} {
-		site, err := h.c.UpdateSite(h.ctx, them, "theirs", "blog.other.example", apitypes.UpdateSiteRequest{
-			Name: name, Settings: apitypes.SiteSettings{Public: &on}})
-		if err != nil || len(site.PublicURLs) != 1 || site.PublicURLs[0] != "https://stats-blog-2.dock.example.net" {
-			t.Errorf("another org renamed its site %q: %v, %v", name, site.PublicURLs, err)
+	if _, err := h.c.AddDomain(h.ctx, them, ServiceRef{"theirs", "production", "web"}, apitypes.AddDomainRequest{Hostname: "shop-example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.EnableHostnameAnalytics(h.ctx, them, "shop-example.com", apitypes.EnableAnalyticsRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	address := func(a Actor, project, name string) string {
+		t.Helper()
+		site, err := h.c.UpdateSite(h.ctx, a, project, name, apitypes.UpdateSiteRequest{Settings: apitypes.SiteSettings{Public: &on}})
+		if err != nil || len(site.PublicURLs) != 1 {
+			t.Fatalf("%s: %v, %v", name, site.PublicURLs, err)
 		}
-		if _, err := h.c.UpdateSite(h.ctx, them, "theirs", name, apitypes.UpdateSiteRequest{Name: "blog.other.example"}); err != nil {
-			t.Fatal(err)
+		return strings.TrimPrefix(site.PublicURLs[0], "https://")
+	}
+	// Both names read shop-example-com; the random parts tell them apart.
+	ours, theirs := address(testSystem, "shop", "shop.example.com"), address(them, "theirs", "shop-example.com")
+	for _, host := range []string{ours, theirs} {
+		if !generatedLike("stats-shop-example-com", "dock.example.net").MatchString(host) {
+			t.Errorf("address %s, want stats-shop-example-com-<random>", host)
 		}
+	}
+	if ours == theirs {
+		t.Fatalf("two sites share %s", ours)
+	}
+	// Renamed, a site keeps its address.
+	if _, err := h.c.UpdateSite(h.ctx, them, "theirs", "shop-example.com", apitypes.UpdateSiteRequest{Name: "blog"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := address(them, "theirs", "blog"); got != theirs {
+		t.Errorf("renamed, the address moved from %s to %s", theirs, got)
 	}
 	// Claimed as a public domain: refused.
-	squat := "stats-blog.dock.example.net"
-	if _, err := h.c.UpdateSite(h.ctx, them, "theirs", "blog.other.example", apitypes.UpdateSiteRequest{
-		Settings: apitypes.SiteSettings{PublicDomain: &squat}}); CodeOf(err) != apitypes.CodeHostnameTaken {
-		t.Errorf("another org took A's address as its public domain: %v", err)
+	if _, err := h.c.UpdateSite(h.ctx, them, "theirs", "blog", apitypes.UpdateSiteRequest{
+		Settings: apitypes.SiteSettings{PublicDomain: &ours}}); CodeOf(err) != apitypes.CodeHostnameTaken {
+		t.Errorf("another org took our address as its public domain: %v", err)
 	}
-	site, err := h.c.UpdateSite(h.ctx, them, "theirs", "shop-example.com", apitypes.UpdateSiteRequest{Settings: apitypes.SiteSettings{Public: &on}})
-	if err != nil || len(site.PublicURLs) != 1 || site.PublicURLs[0] != "https://stats-shop-example-com-2.dock.example.net" {
-		t.Errorf("a site made with a taken address: %v, %v", site.PublicURLs, err)
-	}
-	// A's own domain, set while A's dashboard is off, stays A's.
+	// Our own domain, set while our dashboard is off, stays ours.
 	domain := "stats.shop.example"
-	if _, err := h.c.UpdateSite(h.ctx, testSystem, "shop", "blog", apitypes.UpdateSiteRequest{
+	if _, err := h.c.UpdateSite(h.ctx, testSystem, "shop", "shop.example.com", apitypes.UpdateSiteRequest{
 		Settings: apitypes.SiteSettings{Public: &off, PublicDomain: &domain}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.c.UpdateSite(h.ctx, them, "theirs", "blog.other.example", apitypes.UpdateSiteRequest{
+	if _, err := h.c.UpdateSite(h.ctx, them, "theirs", "blog", apitypes.UpdateSiteRequest{
 		Settings: apitypes.SiteSettings{Public: &on, PublicDomain: &domain}}); CodeOf(err) != apitypes.CodeHostnameTaken {
-		t.Errorf("another org took A's public domain: %v", err)
+		t.Errorf("another org took our public domain: %v", err)
 	}
-	if _, err := h.c.UpdateSite(h.ctx, testSystem, "shop", "blog", apitypes.UpdateSiteRequest{Settings: apitypes.SiteSettings{Public: &on}}); err != nil {
+	if _, err := h.c.UpdateSite(h.ctx, testSystem, "shop", "shop.example.com", apitypes.UpdateSiteRequest{Settings: apitypes.SiteSettings{Public: &on}}); err != nil {
 		t.Fatal(err)
 	}
 
 	eventually(t, "the store", func() bool { return h.rt.AnalyticsStore() != nil })
-	for _, host := range []string{"stats-blog.dock.example.net", "stats.shop.example"} {
-		if st, err := h.c.PublicStats(h.ctx, host, ""); err != nil || st.Site != "blog" {
+	for _, host := range []string{ours, "stats.shop.example"} {
+		if st, err := h.c.PublicStats(h.ctx, host, ""); err != nil || st.Site != "shop.example.com" {
 			t.Errorf("%s shows %q, %v", host, st.Site, err)
 		}
 	}
@@ -128,9 +128,10 @@ func TestPublicDashboards(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(site.PublicURLs) != 2 || site.PublicURLs[0] != "https://stats-shop-example-com.dock.example.net" || site.PublicURLs[1] != "https://stats.example.com" {
+	if len(site.PublicURLs) != 2 || !generatedLike("stats-shop-example-com", "dock.example.net").MatchString(strings.TrimPrefix(site.PublicURLs[0], "https://")) || site.PublicURLs[1] != "https://stats.example.com" {
 		t.Fatalf("public URLs = %v", site.PublicURLs)
 	}
+	address := strings.TrimPrefix(site.PublicURLs[0], "https://")
 	// Its own domain waits for DNS, which is best a CNAME to its Dock address.
 	h.rt.SetDomainCheck(func(host string) node.DomainCheck {
 		return node.DomainCheck{DNSOK: host != "stats.example.com", CertificateOK: true}
@@ -143,7 +144,7 @@ func TestPublicDashboards(t *testing.T) {
 		t.Errorf("Dock's address = %+v", a)
 	}
 	if a := pub.Addresses[1]; !a.Own || a.Status != apitypes.DomainWaitingForDNS || len(a.DNSRecords) == 0 ||
-		a.DNSRecords[0] != (apitypes.DNSRecord{Type: "CNAME", Name: "stats.example.com", Value: "stats-shop-example-com.dock.example.net"}) {
+		a.DNSRecords[0] != (apitypes.DNSRecord{Type: "CNAME", Name: "stats.example.com", Value: address}) {
 		t.Errorf("own domain = %+v", a)
 	}
 	// Routed on the control plane to the stats listener, with certificates.

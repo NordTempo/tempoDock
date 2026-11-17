@@ -259,7 +259,7 @@ func (c *Core) UpdateServer(ctx context.Context, a Actor, name string, req apity
 		c.publishServer(ctx, srv.ID)
 		if srv.Local && settings.BaseDomain != srv.BaseDomain {
 			c.publicSitesChanged(ctx) // stats-<site>.<base domain> moved
-			c.statusPagesChanged(ctx) // and status-<page>.<base domain>
+			c.statusPagesChanged(ctx) // and status pages' addresses
 		}
 	}
 	return c.serverDetail(ctx, srv.ID)

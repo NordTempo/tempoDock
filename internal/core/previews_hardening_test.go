@@ -309,6 +309,7 @@ func TestPreviewCloseDuringDeploy(t *testing.T) {
 		return err == nil && pv.Status == apitypes.PreviewDeploying
 	})
 	vols := h.previewVolumes(id)
+	host := h.generatedHost(ServiceRef{"shop", "pr-7", "web"})
 	if _, err := h.c.ClosePreview(h.ctx, testSystem, EnvRef{"shop", "pr-7"}); err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +318,7 @@ func TestPreviewCloseDuringDeploy(t *testing.T) {
 	}
 	release()
 	h.waitArchived(id, vols)
-	if exists, _ := h.store.HostnameExists(h.ctx, "web-shop-pr-7.apps.test"); exists {
+	if exists, _ := h.store.HostnameExists(h.ctx, host); exists {
 		t.Fatal("the hostname is still taken")
 	}
 }

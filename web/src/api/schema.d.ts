@@ -6251,7 +6251,7 @@ export interface paths {
         put?: never;
         /**
          * Make a status page
-         * @description Unpublished until published; then served at status-<slug>.<base domain>. At most 5 per organization. Organization admins.
+         * @description Unpublished until published; then served at its `address`, status-<slug>-<random>.<base domain>. Names are unique in the organization. At most 5 per organization. Organization admins.
          */
         post: operations["create-status-page"];
         delete?: never;
@@ -6283,7 +6283,7 @@ export interface paths {
         head?: never;
         /**
          * Change a status page
-         * @description Its name (`slug`: the generated address moves to status-<slug>.<base domain>, and the old name and address keep working, redirecting, until another page takes it), its title, whether it shows percentages, whether alerts draft incidents, its custom hostname (served once its TXT record proves the organization controls it, or at once when Dock makes its record in a connected Cloudflare zone), and whether it is published. Organization admins.
+         * @description Its name (`slug`: the generated address moves to status-<slug>-<random>.<base domain>, the same random part, and the old name and address keep working, redirecting, until another of the organization's pages takes it), its title, whether it shows percentages, whether alerts draft incidents, its custom hostname (served once its TXT record proves the organization controls it, or at once when Dock makes its record in a connected Cloudflare zone), and whether it is published. Organization admins.
          */
         patch: operations["update-status-page"];
         trace?: never;
@@ -11670,7 +11670,7 @@ export interface components {
             ignored_ips?: string[];
             /** @description Mask all text in replays; inputs are always masked */
             mask_all_text?: boolean;
-            /** @description A public, read-only dashboard (phase A4): at stats-<site>.<base domain> and public_domain */
+            /** @description A public, read-only dashboard (phase A4): at stats-<site>-<random>.<base domain> and public_domain */
             public?: boolean;
             /** @description A domain of your own for the public dashboard, e.g. stats.example.com; empty for none. Per site, not a default */
             public_domain?: string;
@@ -11911,6 +11911,7 @@ export interface components {
             url?: string;
         };
         StatusPage: {
+            address?: string;
             base_domain?: string;
             components: components["schemas"]["StatusComponent"][] | null;
             /** Format: date-time */

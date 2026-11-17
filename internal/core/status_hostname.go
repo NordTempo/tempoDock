@@ -60,7 +60,7 @@ func (c *Core) setStatusHostname(ctx context.Context, a Actor, p store.StatusPag
 		return "", err
 	}
 	ing := c.ingressOf(srv)
-	if host == statusHostname(p.Slug, ing.baseDomain) {
+	if host == statusHostname(p.Slug, p.AddressKey, ing.baseDomain) {
 		return "", invalid("%s is the page's own address already; a custom hostname is one of yours, like status.example.com", host)
 	}
 	if ing.baseDomain != "" && strings.HasPrefix(host, "status-") && strings.HasSuffix(host, "."+ing.baseDomain) {
@@ -217,7 +217,7 @@ func (c *Core) statusHostnameView(ctx context.Context, p store.StatusPage, base 
 		if !out.Verified {
 			out.Records = append(out.Records, statusVerifyRecord(p))
 		}
-		if def := statusHostname(p.Slug, base); def != "" {
+		if def := statusHostname(p.Slug, p.AddressKey, base); def != "" {
 			out.Records = append(out.Records, apitypes.DNSRecord{Type: "CNAME", Name: host, Value: def})
 		}
 	}

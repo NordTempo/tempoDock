@@ -31,7 +31,7 @@ func registerStatusPages(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "create-status-page", Method: http.MethodPost, Path: Prefix + "/status-pages",
 		Summary: "Make a status page", Tags: tags, DefaultStatus: http.StatusCreated,
-		Description: "Unpublished until published; then served at status-<slug>.<base domain>. At most 5 per organization. Organization admins.",
+		Description: "Unpublished until published; then served at its `address`, status-<slug>-<random>.<base domain>. Names are unique in the organization. At most 5 per organization. Organization admins.",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		Body apitypes.CreateStatusPageRequest
 	}) (*out[apitypes.StatusPage], error) {
@@ -47,7 +47,7 @@ func registerStatusPages(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "update-status-page", Method: http.MethodPatch, Path: statusPagePathT,
 		Summary: "Change a status page", Tags: tags,
-		Description: "Its name (`slug`: the generated address moves to status-<slug>.<base domain>, and the old name and address keep working, redirecting, until another page takes it), its title, whether it shows percentages, whether alerts draft incidents, its custom hostname (served once its TXT record proves the organization controls it, or at once when Dock makes its record in a connected Cloudflare zone), and whether it is published. Organization admins.",
+		Description: "Its name (`slug`: the generated address moves to status-<slug>-<random>.<base domain>, the same random part, and the old name and address keep working, redirecting, until another of the organization's pages takes it), its title, whether it shows percentages, whether alerts draft incidents, its custom hostname (served once its TXT record proves the organization controls it, or at once when Dock makes its record in a connected Cloudflare zone), and whether it is published. Organization admins.",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		StatusPagePath
 		Body apitypes.UpdateStatusPageRequest

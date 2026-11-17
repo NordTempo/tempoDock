@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/netip"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -261,4 +262,29 @@ func TestDomainAddedDuringCutoverIsRouted(t *testing.T) {
 		t.Fatalf("release 2 is %s", r.Status)
 	}
 	h.until("b.example.com routed", func() bool { return upstreamFor(h.rt.Routes(), "b.example.com") != "" })
+}
+
+// generatedLike matches a generated hostname: prefix, a dash, the 7
+// random base32 characters and base (ADR 0087).
+func generatedLike(prefix, base string) *regexp.Regexp {
+	return regexp.MustCompile(`^` + regexp.QuoteMeta(prefix) + `-[a-z2-7]{7}\.` + regexp.QuoteMeta(base) + `$`)
+}
+
+// generatedHost is ref's generated hostname; it fails without exactly one.
+func (h *harness) generatedHost(ref ServiceRef) string {
+	h.t.Helper()
+	doms, err := h.c.ListDomains(h.ctx, testSystem, ref)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	var out []string
+	for _, d := range doms {
+		if d.Generated {
+			out = append(out, d.Hostname)
+		}
+	}
+	if len(out) != 1 {
+		h.t.Fatalf("%s has generated domains %v, want one", ref, out)
+	}
+	return out[0]
 }

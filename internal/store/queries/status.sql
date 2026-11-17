@@ -1,8 +1,8 @@
 -- Public status pages (ADR 0073).
 
 -- name: CreateStatusPage :one
-INSERT INTO status_pages (org_id, slug, title, published, show_uptime, created_at, created_by)
-VALUES (?, ?, ?, 0, 1, ?, ?)
+INSERT INTO status_pages (org_id, slug, address_key, title, published, show_uptime, created_at, created_by)
+VALUES (?, ?, ?, ?, 0, 1, ?, ?)
 RETURNING *;
 
 -- name: GetStatusPage :one
@@ -13,8 +13,8 @@ SELECT * FROM status_pages WHERE org_id = +? AND slug = +?;
 SELECT * FROM status_pages WHERE id = +?;
 
 -- name: StatusSlugTaken :one
--- Whether any org's page holds slug.
-SELECT EXISTS (SELECT 1 FROM status_pages WHERE slug = +?);
+-- Whether the organization has a page called slug.
+SELECT EXISTS (SELECT 1 FROM status_pages WHERE org_id = +? AND slug = +?);
 
 -- name: ListStatusPages :many
 SELECT * FROM status_pages WHERE org_id = +? ORDER BY slug;
@@ -23,10 +23,10 @@ SELECT * FROM status_pages WHERE org_id = +? ORDER BY slug;
 SELECT count(*) FROM status_pages WHERE org_id = +?;
 
 -- name: ListStatusPageHosts :many
--- Every page's slug and verified hostname, for the hostnames Dock holds
--- and serves (a few rows per org, read when Dock starts and when a page
--- changes).
-SELECT id, slug, published, CAST(CASE WHEN verified_at IS NULL THEN '' ELSE coalesce(hostname, '') END AS TEXT) AS hostname
+-- Every page's slug, address key and verified hostname, for the
+-- hostnames Dock holds and serves (a few rows per org, read when Dock
+-- starts and when a page changes).
+SELECT id, slug, address_key, published, CAST(CASE WHEN verified_at IS NULL THEN '' ELSE coalesce(hostname, '') END AS TEXT) AS hostname
 FROM status_pages;
 
 -- name: UpdateStatusPage :one
@@ -41,18 +41,19 @@ DELETE FROM status_pages WHERE id = +?;
 -- An organization's page by a name it had before (ADR 0073, renaming),
 -- asked only when no page has the name now.
 SELECT * FROM status_pages
-WHERE org_id = +? AND id = (SELECT o.page_id FROM status_page_old_slugs o WHERE o.slug = +?);
+WHERE id = (SELECT o.page_id FROM status_page_old_slugs o WHERE o.org_id = +sqlc.arg(org_id) AND o.slug = +sqlc.arg(slug));
 
 -- name: SetStatusPageSlug :one
-UPDATE status_pages SET slug = ? WHERE id = +?
+UPDATE status_pages SET slug = ?, address_key = ? WHERE id = +?
 RETURNING *;
 
 -- name: ReleaseStatusOldSlug :exec
--- A page takes slug, so it is no longer an old name of any page.
-DELETE FROM status_page_old_slugs WHERE slug = +?;
+-- A page takes slug, so it is no longer an old name of any of the
+-- organization's pages.
+DELETE FROM status_page_old_slugs WHERE org_id = +? AND slug = +?;
 
 -- name: AddStatusOldSlug :exec
-INSERT INTO status_page_old_slugs (slug, page_id, changed_at) VALUES (?, ?, ?);
+INSERT INTO status_page_old_slugs (org_id, slug, page_id, address_key, changed_at) VALUES (?, ?, ?, ?, ?);
 
 -- name: TrimStatusOldSlugs :exec
 -- Keeps a page's newest keep old names.
@@ -65,7 +66,7 @@ WHERE status_page_old_slugs.page_id = +sqlc.arg(page_id) AND status_page_old_slu
 -- name: ListStatusOldSlugs :many
 -- Every page's old names, for the addresses that redirect (as few as
 -- ListStatusPageHosts' rows, read with them).
-SELECT slug, page_id FROM status_page_old_slugs;
+SELECT slug, page_id, address_key FROM status_page_old_slugs;
 
 -- name: ListStatusComponents :many
 SELECT * FROM status_components WHERE page_id = +? ORDER BY position;

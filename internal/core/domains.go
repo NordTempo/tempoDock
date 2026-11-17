@@ -7,7 +7,6 @@ import (
 	"net/netip"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -171,9 +170,10 @@ func (c *Core) cloudflareZoneFor(ctx context.Context, a Actor, ss svcScope, host
 }
 
 // GenerateDomain gives a service a hostname under the base domain of its
-// environment's server: <service>-<project>[-<env>].<base>, with -2, -3…
-// on collisions. On a tunnel server whose base domain is in a zone Dock
-// manages, it is routed through the tunnel like a domain from Cloudflare.
+// environment's server: <service>-<project>[-<env>]-<random>.<base>
+// (ADR 0087), a new random part on the rare clash. On a tunnel server
+// whose base domain is in a zone Dock manages, it is routed through the
+// tunnel like a domain from Cloudflare.
 func (c *Core) GenerateDomain(ctx context.Context, a Actor, ref ServiceRef) (apitypes.DomainChange, error) {
 	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeDeploy, "adding a domain")
 	if err != nil {
@@ -187,17 +187,12 @@ func (c *Core) GenerateDomain(ctx context.Context, a Actor, ref ServiceRef) (api
 	if base == "" {
 		return apitypes.DomainChange{}, invalid("the server has no base domain, so it can't generate hostnames; add your own domain, or ask a platform operator to set one")
 	}
-	label := ss.svc.Name + "-" + ss.project.Name
+	prefix := ss.svc.Name + "-" + ss.project.Name
 	if ss.env.Name != "production" {
-		label += "-" + ss.env.Name
+		prefix += "-" + ss.env.Name
 	}
-	label = strings.Trim(label[:min(len(label), 58)], "-")
-	for i := 1; ; i++ {
-		candidate := label
-		if i > 1 {
-			candidate += "-" + strconv.Itoa(i)
-		}
-		host := candidate + "." + base
+	for range hostKeyTries {
+		host := hostLabel(prefix, newHostKey()) + "." + base
 		exists, err := c.store.HostnameExists(ctx, host)
 		if err != nil {
 			return apitypes.DomainChange{}, err
@@ -215,6 +210,7 @@ func (c *Core) GenerateDomain(ctx context.Context, a Actor, ref ServiceRef) (api
 		}
 		return c.addDomain(ctx, a, ss, host, "", true, zone)
 	}
+	return apitypes.DomainChange{}, conflict("no free generated hostname under %s after %d tries; try again", base, hostKeyTries)
 }
 
 // checkNewDomain refuses host for a service before anything is set up

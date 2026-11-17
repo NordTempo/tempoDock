@@ -335,12 +335,13 @@ func BootstrapConfig(opts Options) ([]byte, error) {
 // function; the same input always gives the same output.
 //
 // In direct mode with TLS there are two servers: "https" serves routes with
-// on-demand certificates, and "http" redirects known hostnames to HTTPS.
+// on-demand certificates, and "http" redirects every hostname to HTTPS.
 // With TLS disabled a single "http" server serves routes. In tunnel mode a
 // single "http" server on 127.0.0.1 serves routes, trusts forwarding
 // headers from loopback only, and redirects to https:// because the public
 // side is Cloudflare's edge. Every server starts by setting the marker
-// header (when there is one) and ends with a catch-all 404 page.
+// header (when there is one) and ends with a catch-all 404 page, but
+// direct mode's "http", whose catch-all is the redirect.
 //
 // Hostnames must be lower-case ASCII (punycode for IDNs) and unique across
 // routes.
@@ -373,13 +374,9 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 		main = append(main, markerRoute(opts.ServerMarker))
 		viaTunnel = append(viaTunnel, markerRoute(opts.ServerMarker))
 	}
-	var hostnames []string
 	var counted map[string][]string // hostname → access logger, for counted routes
 	for _, r := range routes {
 		public := !r.TunnelOnly || opts.tunnel()
-		if public {
-			hostnames = append(hostnames, r.Hostnames...)
-		}
 		h := handler{
 			Handler:          "reverse_proxy",
 			Upstreams:        []upstream{{Dial: r.Upstream}},
@@ -523,14 +520,14 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 	if otlp {
 		plain = append(plain, otlpRoute(opts.TraceIngestAddr))
 	}
-	if len(hostnames) > 0 {
-		plain = append(plain, route{
-			Match:    []match{{Host: hostnames}},
-			Handle:   []handler{redirect("https://{http.request.host}" + portSuffix("https", opts.HTTPSPort) + "{http.request.uri}")},
-			Terminal: true,
-		})
-	}
-	plain = append(plain, notFoundRoute())
+	// Every host is sent to HTTPS, known or not, so plain HTTP doesn't
+	// tell which hostnames exist (ADR 0087). ACME HTTP-01 challenges
+	// never reach these routes: Caddy answers them in Server.ServeHTTP
+	// before any route runs.
+	plain = append(plain, route{
+		Handle:   []handler{redirect("https://{http.request.host}" + portSuffix("https", opts.HTTPSPort) + "{http.request.uri}")},
+		Terminal: true,
+	})
 
 	cfg.Apps.HTTP.Servers = map[string]server{
 		"https": {

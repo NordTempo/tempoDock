@@ -868,7 +868,7 @@ func TestDomainsFollowTheirServer(t *testing.T) {
 	}
 	web := p.createService("staging", "web", apitypes.CreateServiceRequest{})
 	gen, err := p.c.GenerateDomain(p.ctx, testSystem, web)
-	if err != nil || gen.Domain.Hostname != "web-shop-staging.up.example.dev" {
+	if err != nil || !generatedLike("web-shop-staging", base).MatchString(gen.Domain.Hostname) {
 		t.Fatalf("generated: %+v, %v", gen.Domain, err)
 	}
 	custom, err := p.c.AddDomain(p.ctx, testSystem, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"})

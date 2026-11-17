@@ -491,9 +491,9 @@ function Settings({ page, admin }: { page: StatusPage; admin: boolean }) {
               >
                 Rename
               </Act>
-              {page.base_domain && renamed && renamed !== page.slug && (
+              {page.address && renamed && renamed !== page.slug && (
                 <span className="basis-full text-sec">
-                  {`The address becomes status-${renamed}.${page.base_domain}; status-${page.slug}.${page.base_domain} redirects to it.`}
+                  {`The address changes with the name; ${page.address} redirects to the new one.`}
                 </span>
               )}
             </form>
