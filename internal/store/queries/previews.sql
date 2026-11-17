@@ -232,6 +232,6 @@ ORDER BY preview_data.preview_id, services.name;
 
 -- name: ListCopyingPreviewData :many
 -- Copies a restart cut short, to end them at the next start.
-SELECT preview_data.*, previews.environment_id FROM preview_data
+SELECT preview_data.*, previews.environment_id, previews.closed_at FROM preview_data
 JOIN previews ON previews.id = preview_data.preview_id
 WHERE preview_data.status = 'copying';

@@ -195,7 +195,9 @@ func (c *Core) fillPreviewDB(ctx context.Context, a Actor, dst envScope, pv stor
 	if ctx.Err() != nil {
 		return // shutting down: the next start ends it (resumePreviewData)
 	}
-	if err != nil && pc.dirty {
+	// A failed refresh empties it too: it no longer holds what its row
+	// says.
+	if err != nil && (pc.dirty || refresh) {
 		up, rerr := c.emptyPreviewDB(ctx, pc.to)
 		if rerr != nil {
 			pc.finish(ctx, fmt.Errorf("%w; emptying it failed too (%w), so it stays stopped", err, rerr))
@@ -769,6 +771,13 @@ func (c *Core) resumePreviewData(ctx context.Context) error {
 	}
 	var envs []int64
 	for _, r := range rows {
+		if r.ClosedAt != nil {
+			// Its volumes went with the preview.
+			if err := c.store.FinishPreviewData(ctx, store.FinishPreviewDataParams{Status: string(apitypes.PreviewDataStartedEmpty), Message: "the preview closed during the copy", FinishedAt: ptr(now()), ServiceID: r.ServiceID}); err != nil {
+				return err
+			}
+			continue
+		}
 		ss, err := c.scopeOf(ctx, r.ServiceID)
 		if err != nil {
 			return err

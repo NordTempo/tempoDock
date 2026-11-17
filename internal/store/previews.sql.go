@@ -606,7 +606,7 @@ func (q *Queries) ListClosedPreviewsLeft(ctx context.Context) ([]Preview, error)
 }
 
 const listCopyingPreviewData = `-- name: ListCopyingPreviewData :many
-SELECT preview_data.service_id, preview_data.preview_id, preview_data.from_service_id, preview_data.mode, preview_data.status, preview_data.message, preview_data.bytes, preview_data.masked_tables, preview_data.masked_columns, preview_data.started_at, preview_data.finished_at, previews.environment_id FROM preview_data
+SELECT preview_data.service_id, preview_data.preview_id, preview_data.from_service_id, preview_data.mode, preview_data.status, preview_data.message, preview_data.bytes, preview_data.masked_tables, preview_data.masked_columns, preview_data.started_at, preview_data.finished_at, previews.environment_id, previews.closed_at FROM preview_data
 JOIN previews ON previews.id = preview_data.preview_id
 WHERE preview_data.status = 'copying'
 `
@@ -624,6 +624,7 @@ type ListCopyingPreviewDataRow struct {
 	StartedAt     time.Time
 	FinishedAt    *time.Time
 	EnvironmentID int64
+	ClosedAt      *time.Time
 }
 
 // Copies a restart cut short, to end them at the next start.
@@ -649,6 +650,7 @@ func (q *Queries) ListCopyingPreviewData(ctx context.Context) ([]ListCopyingPrev
 			&i.StartedAt,
 			&i.FinishedAt,
 			&i.EnvironmentID,
+			&i.ClosedAt,
 		); err != nil {
 			return nil, err
 		}

@@ -303,14 +303,14 @@ until pg_isready -q; do
   i=$((i + 1)); [ "$i" -lt 120 ] || { echo "dock: the preview's database didn't accept connections in 2 minutes" >&2; exit 1; }
   sleep 1
 done
-R="pg_restore --no-owner --no-acl --exit-on-error -d $PGDATABASE"
-$R --section=pre-data "$D/db"
-$R --section=data "$D/db"
+restore() { pg_restore --no-owner --no-acl --exit-on-error -d "$PGDATABASE" "$@" "$D/db"; }
+restore --section=pre-data
+restore --section=data
 for f in "$D"/masked/*.sql; do
   [ -e "$f" ] || continue
   psql -X -q -v ON_ERROR_STOP=1 -c "$(cat "$f")" <"${f%.sql}.copy"
 done
-$R --section=post-data "$D/db"
+restore --section=post-data
 psql -X -q -c ANALYZE
 `
 
