@@ -120,3 +120,29 @@ day, publishing nothing.
 - macOS and old Linux users of `install-cli.sh` get a warning instead
   of a check until they install OpenSSL 3 (`brew install openssl@3`);
   once installed, `dock self-update` checks every later release itself.
+
+## Amendment (2026-11-17): keys you trust yourself
+
+Releases you build and sign yourself (a fork, a patched build, the nightly
+e2e run's build of `main`, e2e/nightly.sh) would be refused from
+v0.56.0 on: only Dock's keys count. `[updates] trusted_keys` in the
+daemon's config lists more Ed25519 public keys, base64 like
+`releaseKeys` and named by the same key id, whose signatures count as
+Dock's for `dock serve` and the root updater (`dock admin update`).
+
+- **Narrow.** On a control plane they apply only when `[updates] source`
+  is a directory: one on GitHub's releases trusts Dock's keys alone, and
+  says so in its log. A node applies its own `trusted_keys` to what its
+  control plane sends, since that is the only way a release reaches it;
+  the control plane already checked it with its own keys.
+- **Root's to set.** The key lives in `/etc/dock/config.toml`, which only
+  root writes (the daemon runs with `ProtectSystem=strict`), and nothing in
+  the API, MCP or the console sets it. Whoever can add a key there can
+  already replace the binary, so it trusts no one new.
+- **Visible.** `dock serve`, `dock node` and `dock admin update` log
+  "trusting 1 extra update key: <id>" at start-up.
+- `install.sh`, `install-cli.sh` and `dock self-update` don't read it:
+  they install Dock's own releases.
+
+Sign a directory release with `scripts/release/sign`, giving it the
+public keys to check against in `TRUSTED_KEYS`.

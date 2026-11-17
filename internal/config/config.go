@@ -7,6 +7,8 @@
 package config
 
 import (
+	"crypto/ed25519"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -201,6 +203,30 @@ type Updates struct {
 	// TokenFile holds a GitHub token that can read Source's releases, used
 	// when the file exists. A private repository needs one.
 	TokenFile string `toml:"token_file"`
+	// TrustedKeys are Ed25519 public keys (base64, as in ADR 0088) whose
+	// signatures count as Dock's own, for releases you build and sign
+	// yourself. Read only from this root-owned file, never set through
+	// the API. They apply only with a directory Source on the control
+	// plane, and to what its control plane sends on a node (Extra).
+	TrustedKeys []string `toml:"trusted_keys"`
+}
+
+// Extra returns TrustedKeys decoded, for update.TrustExtra, when they
+// apply: on a node, which takes releases only from its control plane, or
+// with a directory Source. A control plane on GitHub's releases trusts
+// Dock's keys alone. ignored reports keys that were set but don't apply.
+func (u Updates) Extra(node bool) (keys []ed25519.PublicKey, ignored bool) {
+	if len(u.TrustedKeys) == 0 {
+		return nil, false
+	}
+	if !node && !filepath.IsAbs(u.Source) {
+		return nil, true
+	}
+	for _, k := range u.TrustedKeys {
+		b, _ := base64.StdEncoding.DecodeString(k) // checked by validate
+		keys = append(keys, b)
+	}
+	return keys, false
 }
 
 // Retention is how long the control plane keeps history, and when it
@@ -759,6 +785,11 @@ var githubSourceRe = regexp.MustCompile(`^github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9
 func (u Updates) validate() error {
 	if !githubSourceRe.MatchString(u.Source) && !filepath.IsAbs(u.Source) {
 		return fmt.Errorf("[updates] source %q must be github.com/OWNER/REPO or an absolute path to a directory of releases", u.Source)
+	}
+	for _, k := range u.TrustedKeys {
+		if b, err := base64.StdEncoding.DecodeString(k); err != nil || len(b) != ed25519.PublicKeySize {
+			return fmt.Errorf("[updates] trusted_keys: %q isn't a base64 Ed25519 public key (32 bytes)", k)
+		}
 	}
 	return nil
 }

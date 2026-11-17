@@ -107,9 +107,34 @@ func TestUpdateSource(t *testing.T) {
 		`updates.source = "releases"`:         false, // relative path
 		`updates.source = "gitlab.com/o/r"`:   false,
 		`updates.source = "github.com/o/r/x"`: false,
+		`updates.trusted_keys = ["8uQjZq1kO37ezVv7EzN8eyrqOYXRGK2nsCRL/d3RSdU="]`: true,
+		`updates.trusted_keys = ["bm90IGEga2V5"]`:                                 false, // 9 bytes
+		`updates.trusted_keys = ["not base64!"]`:                                  false,
 	} {
 		if _, err := load(t, toml); (err == nil) != ok {
 			t.Errorf("%q: err = %v", toml, err)
+		}
+	}
+}
+
+// trusted_keys apply on a node, and on a control plane only with a
+// directory source.
+func TestUpdatesExtra(t *testing.T) {
+	keys := []string{"8uQjZq1kO37ezVv7EzN8eyrqOYXRGK2nsCRL/d3RSdU="}
+	for _, c := range []struct {
+		name          string
+		u             Updates
+		node          bool
+		keys, ignored bool
+	}{
+		{"directory source", Updates{Source: "/srv/releases", TrustedKeys: keys}, false, true, false},
+		{"GitHub source", Updates{Source: DefaultUpdateSource, TrustedKeys: keys}, false, false, true},
+		{"node", Updates{Source: DefaultUpdateSource, TrustedKeys: keys}, true, true, false},
+		{"none", Updates{Source: "/srv/releases"}, false, false, false},
+	} {
+		got, ignored := c.u.Extra(c.node)
+		if (len(got) == 1) != c.keys || ignored != c.ignored {
+			t.Errorf("%s: %d keys, ignored %t; want keys %t, ignored %t", c.name, len(got), ignored, c.keys, c.ignored)
 		}
 	}
 }

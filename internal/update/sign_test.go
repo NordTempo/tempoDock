@@ -65,6 +65,27 @@ func TestVerifySums(t *testing.T) {
 	}
 }
 
+// A release signed only by a key in [updates] trusted_keys verifies once
+// TrustExtra has it, and is refused without it; a bad signature by that
+// key is refused either way.
+func TestTrustExtra(t *testing.T) {
+	pub, key, _ := ed25519.GenerateKey(nil)
+	t.Cleanup(func() { TrustExtra(nil) })
+	sums := sumsFor("v0.56.1-nightly.20261117.gabcdef0")
+	sig := []byte(Sign(key, sums))
+	bad := []byte(Sign(key, append(sums, "00  extra\n"...)))
+	if _, err := VerifySums("v0.56.1-nightly.20261117.gabcdef0", sums, sig); !errors.Is(err, ErrBadSignature) {
+		t.Errorf("without the key: %v, want ErrBadSignature", err)
+	}
+	TrustExtra([]ed25519.PublicKey{pub})
+	if signed, err := VerifySums("v0.56.1-nightly.20261117.gabcdef0", sums, sig); !signed || err != nil {
+		t.Errorf("with the key: %t, %v", signed, err)
+	}
+	if _, err := VerifySums("v0.56.1-nightly.20261117.gabcdef0", sums, bad); !errors.Is(err, ErrBadSignature) {
+		t.Errorf("a bad signature with the key: %v, want ErrBadSignature", err)
+	}
+}
+
 // Rotation (ADR 0088): while both keys sign, a binary that knows either
 // one verifies; once only the new key signs, a binary that knows only the
 // old key refuses the release.

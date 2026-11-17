@@ -163,6 +163,11 @@ func joinToken(stdin io.Reader, args []string, file string) (string, error) {
 // answered from the last applied routes, the access check and the wake
 // check of asleep environments.
 func runNode(ctx context.Context, cfg config.Config, log *slog.Logger) error {
+	// The node's updater checks what its control plane sends; logged here
+	// too so the keys show where the node's logs are read.
+	if msg := trustUpdateKeys(cfg, true); msg != "" {
+		log.Warn(msg)
+	}
 	if err := checkLoopback("internal_listen", cfg.InternalListen); err != nil {
 		return err
 	}

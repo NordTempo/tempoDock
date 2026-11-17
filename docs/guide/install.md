@@ -267,6 +267,7 @@ running).
 | `[scan] memory_mb`, `quiet_seconds` | `1024`, `60` | Each scan job's memory limit, and how long no build, deploy, wake or move may have run before a scan starts. `dock scanning off` turns scanning off |
 | `[scan] offline` | `false` | For installs without internet access: builders never download a vulnerability database or check base images; import one with `dock scanning import FILE` (a Grype database archive) |
 | `[updates] source` | `github.com/NordTempo/tempoDock` | Where [updates](#upgrading) come from: a GitHub repository's releases, or an absolute path to a directory of releases (`<dir>/<version>/` with the release's assets and an optional `notes.md`), for a mirror or an air-gapped install. Control plane only |
+| `[updates] trusted_keys` | none | Ed25519 public keys (base64) whose signatures count as Dock's, for releases you build and sign yourself ([ADR 0088](../decisions/0088-signed-releases.md)). Only with a directory `source` on the control plane; on a node, for what its control plane sends. Set it in this file only |
 | `[updates] token_file` | `/etc/dock/github-token` | A GitHub token that can read the repository's releases, used when the file exists. Only releases in a private repository need one |
 
 Where alerts are sent (webhook, Slack, email) is set with `dock alerts
