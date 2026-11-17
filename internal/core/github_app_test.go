@@ -30,8 +30,9 @@ const (
 	// The App's OAuth client (ADR 0066).
 	fakeClientID     = "Iv1.fake"
 	fakeClientSecret = "client-secret"
-	// octo is a GitHub user who can access installation 7; mallory can't.
-	octo, mallory = "octo", "mallory"
+	// octo is a GitHub user who can access installation 7; mallory can't;
+	// dev can access some of its repositories (fakeGitHub.installRepos).
+	octo, mallory, dev = "octo", "mallory", "dev"
 )
 
 // withApp makes the fake GitHub host a GitHub App: it converts manifest
@@ -101,7 +102,7 @@ func (g *fakeGitHub) withApp(t *testing.T) {
 	g.mux.HandleFunc("GET /user/installations", func(w http.ResponseWriter, r *http.Request) {
 		var list []any
 		switch r.Header.Get("Authorization") {
-		case "Bearer ghu_" + octo:
+		case "Bearer ghu_" + octo, "Bearer ghu_" + dev:
 			list = []any{installation}
 		case "Bearer ghu_" + mallory:
 		default:
@@ -109,6 +110,16 @@ func (g *fakeGitHub) withApp(t *testing.T) {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"total_count": len(list), "installations": list})
+	})
+	// octo can access every repository of installation 7, dev only one.
+	g.mux.HandleFunc("GET /user/installations/{id}/repositories", func(w http.ResponseWriter, r *http.Request) {
+		g.mu.Lock()
+		n := max(g.installRepos, 1)
+		g.mu.Unlock()
+		if r.Header.Get("Authorization") == "Bearer ghu_"+dev {
+			n = 1
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"total_count": n, "repositories": []any{}})
 	})
 	g.mux.HandleFunc("GET /app/installations", func(w http.ResponseWriter, r *http.Request) {
 		if jwtOK(w, r) {
@@ -139,7 +150,10 @@ func (g *fakeGitHub) withApp(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"id": fakeRepoID, "full_name": "acme/shop", "default_branch": "main", "private": true})
 	})
 	g.mux.HandleFunc("GET /installation/repositories", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"total_count": 1, "repositories": []any{
+		g.mu.Lock()
+		n := max(g.installRepos, 1)
+		g.mu.Unlock()
+		_ = json.NewEncoder(w).Encode(map[string]any{"total_count": n, "repositories": []any{
 			map[string]any{"id": fakeRepoID, "full_name": "acme/shop", "default_branch": "main", "private": true},
 		}})
 	})
@@ -704,5 +718,30 @@ func TestGitHubAppClientSecret(t *testing.T) {
 	}
 	if err := h.installApp(admin, "", fakeInstall, octo); err != nil {
 		t.Fatalf("org admin's install once installs are checked: %v", err)
+	}
+}
+
+// An installer who can access only some of the installation's
+// repositories can't give it to an org (ADR 0066): GitHub lists it to
+// them, but Dock would read the rest too. One who can access all can.
+func TestGitHubInstallNeedsEveryRepository(t *testing.T) {
+	h, gh, _ := appHarness(t)
+	if err := h.c.UnassignGitHubInstallation(h.ctx, testSystem, fakeInstall); err != nil {
+		t.Fatal(err)
+	}
+	admin := h.in(h.member("ann@x", map[string]apitypes.Scope{"test": apitypes.ScopeAdmin}), "test")
+	assigned := func() bool {
+		_, err := h.store.GetGitHubInstallation(h.ctx, fakeInstall)
+		return err == nil
+	}
+	gh.mu.Lock()
+	gh.installRepos = 3
+	gh.mu.Unlock()
+	err := h.installApp(admin, "", fakeInstall, dev)
+	if CodeOf(err) != apitypes.CodeForbidden || !strings.Contains(err.Error(), "covers 3 repositories and your GitHub account can access 1") || assigned() {
+		t.Fatalf("a member with one of three repositories claimed installation 7: %v", err)
+	}
+	if err := h.installApp(admin, "", fakeInstall, octo); err != nil || !assigned() {
+		t.Fatalf("someone who can access every repository: %v", err)
 	}
 }

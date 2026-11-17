@@ -203,6 +203,28 @@ func (g githubClient) installationRepos(ctx context.Context, token string, limit
 	}
 }
 
+// userInstallationRepoCount is how many of installation id's
+// repositories a person's token has explicit access to (GET
+// /user/installations/{id}/repositories, its total_count).
+func (g githubClient) userInstallationRepoCount(ctx context.Context, token string, id int64) (int, error) {
+	var out struct {
+		TotalCount int `json:"total_count"`
+	}
+	err := g.call(ctx, http.MethodGet, fmt.Sprintf("/user/installations/%d/repositories?per_page=1", id),
+		githubCred{token, credUser}, "your repositories in the installation", &out)
+	return out.TotalCount, err
+}
+
+// installationRepoCount is how many repositories an installation token
+// reads (GET /installation/repositories, its total_count).
+func (g githubClient) installationRepoCount(ctx context.Context, token string) (int, error) {
+	var out struct {
+		TotalCount int `json:"total_count"`
+	}
+	err := g.call(ctx, http.MethodGet, "/installation/repositories?per_page=1", githubCred{token, credInstall}, "the installation's repositories", &out)
+	return out.TotalCount, err
+}
+
 // appClientID reads the App's OAuth client ID (GET /app), for an App
 // whose client Dock didn't keep when it was made.
 func (g githubClient) appClientID(ctx context.Context, jwt string) (string, error) {

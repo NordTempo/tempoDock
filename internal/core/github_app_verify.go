@@ -19,8 +19,9 @@ import (
 // installation there: it sends the browser on to the App's authorize page
 // on GitHub with a new single-use state, exchanges the code GitHub comes
 // back with for the person's token, and claims the installation only if
-// GET /user/installations lists it. The token answers that one question
-// and is dropped. Every step checks the browser binding the start page
+// GET /user/installations lists it and the person can access every
+// repository it covers (coversInstallation). The token answers those
+// questions and is dropped. Every step checks the browser binding the start page
 // set (BindGitHubInstall), and the claim waits for the person to confirm
 // the org on Dock's page (ConfirmGitHubInstall).
 
@@ -137,7 +138,33 @@ func (c *Core) verifyInstaller(ctx context.Context, code, state, binding string)
 	if !slices.Contains(ids, f.installation) {
 		return f, errf(apitypes.CodeForbidden, "your GitHub account can't access installation %d of the GitHub App, so Dock didn't give it to org %s; install the App from Dock with an account that can", f.installation, f.org.Slug)
 	}
-	return f, nil
+	return f, c.coversInstallation(ctx, f, tok.AccessToken)
+}
+
+// coversInstallation refuses an installer who can't access every
+// repository installation f.installation covers. GitHub lists an
+// installation to anyone with explicit access to one of its
+// repositories, and Dock reads all of them: a member with read access to
+// one repository mustn't hand an org the rest. The person's repositories
+// in the installation are a subset of the installation's, so equal
+// counts are equal sets.
+func (c *Core) coversInstallation(ctx context.Context, f githubFlow, userToken string) error {
+	mine, err := c.git.github.userInstallationRepoCount(ctx, userToken, f.installation)
+	if err != nil {
+		return err
+	}
+	token, err := c.installationToken(ctx, f.installation)
+	if err != nil {
+		return err
+	}
+	all, err := c.git.github.installationRepoCount(ctx, token)
+	if err != nil {
+		return err
+	}
+	if mine < all {
+		return errf(apitypes.CodeForbidden, "installation %d of the GitHub App covers %d repositories and your GitHub account can access %d of them, so Dock didn't give it to org %s: Dock would read all of them. Ask an owner of the GitHub account to install it from Dock, or to limit the installation to repositories you can access", f.installation, all, mine, f.org.Slug)
+	}
+	return nil
 }
 
 // confirmStep asks the person of install flow f to confirm org f.org may
