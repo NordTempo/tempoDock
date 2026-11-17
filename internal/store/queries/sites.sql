@@ -206,3 +206,28 @@ JOIN environments ON environments.id = sites.environment_id
 JOIN projects ON projects.id = environments.project_id
 WHERE projects.org_id = +? AND projects.archived_at IS NULL AND sites.archived_at IS NULL
 ORDER BY projects.name, sites.name, sites.id;
+
+-- name: SiteNameCandidate :one
+-- The hostname an automatically named site takes its name from: its
+-- hostnames that are still one of their service's domains (no redirect),
+-- custom ones before generated ones.
+SELECT site_hostnames.hostname FROM site_hostnames
+JOIN domains ON domains.hostname = site_hostnames.hostname AND domains.service_id = site_hostnames.service_id
+WHERE site_hostnames.site_id = +? AND domains.redirect_to = ''
+ORDER BY domains.generated, site_hostnames.hostname LIMIT 1;
+
+-- name: ListSitesNamedAfterGoneHostnames :many
+-- Live sites named after one of their hostnames that is no longer a
+-- domain, with the name to take instead (SiteNameCandidate's): renamed
+-- when analytics starts. Sites are few; this reads them once.
+SELECT sites.id, environments.project_id, sites.name, CAST(coalesce((
+    SELECT sh.hostname FROM site_hostnames sh
+    JOIN domains d ON d.hostname = sh.hostname AND d.service_id = sh.service_id
+    WHERE sh.site_id = sites.id AND d.redirect_to = ''
+    ORDER BY d.generated, sh.hostname LIMIT 1
+), '') AS TEXT) AS better
+FROM sites
+JOIN environments ON environments.id = sites.environment_id
+JOIN site_hostnames ON site_hostnames.site_id = sites.id AND site_hostnames.hostname = sites.name
+WHERE sites.archived_at IS NULL
+  AND NOT EXISTS (SELECT 1 FROM domains WHERE domains.hostname = sites.name);

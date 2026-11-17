@@ -793,6 +793,58 @@ func (q *Queries) ListSiteMarkers(ctx context.Context, arg ListSiteMarkersParams
 	return items, nil
 }
 
+const listSitesNamedAfterGoneHostnames = `-- name: ListSitesNamedAfterGoneHostnames :many
+SELECT sites.id, environments.project_id, sites.name, CAST(coalesce((
+    SELECT sh.hostname FROM site_hostnames sh
+    JOIN domains d ON d.hostname = sh.hostname AND d.service_id = sh.service_id
+    WHERE sh.site_id = sites.id AND d.redirect_to = ''
+    ORDER BY d.generated, sh.hostname LIMIT 1
+), '') AS TEXT) AS better
+FROM sites
+JOIN environments ON environments.id = sites.environment_id
+JOIN site_hostnames ON site_hostnames.site_id = sites.id AND site_hostnames.hostname = sites.name
+WHERE sites.archived_at IS NULL
+  AND NOT EXISTS (SELECT 1 FROM domains WHERE domains.hostname = sites.name)
+`
+
+type ListSitesNamedAfterGoneHostnamesRow struct {
+	ID        int64
+	ProjectID int64
+	Name      string
+	Better    string
+}
+
+// Live sites named after one of their hostnames that is no longer a
+// domain, with the name to take instead (SiteNameCandidate's): renamed
+// when analytics starts. Sites are few; this reads them once.
+func (q *Queries) ListSitesNamedAfterGoneHostnames(ctx context.Context) ([]ListSitesNamedAfterGoneHostnamesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSitesNamedAfterGoneHostnames)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSitesNamedAfterGoneHostnamesRow
+	for rows.Next() {
+		var i ListSitesNamedAfterGoneHostnamesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.Name,
+			&i.Better,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSitesWithoutPublicSlug = `-- name: ListSitesWithoutPublicSlug :many
 SELECT id, name FROM sites WHERE public_slug IS NULL AND archived_at IS NULL ORDER BY id
 `
@@ -1070,6 +1122,23 @@ type SetSiteSettingsParams struct {
 func (q *Queries) SetSiteSettings(ctx context.Context, arg SetSiteSettingsParams) error {
 	_, err := q.db.ExecContext(ctx, setSiteSettings, arg.Settings, arg.ID)
 	return err
+}
+
+const siteNameCandidate = `-- name: SiteNameCandidate :one
+SELECT site_hostnames.hostname FROM site_hostnames
+JOIN domains ON domains.hostname = site_hostnames.hostname AND domains.service_id = site_hostnames.service_id
+WHERE site_hostnames.site_id = +? AND domains.redirect_to = ''
+ORDER BY domains.generated, site_hostnames.hostname LIMIT 1
+`
+
+// The hostname an automatically named site takes its name from: its
+// hostnames that are still one of their service's domains (no redirect),
+// custom ones before generated ones.
+func (q *Queries) SiteNameCandidate(ctx context.Context, siteID int64) (string, error) {
+	row := q.db.QueryRowContext(ctx, siteNameCandidate, siteID)
+	var hostname string
+	err := row.Scan(&hostname)
+	return hostname, err
 }
 
 const siteOfService = `-- name: SiteOfService :one

@@ -405,7 +405,8 @@ func (c *Core) domainScope(ctx context.Context, a Actor, hostname string, need a
 
 // EnableHostnameAnalytics turns analytics on for a domain's hostname: it
 // joins req.Site, or the site of its service's other hostnames, or a new
-// site named after it. The first site turns analytics on for the install.
+// site named after the service's custom domain or it (newSiteName). The
+// first site turns analytics on for the install.
 // Pages then need the script: <script src="/_dock/a/s.js" defer></script>.
 func (c *Core) EnableHostnameAnalytics(ctx context.Context, a Actor, hostname string, req apitypes.EnableAnalyticsRequest) (apitypes.Site, error) {
 	d, es, err := c.domainScope(ctx, a, hostname, apitypes.ScopeDeploy, "turning analytics on for a domain")
@@ -437,7 +438,10 @@ func (c *Core) EnableHostnameAnalytics(ctx context.Context, a Actor, hostname st
 		default:
 			site, err = q.SiteOfService(ctx, &d.ServiceID)
 			if store.IsNotFound(err) || (err == nil && site.EnvironmentID != es.env.ID) {
-				site, err = c.createSite(ctx, q, es.project.ID, es.env.ID, d.Hostname, a.Name, t)
+				var name string
+				if name, err = newSiteName(ctx, q, d.ServiceID, d.Hostname); err == nil {
+					site, err = c.createSite(ctx, q, es.project.ID, es.env.ID, name, a.Name, t)
+				}
 			}
 		}
 		if err != nil {
@@ -629,6 +633,7 @@ func (c *Core) DisableHostnameAnalytics(ctx context.Context, a Actor, hostname s
 		c.log.Error("apply routes after turning analytics off", "domain", host, "err", err)
 	}
 	c.audit(ctx, a, "analytics.disable", &p, &env, host, "analytics off for "+host+" (site "+site.Name+")")
+	c.renameSiteNamedAfter(ctx, a, p, env, host, site.ID)
 	return nil
 }
 
@@ -709,7 +714,11 @@ func (c *Core) siteDomainAdded(ctx context.Context, a Actor, ss svcScope, host, 
 				}
 			}
 		}
-		fresh, err := c.createSite(ctx, q, ss.project.ID, ss.env.ID, host, a.Name, t)
+		name, err := newSiteName(ctx, q, ss.svc.ID, host)
+		if err != nil {
+			return err
+		}
+		fresh, err := c.createSite(ctx, q, ss.project.ID, ss.env.ID, name, a.Name, t)
 		if err != nil {
 			return err
 		}

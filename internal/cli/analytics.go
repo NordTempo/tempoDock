@@ -93,8 +93,8 @@ func newAnalyticsEnableCmd(g *globals) *cobra.Command {
 		Use:   "enable <hostname>",
 		Short: "Count visits to a domain: it joins a site, or starts one",
 		Long: `Turn analytics on for one of a service's domains. The hostname joins --site,
-or the site of the service's other hostnames, or a new site named after it.
-Its pages then need one line in their <head>:
+or the site of the service's other hostnames, or a new site named after the
+service's custom domain or it. Its pages then need one line in their <head>:
 
   ` + snippet + `
 
