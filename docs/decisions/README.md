@@ -106,6 +106,7 @@ line means a later record added to it without changing what it decided.
 | [0090](0090-wildcard-certificates.md) | Wildcard certificates for generated hostnames: `*.<base>` over ACME DNS-01 through Cloudflare, sent to servers with their routes, no CT log entries or TLS oracle | accepted |
 | [0091](0091-switches-without-reloads.md) | Traffic switches without Caddy reloads: each service's upstream in a file Caddy reads per request, and a move's hold on a fresh port | accepted |
 | [0092](0092-preview-database-copies.md) | Previews start with a copy of the base's database: empty, newest snapshot, copy, or masked (sensitive columns replaced while the base is read); forks get none unless allowed; refresh from base | accepted |
+| [0094](0094-deploying-from-github-actions.md) | Deploying from GitHub Actions: an official composite action with the server's CLI, signature checked, `--json-file` for logs with results; GitHub OIDC trust for org agents designed | accepted; OIDC not built |
 
 ## Template
 

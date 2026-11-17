@@ -12,6 +12,7 @@ served traffic can be started again exactly as it was.
 | Source | `dock deploy` | On the server, by BuildKit | Available |
 | Image | `dock deploy --image ghcr.io/acme/web:1.4.2` | Elsewhere (CI); the server only pulls | Available |
 | Git push | `dock git connect acme/shop --branch main`, then `git push` ([below](#deploy-on-git-push)) | On the server, by BuildKit, like `dock deploy` | Available |
+| GitHub Actions | The Deploy to Tempo Dock action, after your tests ([guide](github-actions.md)) | On the server, or in CI for an image | Available |
 | Promote | `dock promote staging production` | Nowhere: reuses the exact image that ran in staging ([below](#promote)) | Available |
 
 ### Image services and source services
@@ -720,6 +721,8 @@ Connect a service to a GitHub repository and branch, and every push to it
 deploys the service from source: the commit's files (or a subdirectory's)
 go through exactly the pipeline of `dock deploy`, `dock.toml` included
 ([ADR 0018](../decisions/0018-git-push-deploy.md)).
+To run your tests first and deploy only when they pass, deploy from
+your workflow instead ([GitHub Actions](github-actions.md)).
 
 ```sh
 dock git connect acme/shop --branch main
