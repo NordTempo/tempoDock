@@ -31,8 +31,11 @@ func TestAlertChannelCommands(t *testing.T) {
 		t.Fatalf("created = %+v", created)
 	}
 	ok[apitypes.CreatedAlertChannel](t, "alerts", "channel", "add", "down", "--slack", hook.URL+"/down", "--renotify", "0")
-	// --platform reaches the platform's channels, apart from the org's.
-	ok[apitypes.CreatedAlertChannel](t, "alerts", "channel", "add", "pager", "--platform", "--slack", hook.URL+"/pager")
+	// --platform reaches the platform's channels, apart from the org's,
+	// and the hint to test one says --platform too.
+	if code, stdout, stderr := exec(t, "alerts", "channel", "add", "pager", "--platform", "--slack", hook.URL+"/pager"); code != 0 || !strings.Contains(stdout, "dock alerts channel test pager --platform") {
+		t.Fatalf("platform channel add: exit %d %q %q", code, stdout, stderr)
+	}
 	if chs := ok[[]apitypes.AlertChannel](t, "alerts", "channel", "list", "--platform"); len(chs) != 1 || chs[0].Name != "pager" {
 		t.Fatalf("platform channels = %+v", chs)
 	}
