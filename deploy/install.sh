@@ -29,7 +29,9 @@
 # Environment:
 #   DOCK_BINARY   path to a dock binary (a release's dock-linux-<arch>, or make build)
 #   DOCK_VERSION  without DOCK_BINARY: the release to download, checked against its
-#                 SHA256SUMS (default: this release tarball's version, else the latest)
+#                 signed SHA256SUMS (default: this release tarball's version, else the latest)
+#   DOCK_REQUIRE_SIGNATURE  "1" fails that download when its signature can't be
+#                 checked here (it needs OpenSSL 3: Debian 12, Ubuntu 22.04 and later)
 #   GITHUB_TOKEN  for that download from a private repository: a token that can read its releases
 #   CADDY_VERSION     Caddy release to install (default below)
 #   PUBLIC_IP         address users point DNS at (default: auto-detect; empty on tunnel servers)
@@ -72,6 +74,11 @@ REGISTRY_IMAGE="registry:3.1.2@sha256:be9a7062dd7e3316e5c0368e42740dc991a9ceb5d3
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Releases (.github/workflows/release.yml) are downloaded from here.
 RELEASE_REPO=NordTempo/tempoDock
+# Dock's release signing keys (ADR 0088), as in internal/update/sign.go:
+# "<key id> <raw Ed25519 public key, base64>" per line. Releases from
+# FIRST_SIGNED on are signed.
+RELEASE_KEYS='bc6c45a08a65c136 8uQjZq1kO37ezVv7EzN8eyrqOYXRGK2nsCRL/d3RSdU='
+FIRST_SIGNED=v0.56.0
 CONF=/etc/dock/config.toml
 # Written by `dock node join`; its presence means this node has joined.
 NODE_STATE=/var/lib/dock/node.toml
@@ -90,6 +97,7 @@ MACHINE_KEYS=(:data_dir :listen :internal_listen :public_ip
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+warn() { printf 'warning: %s\n' "$*" >&2; }
 
 # Temporary files, removed on exit.
 staged=""
@@ -108,24 +116,65 @@ github() {
   fi
 }
 
+# signature_required VERSION: is VERSION (vX.Y.Z, pre-releases as their
+# X.Y.Z) FIRST_SIGNED or newer?
+signature_required() {
+  printf '%s %s\n' "${1#v}" "${FIRST_SIGNED#v}" | awk '{
+    split($1, a, /[.-]/); split($2, b, /[.-]/)
+    for (i = 1; i <= 3; i++) { if (a[i] + 0 > b[i] + 0) exit 0; if (a[i] + 0 < b[i] + 0) exit 1 }
+    exit 0 }'
+}
+
+# verify_sums DIR VERSION checks DIR/SHA256SUMS against DIR/SHA256SUMS.sig
+# (missing when the release has none) with openssl, as dock does.
+verify_sums() {
+  local dir=$1 version=$2 id key line
+  if [[ ! -s "$dir/SHA256SUMS.sig" ]]; then
+    ! signature_required "$version" \
+      || die "release $version has no SHA256SUMS.sig; releases from $FIRST_SIGNED on are signed, so don't install this one: it may have been tampered with"
+    warn "release $version predates signed releases ($FIRST_SIGNED); checked against its SHA256SUMS only"
+    return 0
+  fi
+  grep -q "  dock-install-$version.tar.gz\$" "$dir/SHA256SUMS" || die "SHA256SUMS belongs to another release than $version"
+  if ! openssl pkeyutl -help 2>&1 | grep -q -- -rawin; then
+    [[ "${DOCK_REQUIRE_SIGNATURE:-}" != 1 ]] || die "can't check the release's signature: it needs OpenSSL 3 (openssl pkeyutl -rawin)"
+    warn "can't check the release's signature without OpenSSL 3; checked against its SHA256SUMS only. To check where it was built: gh attestation verify dock-linux-$ARCH --repo $RELEASE_REPO"
+    return 0
+  fi
+  while read -r id key; do
+    line="$(grep "^$id " "$dir/SHA256SUMS.sig")" || continue
+    printf '%s' "${line#* }" | openssl base64 -d -A > "$dir/sig.bin" || continue
+    printf -- '-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA%s\n-----END PUBLIC KEY-----\n' "$key" > "$dir/key.pem"
+    if openssl pkeyutl -verify -pubin -inkey "$dir/key.pem" -rawin -in "$dir/SHA256SUMS" -sigfile "$dir/sig.bin" > /dev/null 2>&1; then
+      return 0
+    fi
+  done <<< "$RELEASE_KEYS"
+  die "release $version's SHA256SUMS isn't signed by a Dock release key; don't install it: it may have been tampered with"
+}
+
 # download_dock VERSION DIR downloads release VERSION's (or the latest
-# release's) dock-linux-$ARCH into DIR and checks it against SHA256SUMS.
-# Through the API, because release download links don't take a token.
+# release's) dock-linux-$ARCH into DIR and checks it against SHA256SUMS
+# and its signature. Through the API, because release download links
+# don't take a token.
 download_dock() {
   local version=$1 dir=$2 path name url
   path="releases/tags/$version"
   [[ "$version" != latest ]] || path=releases/latest
   github "https://api.github.com/repos/$RELEASE_REPO/$path" > "$dir/release.json" \
     || die "could not read release $version of $RELEASE_REPO; set GITHUB_TOKEN to a token that can read it (sudo --preserve-env=GITHUB_TOKEN), or download it yourself and set DOCK_BINARY"
-  for name in "dock-linux-$ARCH" SHA256SUMS; do
+  version="$(grep -o '"tag_name": *"[^"]*"' "$dir/release.json" | head -n1 | sed 's/.*"\([^"]*\)"$/\1/')"
+  [[ -n "$version" ]] || die "GitHub's answer for the release names no version"
+  for name in "dock-linux-$ARCH" SHA256SUMS SHA256SUMS.sig; do
     # An asset's "url" comes just before its "name" in GitHub's JSON.
     # shellcheck disable=SC2020 # one newline per character, on purpose
     url="$(tr ',{}[]' '\n\n\n\n\n' < "$dir/release.json" | awk -v name="$name" '
       /"url": *"[^"]*\/releases\/assets\/[0-9]+"/ { u = $0; sub(/^[^:]*: *"/, "", u); sub(/".*$/, "", u) }
       $0 ~ "\"name\": *\"" name "\"" && u != "" { print u; exit }')"
-    [[ -n "$url" ]] || die "release $version has no $name"
-    github -H "Accept: application/octet-stream" -o "$dir/$name" "$url" || die "could not download $name"
+    # Releases before FIRST_SIGNED have no signature; verify_sums decides.
+    [[ -n "$url" || "$name" == SHA256SUMS.sig ]] || die "release $version has no $name"
+    [[ -z "$url" ]] || github -H "Accept: application/octet-stream" -o "$dir/$name" "$url" || die "could not download $name"
   done
+  verify_sums "$dir" "$version"
   (cd "$dir" && grep -E "  dock-linux-$ARCH\$" SHA256SUMS | sha256sum --check --quiet --strict) \
     || die "dock-linux-$ARCH does not match the release's SHA256SUMS"
   chmod 0755 "$dir/dock-linux-$ARCH"

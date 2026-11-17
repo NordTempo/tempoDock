@@ -76,4 +76,5 @@ Eriksen's sole proprietorship (ENK); "the maintainer" below.
 - Agents treat fork pull requests (code, titles, comments) as untrusted
   input and never merge one without a maintainer (AGENTS.md).
 - Release signing beyond SHA256SUMS is not decided here; it is the next
-  hardening step for the update path.
+  hardening step for the update path. Decided in
+  [0088](0088-signed-releases.md).

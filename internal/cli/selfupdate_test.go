@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -19,19 +20,33 @@ import (
 )
 
 // fakeCLIReleases serves releases (newest first; a "-rc" one is a
-// prerelease) as GitHub's API does, each with this platform's dock-cli
-// and its SHA256SUMS, and points `dock self-update` at them and at a
-// temp binary, reached through a symlink. It returns the symlink and the
-// number of binary downloads so far.
+// prerelease) as GitHub's API does, each with this platform's dock-cli,
+// its SHA256SUMS and their signature by a key trusted for the test, and
+// points `dock self-update` at them and at a temp binary, reached through
+// a symlink. v0.55.x releases predate signing and have no signature;
+// v8.8.8's is by a stranger's key. It returns the symlink and the number
+// of binary downloads so far.
 func fakeCLIReleases(t *testing.T, versions ...string) (link string, downloads *int) {
 	t.Helper()
 	asset := update.CLIAsset(runtime.GOOS, runtime.GOARCH)
 	downloads = new(int)
+	pub, key, _ := ed25519.GenerateKey(nil)
+	update.TrustForTest(t, pub)
+	_, stranger, _ := ed25519.GenerateKey(nil)
+	sums := func(v string) string {
+		// v9.9.9's sums list another binary than the one served.
+		bin := sha256.Sum256([]byte("dock " + strings.Replace(v, "v9.9.9", "v0.0.0", 1)))
+		return fmt.Sprintf("%s  %s\n%s  %s\n", hex.EncodeToString(bin[:]), asset, strings.Repeat("0", 64), update.InstallAsset(v))
+	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		base := "http://" + r.Host
 		release := func(v string) string {
-			return fmt.Sprintf(`{"tag_name":%q,"prerelease":%t,"assets":[{"name":%q,"url":"%s/assets/%s/%[3]s"},{"name":"SHA256SUMS","url":"%[4]s/assets/%[5]s/SHA256SUMS"}]}`,
-				v, strings.Contains(v, "-rc"), asset, base, v)
+			sig := ""
+			if !strings.HasPrefix(v, "v0.55.") {
+				sig = fmt.Sprintf(`,{"name":"SHA256SUMS.sig","url":"%s/assets/%s/SHA256SUMS.sig"}`, base, v)
+			}
+			return fmt.Sprintf(`{"tag_name":%q,"prerelease":%t,"assets":[{"name":%q,"url":"%s/assets/%s/%[3]s"},{"name":"SHA256SUMS","url":"%[4]s/assets/%[5]s/SHA256SUMS"}%[6]s]}`,
+				v, strings.Contains(v, "-rc"), asset, base, v, sig)
 		}
 		switch {
 		case r.URL.Path == "/repos/"+releaseRepo+"/releases":
@@ -44,10 +59,15 @@ func fakeCLIReleases(t *testing.T, versions ...string) (link string, downloads *
 			_, _ = fmt.Fprint(w, release(filepath.Base(r.URL.Path)))
 		case strings.HasPrefix(r.URL.Path, "/assets/"):
 			v, name := filepath.Base(filepath.Dir(r.URL.Path)), filepath.Base(r.URL.Path)
-			if name == update.SumsAsset {
-				// v9.9.9's sums list another binary than the one served.
-				sum := sha256.Sum256([]byte("dock " + strings.Replace(v, "v9.9.9", "v0.0.0", 1)))
-				_, _ = fmt.Fprintf(w, "%s  %s\n", hex.EncodeToString(sum[:]), asset)
+			switch {
+			case name == update.SumsAsset:
+				_, _ = fmt.Fprint(w, sums(v))
+				return
+			case name == update.SigAsset && v == "v8.8.8":
+				_, _ = fmt.Fprint(w, update.Sign(stranger, []byte(sums(v))))
+				return
+			case name == update.SigAsset:
+				_, _ = fmt.Fprint(w, update.Sign(key, []byte(sums(v))))
 				return
 			}
 			*downloads++
@@ -156,6 +176,24 @@ func TestSelfUpdateRefusesMismatch(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(filepath.Dir(link)); len(entries) != 2 {
 		t.Errorf("left behind: %v", entries)
+	}
+}
+
+// A release from update.FirstSignedRelease on whose signature isn't
+// Dock's is refused; an older, unsigned one installs with a warning.
+func TestSelfUpdateChecksSignature(t *testing.T) {
+	setup(t)
+	link, _ := fakeCLIReleases(t)
+	code, _, stderr := selfUpdate(t, "--to", "v8.8.8")
+	if code == 0 || !strings.Contains(stderr, "isn't signed by a Dock release key") {
+		t.Fatalf("a stranger's signature: %d %s", code, stderr)
+	}
+	if got := binary(t, link); got != "dock old" {
+		t.Errorf("binary holds %q", got)
+	}
+	code, v, stderr := selfUpdate(t, "--to", "v0.55.2")
+	if code != 0 || !v.Updated || !v.Unsigned || binary(t, link) != "dock v0.55.2" {
+		t.Fatalf("an unsigned v0.55.2: %d %+v %s", code, v, stderr)
 	}
 }
 

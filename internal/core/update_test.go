@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -31,7 +32,7 @@ func (c *countingReleases) Releases(ctx context.Context) ([]update.Release, erro
 }
 
 // writeRelease adds release v to a directory source, for this machine's
-// arch and arm64.
+// arch and arm64, signed by a key trusted for the test.
 func writeRelease(t *testing.T, dir, v string) {
 	t.Helper()
 	rel := filepath.Join(dir, v)
@@ -47,7 +48,13 @@ func writeRelease(t *testing.T, dir, v string) {
 		h := sha256.Sum256(b)
 		fmt.Fprintf(&sums, "%s  %s\n", hex.EncodeToString(h[:]), name)
 	}
-	for name, b := range map[string]string{update.SumsAsset: sums.String(), "notes.md": "## " + v + " notes"} {
+	pub, key, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	update.TrustForTest(t, pub)
+	signature := update.Sign(key, []byte(sums.String()))
+	for name, b := range map[string]string{update.SumsAsset: sums.String(), update.SigAsset: signature, "notes.md": "## " + v + " notes"} {
 		if err := os.WriteFile(filepath.Join(rel, name), []byte(b), 0o644); err != nil {
 			t.Fatal(err)
 		}

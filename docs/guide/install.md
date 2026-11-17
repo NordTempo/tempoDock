@@ -24,7 +24,9 @@ control plane.
 A server needs two files from a [release](https://github.com/NordTempo/tempoDock/releases):
 the `dock-linux-<arch>` binary and `dock-install-<version>.tar.gz` (the
 `deploy/` directory: `install.sh` and the systemd units). Download them,
-check them against `SHA256SUMS`, copy them over and run the script as root:
+check them against `SHA256SUMS` (and that file's signature: see
+[Verifying a release](../../SECURITY.md#verifying-a-release)), copy them
+over and run the script as root:
 
 ```sh
 v=v0.1.0
@@ -39,7 +41,11 @@ ssh server "cd /tmp/dock-$v && tar -xzf dock-install-$v.tar.gz && sudo DOCK_BINA
 
 Without `DOCK_BINARY`, `install.sh` downloads the binary itself: the
 version the tarball came from (or `DOCK_VERSION`), checked against the
-release's `SHA256SUMS`:
+release's `SHA256SUMS` and its signature
+([ADR 0088](../decisions/0088-signed-releases.md); from v0.56.0 on). The
+signature check needs OpenSSL 3, which Debian 12 and Ubuntu 22.04 have;
+without it the script warns and checks `SHA256SUMS` only, unless
+`DOCK_REQUIRE_SIGNATURE=1`:
 
 ```sh
 tar -xzf dock-install-v0.1.0.tar.gz
@@ -77,8 +83,12 @@ its projects, members' roles and tokens ([ADR 0027](../decisions/0027-organizati
 Laptops and CI only need the client, `dock-cli-<os>-<arch>` (a quarter of
 the size; see [CLI-only build](../cli.md#cli-only-build)). Install the one
 matching the server's version: `install-cli.sh` from the release picks the
-right build, checks it against `SHA256SUMS` and installs it as `dock` in
-`~/.local/bin` (`/usr/local/bin` as root, or `DOCK_INSTALL_DIR`).
+right build, checks it against `SHA256SUMS` and its signature, and
+installs it as `dock` in `~/.local/bin` (`/usr/local/bin` as root, or
+`DOCK_INSTALL_DIR`). The signature check needs OpenSSL 3; macOS ships
+LibreSSL, so there the script warns and checks `SHA256SUMS` only, unless
+you `brew install openssl@3` and put it first in `PATH`
+(`DOCK_REQUIRE_SIGNATURE=1` makes a missing OpenSSL 3 an error).
 
 ```sh
 curl -fsSL https://github.com/NordTempo/tempoDock/releases/download/v0.1.0/install-cli.sh | DOCK_VERSION=v0.1.0 sh
@@ -94,10 +104,15 @@ grep ' dock-cli-darwin-arm64$' SHA256SUMS | shasum -a 256 -c
 install -m 0755 dock-cli-darwin-arm64 ~/.local/bin/dock
 ```
 
+Checking by hand, check `SHA256SUMS` itself too: with its signature
+([Verifying a release](../../SECURITY.md#verifying-a-release)), or with
+`gh attestation verify dock-cli-darwin-arm64 --repo NordTempo/tempoDock`.
+
 Once it is installed, `dock self-update` keeps it in step: it installs the
 release the current context's server runs (or the latest, with
 `--latest`, or a given one, with `--to v0.54.1`), checked against the
-release's `SHA256SUMS`, in place of the running binary. In a directory
+release's signed `SHA256SUMS`, in place of the running binary. A release
+from before v0.56.0, which has no signature, installs with a warning. In a directory
 only root can write to, such as `/usr/local/bin`, it prints the `sudo`
 command to run, with the version pinned.
 
@@ -121,7 +136,8 @@ the others also change an existing config, touching only their own keys.
 | Variable | Default | Meaning |
 |---|---|---|
 | `DOCK_BINARY` | download | Path to a `dock` binary: a release's `dock-linux-<arch>`, or `bin/dock` from `make build` |
-| `DOCK_VERSION` | the tarball's version, else the latest release | Without `DOCK_BINARY`: the release to download `dock-linux-<arch>` from, checked against its `SHA256SUMS` |
+| `DOCK_VERSION` | the tarball's version, else the latest release | Without `DOCK_BINARY`: the release to download `dock-linux-<arch>` from, checked against its signed `SHA256SUMS` |
+| `DOCK_REQUIRE_SIGNATURE` | empty | `1`: fail that download when this machine can't check the signature (no OpenSSL 3) instead of warning |
 | `GITHUB_TOKEN` | empty | For that download, only from a private repository: a token that can read its releases (pass it with `sudo --preserve-env=GITHUB_TOKEN`) |
 | `CADDY_VERSION` | `2.11.7` | Caddy release to download from GitHub |
 | `PUBLIC_IP` | auto (`api.ipify.org`), empty on tunnel servers | Address users point DNS at → `public_ip` |
@@ -779,11 +795,13 @@ the control plane restarts. What happens
 ([ADR 0028](../decisions/0028-updates-from-the-console.md)):
 
 1. The control plane downloads the release (its binary for every server's
-   architecture, the install tarball and `SHA256SUMS`) and refuses any
-   file that doesn't match `SHA256SUMS`.
+   architecture, the install tarball, `SHA256SUMS` and its signature) and
+   refuses a release whose signature isn't Dock's and any file that
+   doesn't match `SHA256SUMS`
+   ([ADR 0088](../decisions/0088-signed-releases.md)).
 2. It asks its updater: `dock-update.service`, which runs as root,
    started by `dock-update.path`. The updater copies the release out of
-   the daemon's reach and checks it again, stops `dock`, writes a control
+   the daemon's reach and checks it again, signature included, stops `dock`, writes a control
    plane backup to `/var/lib/dock-update/`, and runs the new release's
    `install.sh`, which swaps the binary and refreshes the units, as below.
 3. If `install.sh` fails, or the new version doesn't answer on the API

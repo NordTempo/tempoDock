@@ -4,7 +4,8 @@
 //
 // It trusts nothing the daemon wrote except the requested version: it
 // copies the staged files out of the daemon's reach and checks them
-// against the release's SHA256SUMS there, checks the binary reports that
+// against the release's SHA256SUMS there, whose signature it checks with
+// the keys built into this binary (ADR 0088), checks the binary reports that
 // version, saves what it replaces, backs up the control plane with the
 // daemon stopped, and runs the release's own install.sh. If install.sh
 // fails or the new version isn't healthy in time, it puts the old binary,
@@ -250,7 +251,8 @@ func (r *run) check() error {
 }
 
 // verify copies the staged release into StateDir and checks the copies:
-// against SHA256SUMS, and the binary against the version it says. Then it
+// SHA256SUMS against its signature, the files against SHA256SUMS, and
+// the binary against the version it says. Then it
 // unpacks the install tarball's deploy/ next to them.
 func (r *run) verify(ctx context.Context) error {
 	v := r.req.Version
@@ -268,9 +270,19 @@ func (r *run) verify(ctx context.Context) error {
 			return fmt.Errorf("copy the staged %s: %w", name, err)
 		}
 	}
-	sums, err := update.ReadSums(r.release)
+	// The signature is optional here; ReadSums refuses a release that
+	// needs one and has none.
+	_, err := update.CopyFile(filepath.Join(staged, update.SigAsset), filepath.Join(r.release, update.SigAsset), 0o700)
+	signed := err == nil
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("copy the staged %s: %w", update.SigAsset, err)
+	}
+	sums, err := update.ReadSums(r.release, v)
 	if err != nil {
 		return err
+	}
+	if !signed {
+		r.say("%s is older than %s and unsigned: checked against its SHA256SUMS only", v, update.FirstSignedRelease)
 	}
 	for _, name := range update.Assets(v, r.o.Arch)[1:] {
 		if err := sums.Check(r.release, name); err != nil {

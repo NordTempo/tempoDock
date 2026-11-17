@@ -18,7 +18,7 @@ the new version doesn't come up, then updates the nodes.
 | Force | Means here |
 |---|---|
 | Privilege | The daemon runs as the unprivileged `dock` user under `ProtectSystem=strict`; installing a binary and units needs root. The daemon must not get broad root for it |
-| Integrity | Only bytes that match the release's `SHA256SUMS` are ever installed, on every server |
+| Integrity | Only bytes that match the release's `SHA256SUMS` are ever installed, on every server; from v0.56.0 on that file must carry Dock's signature ([0088](0088-signed-releases.md)) |
 | Recoverable | Migrations only go forward. A bad release must leave the install as it was: old binary, old units, old database |
 | Idle means idle | No background polling for releases ([performance](../performance.md#idle-means-idle)) |
 | One install path | `install.sh` already knows how to upgrade (units, `caddy.json`, firewall, registry). A second implementation would drift from it |

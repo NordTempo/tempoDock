@@ -36,6 +36,9 @@ type selfUpdateView struct {
 	// --dry-run.
 	Updated bool `json:"updated"`
 	DryRun  bool `json:"dryRun,omitempty"`
+	// Unsigned: To predates signed releases (update.FirstSignedRelease)
+	// and was checked against its SHA256SUMS only.
+	Unsigned bool `json:"unsigned,omitempty"`
 }
 
 // selfUpdateHost is what `dock self-update` takes from its surroundings;
@@ -62,7 +65,9 @@ func newSelfUpdateCmd(g *globals) *cobra.Command {
 		Use:   "self-update",
 		Short: "Install the CLI that matches your server",
 		Long: `Replace this CLI with the release's dock-cli build for this machine,
-checked against the release's SHA256SUMS. By default the release is the
+checked against the release's SHA256SUMS and its signature (releases
+from ` + update.FirstSignedRelease + ` on are signed; older ones are installed
+with a warning). By default the release is the
 version the current context's server runs, so the CLI and the server
 match; with no server reachable, the latest release. --latest takes the
 newest release, --to a given one.
@@ -112,10 +117,14 @@ This updates the CLI only; ` + "`dock update`" + ` updates the platform.`,
 				}
 				if !dryRun {
 					g.io.Progressf("Downloading %s %s", asset, v.To)
-					if err := replaceBinary(cmd.Context(), src, v.To, asset, exe); err != nil {
+					signed, err := replaceBinary(cmd.Context(), src, v.To, asset, exe)
+					if err != nil {
 						return err
 					}
-					v.Updated = true
+					v.Updated, v.Unsigned = true, !signed
+					if v.Unsigned {
+						g.io.Warnf("dock %s predates signed releases (%s): it was checked against its SHA256SUMS only.", v.To, update.FirstSignedRelease)
+					}
 				}
 			}
 			return g.io.Print(v, func() error {
@@ -233,23 +242,27 @@ func unwritable(exe, version string, err error) error {
 
 // replaceBinary downloads release version's asset next to exe, makes it
 // executable and renames it over exe. Until the rename exe is untouched;
-// a download that fails or doesn't match SHA256SUMS is removed.
-func replaceBinary(ctx context.Context, src update.Source, version, asset, exe string) error {
+// a download that fails or doesn't match the signed SHA256SUMS is
+// removed. signed is false for a release before signing began.
+func replaceBinary(ctx context.Context, src update.Source, version, asset, exe string) (signed bool, err error) {
 	f, err := os.CreateTemp(filepath.Dir(exe), ".dock-self-update-*")
 	if err != nil {
-		return unwritable(exe, version, err)
+		return false, unwritable(exe, version, err)
 	}
 	tmp := f.Name()
 	defer func() { _ = os.Remove(tmp) }() // a no-op after the rename
-	err = update.Fetch(ctx, src, version, asset, f)
+	signed, err = update.Fetch(ctx, src, version, asset, f)
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
-	if err != nil {
-		return &output.Error{Exit: output.ExitError, Message: fmt.Sprintf("could not download %s %s: %v", asset, version, err), Hint: "dock is unchanged. Try again, or pin another release with `--to`.", Err: err}
+	switch {
+	case errors.Is(err, update.ErrUnsigned) || errors.Is(err, update.ErrBadSignature):
+		return false, &output.Error{Exit: output.ExitError, Message: fmt.Sprintf("refusing %s %s: %v", asset, version, err), Hint: "dock is unchanged. Report it: https://github.com/" + releaseRepo + "/security", Err: err}
+	case err != nil:
+		return false, &output.Error{Exit: output.ExitError, Message: fmt.Sprintf("could not download %s %s: %v", asset, version, err), Hint: "dock is unchanged. Try again, or pin another release with `--to`.", Err: err}
 	}
 	if err := os.Chmod(tmp, 0o755); err != nil {
-		return err
+		return false, err
 	}
-	return os.Rename(tmp, exe)
+	return signed, os.Rename(tmp, exe)
 }

@@ -65,7 +65,7 @@ func newUpdateApplyCmd(g *globals) *cobra.Command {
 		Use:   "apply [VERSION]",
 		Short: "Update the control plane, then every node behind it (operator)",
 		Long: `Update the platform to VERSION, the newest release when left out. The
-control plane downloads it and checks it against the release's SHA256SUMS,
+control plane downloads it and checks it against the release's signed SHA256SUMS,
 backs itself up, swaps its binary and units and restarts; if the new version
 isn't healthy within 90 seconds it rolls back, database included. Then it
 updates every node behind it over its link, one at a time. Apps keep running

@@ -18,7 +18,7 @@ func AnalyticsDir(dataDir string) string { return filepath.Join(dataDir, "analyt
 
 // StageAnalytics downloads the store's binary for arch from release
 // version into AnalyticsDir, unless a copy that matches the release's
-// SHA256SUMS is there, and makes it executable. It returns the binary's
+// signed SHA256SUMS is there, and makes it executable. It returns the binary's
 // path and SHA-256.
 func StageAnalytics(ctx context.Context, src Source, dataDir, version, arch string) (path, sum string, err error) {
 	if !IsRelease(version) {
@@ -28,7 +28,7 @@ func StageAnalytics(ctx context.Context, src Source, dataDir, version, arch stri
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", "", err
 	}
-	sums, err := ReadSums(dir)
+	sums, err := ReadSums(dir, version)
 	if err != nil {
 		if sums, err = downloadSums(ctx, src, dir, version); err != nil {
 			return "", "", err

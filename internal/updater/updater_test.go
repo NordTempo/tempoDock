@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -126,7 +127,8 @@ func request(t *testing.T, dataDir, v string, at time.Time) {
 	}
 }
 
-// stageRelease writes a release's binary, install tarball and SHA256SUMS.
+// stageRelease writes a release's binary, install tarball, SHA256SUMS and
+// its signature by a key trusted for the test.
 func stageRelease(t *testing.T, dir, v, binary string) {
 	t.Helper()
 	var tgz bytes.Buffer
@@ -146,6 +148,27 @@ func stageRelease(t *testing.T, dir, v, binary string) {
 		write(t, filepath.Join(dir, name), string(b))
 		h := sha256.Sum256(b)
 		fmt.Fprintf(&sums, "%s  %s\n", hex.EncodeToString(h[:]), name)
+	}
+	write(t, filepath.Join(dir, update.SumsAsset), sums.String())
+	pub, key, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	update.TrustForTest(t, pub)
+	write(t, filepath.Join(dir, update.SigAsset), update.Sign(key, []byte(sums.String())))
+}
+
+// resum rewrites the staged SHA256SUMS to match its files, as someone
+// with the dock user's access could; its signature then no longer fits.
+func resum(t *testing.T, dir, v string) {
+	t.Helper()
+	var sums strings.Builder
+	for _, name := range []string{update.BinaryAsset("amd64"), update.InstallAsset(v)} {
+		got, err := update.HashFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprintf(&sums, "%s  %s\n", got, name)
 	}
 	write(t, filepath.Join(dir, update.SumsAsset), sums.String())
 }
@@ -228,6 +251,15 @@ func TestRunRefusesBeforeChangingAnything(t *testing.T) {
 		"tampered binary": func(o Options) {
 			write(t, filepath.Join(update.ReleaseDir(o.DataDir, "v1.1.0"), update.BinaryAsset("amd64")), "dock v6.6.6")
 		},
+		// The SHA256SUMS check alone would pass this one.
+		"tampered install tarball and SHA256SUMS": func(o Options) {
+			dir := update.ReleaseDir(o.DataDir, "v1.1.0")
+			write(t, filepath.Join(dir, update.InstallAsset("v1.1.0")), "a root shell")
+			resum(t, dir, "v1.1.0")
+		},
+		"unsigned": func(o Options) {
+			_ = os.Remove(filepath.Join(update.ReleaseDir(o.DataDir, "v1.1.0"), update.SigAsset))
+		},
 		"stale request": func(o Options) { request(t, o.DataDir, "v1.1.0", time.Now().Add(-time.Hour)) },
 		"downgrade":     func(o Options) { request(t, o.DataDir, "v0.9.0", time.Now()) },
 		"symlinked binary": func(o Options) {
@@ -247,6 +279,9 @@ func TestRunRefusesBeforeChangingAnything(t *testing.T) {
 			}
 			if res.Status != update.Failed {
 				t.Fatalf("result %+v", res)
+			}
+			if signing := strings.Contains(name, "SHA256SUMS") || name == "unsigned"; signing && !strings.Contains(res.Error, update.SigAsset) && !strings.Contains(res.Error, "signed") {
+				t.Errorf("error %q; want the signature refused", res.Error)
 			}
 			if got := strings.Join(f.calls, ","); got != "notify" {
 				t.Errorf("calls %s; want nothing touched", got)

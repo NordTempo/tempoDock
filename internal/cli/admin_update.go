@@ -37,7 +37,7 @@ when the daemon writes <data_dir>/update/request.json, which ` + "`dock update a
 and the console's Update do. Nothing happens without a request.
 
 It copies the staged release out of the daemon's reach, checks it against
-the release's SHA256SUMS and the binary's own version, saves the current
+the release's signed SHA256SUMS and the binary's own version, saves the current
 binary, units and caddy.json, and on the control plane stops dock and
 writes a control plane backup to /var/lib/dock-update. Then it runs the
 release's install.sh and checks the new version comes up. If not, it puts

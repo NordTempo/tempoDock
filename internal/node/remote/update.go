@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/update"
@@ -18,7 +19,12 @@ import (
 // 0028). Older nodes are updated by hand.
 const UpdateProtocol = 4
 
-// updateTimeout bounds sending a release to a node: three files, ~40 MB.
+// SignedUpdateProtocol is the first that takes a release's SigAsset with
+// its update (ADR 0088); older nodes refuse a file they don't expect, and
+// don't check signatures anyway.
+const SignedUpdateProtocol = 30
+
+// updateTimeout bounds sending a release to a node: three or four files, ~40 MB.
 const updateTimeout = 10 * time.Minute
 
 // ErrNoUpdateCall is a node too old to be updated over its link.
@@ -53,13 +59,18 @@ func (h *Hub) UpdateNode(ctx context.Context, serverID int64, u NodeUpdate) (Hel
 			_ = f.Close()
 		}
 	}()
-	readers := make([]io.Reader, 0, 3)
-	for _, name := range update.Assets(u.Version, s.hello.Arch) {
+	names := update.Assets(u.Version, s.hello.Arch)
+	if s.hello.Protocol >= SignedUpdateProtocol && update.Exists(u.Dir, update.SigAsset) {
+		names = slices.Insert(names, 1, update.SigAsset)
+	}
+	readers := make([]io.Reader, 0, len(names))
+	for _, name := range names {
 		path := filepath.Join(u.Dir, name)
 		sum, ok := u.Sums[name]
-		if name == update.SumsAsset {
-			// SHA256SUMS doesn't list itself; the node checks the copy it
-			// gets is the one the control plane verified against.
+		if name == update.SumsAsset || name == update.SigAsset {
+			// SHA256SUMS doesn't list itself or its signature; the node
+			// checks the copies it gets are the ones the control plane
+			// verified, and its updater checks the signature again.
 			sum, err = update.HashFile(path)
 			ok = err == nil
 		}
