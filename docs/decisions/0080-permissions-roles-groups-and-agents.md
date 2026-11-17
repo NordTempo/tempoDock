@@ -245,3 +245,13 @@ one decides.
 - `--role read|deploy|admin`, `--scope`, `--project`, `--environment`,
   `dock env lock|unlock` and `dock db policy` keep working on the new
   model.
+
+## Amended 2026-11-17
+
+Settled after reviewing phases 6 and 7 as a whole:
+
+- **An approval lifts what its decider may lift.** A person approving
+  their own agent's "ask me first" request lifts that asking and nothing
+  else: a lock set, or an agent rule made, while the request waited stops
+  its run as it would a new call, and the request ends failed, saying so.
+  An approver's decision lifts the lock, the agent rules and the asking.

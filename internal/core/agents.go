@@ -187,9 +187,9 @@ func (a Actor) isPersonalAgent() bool {
 
 // asksOwner reports whether a personal agent's change in e waits for its
 // person: the check's permission is one they asked to approve first in
-// e's kind, and no approved request lets this call through.
+// e's kind, and neither they nor an approver approved this call.
 func (a Actor) asksOwner(need apitypes.Scope, action string, e store.Environment) bool {
-	return a.agent != nil && a.asks(a.agent.ask, need, action, e)
+	return a.agent != nil && a.ownerApproved != e.ID && a.asks(a.agent.ask, need, action, e)
 }
 
 // asksApprover reports whether an agent's change in e waits for an
@@ -198,7 +198,8 @@ func (a Actor) asksApprover(need apitypes.Scope, action string, e store.Environm
 	return a.agent != nil && a.asks(a.agent.ruleAsk, need, action, e)
 }
 
-// asks reports whether a check's permission in e is in an ask set.
+// asks reports whether a check's permission in e is in an ask set, and no
+// approver's decision lets this call through.
 func (a Actor) asks(set [3]Perms, need apitypes.Scope, action string, e store.Environment) bool {
 	// Only while grants decide: in shadow mode the role still does.
 	if !a.hasGrants || set == ([3]Perms{}) || a.granted == e.ID {

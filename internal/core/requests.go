@@ -633,6 +633,9 @@ func (c *Core) runRequest(r store.AccessRequest, es envScope, by Actor) {
 		if CodeOf(err) == apitypes.CodeUnauthorized {
 			msg = "the token that asked is revoked, expired or no longer acts for its user; nothing ran"
 		}
+		if _, held := errors.AsType[*LockedError](err); held && r.AskUserID != nil {
+			msg += "; your approval answered your agent's asking you first, not this: nothing ran. Make the call again and it waits for the environment's approvers"
+		}
 	}
 	finished, ferr := c.store.FinishAccessRequest(context.WithoutCancel(ctx), store.FinishAccessRequestParams{
 		Status: string(status), Result: string(result), Error: msg, FinishedAt: ptr(now()), ID: r.ID,
@@ -690,6 +693,10 @@ func (c *Core) CheckRequest(ctx context.Context, a Actor, id int64) (apitypes.Ac
 		// The call reached no lock, so it would change nothing here.
 		return apitypes.AccessRequestCheck{Reason: "the call no longer changes anything in " + es.String()}, nil
 	}
+	if r.AskUserID != nil && lockHolds(es.env, now()) {
+		// The person's approval answers their agent's asking first, not a lock.
+		return apitypes.AccessRequestCheck{Reason: fmt.Sprintf("%s is locked now, which your approval doesn't lift: reject this request and make the call again, so it waits for the environment's approvers", es)}, nil
+	}
 	if le.Service != "" && restartOps[r.Via+":"+r.Operation] {
 		ss, err := c.loadService(ctx, a.OrgID, ServiceRef{es.project.Name, es.env.Name, le.Service})
 		if err != nil {
@@ -743,9 +750,15 @@ func (c *Core) replayRequest(ctx context.Context, r store.AccessRequest, es envS
 			return nil, err
 		}
 	}
-	if check {
+	switch {
+	case check:
 		a.checkOnly = true
-	} else {
+	case r.AskUserID != nil:
+		// The person's answer to their own agent's asking first: it lifts
+		// that and nothing an approver decides. A lock set or an agent rule
+		// made since stops the call as it would a new one.
+		a.ownerApproved, a.approval = es.env.ID, &approval{id: r.ID, by: by.Name}
+	default:
 		a.granted, a.approval = es.env.ID, &approval{id: r.ID, by: by.Name}
 	}
 	return run(ctx, a, r.Operation, args)
