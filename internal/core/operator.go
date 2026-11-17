@@ -316,10 +316,11 @@ func (c *Core) OperatorRemoveMember(ctx context.Context, a Actor, slug string, u
 	if err != nil {
 		return err
 	}
-	if err := c.leaveOrgMember(ctx, o.ID, userID); err != nil {
+	invites, err := c.leaveOrgMember(ctx, o.ID, userID)
+	if err != nil {
 		return err
 	}
-	c.auditBoth(ctx, a, o, "org.member_remove", "the platform's operator removed "+u.Email+" from the organization")
+	c.auditBoth(ctx, a, o, "org.member_remove", "the platform's operator removed "+u.Email+" from the organization"+invitesNote(invites))
 	return nil
 }
 

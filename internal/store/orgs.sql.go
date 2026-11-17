@@ -887,6 +887,29 @@ func (q *Queries) RevokeOrgInvite(ctx context.Context, arg RevokeOrgInviteParams
 	return result.RowsAffected()
 }
 
+const revokeOrgInvitesBy = `-- name: RevokeOrgInvitesBy :execrows
+UPDATE org_invites SET revoked_at = ?1
+WHERE org_id = +?2 AND accepted_at IS NULL AND revoked_at IS NULL
+  AND created_by = (SELECT email FROM users WHERE users.id = +?3)
+`
+
+type RevokeOrgInvitesByParams struct {
+	Now    *time.Time
+	OrgID  int64
+	UserID int64
+}
+
+// RevokeOrgInvitesBy ends the open invites a member made in an org, when
+// they leave it or their role is lowered: invites record their maker by
+// email. The open invites of one org are few (org_invites_open).
+func (q *Queries) RevokeOrgInvitesBy(ctx context.Context, arg RevokeOrgInvitesByParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, revokeOrgInvitesBy, arg.Now, arg.OrgID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const revokeOrgTokens = `-- name: RevokeOrgTokens :exec
 UPDATE tokens SET revoked_at = coalesce(revoked_at, +?1), org_id = NULL
 WHERE org_id = +?2

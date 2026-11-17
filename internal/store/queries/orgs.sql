@@ -120,6 +120,14 @@ WHERE org_invites.hash = +?;
 -- name: RevokeOrgInvite :execrows
 UPDATE org_invites SET revoked_at = ? WHERE id = +? AND org_id = +? AND accepted_at IS NULL AND revoked_at IS NULL;
 
+-- RevokeOrgInvitesBy ends the open invites a member made in an org, when
+-- they leave it or their role is lowered: invites record their maker by
+-- email. The open invites of one org are few (org_invites_open).
+-- name: RevokeOrgInvitesBy :execrows
+UPDATE org_invites SET revoked_at = sqlc.arg(now)
+WHERE org_id = +sqlc.arg(org_id) AND accepted_at IS NULL AND revoked_at IS NULL
+  AND created_by = (SELECT email FROM users WHERE users.id = +sqlc.arg(user_id));
+
 -- name: AcceptOrgInvite :execrows
 UPDATE org_invites SET accepted_at = ? WHERE id = +? AND accepted_at IS NULL AND revoked_at IS NULL;
 

@@ -154,10 +154,11 @@ func (c *Core) LeaveOrg(ctx context.Context, a Actor) error {
 	if err := c.keepAnAdmin(ctx, a.OrgID, a.UserID, ""); err != nil {
 		return err
 	}
-	if err := c.leaveOrgMember(ctx, a.OrgID, a.UserID); err != nil {
+	invites, err := c.leaveOrgMember(ctx, a.OrgID, a.UserID)
+	if err != nil {
 		return err
 	}
-	c.audit(ctx, a, "org.leave", nil, nil, a.Email, a.Email+" left the organization")
+	c.audit(ctx, a, "org.leave", nil, nil, a.Email, a.Email+" left the organization"+invitesNote(invites))
 	return nil
 }
 
@@ -193,16 +194,24 @@ func (c *Core) SetMemberRole(ctx context.Context, a Actor, userID int64, req api
 	}
 	// The role is the member's seeded group (ADR 0080): Admins,
 	// Developers or Viewers.
+	var invites int64
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		if _, err := q.SetMemberRole(ctx, store.SetMemberRoleParams{Role: string(req.Role), OrgID: a.OrgID, UserID: userID}); err != nil {
 			return err
 		}
-		return placeInRoleGroup(ctx, q, a.OrgID, userID, req.Role, a.Name)
+		if err := placeInRoleGroup(ctx, q, a.OrgID, userID, req.Role, a.Name); err != nil {
+			return err
+		}
+		if rank(req.Role) < rank(apitypes.Scope(was)) {
+			// The invites they made offered roles they may not give now.
+			invites, err = endInvitesBy(ctx, q, a.OrgID, userID)
+		}
+		return err
 	})
 	if err != nil {
 		return apitypes.User{}, err
 	}
-	c.audit(ctx, a, "org.member_role", nil, nil, u.Email, fmt.Sprintf("made %s %s", u.Email, req.Role))
+	c.audit(ctx, a, "org.member_role", nil, nil, u.Email, fmt.Sprintf("made %s %s", u.Email, req.Role)+invitesNote(invites))
 	return c.memberView(ctx, a.OrgID, u.ID)
 }
 
@@ -225,6 +234,7 @@ func (c *Core) RemoveMember(ctx context.Context, a Actor, userID int64) error {
 	if err := c.keepAnAdmin(ctx, a.OrgID, userID, ""); err != nil {
 		return err
 	}
+	var invites int64
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		if _, err := q.RemoveOrgMember(ctx, store.RemoveOrgMemberParams{OrgID: a.OrgID, UserID: userID}); err != nil {
 			return err
@@ -232,12 +242,15 @@ func (c *Core) RemoveMember(ctx context.Context, a Actor, userID int64) error {
 		if err := leaveOrgAccess(ctx, q, a.OrgID, userID); err != nil {
 			return err
 		}
+		if invites, err = endInvitesBy(ctx, q, a.OrgID, userID); err != nil {
+			return err
+		}
 		return keepFullAccess(ctx, q, a)
 	})
 	if err != nil {
 		return err
 	}
-	c.audit(ctx, a, "org.member_remove", nil, nil, u.Email, "removed "+u.Email+" from the organization")
+	c.audit(ctx, a, "org.member_remove", nil, nil, u.Email, "removed "+u.Email+" from the organization"+invitesNote(invites))
 	return nil
 }
 
