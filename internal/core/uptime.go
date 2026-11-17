@@ -86,7 +86,10 @@ type uptimeState struct {
 // checkState is what the probes of one check said.
 type checkState struct {
 	// running: a probe of the check hasn't finished.
-	running  bool
+	running bool
+	// login: the check is of a domain behind a Dock login, so the control
+	// plane probes it (uptimeEntry.accessKey), as of the last reload.
+	login    bool
 	failures int
 	// since is when the current run of failures began.
 	since time.Time
@@ -516,7 +519,11 @@ func (c *Core) toUptimeCheck(r store.UptimeCheck, envServer int64, servers []sto
 		CreatedAt: r.CreatedAt, CreatedBy: r.CreatedBy, Auto: r.Auto, State: apitypes.UptimeUnknown,
 		Incidents: []apitypes.UptimeIncident{},
 	}
-	out.Server = c.serverLabel(c.uptimeProber(servers, r.ID, envServer).Name, operator)
+	c.uptime.mu.Lock()
+	st := c.uptime.checks[r.ID]
+	login := st != nil && st.login
+	c.uptime.mu.Unlock()
+	out.Server = c.serverLabel(c.uptimeProber(servers, r.ID, envServer, login).Name, operator)
 	out.State, out.LastProbe = c.checkStatus(r.ID)
 	if out.LastProbe != nil {
 		p := *out.LastProbe

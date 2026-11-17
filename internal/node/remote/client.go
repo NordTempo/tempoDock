@@ -963,8 +963,12 @@ func (c *Client) DialAnalyticsStore(ctx context.Context, kind node.StoreKind) (n
 const ProbeProtocol = 19
 
 // Probe implements node.Prober. The call may take the probe's timeout,
-// plus the link's own time.
+// plus the link's own time. A probe with a session cookie is refused:
+// those stay on the control plane (node.ProbeRequest.Cookie).
 func (c *Client) Probe(ctx context.Context, req node.ProbeRequest) (node.ProbeResult, error) {
+	if req.Cookie != "" {
+		return node.ProbeResult{}, errors.New("a probe of a login-protected domain runs on the control plane only")
+	}
 	if err := c.needProtocol(ctx, ProbeProtocol, "run uptime checks"); err != nil {
 		return node.ProbeResult{}, err
 	}

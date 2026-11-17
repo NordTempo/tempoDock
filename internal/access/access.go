@@ -32,6 +32,15 @@ const (
 	// CallbackPath is where, on the app's hostname, a grant is traded for
 	// a session cookie: CallbackPath?grant=<token>&to=<path>.
 	CallbackPath = "/.dock/access"
+	// CookieName is the cookie that holds a visitor's session on a
+	// login-protected hostname.
+	CookieName = "dock_access"
+	// ProbeTTL is how long the session of one uptime probe lasts (ADR
+	// 0030, "Uptime probes"): the longest probe timeout and some slack.
+	ProbeTTL = time.Minute
+	// ProbeUser is who an uptime probe's session names. No person's
+	// session does: theirs name an email address.
+	ProbeUser = "dock-uptime"
 	// UserHeader carries the signed-in visitor's name to the app,
 	// replacing any value the client sent.
 	UserHeader = "X-Dock-User"
@@ -94,6 +103,14 @@ func mac(key []byte, payload string) []byte {
 	m := hmac.New(sha256.New, key)
 	m.Write([]byte(payload))
 	return m.Sum(nil)
+}
+
+// ProbeCookie is the Cookie header that lets one of Dock's uptime probes
+// through the login on host: a session naming ProbeUser, bound to host
+// like every session and valid for ProbeTTL from now. Only the control
+// plane makes one, for a check of a domain of the service key belongs to.
+func ProbeCookie(key []byte, host string, now time.Time) string {
+	return CookieName + "=" + Sign(key, Session, host, ProbeUser, now.Add(ProbeTTL))
 }
 
 // LocalPath is to if it is a path on the same hostname, else "/". Both the

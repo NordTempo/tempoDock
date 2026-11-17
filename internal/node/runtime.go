@@ -34,7 +34,8 @@ type Runtime interface {
 // other than the one serving a site to fetch it.
 type Prober interface {
 	// Probe sends one GET to req.URL and says whether the answer was the
-	// expected one in time. Redirects aren't followed, nothing is kept
+	// expected one in time. Redirects aren't followed (req.Cookie relies
+	// on it), nothing is kept
 	// alive, and addresses of the server itself, link-local, multicast and
 	// cloud metadata addresses are refused after DNS. A site that is down
 	// is a result (Up false, Error set), not an error; the error is for
@@ -51,6 +52,11 @@ type ProbeRequest struct {
 	ExpectStatus int
 	// Timeout bounds the whole request, connecting included.
 	Timeout time.Duration
+	// Cookie, when set, is the request's Cookie header: the session that
+	// lets a probe through a Dock login (access.ProbeCookie). It goes to
+	// URL's host only, as redirects aren't followed, and never over the
+	// node link: such a probe runs on the control plane.
+	Cookie string
 }
 
 // Status classes for ProbeRequest.ExpectStatus: any 2xx or any 3xx code.

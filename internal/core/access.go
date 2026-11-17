@@ -116,6 +116,8 @@ func (c *Core) SetServiceAccess(ctx context.Context, a Actor, ref ServiceRef, re
 		c.log.Error("apply routes after changing access", "service", ss.String(), "err", err)
 	}
 	c.audit(ctx, a, "service.access", &ss.project, &ss.env, ss.String(), summary)
+	// Its uptime checks gain or lose their session (uptimeEntry.accessKey).
+	c.kickUptime()
 	if req.Mode == apitypes.AccessPublic {
 		return apitypes.Access{Mode: apitypes.AccessPublic}, nil
 	}

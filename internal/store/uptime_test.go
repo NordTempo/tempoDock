@@ -10,7 +10,8 @@ import (
 // alert key. Grouping sorts a bounded set (a service's checks, an hour's
 // minute rows), so only scans of growing tables and sorts for ORDER BY
 // fail. The scheduler's list (ListUptimeSchedule) reads every check on
-// purpose.
+// purpose, and its login domains (ListLoginDomains) every protected
+// service, each one's domains through the index.
 func TestUptimeQueryPlans(t *testing.T) {
 	f := newDataFixture(t)
 	for _, tc := range []struct {
@@ -25,6 +26,7 @@ func TestUptimeQueryPlans(t *testing.T) {
 		{"UptimeTotals", uptimeTotals, []any{1, 2, 3, 1, 0}, "s USING PRIMARY KEY (check_id=?)"},
 		{"UptimeSeries", uptimeSeries, []any{1, 0}, "s USING PRIMARY KEY (check_id=? AND res=? AND at>?)"},
 		{"UptimeProjectSummary", uptimeProjectSummary, []any{0, 1}, "s USING PRIMARY KEY (check_id=? AND res=? AND at>?)"},
+		{"ListLoginDomains", listLoginDomains, nil, "domains USING INDEX domains_service (service_id=?)"},
 		{"ListUptimeIncidents", listUptimeIncidents, []any{1, 5}, "alerts USING INDEX alerts_key (key=?)"},
 	} {
 		rows, err := f.s.DB.Query("EXPLAIN QUERY PLAN "+tc.sql, tc.args...)
@@ -44,7 +46,7 @@ func TestUptimeQueryPlans(t *testing.T) {
 		all := strings.Join(plan, "; ")
 		t.Logf("%s: %s", tc.name, all)
 		if !strings.Contains(all, tc.want) || strings.Contains(all, "SCAN uptime_stats") || strings.Contains(all, "SCAN m") ||
-			strings.Contains(all, "SCAN s") || strings.Contains(all, "SCAN alerts") || strings.Contains(all, "FOR ORDER BY") {
+			strings.Contains(all+";", "SCAN s;") || strings.Contains(all, "SCAN s ") || strings.Contains(all, "SCAN alerts") || strings.Contains(all, "FOR ORDER BY") {
 			t.Errorf("%s: %s, want %s", tc.name, all, tc.want)
 		}
 	}

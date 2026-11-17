@@ -36,6 +36,23 @@ internet, with a password or with the Dock login, chosen per service.
 | Dock's address | The login URL is Dock's public address ([0029](0029-public-address.md)), or its private one without it. Changing the address reroutes every online server |
 | API, CLI, UI | `GET`/`PUT .../services/{service}/access`, `POST /access/grants`; `dock access`, `dock access public\|password\|login`; on the Domains tab, a line saying who can open the service, with Change (mock C, picked by Saile). Audited as `service.access` |
 
+## Amendment: uptime probes (2026-11-17)
+
+An uptime check ([0055](0055-uptime-checks.md)) of a login-protected
+domain got the check's 401, so every such service showed as down and
+raised an alert. Dock's own probe now passes the login, by the path the
+check already has: a session cookie.
+
+| Topic | Decision |
+|---|---|
+| What the probe carries | `dock_access`, a session signed with the service's key like a visitor's (`access.ProbeCookie`). No new token kind, header or allowlist: the access check is unchanged, so nodes of any version let it through |
+| Scope | Bound to the probed hostname, as every session is, and valid for one minute (`access.ProbeTTL`), not 12 hours. A new one is signed for each probe (opening the key and one HMAC, microseconds) and none is stored |
+| Who it names | `dock-uptime` (`access.ProbeUser`), which the app gets in `X-Dock-User`. A person's session names their email address, so the two can't be confused. It is no member: nothing is audited as a sign-in, and the probe's `User-Agent: dock-uptime/*` already keeps it out of traces and sleep's access log |
+| Which checks | Only a check whose host is a verified, serving (not redirecting) domain of the check's own service, and only while that service's mode is `login`. The scheduler matches hostname and service when it loads its checks (`ListLoginDomains`); changing a service's access reloads them. Any other check is probed as before, without a cookie |
+| Redirects | The probe follows none (`http.ErrUseLastResponse`), so the cookie reaches the probed host only. Signed with that service's key for that hostname, it would open nothing anywhere else either |
+| Where it runs | On the control plane only. The cookie is signed there and never crosses the node link (`remote.Client.Probe` refuses a request with one), so a protected check loses [0055](0055-uptime-checks.md)'s "from another server" and no protocol change is needed. Sending it to a probing node is a possible follow-up |
+| Password mode | Unchanged: Dock holds only the password's hash and can't answer basic auth. A check of such a service expects 401 if it is to be up |
+
 ## Why this shape
 
 **Per service, not per domain.** Per domain would let a service be

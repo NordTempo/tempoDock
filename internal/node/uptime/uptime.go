@@ -104,6 +104,10 @@ func (p *Prober) Probe(ctx context.Context, req node.ProbeRequest) (node.ProbeRe
 		return node.ProbeResult{}, fmt.Errorf("probe %q: %w", req.URL, err)
 	}
 	hr.Header.Set("User-Agent", "dock-uptime/"+version.Version)
+	if req.Cookie != "" {
+		// Safe on this one request: the client follows no redirects.
+		hr.Header.Set("Cookie", req.Cookie)
+	}
 	start := time.Now()
 	resp, err := p.client.Do(hr)
 	res := node.ProbeResult{Latency: time.Since(start)}
