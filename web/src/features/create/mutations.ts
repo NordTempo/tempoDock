@@ -1,10 +1,7 @@
-import {
-  type QueryKey,
-  useMutation,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { api, body } from "../../api/client";
 import type { components } from "../../api/schema";
+import { useAction } from "../../data/action";
 import { envPath, keys, queries, servicePath } from "../../data/queries";
 import type { EnvironmentKind, EnvRef, Project } from "../../data/types";
 
@@ -13,26 +10,9 @@ export type NewService = Schemas["CreateServiceRequest"];
 export type GitConnect = Schemas["GitConnectRequest"];
 export type GitConnected = Schemas["GitConnectResult"];
 
-/** A mutation that refetches the given cache subtrees once it settles. */
-function useCreate<Vars, Data>(
-  mutationFn: (vars: Vars) => Promise<Data>,
-  touches: (vars: Vars) => QueryKey[],
-) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn,
-    onSettled: (_data, _error, vars) =>
-      Promise.all(
-        touches(vars).map((queryKey) =>
-          queryClient.invalidateQueries({ queryKey }),
-        ),
-      ),
-  });
-}
-
 /** Creates an organization with the caller as its admin. */
 export function useCreateOrg() {
-  return useCreate(
+  return useAction(
     (req: { slug: string; name?: string }) =>
       body(api.POST("/api/v1/orgs", { body: req })),
     () => [keys.orgs],
@@ -46,7 +26,7 @@ export function useCreateOrg() {
  */
 export function useCreateProject() {
   const queryClient = useQueryClient();
-  return useCreate(
+  return useAction(
     async (name: string) => {
       const project = await body(
         api.POST("/api/v1/projects", { body: { name } }),
@@ -64,7 +44,7 @@ export function useCreateProject() {
 
 /** Creates an empty environment; the server places it. */
 export const useCreateEnvironment = () =>
-  useCreate(
+  useAction(
     ({
       project,
       name,
@@ -88,7 +68,7 @@ export const useCreateEnvironment = () =>
  * away). Resolves with the new service.
  */
 export const useCreateService = () =>
-  useCreate(
+  useAction(
     ({ env, ...req }: { env: EnvRef } & NewService) =>
       body(
         api.POST(
@@ -101,7 +81,7 @@ export const useCreateService = () =>
 
 /** Connects a service to a GitHub repository (ADR 0018). */
 export const useConnectGit = () =>
-  useCreate(
+  useAction(
     ({ env, service, ...req }: { env: EnvRef; service: string } & GitConnect) =>
       body(
         api.PUT(

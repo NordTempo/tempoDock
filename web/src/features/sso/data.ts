@@ -1,6 +1,7 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { api, body } from "../../api/client";
 import type { components } from "../../api/schema";
+import { useAction } from "../../data/action";
 
 // Signing in through one of the platform's identity providers (ADR 0065):
 // the sign-in page's buttons, an invite page signed out, and the step-up
@@ -21,12 +22,13 @@ export const useSignInMethods = () =>
  * so the mutation stays pending until it does.
  */
 export const useStartSSO = () =>
-  useMutation({
-    mutationFn: async (req: StartRequest) => {
+  useAction(
+    async (req: StartRequest) => {
       const res = await body(api.POST("/api/v1/auth/sso/start", { body: req }));
       window.location.assign(res.url);
     },
-  });
+    () => [],
+  );
 
 /** The page to land on after signing in again: this one. */
 export const here = () => window.location.pathname + window.location.search;

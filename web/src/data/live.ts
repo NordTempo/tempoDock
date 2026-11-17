@@ -1,4 +1,8 @@
-import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  type QueryKey,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { currentOrg } from "../api/client";
@@ -20,9 +24,10 @@ import { storageKey } from "../features/storage/data";
 import { applyUpdateEvent } from "../features/update/data";
 import { applyUptimeEvent } from "../features/uptime/data";
 import { useOrg } from "../shell/location";
+import { refetchedOnSettle } from "./action";
 import { recordLiveEvent } from "./feed";
 import { setLiveStatus, useLiveAttempt } from "./liveStatus";
-import { refetchedOnSettle, signedOut } from "./mutations";
+import { signedOut } from "./mutations";
 import { followProjectRename, reconcileProjectNames } from "./projectRename";
 import { findService, keys, queries } from "./queries";
 import type {
@@ -848,13 +853,18 @@ function invalidateForData(
   queryClient: QueryClient,
   audit: components["schemas"]["AuditEvent"],
 ) {
+  // As in invalidateForAudit, a call from this page refetches its own.
+  const unclaimed = (queryKey: QueryKey) => !refetchedOnSettle(queryKey);
   if (audit.action === "data.policy") {
     // A policy or a token's override changed: anyone's access may differ.
-    queryClient.invalidateQueries({ queryKey: keys.dataPolicy });
-    queryClient.invalidateQueries({ queryKey: keys.tokens });
+    for (const queryKey of [keys.dataPolicy, keys.tokens])
+      queryClient.invalidateQueries({
+        queryKey,
+        predicate: (q) => unclaimed(q.queryKey),
+      });
     queryClient.invalidateQueries({
       queryKey: ["data"],
-      predicate: (q) => q.queryKey[4] === "info",
+      predicate: (q) => q.queryKey[4] === "info" && unclaimed(q.queryKey),
     });
     return;
   }
@@ -862,7 +872,8 @@ function invalidateForData(
   if (!parts || !audit.project || !audit.environment) return;
   queryClient.invalidateQueries({
     queryKey: ["data", audit.project, audit.environment],
-    predicate: (q) => parts.includes(String(q.queryKey[4])),
+    predicate: (q) =>
+      parts.includes(String(q.queryKey[4])) && unclaimed(q.queryKey),
   });
 }
 

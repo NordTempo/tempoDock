@@ -1,14 +1,12 @@
 import {
-  partialMatchKey,
   type QueryClient,
   type QueryKey,
-  useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
 import { type RegisteredRouter, useRouter } from "@tanstack/react-router";
 import { api, body, done, setOrg } from "../api/client";
 import type { components } from "../api/schema";
-import { type NoticeTone, notify } from "../ui/notice";
+import { useAction } from "./action";
 import { currentMe, envPath, keys, servicePath } from "./queries";
 import { rememberTyped } from "./typed";
 import type {
@@ -26,61 +24,12 @@ import type {
   TemplateInfo,
 } from "./types";
 
-// Mutation hooks. Each one names the cache subtrees it touches; they are
-// refetched once the call settles. Live events (./live.ts) cover what happens
-// later, such as deploy progress, and changes made from the CLI. This module
-// is in the initial bundle: hooks only one screen uses live with that
-// screen's feature, built on useAction.
+// Mutation hooks, built on useAction (./action.ts). Live events (./live.ts)
+// cover what happens later, such as deploy progress, and changes made from
+// the CLI. This module is in the initial bundle: hooks only one screen uses
+// live with that screen's feature.
 
-// The subtrees of calls still waiting for their answer. Every mutation is
-// audited and the server publishes the audit event before it answers, so
-// that event usually arrives first: live.ts leaves these subtrees to the
-// refetch the call makes once it settles (always later than the event)
-// instead of fetching them twice.
-const awaiting = new Set<readonly QueryKey[]>();
-
-/** True while a call in flight will refetch the query once it settles. */
-export function refetchedOnSettle(queryKey: QueryKey) {
-  for (const touched of awaiting)
-    if (touched.some((t) => partialMatchKey(queryKey, t))) return true;
-  return false;
-}
-
-export function useAction<Vars, Data>(
-  mutationFn: (vars: Vars) => Promise<Data>,
-  touches: (vars: Vars) => QueryKey[],
-  /**
-   * What to tell the person once it worked, as a notice: "Archived web",
-   * or with a tone, ["Restarting web", "info"] for work that runs on.
-   */
-  said?: (vars: Vars, data: Data) => string | [string, NoticeTone],
-) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (vars: Vars) => {
-      const touched = touches(vars);
-      awaiting.add(touched);
-      try {
-        return await mutationFn(vars);
-      } finally {
-        awaiting.delete(touched);
-      }
-    },
-    onSuccess:
-      said &&
-      ((data, vars) => {
-        const s = said(vars, data);
-        if (typeof s === "string") notify(s);
-        else notify(...s);
-      }),
-    onSettled: (_data, _error, vars) =>
-      Promise.all(
-        touches(vars).map((queryKey) =>
-          queryClient.invalidateQueries({ queryKey }),
-        ),
-      ),
-  });
-}
+export { useAction };
 
 export const serviceWide = (ref: ServiceRef): QueryKey[] => [
   keys.service(ref),
@@ -515,18 +464,19 @@ export const useRotateServerKey = () =>
  */
 export function useRemoveServer() {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (name: string) =>
-      done(
+  return useAction(
+    async (name: string) => {
+      await done(
         api.DELETE("/api/v1/servers/{server}", {
           params: { path: { server: name } },
         }),
-      ),
-    onSuccess: (_data, name) =>
+      );
       queryClient.setQueryData<Server[]>(keys.servers, (list) =>
         list?.filter((s) => s.name !== name),
-      ),
-  });
+      );
+    },
+    () => [],
+  );
 }
 
 /**
@@ -582,8 +532,8 @@ export const usePinPlacement = () =>
  */
 export function useLogin() {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (credentials: { email: string; password: string }) => {
+  return useAction(
+    async (credentials: { email: string; password: string }) => {
       const res = await body(
         api.POST("/api/v1/auth/login", { body: credentials }),
       );
@@ -591,7 +541,8 @@ export function useLogin() {
       queryClient.setQueryData(keys.session, await currentMe());
       return null;
     },
-  });
+    () => [],
+  );
 }
 
 /**
@@ -601,21 +552,25 @@ export function useLogin() {
  */
 export function useLoginVerify() {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (v: components["schemas"]["Verification"]) => {
+  return useAction(
+    async (v: components["schemas"]["Verification"]) => {
       await body(api.POST("/api/v1/auth/login/verify", { body: v }));
       queryClient.setQueryData(keys.session, await currentMe());
     },
-  });
+    () => [],
+  );
 }
 
 export function useLogout() {
   const queryClient = useQueryClient();
   const router = useRouter();
-  return useMutation({
-    mutationFn: () => done(api.POST("/api/v1/auth/logout")),
-    onSuccess: () => signedOut(queryClient, router),
-  });
+  return useAction(
+    async () => {
+      await done(api.POST("/api/v1/auth/logout"));
+      await signedOut(queryClient, router);
+    },
+    () => [],
+  );
 }
 
 /**

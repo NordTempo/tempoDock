@@ -1,11 +1,7 @@
-import {
-  queryOptions,
-  useMutation,
-  useQueryClient,
-  useSuspenseQuery,
-} from "@tanstack/react-query";
+import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { api, body, done, list } from "../../api/client";
 import type { components } from "../../api/schema";
+import { useAction } from "../../data/action";
 import { registryKey } from "../registry/data";
 
 // Storage connections (ADR 0034): S3-compatible buckets defined once and
@@ -28,20 +24,9 @@ export const storageQuery = () =>
 export const useStorage = () => useSuspenseQuery(storageQuery()).data;
 
 /** A storage mutation: refetches the list and the registry, which names it. */
-function useStorageAction<Vars, Data>(
+const useStorageAction = <Vars, Data>(
   mutationFn: (vars: Vars) => Promise<Data>,
-) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn,
-    onSettled: () =>
-      Promise.all(
-        [storageKey, registryKey, ["audit"]].map((queryKey) =>
-          queryClient.invalidateQueries({ queryKey }),
-        ),
-      ),
-  });
-}
+) => useAction(mutationFn, () => [storageKey, registryKey, ["audit"]]);
 
 export const useAddStorage = () =>
   useStorageAction((input: NewStorage) =>

@@ -1,8 +1,4 @@
-import {
-  queryOptions,
-  useMutation,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { queryOptions, useQueryClient } from "@tanstack/react-query";
 import { api, body, done, list } from "../../api/client";
 import type { components } from "../../api/schema";
 import { useAction } from "../../data/mutations";
@@ -216,8 +212,8 @@ export function useAcceptInvite() {
  */
 export function useInviteSignUp() {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({
+  return useAction(
+    async ({
       code,
       ...req
     }: { code: string } & components["schemas"]["InviteSignUpRequest"]) => {
@@ -230,7 +226,8 @@ export function useInviteSignUp() {
       queryClient.removeQueries({ queryKey: ["invite"] });
       queryClient.setQueryData(keys.session, await currentMe());
     },
-  });
+    () => [],
+  );
 }
 
 export const useSetOrgVariable = () =>

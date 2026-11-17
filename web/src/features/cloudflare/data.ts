@@ -1,13 +1,12 @@
 import {
   type QueryClient,
   queryOptions,
-  useMutation,
   useQuery,
-  useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query";
 import { api, body, done, list } from "../../api/client";
 import type { components } from "../../api/schema";
+import { useAction } from "../../data/action";
 import { keys } from "../../data/queries";
 
 // Cloudflare connections (ADR 0036): API tokens Dock runs tunnels and
@@ -89,20 +88,9 @@ export const useCloudflareZones = () =>
   });
 
 /** A connection mutation: refetches the connections, zones and servers. */
-function useCloudflareAction<Vars, Data>(
+const useCloudflareAction = <Vars, Data>(
   mutationFn: (vars: Vars) => Promise<Data>,
-) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn,
-    onSettled: () =>
-      Promise.all(
-        [cloudflareKey, keys.servers, ["audit"]].map((queryKey) =>
-          queryClient.invalidateQueries({ queryKey }),
-        ),
-      ),
-  });
-}
+) => useAction(mutationFn, () => [cloudflareKey, keys.servers, ["audit"]]);
 
 export const useAddCloudflare = (scope: CloudflareScope) =>
   useCloudflareAction((input: Schemas["CreateCloudflareRequest"]) =>

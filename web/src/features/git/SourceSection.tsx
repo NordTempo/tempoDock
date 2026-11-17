@@ -1,8 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type FormEvent, type ReactNode, useState } from "react";
 import { api, body, done } from "../../api/client";
 import type { components } from "../../api/schema";
+import { useAction } from "../../data/action";
 import { keys, useSession } from "../../data/queries";
 import type { ServiceRef } from "../../data/types";
 import { useOrg } from "../../shell/location";
@@ -68,25 +69,29 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       keys.git(ref),
       (old) => old && { ...old, connection },
     );
-  const connect = useMutation({
-    mutationFn: (req: ConnectRequest) =>
-      body(api.PUT(gitPath, { ...path, body: req })),
-    onSuccess: (res) => {
+  // The answer replaces the cached connection; git.* audit events
+  // refetch the rest.
+  const connect = useAction(
+    async (req: ConnectRequest) => {
+      const res = await body(api.PUT(gitPath, { ...path, body: req }));
       setConnection(res.connection);
       setConnecting(false);
       setConfirming(null);
       if (res.secret) setCreated(res);
+      return res;
     },
-  });
-  const disconnect = useMutation({
-    mutationFn: () => done(api.DELETE(gitPath, path)),
-    onSuccess: () => {
+    () => [],
+  );
+  const disconnect = useAction(
+    async () => {
+      await done(api.DELETE(gitPath, path));
       setConnection(undefined);
       setConfirming(null);
       setCreated(null);
-      void client.invalidateQueries({ queryKey: keys.previews(ref.project) });
     },
-  });
+    // Previews follow the source.
+    () => [keys.previews(ref.project)],
+  );
 
   const flags = `-s ${ref.service} -e ${ref.environment}`;
   const conn = source.data?.connection;

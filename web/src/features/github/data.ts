@@ -1,11 +1,7 @@
-import {
-  queryOptions,
-  useMutation,
-  useQueryClient,
-  useSuspenseQuery,
-} from "@tanstack/react-query";
+import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { api, body, done } from "../../api/client";
 import type { components } from "../../api/schema";
+import { useAction } from "../../data/action";
 
 // Dock's GitHub App for the console's GitHub page (ADR 0031, 0066). Reading it
 // asks GitHub for the App's installations now, so a refetch is "check
@@ -30,39 +26,38 @@ const go = (link: { url: string }) => window.location.assign(link.url);
 
 /** Starts creating the App: the answer is Dock's page that posts the manifest. */
 export const useCreateApp = () =>
-  useMutation({
-    mutationFn: (req: components["schemas"]["GitHubAppRequest"]) =>
-      body(api.POST("/api/v1/github/app", { body: req })),
-    onSuccess: go,
-  });
+  useAction(
+    async (req: components["schemas"]["GitHubAppRequest"]) =>
+      go(await body(api.POST("/api/v1/github/app", { body: req }))),
+    () => [],
+  );
 
 /** Gives an App made before ADR 0066 its client secret, so installs are checked. */
-export function useSetClientSecret() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (client_secret: string) =>
+export const useSetClientSecret = () =>
+  useAction(
+    (client_secret: string) =>
       done(
         api.PUT("/api/v1/github/app/client-secret", {
           body: { client_secret },
         }),
       ),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: githubKey }),
-  });
-}
+    () => [githubKey, ["audit"]],
+  );
 
 /** Opens the App's install page on GitHub for an org. */
 export const useInstall = () =>
-  useMutation({
-    mutationFn: (org: string) =>
-      body(api.POST("/api/v1/github/installations", { body: { org } })),
-    onSuccess: go,
-  });
+  useAction(
+    async (org: string) =>
+      go(
+        await body(api.POST("/api/v1/github/installations", { body: { org } })),
+      ),
+    () => [],
+  );
 
 /** Assigns an installation to an org, or unassigns it (org ""). */
-export function useAssign() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, org }: { id: number; org: string }) => {
+export const useAssign = () =>
+  useAction(
+    ({ id, org }: { id: number; org: string }) => {
       const path = { params: { path: { id } } };
       return org
         ? done(
@@ -73,18 +68,15 @@ export function useAssign() {
           )
         : done(api.DELETE("/api/v1/github/installations/{id}", path));
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: githubKey }),
-  });
-}
+    () => [githubKey, ["audit"]],
+  );
 
 /** Forgets the App. */
-export function useRemoveApp() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => done(api.DELETE("/api/v1/github/app")),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: githubKey }),
-  });
-}
+export const useRemoveApp = () =>
+  useAction(
+    () => done(api.DELETE("/api/v1/github/app")),
+    () => [githubKey, ["audit"]],
+  );
 
 /** The org's view of GitHub: the platform's App and its own installations. */
 export const githubOrgQuery = () =>
@@ -95,8 +87,8 @@ export const githubOrgQuery = () =>
 
 /** Opens the App's install page on GitHub for the caller's own org. */
 export const useInstallForOrg = () =>
-  useMutation({
-    mutationFn: () =>
-      body(api.POST("/api/v1/github/installations", { body: {} })),
-    onSuccess: go,
-  });
+  useAction(
+    async () =>
+      go(await body(api.POST("/api/v1/github/installations", { body: {} }))),
+    () => [],
+  );

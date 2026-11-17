@@ -1,11 +1,11 @@
 import {
   queryOptions,
-  useMutation,
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query";
 import { api, body } from "../../api/client";
 import type { components } from "../../api/schema";
+import { useAction } from "../../data/action";
 
 // Dock's own address for the console's Address page (ADR 0029). Reading
 // it checks the public address's DNS and certificate on the server, so
@@ -27,20 +27,29 @@ export const useAddress = () => useSuspenseQuery(addressQuery());
 /** Sets or moves the public address; the answer replaces the cache. */
 export function useSetAddress() {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (hostname: string) =>
-      body(api.PUT("/api/v1/address", { body: { hostname } })),
-    onSuccess: (a) => queryClient.setQueryData(addressKey, a),
-  });
+  return useAction(
+    async (hostname: string) => {
+      const answer = await body(
+        api.PUT("/api/v1/address", { body: { hostname } }),
+      );
+      queryClient.setQueryData(addressKey, answer);
+      return answer;
+    },
+    () => [],
+  );
 }
 
 /** Removes the public address; the private one stays. */
 export function useRemoveAddress() {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => body(api.DELETE("/api/v1/address")),
-    onSuccess: (a) => queryClient.setQueryData(addressKey, a),
-  });
+  return useAction(
+    async () => {
+      const answer = await body(api.DELETE("/api/v1/address"));
+      queryClient.setQueryData(addressKey, answer);
+      return answer;
+    },
+    () => [],
+  );
 }
 
 /**
@@ -48,10 +57,8 @@ export function useRemoveAddress() {
  * failed Cloudflare change: `dock cloudflare retry`. The worker runs in
  * the background, so the address is read again once it was asked.
  */
-export function useRetryWildcards() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => body(api.POST("/api/v1/cloudflare/retry")),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: addressKey }),
-  });
-}
+export const useRetryWildcards = () =>
+  useAction(
+    () => body(api.POST("/api/v1/cloudflare/retry")),
+    () => [addressKey],
+  );

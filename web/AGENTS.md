@@ -30,12 +30,17 @@ tests/          dev-only browser fixtures (`*.html`, with `*.test.ts(x)`
   change, `make generate` from the repo root.
 - Nothing polls. `src/data/live.ts` patches or invalidates the query cache
   from `/api/v1/events`; a new event type is handled there (or in its
-  feature's data.ts). Mutations use `useAction`, naming the cache
-  subtrees they touch: only what the action changes, and the same
-  subtrees its audit event invalidates in `live.ts`, since other pages
-  refetch from that event. While a call is in flight, live.ts leaves
-  its subtrees to it, so the page that made the change fetches once
-  (a hand-written `useMutation` that invalidates fetches twice).
+  feature's data.ts). Every call that changes something is a
+  `useAction` (`src/data/action.ts`; Biome refuses `useMutation`
+  outside it), naming the cache subtrees it touches: only what the
+  action changes, and the same subtrees its audit event invalidates in
+  `live.ts`, since other pages refetch from that event. While a call is
+  in flight, live.ts leaves its subtrees to it, so the page that made
+  the change fetches once; an `invalidateQueries` of your own after a
+  call fetches twice. A call that changes nothing cached touches
+  `() => []`, one whose answer replaces a query sets it in mutationFn,
+  and a call that isn't a mutation (a streamed query run) goes through
+  `settling`.
   `src/data` is in the initial bundle, so a mutation
   only one screen uses lives in that screen's feature.
 - A route's `beforeLoad` also runs when a hovered link preloads it

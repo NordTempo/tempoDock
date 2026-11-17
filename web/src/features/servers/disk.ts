@@ -1,11 +1,7 @@
-import {
-  queryOptions,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { api, body } from "../../api/client";
 import type { components } from "../../api/schema";
+import { useAction } from "../../data/action";
 
 // Where a server's disk goes (ADR 0035). The daemon answers with its last
 // reading at once (only the first read waits) and, when it is old, reads
@@ -33,20 +29,13 @@ export const diskQuery = (server: string) =>
 export const useServerDisk = (server: string) => useQuery(diskQuery(server));
 
 /** Prunes a server now; the disk is read again afterwards. */
-export function usePruneServer(server: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () =>
+export const usePruneServer = (server: string) =>
+  useAction(
+    () =>
       body(
         api.POST("/api/v1/servers/{server}/prune", {
           params: { path: { server } },
         }),
       ),
-    onSettled: () =>
-      Promise.all(
-        [diskKey(server), ["audit"]].map((queryKey) =>
-          queryClient.invalidateQueries({ queryKey }),
-        ),
-      ),
-  });
-}
+    () => [diskKey(server), ["audit"]],
+  );

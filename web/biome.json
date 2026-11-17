@@ -15,6 +15,29 @@
   },
   "formatter": { "indentStyle": "space" },
   "css": { "parser": { "tailwindDirectives": true } },
-  "linter": { "rules": { "suspicious": { "noExplicitAny": "error" } } },
+  "linter": {
+    "rules": {
+      "suspicious": { "noExplicitAny": "error" },
+      "style": {
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "paths": {
+              "@tanstack/react-query": {
+                "importNames": ["useMutation"],
+                "message": "Use useAction (src/data/action.ts): it names what the call changes, so the page that made it fetches that once instead of again from its audit event."
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["src/data/action.ts", "tempobase/**"],
+      "linter": { "rules": { "style": { "noRestrictedImports": "off" } } }
+    }
+  ],
   "assist": { "actions": { "source": { "organizeImports": "on" } } }
 }

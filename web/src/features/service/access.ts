@@ -1,6 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, body } from "../../api/client";
 import type { components } from "../../api/schema";
+import { useAction } from "../../data/action";
 import { keys } from "../../data/queries";
 import type { ServiceRef } from "../../data/types";
 
@@ -23,11 +24,16 @@ export const useAccess = (ref: ServiceRef) =>
 /** Changes the access; the answer replaces the cached one. */
 export function useSetAccess(ref: ServiceRef) {
   const client = useQueryClient();
-  return useMutation({
-    mutationFn: (req: SetAccess) =>
-      body(api.PUT(accessPath, { params: { path: ref }, body: req })),
-    onSuccess: (a) => client.setQueryData(keys.access(ref), a),
-  });
+  return useAction(
+    async (req: SetAccess) => {
+      const answer = await body(
+        api.PUT(accessPath, { params: { path: ref }, body: req }),
+      );
+      client.setQueryData(keys.access(ref), answer);
+      return answer;
+    },
+    () => [],
+  );
 }
 
 /** "Open to anyone", as the closed line and `dock access` say it. */

@@ -1,6 +1,6 @@
 import {
+  type QueryKey,
   useInfiniteQuery,
-  useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -13,6 +13,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { settling, useAction } from "../../data/action";
 import type { PolicyRule } from "./policy";
 import type { ChangeBody, CommitOptions, EditActions } from "./ReviewPanel";
 import type {
@@ -185,6 +186,10 @@ export function useDataSource() {
   return source;
 }
 
+/** The source's cache subtrees for these parts of the panel. */
+const parts = (source: DataSource, ...names: string[]): QueryKey[] =>
+  names.map((name) => [...source.key, name]);
+
 /**
  * A CLI command hint with the database's flags appended, or undefined
  * where the host has no CLI.
@@ -208,15 +213,14 @@ export function useDataInfo() {
 export function useDataSetup() {
   const source = useDataSource();
   const client = useQueryClient();
-  return useMutation({
-    mutationFn: () => source.setup(),
-    onSuccess: (info) => {
+  return useAction(
+    async () => {
+      const info = await source.setup();
       client.setQueryData([...source.key, "info"], info);
-      return client.invalidateQueries({
-        queryKey: [...source.key, "schema"],
-      });
+      return info;
     },
-  });
+    () => [[...source.key, "schema"]],
+  );
 }
 
 /** GET /data/schema. The server caches the catalog for 60 s, so do we. */
@@ -347,17 +351,10 @@ export function useKeyValue(q: Omit<DataKeyRequest, "after"> | null) {
 /** PUT /data/sensitive-keys (admin); the keyspace and key pages refetch. */
 export function useSetSensitiveKeys() {
   const source = useDataSource();
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (patterns: string[]) =>
-      keySource(source).setSensitiveKeys(patterns),
-    onSettled: () =>
-      Promise.all(
-        (["schema", "keys"] as const).map((part) =>
-          client.invalidateQueries({ queryKey: [...source.key, part] }),
-        ),
-      ),
-  });
+  return useAction(
+    (patterns: string[]) => keySource(source).setSensitiveKeys(patterns),
+    () => parts(source, "schema", "keys"),
+  );
 }
 
 /** GET /data/tables/{table}/references for one row (null: none selected). */
@@ -403,24 +400,20 @@ export function useSavedQueries() {
 /** PUT /data/saved-queries[/{id}] */
 export function useSaveQuery() {
   const source = useDataSource();
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, ...body }: SaveDataQueryRequest & { id?: number }) =>
+  return useAction(
+    ({ id, ...body }: SaveDataQueryRequest & { id?: number }) =>
       source.saveQuery(body, id),
-    onSuccess: () =>
-      client.invalidateQueries({ queryKey: [...source.key, "saved"] }),
-  });
+    () => parts(source, "saved"),
+  );
 }
 
 /** DELETE /data/saved-queries/{id} */
 export function useDeleteSavedQuery() {
   const source = useDataSource();
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (id: number) => source.deleteSavedQuery(id),
-    onSuccess: () =>
-      client.invalidateQueries({ queryKey: [...source.key, "saved"] }),
-  });
+  return useAction(
+    (id: number) => source.deleteSavedQuery(id),
+    () => parts(source, "saved"),
+  );
 }
 
 /** GET /data/changesets: pending proposals and recent decisions. */
@@ -447,38 +440,28 @@ function committed(c: DataChangeset) {
   return c;
 }
 
-/** Refetches what a decided changeset changes: the list and the rows. */
-function useChangesetSettled() {
-  const source = useDataSource();
-  const client = useQueryClient();
-  return () =>
-    Promise.all(
-      (["changesets", "rows", "references"] as const).map((part) =>
-        client.invalidateQueries({ queryKey: [...source.key, part] }),
-      ),
-    );
-}
+/** What a decided changeset changes: the list and the rows. */
+const decided = (source: DataSource) =>
+  parts(source, "changesets", "rows", "references");
 
 /** POST /data/changesets/{id}/commit: approve (admin) or commit. */
 export function useCommitChangeset() {
   const source = useDataSource();
-  const onSettled = useChangesetSettled();
-  return useMutation({
-    mutationFn: async ({ id, confirm }: { id: number; confirm?: string }) =>
+  return useAction(
+    async ({ id, confirm }: { id: number; confirm?: string }) =>
       committed(await source.commitChangeset(id, { confirm })),
-    onSettled,
-  });
+    () => decided(source),
+  );
 }
 
 /** POST /data/changesets/{id}/reject */
 export function useRejectChangeset() {
   const source = useDataSource();
-  const onSettled = useChangesetSettled();
-  return useMutation({
-    mutationFn: ({ id, reason }: { id: number; reason?: string }) =>
+  return useAction(
+    ({ id, reason }: { id: number; reason?: string }) =>
       source.rejectChangeset(id, { reason }),
-    onSettled,
-  });
+    () => decided(source),
+  );
 }
 
 /**
@@ -487,16 +470,10 @@ export function useRejectChangeset() {
  */
 export function useSetSensitive() {
   const source = useDataSource();
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (columns: DataColumnRef[]) => source.setSensitive(columns),
-    onSettled: () =>
-      Promise.all(
-        (["schema", "rows", "references"] as const).map((part) =>
-          client.invalidateQueries({ queryKey: [...source.key, part] }),
-        ),
-      ),
-  });
+  return useAction(
+    (columns: DataColumnRef[]) => source.setSensitive(columns),
+    () => parts(source, "schema", "rows", "references"),
+  );
 }
 
 /**
@@ -517,8 +494,6 @@ export function useEditActions(
 
   return useMemo(() => {
     if (level !== "propose" && level !== "write") return undefined;
-    const settle = () =>
-      client.invalidateQueries({ queryKey: [...source.key, "changesets"] });
     return {
       renderSql: async (body: ChangeBody) =>
         (await source.changeset({ ...body, dry_run: true })).sql,
@@ -526,17 +501,17 @@ export function useEditActions(
         body: ChangeBody,
         { confirm, message, propose }: CommitOptions,
       ) => {
-        const staged = await source.changeset({ ...body, message });
-        if (level === "propose" || propose) {
-          await settle();
-          proposed.current(staged);
-          return;
-        }
-        try {
-          committed(await source.commitChangeset(staged.id, { confirm }));
-        } finally {
-          await settle();
-        }
+        const staged = await settling(
+          client,
+          parts(source, "changesets"),
+          async () => {
+            const staged = await source.changeset({ ...body, message });
+            if (level !== "propose" && !propose)
+              committed(await source.commitChangeset(staged.id, { confirm }));
+            return staged;
+          },
+        );
+        if (level === "propose" || propose) proposed.current(staged);
       },
     };
   }, [source, client, level]);
@@ -585,36 +560,36 @@ export function useQueryRunner() {
         if (!abort.signal.aborted) setResult(current);
       };
       update({});
-      try {
-        for await (const frame of source.query(
-          { sql, ...options },
-          abort.signal,
-        )) {
-          switch (frame.type) {
-            case "header":
-              update({ columns: frame.columns ?? [] });
-              break;
-            case "rows":
-              update({ rows: current.rows.concat(frame.rows ?? []) });
-              break;
-            case "end":
-              update({ state: "done", end: frame });
-              break;
-            case "error":
-              update({ state: "failed", error: frame.error });
-              break;
+      // The server records the query in the history.
+      await settling(client, parts(source, "history"), async () => {
+        try {
+          for await (const frame of source.query(
+            { sql, ...options },
+            abort.signal,
+          )) {
+            switch (frame.type) {
+              case "header":
+                update({ columns: frame.columns ?? [] });
+                break;
+              case "rows":
+                update({ rows: current.rows.concat(frame.rows ?? []) });
+                break;
+              case "end":
+                update({ state: "done", end: frame });
+                break;
+              case "error":
+                update({ state: "failed", error: frame.error });
+                break;
+            }
           }
+        } catch (e) {
+          if (abort.signal.aborted) return;
+          update({
+            state: "failed",
+            error: { message: e instanceof Error ? e.message : String(e) },
+          });
         }
-      } catch (e) {
-        if (abort.signal.aborted) return;
-        update({
-          state: "failed",
-          error: { message: e instanceof Error ? e.message : String(e) },
-        });
-      }
-      if (!abort.signal.aborted) {
-        client.invalidateQueries({ queryKey: [...source.key, "history"] });
-      }
+      });
     },
     [source, client],
   );

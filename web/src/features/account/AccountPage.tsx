@@ -1,8 +1,9 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, Suspense, useState } from "react";
 import { api, done } from "../../api/client";
 import type { components } from "../../api/schema";
+import { useAction } from "../../data/action";
 import { useIsAdmin, useOrgs, useSession } from "../../data/queries";
 import { useOrg } from "../../shell/location";
 import { Act, ErrorText, Page, PageBar, SectionHead } from "../../ui/kit";
@@ -29,10 +30,11 @@ const MIN_PASSWORD = 12;
  * every other session and `dock login` token of theirs ends.
  */
 const useChangePassword = () =>
-  useMutation({
-    mutationFn: (req: components["schemas"]["ChangePasswordRequest"]) =>
+  useAction(
+    (req: components["schemas"]["ChangePasswordRequest"]) =>
       done(api.POST("/api/v1/me/password", { body: req })),
-  });
+    () => [["audit"]],
+  );
 
 export function AccountPage() {
   const me = useSession();

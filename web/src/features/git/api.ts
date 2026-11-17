@@ -1,6 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { api, body } from "../../api/client";
 import type { components } from "../../api/schema";
+import { useAction } from "../../data/action";
 import { keys } from "../../data/queries";
 import type { ServiceRef } from "../../data/types";
 
@@ -41,10 +42,9 @@ export const useGitHubRepos = (enabled: boolean) =>
  * Queues a commit as if pushed: `ref` (a SHA, branch or tag), or the
  * connected branch's head when empty.
  */
-export function useGitDeploy(ref: ServiceRef) {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (gitRef: string) =>
+export const useGitDeploy = (ref: ServiceRef) =>
+  useAction(
+    (gitRef: string) =>
       body(
         api.POST(`${gitPath}/deploy`, {
           params: { path: ref },
@@ -52,9 +52,8 @@ export function useGitDeploy(ref: ServiceRef) {
         }),
       ),
     // The queued push and last event changed.
-    onSettled: () => client.invalidateQueries({ queryKey: keys.git(ref) }),
-  });
-}
+    () => [keys.git(ref), ["audit"]],
+  );
 
 /** "acme/shop@main in apps/web/". */
 export const targetText = (c: GitConnection) =>
