@@ -31,7 +31,7 @@ const (
 	// AlertCrashLoop: a service's container keeps restarting.
 	AlertCrashLoop AlertKind = "crash_loop"
 	// AlertDeployFailed: a service's newest release failed; the release
-	// before it keeps serving.
+	// before it, if there is one, keeps serving.
 	AlertDeployFailed AlertKind = "deploy_failed"
 	// AlertDomain: a domain is in error: its certificate wasn't issued
 	// although its DNS is right.

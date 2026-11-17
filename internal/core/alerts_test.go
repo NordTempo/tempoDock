@@ -139,6 +139,36 @@ func (h *harness) addChannel(platform bool, req apitypes.CreateAlertChannelReque
 	return ch
 }
 
+// A failed deploy's alert says the release before it keeps serving only
+// when one does, from the bus event and from reconcileAlerts alike.
+func TestDeployFailureSaysWhatServes(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	h.deploy(web, "app:1")
+	api := h.service("api", apitypes.CreateServiceRequest{})
+	h.rt.FailPull(errors.New("manifest unknown"))
+	h.deploy(web, "app:2")
+	h.deploy(api, "app:2")
+	webKey, apiKey := "deploy:service:"+itoa(h.serviceID(web)), "deploy:service:"+itoa(h.serviceID(api))
+	check := func(from string) {
+		t.Helper()
+		if m := h.openAlert(webKey, true).Message; !strings.Contains(m, "The release before it keeps serving.") {
+			t.Errorf("%s: web's alert = %q", from, m)
+		}
+		if m := h.openAlert(apiKey, true).Message; !strings.Contains(m, "Nothing served before it, so the service has no running release.") {
+			t.Errorf("%s: api's alert = %q", from, m)
+		}
+	}
+	check("bus event")
+	for _, key := range []string{webKey, apiKey} {
+		if _, err := h.c.ResolveAlert(h.ctx, testSystem, h.openAlert(key, true).ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.c.reconcileAlerts(h.ctx, time.Now())
+	check("reconcile")
+}
+
 // A failed deploy opens one alert however often the service fails again,
 // and the next deploy that goes live resolves it.
 func TestDeployFailureAlertDedupesAndResolves(t *testing.T) {
