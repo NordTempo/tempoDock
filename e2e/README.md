@@ -6,7 +6,7 @@ the CLI and real traffic through the proxy.
 | Script | What it covers |
 | --- | --- |
 | `run.sh` | apps from source, Postgres, zero-downtime deploys, failures, scoped tokens, daemon crashes |
-| `features.sh` | pre-deploy, stop/start, `dock run`, locks, logs and drains, snapshots, moves, apply, health, nodes going down, backups |
+| `features.sh` | pre-deploy, stop/start, `dock run`, locks, logs and drains, snapshots, moves, apply, health, nodes going down, backups, Slack alerts against a mock |
 | `release.sh` | the release walk: traces, status pages, vulnerability scans, MySQL/Redis data, diagnose, sleeping environments |
 | `templates.sh` | every app template deploys and serves |
 | `traces.sh`, `metrics.sh` | OTLP traces and metrics, on their own servers |

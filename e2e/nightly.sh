@@ -57,7 +57,7 @@ SUITE=(
 	run/apps run/pg run/zerodowntime run/failures run/perms run/daemon
 	features/predeploy features/stopstart features/stopnode features/run features/lock
 	features/logs features/snapshot features/move features/apply features/health
-	features/nodedown features/backup
+	features/nodedown features/backup features/alerts
 	release/traces release/status release/vulns release/data release/diagnose release/sleep
 	templates/all
 )
