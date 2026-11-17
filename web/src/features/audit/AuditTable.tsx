@@ -56,6 +56,7 @@ const words: Record<string, readonly [label: string, past: string]> = {
   "backup.move_copied": ["copy backups", "copied"],
   "backup.move_failed": ["backup move failed", "failed to move"],
   "backup.moved": ["backups moved", "moved"],
+  "backup.pitr": ["point-in-time restore", "changed point-in-time restore of"],
   "backup.restore": ["start restore", "started restoring"],
   "backup.restore_failed": ["restore failed", "failed to restore"],
   "backup.restored": ["restore done", "restored"],

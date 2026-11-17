@@ -1,4 +1,5 @@
 import type { BackupRun, ServiceBackups } from "../../data/types";
+import { clockSec, day } from "../../ui/format";
 import type { Snapshot, SnapshotRestore } from "./data";
 
 // One restore model (ADR 0061): a service's backups and snapshots are
@@ -36,8 +37,13 @@ const backupState = (r: BackupRun): PointState =>
         ? "removed"
         : "ready";
 
+/** A point-in-time base backup (ADR 0093), not a dump. */
+export const isBaseRun = (r: BackupRun) => r.kind === "pitr";
+
 /**
- * Backups and snapshots, newest first. Restores of runs are left out.
+ * Backups and snapshots, newest first. Restores of runs are left out, and
+ * so are base backups that went well: they restore through a time, and
+ * the strip shows them; a running or failed one is listed, for its log.
  * server is the service's server (operators only), so a snapshot kept
  * there reads "this server" like a backup kept there.
  */
@@ -47,7 +53,10 @@ export function restorePoints(
   server?: string,
 ): RestorePoint[] {
   const fromBackups = (backups.runs ?? [])
-    .filter((r) => r.operation === "backup")
+    .filter(
+      (r) =>
+        r.operation === "backup" && (!isBaseRun(r) || r.status !== "succeeded"),
+    )
     .map(
       (run): RestorePoint => ({
         kind: "backup",
@@ -98,10 +107,10 @@ export function restorePoints(
  */
 export const isEmpty = (p: RestorePoint) => p.state === "ready" && p.size <= 0;
 
-/** "backup 9d03b7a1", "snapshot 2": a point by kind and id. */
+/** "backup 9d03b7a1", "base backup 412", "snapshot 2": a point by kind and id. */
 export const pointName = (p: RestorePoint) =>
   p.kind === "backup"
-    ? `backup ${p.run.snapshot?.slice(0, 8) ?? p.run.id}`
+    ? `${isBaseRun(p.run) ? "base backup" : "backup"} ${p.run.snapshot?.slice(0, 8) ?? p.run.id}`
     : `snapshot ${p.snapshot.id}`;
 
 /** A restore that ran, from a backup or a snapshot. */
@@ -134,12 +143,15 @@ export function restoreRecords(
     .map(
       (r): RestoreRecord => ({
         key: `b${r.id}`,
-        from: `backup ${r.snapshot?.slice(0, 8) ?? ""}`.trim(),
-        to: r.restored_to,
+        from: r.to_time
+          ? `${r.service} as of ${day(r.to_time)} ${clockSec(r.to_time)}`
+          : `backup ${r.snapshot?.slice(0, 8) ?? ""}`.trim(),
+        // A restore to a time in place names the database itself.
+        to: r.restored_to === r.service ? undefined : r.restored_to,
         status: r.status,
         error: r.error,
         at: r.finished_at ?? r.started_at,
-        pointAt: backupAt(r.snapshot),
+        pointAt: r.to_time ?? backupAt(r.snapshot),
       }),
     );
   const fromSnapshots = restores.map(

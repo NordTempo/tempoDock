@@ -60,6 +60,10 @@ func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog
 	if containers.Probe, err = probe.Install(cfg.DataDir); err != nil {
 		log.Warn("ongoing health checks are off", "err", err)
 	}
+	// Point-in-time restore runs this binary next to databases (ADR 0093).
+	if containers.Self, err = os.Executable(); err != nil {
+		log.Warn("point-in-time restore is off on this server", "err", err)
+	}
 	// Without dock-sync, environments can't move to or from this server.
 	if containers.Sync, err = probe.InstallSync(cfg.DataDir); err != nil {
 		log.Warn("environments can't move to or from this server", "err", err)

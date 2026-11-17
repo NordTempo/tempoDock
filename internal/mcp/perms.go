@@ -62,6 +62,7 @@ var toolPerms = map[string]core.Perm{
 	"add_volume":                core.PermConfigWrite,
 	"create_snapshot":           core.PermConfigWrite,
 	"restore_snapshot":          core.PermConfigWrite,
+	"restore_to_time":           core.PermConfigWrite,
 	"set_job":                   core.PermConfigWrite,
 	"remove_job":                core.PermConfigWrite,
 	"clone_environment":         core.PermEnvironmentsCreate,

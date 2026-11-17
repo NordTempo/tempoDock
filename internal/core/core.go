@@ -226,6 +226,7 @@ type Core struct {
 	// backups is the backup scheduler's kick and the runs in flight
 	// (backups.go).
 	backups backupState
+	pitr    pitrState
 	// volumes keeps restores apart from the other writers of a service's
 	// volumes (volume_writers.go).
 	volumes volumeWriters
@@ -524,6 +525,9 @@ func (c *Core) Start(ctx context.Context) error {
 	}
 	c.loadAccessModel(ctx)
 	c.applyRegistryStorage(ctx)
+	if err := c.loadPITR(ctx); err != nil {
+		return fmt.Errorf("point-in-time restore: %w", err)
+	}
 	if err := c.convertBackupRepository(ctx); err != nil {
 		// Backups keep using the URL as before; the next start tries again.
 		c.log.Error("turn the backup repository into a storage connection", "err", err)

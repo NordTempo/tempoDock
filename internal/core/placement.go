@@ -360,6 +360,10 @@ func (o offlineRuntime) Dial(context.Context, node.DialRequest) (net.Conn, error
 func (o offlineRuntime) RunJob(context.Context, node.JobSpec) (node.JobResult, error) {
 	return node.JobResult{}, o.err
 }
+func (o offlineRuntime) EnsureSidecar(context.Context, node.SidecarSpec) error { return o.err }
+func (o offlineRuntime) RemoveSidecar(context.Context, string, node.Labels) error {
+	return o.err
+}
 func (o offlineRuntime) Build(context.Context, node.BuildRequest) (node.Built, error) {
 	return node.Built{}, o.err
 }

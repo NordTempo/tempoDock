@@ -176,6 +176,29 @@ func (c *Client) RemoveVolume(ctx context.Context, name string, labels node.Labe
 	return err
 }
 
+// SidecarProtocol is the first node protocol that runs sidecars: a
+// Postgres database's WAL archiver (ADR 0093).
+const SidecarProtocol = 33
+
+// EnsureSidecar implements node.Containers.
+func (c *Client) EnsureSidecar(ctx context.Context, spec node.SidecarSpec) error {
+	if err := c.needProtocol(ctx, SidecarProtocol, "archive a database's WAL for point-in-time restore"); err != nil {
+		return err
+	}
+	_, err := unaryCall[empty](ctx, c, opEnsureSidecar, toSidecarRequest(spec))
+	return err
+}
+
+// RemoveSidecar implements node.Containers. An older node has none to
+// remove.
+func (c *Client) RemoveSidecar(ctx context.Context, name string, labels node.Labels) error {
+	if c.needProtocol(ctx, SidecarProtocol, "remove sidecars") != nil {
+		return nil
+	}
+	_, err := unaryCall[empty](ctx, c, opRemoveSidecar, resourceRequest{Name: name, Labels: toWireLabels(labels)})
+	return err
+}
+
 // ExecFormProtocol is the first node protocol that starts a container
 // with args instead of a shell command (ADR 0083).
 const ExecFormProtocol = 29
@@ -284,6 +307,11 @@ func (c *Client) RunJob(ctx context.Context, spec node.JobSpec) (node.JobResult,
 	}
 	if err := c.needProtocol(ctx, jobProtocol, "run backup jobs"); err != nil {
 		return node.JobResult{}, err
+	}
+	if spec.Dock {
+		if err := c.needProtocol(ctx, SidecarProtocol, "back up and restore a database for point-in-time restore"); err != nil {
+			return node.JobResult{}, err
+		}
 	}
 	if spec.Sync {
 		if err := c.needProtocol(ctx, MoveSyncProtocol, "copy volumes while their service runs"); err != nil {

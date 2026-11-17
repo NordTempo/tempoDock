@@ -362,6 +362,12 @@ func (n *Node) runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 	h(opWarmBuilder, unary(func(ctx context.Context, _ empty) (empty, error) {
 		return empty{}, rt.WarmBuilder(ctx)
 	}))
+	h(opEnsureSidecar, unary(func(ctx context.Context, a sidecarRequest) (empty, error) {
+		return empty{}, rt.EnsureSidecar(ctx, a.node())
+	}))
+	h(opRemoveSidecar, unary(func(ctx context.Context, a resourceRequest) (empty, error) {
+		return empty{}, rt.RemoveSidecar(ctx, a.Name, a.Labels.node())
+	}))
 	h(opEnsureNetwork, unary(func(ctx context.Context, a resourceRequest) (empty, error) {
 		return empty{}, rt.EnsureNetwork(ctx, a.Name, a.Labels.node())
 	}))

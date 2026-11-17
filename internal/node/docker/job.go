@@ -43,6 +43,9 @@ func (r *Runtime) RunJob(ctx context.Context, spec node.JobSpec) (_ node.JobResu
 	if spec.Sync && r.Sync == "" {
 		return node.JobResult{}, fmt.Errorf("job %s: %w", spec.Name, node.ErrNoSync)
 	}
+	if spec.Dock && r.Self == "" {
+		return node.JobResult{}, fmt.Errorf("job %s: %w", spec.Name, node.ErrNoDock)
+	}
 	if err := r.checkDeps(ctx, node.ContainerSpec{Network: spec.Network, Mounts: spec.Mounts, Labels: spec.Labels}); err != nil {
 		return node.JobResult{}, err
 	}
@@ -53,6 +56,9 @@ func (r *Runtime) RunJob(ctx context.Context, spec node.JobSpec) (_ node.JobResu
 	opts := jobOptions(spec, pause, r.owner())
 	if spec.Sync {
 		opts.HostConfig.Mounts = append(opts.HostConfig.Mounts, mount.Mount{Type: mount.TypeBind, Source: r.Sync, Target: node.SyncPath, ReadOnly: true})
+	}
+	if spec.Dock {
+		opts.HostConfig.Mounts = append(opts.HostConfig.Mounts, mount.Mount{Type: mount.TypeBind, Source: r.Self, Target: node.DockPath, ReadOnly: true})
 	}
 	created, err := r.cli.ContainerCreate(ctx, opts)
 	if cerrdefs.IsConflict(err) {

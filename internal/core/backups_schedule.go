@@ -258,4 +258,5 @@ func (c *Core) scheduledBackup(ctx context.Context, serviceID int64) {
 		return
 	}
 	c.runBackup(ctx, ss, row)
+	c.scheduledBase(ctx, ss)
 }

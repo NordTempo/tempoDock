@@ -222,7 +222,8 @@ type Containers interface {
 	// dials the container's IP on its environment network from the host
 	// that runs it; on a remote server the bytes stream over the node link.
 	// It is not an open proxy: the target must carry LabelManaged and a
-	// service label, and no other network or address is ever used. ctx only
+	// service label (an app container, or a service's sidecar by its
+	// name), and no other network or address is ever used. ctx only
 	// bounds connecting; closing the returned conn ends it. A container
 	// that doesn't exist or isn't a service is ErrNotFound (wrapped).
 	Dial(ctx context.Context, req DialRequest) (net.Conn, error)
@@ -236,10 +237,50 @@ type Containers interface {
 	// With spec.Stream it is connected to its caller while it runs (`dock
 	// run`, ADR 0048; on a remote server since node protocol 16).
 	RunJob(ctx context.Context, spec JobSpec) (JobResult, error)
+
+	// EnsureSidecar runs a container Dock owns next to a service (ADR
+	// 0093: a Postgres database's WAL archiver): spec's image and
+	// arguments, dock-probe (for spec.Health) and the server's own dock
+	// binary bind-mounted read-only at ProbePath and DockPath, restarted
+	// by Docker. A new dock version replaces it. It does
+	// nothing when the container already runs as spec says, so it is
+	// cheap enough for every release that goes active, and replaces it
+	// otherwise. It carries LabelRole RoleSidecar: never listed or
+	// returned as an app, but Events streams its health_status, die and
+	// start events with Role set. On a remote server since node protocol
+	// 33; an older node's error says to upgrade it.
+	EnsureSidecar(ctx context.Context, spec SidecarSpec) error
+	// RemoveSidecar stops and removes the sidecar named name. One that
+	// isn't there, isn't a sidecar or carries labels other than labels
+	// (another control plane's) is left alone without an error.
+	RemoveSidecar(ctx context.Context, name string, labels Labels) error
+}
+
+// SidecarSpec is a sidecar container (EnsureSidecar). Env may hold
+// secrets: Docker shows it only to those who can run Docker.
+type SidecarSpec struct {
+	Name   string
+	Image  string
+	Labels Labels
+	Env    map[string]string
+	// Args replace the image's command, without a shell.
+	Args      []string
+	Network   string
+	Aliases   []string
+	Mounts    []Mount
+	Resources Resources
+	Health    *LivenessCheck
 }
 
 // RoleJob is the LabelRole value of RunJob's containers.
 const RoleJob = "job"
+
+// RoleSidecar is the LabelRole value of EnsureSidecar's containers.
+const RoleSidecar = "sidecar"
+
+// ProbePath is where a sidecar (and an app container with a health
+// check) finds dock-probe.
+const ProbePath = "/.dock-probe"
 
 // RoleBuildKit is the LabelRole value of the BuildKit container.
 const RoleBuildKit = "buildkit"
@@ -306,10 +347,22 @@ type JobSpec struct {
 	// the passes that copy a volume to another server (ADR 0063). A
 	// server without one fails the job with ErrNoSync (wrapped).
 	Sync bool
+	// Dock bind-mounts the server's own dock binary read-only at DockPath,
+	// for point-in-time restore's base backups and restores (ADR 0093).
+	// A server without one fails the job with ErrNoDock (wrapped). On a
+	// remote server since node protocol 33.
+	Dock bool
 }
 
 // SyncPath is where JobSpec.Sync mounts dock-sync in a job.
 const SyncPath = "/.dock-sync"
+
+// DockPath is where JobSpec.Dock and sidecars mount the dock binary.
+const DockPath = "/.dock"
+
+// ErrNoDock means a server's runtime doesn't know where its dock binary
+// is, so point-in-time restore can't run there.
+var ErrNoDock = errors.New("this server's runtime doesn't know its dock binary, so point-in-time restore can't run there")
 
 // ErrNoSync means a server's dock has no dock-sync to run (a build
 // without `make build`).
@@ -387,7 +440,8 @@ type PullOptions struct {
 
 // DialRequest names what Containers.Dial connects to.
 type DialRequest struct {
-	// ContainerID is the full ID of a running service container.
+	// ContainerID is the full ID of a running service container, or a
+	// sidecar's name.
 	ContainerID string
 	// Port is the container port (e.g. 5432), not a published host port.
 	Port int
@@ -918,6 +972,9 @@ type ContainerEvent struct {
 	Time   time.Time
 	// Request is set on an ActionWake event: what woke the environment.
 	Request string
+	// Role is RoleSidecar for a sidecar's event (EnsureSidecar), "" for
+	// an app container's.
+	Role string
 }
 
 // ActionWake is the Action of a ContainerEvent that is no container's: a

@@ -14,7 +14,9 @@ import (
 
 // RestoreBackup restores a template database's snapshot into a NEW
 // service from the same template (ADR 0011, 0019): new credentials, the
-// snapshot's data, nothing referencing it yet. The live service is never
+// snapshot's data, nothing referencing it yet. With req.ToTime it
+// restores a Postgres database as it was then instead (ADR 0093,
+// restoreToTime), into a new service or, with req.InPlace, itself. The live service is never
 // touched; switch references to the new one when it checks out. The
 // answer comes at once with the new service; the restore finishes in the
 // background (a restore row on the source service, and audit events).
@@ -30,6 +32,12 @@ func (c *Core) RestoreBackup(ctx context.Context, a Actor, ref ServiceRef, req a
 	if !ok {
 		return apitypes.RestoreResult{}, invalid("only template databases restore into a new service; restore %s's volume backups by hand with restic (see docs/guide/databases.md)", ss)
 	}
+	if req.ToTime != nil {
+		return c.restoreToTime(ctx, a, ss, t, req)
+	}
+	if req.InPlace {
+		return apitypes.RestoreResult{}, invalid("a backup restores into a new service; only a restore to a time (to_time) goes in place")
+	}
 	snap := strings.TrimSpace(req.Snapshot)
 	if len(snap) < 8 {
 		return apitypes.RestoreResult{}, invalid("give the snapshot ID or at least its first 8 characters; `dock backup list` shows them")
@@ -43,6 +51,9 @@ func (c *Core) RestoreBackup(ctx context.Context, a Actor, ref ServiceRef, req a
 	}
 	if from.Pruned {
 		return apitypes.RestoreResult{}, invalid("snapshot %s was removed by retention; pick a newer one", snap)
+	}
+	if from.Kind == string(apitypes.BackupPITR) {
+		return apitypes.RestoreResult{}, invalid("snapshot %s is a base backup of point-in-time restore; restore a time instead (`dock backup restore --to-time`)", snap)
 	}
 	set, err := c.backupSettings(ctx)
 	if err != nil {

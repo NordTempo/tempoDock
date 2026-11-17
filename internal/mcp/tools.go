@@ -434,6 +434,7 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 
 	h.addConfigTools(s)
 	h.addSnapshotTools(s)
+	h.addPITRTools(s)
 	h.addAnalyticsTools(s)
 	h.addErrorTools(s)
 	h.addTraceTools(s)

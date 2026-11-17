@@ -18,6 +18,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/backup"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/store"
+	"github.com/NordTempo/tempoDock/internal/walarchive"
 )
 
 // Backups (ADR 0019): every stateful service is backed up daily with
@@ -444,6 +445,9 @@ func (c *Core) serviceBackups(ctx context.Context, ss svcScope) (apitypes.Servic
 	if out.Schedule, err = c.scheduleOf(ctx, ss, set); err != nil {
 		return out, err
 	}
+	if out.PITR, err = c.pitrInfo(ctx, ss, set); err != nil {
+		return out, err
+	}
 	rows, err := c.store.ListServiceBackups(ctx, store.ListServiceBackupsParams{ServiceID: ss.svc.ID, Limit: serviceBackupRuns})
 	if err != nil {
 		return out, err
@@ -519,7 +523,7 @@ func jobLog(env map[string]string, out string) string {
 		return ""
 	}
 	secrets := map[string]string{}
-	for _, k := range []string{"RESTIC_PASSWORD", "AWS_SECRET_ACCESS_KEY", "PGPASSWORD", "REDISCLI_AUTH", "MYSQL_PWD"} {
+	for _, k := range append([]string{"RESTIC_PASSWORD", "AWS_SECRET_ACCESS_KEY", "PGPASSWORD", "REDISCLI_AUTH", "MYSQL_PWD"}, walarchive.Secrets...) {
 		if v := env[k]; v != "" {
 			secrets[k] = v
 		}
@@ -556,6 +560,7 @@ func toBackupRun(r store.Backup, service string, names map[int64]string) apitype
 		Status: apitypes.BackupStatus(r.Status), Snapshot: r.SnapshotID, SizeBytes: r.SizeBytes,
 		Repository: repoLabel(r.Repository), OffBox: r.Repository != "", Pruned: r.Pruned, Error: r.Error,
 		CreatedBy: r.CreatedBy, StartedAt: r.StartedAt, FinishedAt: r.FinishedAt,
+		ConsistentAt: r.ConsistentAt, ToTime: r.RestoreToTime,
 	}
 	if r.RestoredTo != nil {
 		out.RestoredTo = names[*r.RestoredTo]
@@ -627,7 +632,13 @@ func (c *Core) startBackup(ctx context.Context, a Actor, ss svcScope, trigger st
 // it finished can start the next run.
 func (c *Core) runBackup(ctx context.Context, ss svcScope, row store.Backup) {
 	defer c.kickBackups() // a due backup may have waited for this one
-	res, log, err := c.backupJob(ctx, ss, row)
+	// A database whose point-in-time restore is off lets its base
+	// backups age out with its dumps (ADR 0093).
+	var forget []store.Backup
+	if f, pitr := c.baseForget(ctx, ss); !pitr.Enabled && row.Kind == string(apitypes.BackupPostgres) {
+		forget = f
+	}
+	res, log, err := c.backupJob(ctx, ss, row, snapshotIDs(forget))
 	c.releaseService(ss.svc.ID)
 	if ctx.Err() != nil {
 		return // shutting down: the next start marks it failed
@@ -646,7 +657,11 @@ func (c *Core) runBackup(ctx context.Context, ss svcScope, row store.Backup) {
 		c.signalAlert(ctx, alertSignal{Key: "backup:" + alertServiceKey(ss.svc.ID, ss.project.Name, ss.env.Name, ss.svc.Name), Resolve: true})
 		fin.SnapshotID, fin.SizeBytes = res.SnapshotID, res.Bytes
 		if res.Kept != nil {
-			c.markPruned(ctx, ss.svc.ID, row.Repository, res.Kept)
+			c.markPruned(ctx, ss.svc.ID, row.Kind, row.Repository, res.Kept)
+		}
+		if len(forget) > 0 {
+			c.afterForget(ctx, ss, row.Repository, log, forget, nil)
+			defer c.pruneWAL(ctx, ss)
 		}
 		short := res.SnapshotID[:min(8, len(res.SnapshotID))]
 		c.audit(ctx, System, "backup.succeeded", &ss.project, &ss.env, ss.String(),
@@ -657,16 +672,17 @@ func (c *Core) runBackup(ctx context.Context, ss svcScope, row store.Backup) {
 	}
 }
 
-// markPruned marks the service's snapshots in repository that retention
-// removed: every one not in kept.
-func (c *Core) markPruned(ctx context.Context, serviceID int64, repository string, kept []string) {
+// markPruned marks the service's snapshots of a kind in repository that
+// retention removed: every one not in kept. Dumps and base backups have
+// their own tags (backup.Tag, BaseTag), so their own retention.
+func (c *Core) markPruned(ctx context.Context, serviceID int64, kind, repository string, kept []string) {
 	rows, err := c.store.ListUnprunedBackups(ctx, store.ListUnprunedBackupsParams{ServiceID: serviceID, Repository: repository})
 	if err != nil {
 		c.log.Warn("list backups for retention", "service", serviceID, "err", err)
 		return
 	}
 	for _, r := range rows {
-		if !slices.Contains(kept, r.SnapshotID) {
+		if (r.Kind == string(apitypes.BackupPITR)) == (kind == string(apitypes.BackupPITR)) && !slices.Contains(kept, r.SnapshotID) {
 			if err := c.store.PruneBackup(ctx, r.ID); err != nil {
 				c.log.Warn("mark backup pruned", "backup", r.ID, "err", err)
 			}
@@ -690,8 +706,8 @@ func humanBytes(n int64) string {
 
 // backupJob runs the backup job of row on the service's server and parses
 // its output; log is what View log keeps of it (jobLog), "" when the job
-// never ran.
-func (c *Core) backupJob(ctx context.Context, ss svcScope, row store.Backup) (res backup.Result, log string, err error) {
+// never ran. forget are base backup snapshots its retention removes too.
+func (c *Core) backupJob(ctx context.Context, ss svcScope, row store.Backup, forget []string) (res backup.Result, log string, err error) {
 	rt, err := c.runtimeFor(ss.env.ServerID)
 	if err != nil {
 		return backup.Result{}, "", err
@@ -752,6 +768,7 @@ func (c *Core) backupJob(ctx context.Context, ss svcScope, row store.Backup) (re
 		Env:    backup.BackupEnv(src, repo, backup.Retention{Daily: int(set.KeepDaily), Weekly: int(set.KeepWeekly), Monthly: int(set.KeepMonthly)}),
 		Script: script, Network: networkName(ss.envScope), Mounts: mounts,
 	}
+	spec.Env["DOCK_FORGET"] = strings.Join(forget, " ")
 	out, err := c.runResticJob(ctx, ss.env.ServerID, rt, repo, spec)
 	log = jobLog(spec.Env, out)
 	if err != nil {

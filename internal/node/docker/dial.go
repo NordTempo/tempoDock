@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"slices"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
@@ -19,13 +20,13 @@ import (
 // the container's IP in its environment network (ADR 0016). Host-originated
 // traffic leaves through OUTPUT, which the app firewall leaves alone, and the
 // replies are ESTABLISHED, which it lets back in. Containers that aren't
-// managed apps with a service label are not found; no other network or
+// managed apps (or sidecars) with a service label are not found; no other network or
 // address is ever dialed. ctx bounds the inspect calls and connecting only.
 func (r *Runtime) Dial(ctx context.Context, req node.DialRequest) (net.Conn, error) {
 	if req.Port < 1 || req.Port > 65535 {
 		return nil, fmt.Errorf("invalid port %d", req.Port)
 	}
-	c, err := r.inspect(ctx, req.ContainerID)
+	c, err := r.inspectDialable(ctx, req.ContainerID)
 	if err != nil {
 		return nil, err
 	}
@@ -111,4 +112,20 @@ func envEndpoint(ct node.Labels, eps []endpoint) (netip.Addr, bool) {
 		return cmp.Compare(rank(a), rank(b))
 	})
 	return best.addr, rank(best) > 0
+}
+
+// inspectDialable fetches an app container or a sidecar (a database's
+// archiver answers its status this way, ADR 0093).
+func (r *Runtime) inspectDialable(ctx context.Context, id string) (container.InspectResponse, error) {
+	res, err := r.cli.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+	if cerrdefs.IsNotFound(err) {
+		return container.InspectResponse{}, notFound("container", id)
+	}
+	if err != nil {
+		return container.InspectResponse{}, fmt.Errorf("inspect container %s: %w", id, err)
+	}
+	if res.Container.Config == nil || (!isApp(res.Container.Config.Labels) && !isSidecar(res.Container.Config.Labels)) {
+		return container.InspectResponse{}, notFound("container", id)
+	}
+	return res.Container, nil
 }

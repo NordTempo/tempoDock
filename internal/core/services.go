@@ -403,6 +403,7 @@ func (c *Core) finishArchive(ctx context.Context, done []archivedService) (notes
 	links := map[int64]serverLink{}
 	stopping := map[int64]int{} // containers to stop, by server
 	for _, as := range done {
+		c.pitrArchived(ctx, as.svcScope) // its archiver goes with it
 		id := as.env.ServerID
 		if _, ok := links[id]; !ok {
 			links[id] = c.linkOf(ctx, System, id)

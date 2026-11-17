@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -133,5 +134,38 @@ func TestRelay(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("relay still runs after its standard input closed")
+	}
+}
+
+// TestWalPush: archive_command sends the file with its length and mtime,
+// succeeds on 200 only, and carries the archiver's error otherwise.
+func TestWalPush(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "000000010000000000000003")
+	if err := os.WriteFile(path, []byte("segment"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mtime := time.UnixMilli(1_763_400_000_123)
+	if err := os.Chtimes(path, mtime, mtime); err != nil {
+		t.Fatal(err)
+	}
+	fail := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if r.Method != http.MethodPut || r.URL.Path != "/wal/000000010000000000000003" || string(body) != "segment" || r.Header.Get("X-Dock-Mtime") != "1763400000123" {
+			t.Errorf("got %s %s %q mtime %s", r.Method, r.URL.Path, body, r.Header.Get("X-Dock-Mtime"))
+		}
+		if fail {
+			http.Error(w, "dock-wal: s3: connection refused", http.StatusBadGateway)
+		}
+	}))
+	defer srv.Close()
+	addr := strings.TrimPrefix(srv.URL, "http://")
+	if err := walPush(addr, path, "000000010000000000000003"); err != nil {
+		t.Fatal(err)
+	}
+	fail = true
+	err := walPush(addr, path, "000000010000000000000003")
+	if err == nil || !strings.Contains(err.Error(), "answered 502: dock-wal: s3: connection refused") {
+		t.Fatalf("a failed upload: %v", err)
 	}
 }

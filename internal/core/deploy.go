@@ -93,6 +93,7 @@ func (c *Core) deploy(ctx context.Context, run *deployRun, ss svcScope, rel stor
 		d.fail(ctx, err)
 	} else {
 		c.afterActive(ctx, d.ss)
+		c.pitrAfterActive(ctx, d.ss)
 		c.kickBackups() // it may be newly stateful
 	}
 	if spec.done != nil {
@@ -865,6 +866,7 @@ func (c *Core) containerSpec(ss svcScope, rel store.Release, cfg releaseConfig) 
 	}
 	spec.Health = liveness(cfg)
 	c.addTracing(&spec, ss, rel)
+	c.addArchiving(&spec, ss)
 	return spec
 }
 

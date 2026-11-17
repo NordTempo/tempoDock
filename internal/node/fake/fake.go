@@ -19,6 +19,7 @@ import (
 	"maps"
 	"net"
 	"os"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -76,6 +77,9 @@ type Runtime struct {
 	forwards map[int]net.Listener
 	onJob    func(context.Context, node.JobSpec) (node.JobResult, error)
 	jobs     []node.JobSpec
+	// sidecars are EnsureSidecar's specs by name; sidecarErr fails it.
+	sidecars   map[string]node.SidecarSpec
+	sidecarErr error
 
 	// imageVolumes are the VOLUMEs images declare (SetImageVolumes);
 	// keptAnon names the containers Remove kept the anonymous volumes of.
@@ -1010,7 +1014,8 @@ func (r *Runtime) Events(ctx context.Context) (<-chan node.ContainerEvent, error
 func (r *Runtime) DialTo(addr string) { r.mu.Lock(); r.dialAddr = addr; r.mu.Unlock() }
 
 // Dial implements node.Containers. Like the real runtime it only dials
-// running service containers; the connection goes to the DialTo address.
+// running service containers and sidecars (by name); the connection goes
+// to the DialTo address.
 func (r *Runtime) Dial(ctx context.Context, req node.DialRequest) (net.Conn, error) {
 	// The container's fields are read under the lock: Stop changes them.
 	r.mu.Lock()
@@ -1019,6 +1024,8 @@ func (r *Runtime) Dial(ctx context.Context, req node.DialRequest) (net.Conn, err
 	var state node.ContainerState
 	if ok {
 		service, state = c.Labels.Service, c.State
+	} else if s, found := r.sidecars[req.ContainerID]; found {
+		ok, service, state = true, s.Labels.Service, node.StateRunning
 	}
 	addr := r.dialAddr
 	r.mu.Unlock()
@@ -1646,4 +1653,59 @@ func demoLogs() []node.LogLine {
 		out = append(out, node.LogLine{Time: at, Stream: stream, Text: l})
 	}
 	return out
+}
+
+// EnsureSidecar records spec ("ensure-sidecar <name>" when it changed).
+func (r *Runtime) EnsureSidecar(_ context.Context, spec node.SidecarSpec) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.sidecarErr != nil {
+		return r.sidecarErr
+	}
+	if r.sidecars == nil {
+		r.sidecars = map[string]node.SidecarSpec{}
+	}
+	if old, ok := r.sidecars[spec.Name]; ok && reflect.DeepEqual(old, spec) {
+		return nil
+	}
+	r.sidecars[spec.Name] = spec
+	r.op("ensure-sidecar %s", spec.Name)
+	return nil
+}
+
+// RemoveSidecar forgets a sidecar ("remove-sidecar <name>" if it ran).
+func (r *Runtime) RemoveSidecar(_ context.Context, name string, labels node.Labels) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if s, ok := r.sidecars[name]; ok && !s.Labels.Conflicts(labels) {
+		delete(r.sidecars, name)
+		r.op("remove-sidecar %s", name)
+	}
+	return nil
+}
+
+// Sidecars returns the running sidecars by name.
+func (r *Runtime) Sidecars() map[string]node.SidecarSpec {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return maps.Clone(r.sidecars)
+}
+
+// SetSidecarErr makes EnsureSidecar fail with err (nil: succeed).
+func (r *Runtime) SetSidecarErr(err error) {
+	r.mu.Lock()
+	r.sidecarErr = err
+	r.mu.Unlock()
+}
+
+// SidecarHealth emits a sidecar's health_status event, as Docker sends
+// when its check changes state.
+func (r *Runtime) SidecarHealth(name, health string) {
+	r.mu.Lock()
+	spec, ok := r.sidecars[name]
+	r.mu.Unlock()
+	if !ok {
+		return
+	}
+	r.Emit(node.ContainerEvent{ContainerID: name, Labels: spec.Labels, Action: "health_status", Health: health, Role: node.RoleSidecar, Time: time.Now()})
 }

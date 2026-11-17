@@ -218,6 +218,11 @@ func (c *Core) onContainerEvent(ctx context.Context, serverID int64, ev node.Con
 	if c.foreign(ev.Labels) {
 		return
 	}
+	if ev.Role == node.RoleSidecar {
+		// A database's WAL archiver, not an app (ADR 0093).
+		c.onArchiverEvent(ctx, serverID, ev)
+		return
+	}
 	if ev.Action == node.ActionWake {
 		// No container's: a node's wake check (ADR 0070).
 		c.wakeFromNode(ctx, serverID, ev)

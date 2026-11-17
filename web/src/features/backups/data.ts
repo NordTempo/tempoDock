@@ -1,9 +1,13 @@
-import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
+import {
+  queryOptions,
+  useQueryClient,
+  useSuspenseQuery,
+} from "@tanstack/react-query";
 import { api, body, done } from "../../api/client";
 import type { components } from "../../api/schema";
 import { useAction } from "../../data/mutations";
 import { keys, servicePath } from "../../data/queries";
-import type { ServiceRef } from "../../data/types";
+import type { ServiceBackups, ServiceRef } from "../../data/types";
 
 // A stateful service's volume snapshots (ADR 0045), and its backup runs'
 // logs. The keys sit under the service, so snapshot.* audit events (which
@@ -139,3 +143,30 @@ export const useSwitchReferences = () =>
     ({ ref, dry_run }) =>
       dry_run ? [] : [keys.project(ref.project), ["audit"]],
   );
+
+/**
+ * Turns a database's point-in-time restore on or off, or sets its days
+ * (ADR 0093; operators). Turning it on or off starts a restart release,
+ * which the overview follows from its events; the answer replaces the
+ * backups query.
+ */
+export function useSetPITR() {
+  const queryClient = useQueryClient();
+  return useAction(
+    async ({
+      ref,
+      ...input
+    }: { ref: ServiceRef } & Schemas["SetPITRRequest"]) => {
+      const b = await body(
+        api.PUT(
+          "/api/v1/projects/{project}/environments/{environment}/services/{service}/backups/pitr",
+          { params: { path: servicePath(ref) }, body: input },
+        ),
+      );
+      const answer: ServiceBackups = { ...b, runs: b.runs ?? [] };
+      queryClient.setQueryData(keys.backups(ref), answer);
+      return answer;
+    },
+    ({ ref }) => [keys.overview(ref.project), ["audit"]],
+  );
+}

@@ -7,6 +7,7 @@
 //	dock-probe tcp PORT TIMEOUT_MS
 //	dock-probe http PORT PATH TIMEOUT_MS
 //	dock-probe relay ADDR SOCKET
+//	dock-probe wal-push ADDR PATH FILE
 //	dock-probe version
 //
 // It connects to PORT on the container's loopback, then, if nothing
@@ -21,6 +22,12 @@
 // the Unix socket SOCKET, which the dock daemon serves on the host, and
 // prints "ready" once it listens. It runs only while a build exports,
 // and exits when its standard input closes (the daemon ends the exec).
+//
+// wal-push is a Postgres database's archive_command while point-in-time
+// restore is on (ADR 0093): it sends the finished WAL file at PATH (%p)
+// as FILE (%f) to the database's archiver at ADDR, and exits 0 only once
+// the archiver answers that the file is stored off the server. The
+// archiver holds the storage keys; the database's container never does.
 //
 // It imports only io, net, os, strconv and time (no net/http, no fmt) to
 // stay small: Docker execs it every interval in the app's own cgroup.
@@ -53,6 +60,9 @@ func run(args []string) error {
 	if len(args) == 1 && args[0] == "version" {
 		_, _ = os.Stdout.WriteString(version + "\n")
 		return nil
+	}
+	if len(args) == 4 && args[0] == "wal-push" {
+		return walPush(args[1], args[2], args[3])
 	}
 	if len(args) == 3 && args[0] == "relay" {
 		return relay(args[1], args[2], os.Stdin)
@@ -218,4 +228,61 @@ func join(c net.Conn, sock string) {
 	_, _ = io.Copy(c, u)
 	_ = c.(*net.TCPConn).CloseWrite()
 	<-done
+}
+
+// walPushTimeout bounds one archive_command: connecting, sending a 16 MB
+// segment and the archiver's upload of it. Postgres retries one that
+// fails.
+const walPushTimeout = 10 * time.Minute
+
+// walPush sends the file at path to the archiver at addr as
+// `PUT /wal/<file>` (HTTP/1.0, just enough of it) with its length and
+// mtime, and reads the answer: 200, or the archiver's error.
+func walPush(addr, path, file string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	conn, err := net.DialTimeout("tcp", addr, 30*time.Second)
+	if err != nil {
+		return describe("connect to the WAL archiver at "+addr, err)
+	}
+	defer func() { _ = conn.Close() }()
+	_ = conn.SetDeadline(time.Now().Add(walPushTimeout))
+	what := "archive " + file
+	head := "PUT /wal/" + file + " HTTP/1.0\r\nHost: dock-wal\r\nContent-Length: " + strconv.FormatInt(info.Size(), 10) +
+		"\r\nX-Dock-Mtime: " + strconv.FormatInt(info.ModTime().UnixMilli(), 10) + "\r\n\r\n"
+	if _, err := conn.Write([]byte(head)); err != nil {
+		return describe(what, err)
+	}
+	if _, err := io.CopyN(conn, f, info.Size()); err != nil {
+		return describe(what, err)
+	}
+	// HTTP/1.0: the archiver closes the connection after its answer.
+	answer, err := io.ReadAll(io.LimitReader(conn, 4096))
+	if err != nil && len(answer) == 0 {
+		return describe(what, err)
+	}
+	if len(answer) < 12 || string(answer[:5]) != "HTTP/" {
+		return errors.New(what + ": the archiver's answer is not HTTP")
+	}
+	if string(answer[9:12]) == "200" {
+		return nil
+	}
+	body := string(answer)
+	for i := 0; i+3 < len(body); i++ {
+		if body[i:i+4] == "\r\n\r\n" {
+			body = body[i+4:]
+			break
+		}
+	}
+	for len(body) > 0 && (body[len(body)-1] == '\n' || body[len(body)-1] == '\r') {
+		body = body[:len(body)-1]
+	}
+	return errors.New(what + ": the archiver answered " + string(answer[9:12]) + ": " + body)
 }

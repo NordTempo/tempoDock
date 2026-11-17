@@ -32,7 +32,7 @@ line means a later record added to it without changing what it decided.
 | [0016](0016-database-panel.md) | Database panel | superseded in part by [0023](0023-connect-tunnels.md), [0024](0024-tempobase-standalone.md) |
 | [0017](0017-mcp-endpoint.md) | MCP endpoint | accepted |
 | [0018](0018-git-push-deploy.md) | GitHub push-to-deploy | superseded in part by [0031](0031-github-app.md); amended by [0086](0086-cancel-a-deploy.md) |
-| [0019](0019-templates-and-backups.md) | Database templates and backups | superseded in part by [0039](0039-backups-on-storage-connections.md), [0061](0061-one-restore-model.md); amended by [0069](0069-database-insights.md) |
+| [0019](0019-templates-and-backups.md) | Database templates and backups | superseded in part by [0039](0039-backups-on-storage-connections.md), [0061](0061-one-restore-model.md); amended by [0069](0069-database-insights.md), [0093](0093-point-in-time-restore.md) (base backups and WAL for Postgres) |
 | [0020](0020-retention-and-alerts.md) | Retention, disk pruning and alerts | superseded in part by [0062](0062-org-alerts-and-operators.md), [0078](0078-deleting-archived-projects.md), [0079](0079-dock-sends-its-own-email.md) |
 | [0021](0021-control-plane-backup-and-move.md) | Control plane backup, restore and move | accepted |
 | [0022](0022-clone-and-export.md) | Clone an environment, export a project's config | superseded in part by [0049](0049-apply-and-compose-import.md) |
@@ -74,7 +74,7 @@ line means a later record added to it without changing what it decided.
 | [0058](0058-sso-oidc.md) | Single sign-on with OpenID Connect | superseded in part by [0065](0065-sign-in-is-the-platforms.md) |
 | [0059](0059-analytics-area-and-slimmer-service-page.md) | An Analytics area, a slimmer service page, project settings and uptime checks that set themselves up | superseded in part by [0076](0076-service-page-in-nine-tabs.md) |
 | [0060](0060-invite-links-signed-out.md) | Invite links work signed out, with a sign-up step | accepted; amended by [0065](0065-sign-in-is-the-platforms.md), [0079](0079-dock-sends-its-own-email.md) |
-| [0061](0061-one-restore-model.md) | One restore model: restore points, a restored service, and switching to it | accepted |
+| [0061](0061-one-restore-model.md) | One restore model: restore points, a restored service, and switching to it | accepted; amended by [0093](0093-point-in-time-restore.md) (restore to a time) |
 | [0062](0062-org-alerts-and-operators.md) | Alerts belong to the org, operators run the platform | superseded in part by [0065](0065-sign-in-is-the-platforms.md), [0066](0066-github-apps-for-many-orgs.md), [0080](0080-permissions-roles-groups-and-agents.md) |
 | [0063](0063-moves-without-downtime-and-server-drains.md) | Moves without downtime, and draining a server | accepted; amended by [0091](0091-switches-without-reloads.md) (the hold's fresh port) |
 | [0064](0064-changing-an-org-slug.md) | Changing an organization's slug | accepted |
@@ -106,6 +106,7 @@ line means a later record added to it without changing what it decided.
 | [0090](0090-wildcard-certificates.md) | Wildcard certificates for generated hostnames: `*.<base>` over ACME DNS-01 through Cloudflare, sent to servers with their routes, no CT log entries or TLS oracle | accepted |
 | [0091](0091-switches-without-reloads.md) | Traffic switches without Caddy reloads: each service's upstream in a file Caddy reads per request, and a move's hold on a fresh port | accepted |
 | [0092](0092-preview-database-copies.md) | Previews start with a copy of the base's database: empty, newest snapshot, copy, or masked (sensitive columns replaced while the base is read); forks get none unless allowed; refresh from base | accepted |
+| [0093](0093-point-in-time-restore.md) | Point-in-time restore for Postgres: WAL archived by a sidecar that holds the keys, daily base backups in restic, restores to a time into a new service or in place | accepted |
 | [0094](0094-deploying-from-github-actions.md) | Deploying from GitHub Actions: an official composite action with the server's CLI, signature checked, `--json-file` for logs with results; GitHub OIDC trust for org agents designed | accepted; OIDC not built |
 
 ## Template
