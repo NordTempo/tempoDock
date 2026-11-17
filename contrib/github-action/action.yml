@@ -58,7 +58,7 @@ outputs:
     description: Every release started, as a JSON array of Dock's releases (project, environment, service, number, status, error, ...).
     value: ${{ steps.deploy.outputs.releases }}
   exit-code:
-    description: dock's exit code (docs/cli.md): 0 deployed, 3 not allowed, 5 conflict, 6 failed, 7 unreachable, 10 canceled.
+    description: "dock's exit code (docs/cli.md): 0 deployed, 3 not allowed, 5 conflict, 6 failed, 7 unreachable, 10 canceled."
     value: ${{ steps.deploy.outputs.exit-code }}
 runs:
   using: composite
