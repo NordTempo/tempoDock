@@ -3,7 +3,8 @@
 Status: accepted (asked by Saile, 2026-11-13, from using prod; the
 coordinator relayed the pick of the plan's model, Postplan
 `54pidqa7y3qp`). Amends [0056](0056-preview-environments.md)'s "Opt in"
-and "Which pull requests".
+and "Which pull requests". Amended by [0092](0092-preview-database-copies.md):
+seed is `data snapshot`, next to copies of the base's database.
 
 ## Context
 

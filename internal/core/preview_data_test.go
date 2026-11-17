@@ -148,7 +148,9 @@ func TestPreviewMaskedCopy(t *testing.T) {
 	}
 	rel := h.waitReleases(db, 1)[0]
 	r, err := h.c.GetRelease(h.ctx, testSystem, db, rel.Number)
-	if err != nil || !slices.ContainsFunc(r.Events, func(e apitypes.ReleaseEvent) bool { return strings.Contains(e.Message, "masked copy of shop/staging/db") }) {
+	if err != nil || !slices.ContainsFunc(r.Events, func(e apitypes.ReleaseEvent) bool {
+		return strings.Contains(e.Message, "masked copy of shop/staging/db")
+	}) {
 		t.Errorf("release events %+v, %v; want the copy", r.Events, err)
 	}
 }

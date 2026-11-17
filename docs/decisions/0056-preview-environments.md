@@ -2,7 +2,8 @@
 
 Status: accepted (asked by Saile, 2026-11-03; decided by the agent); superseded
 in part by [0077](0077-previews-belong-to-services.md) (services opt in, and each picks its pull requests);
-amended by [0070](0070-sleeping-environments.md) (previews sleep after 30 minutes idle by default)
+amended by [0070](0070-sleeping-environments.md) (previews sleep after 30 minutes idle by default) and
+[0092](0092-preview-database-copies.md) (databases start with a copy, masked or not, of the base's)
 
 Amended by [0077](0077-previews-belong-to-services.md): previews are opted
 into per service, and the base is that service's environment.

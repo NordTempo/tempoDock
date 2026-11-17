@@ -6,7 +6,8 @@ built from the pull request's head commit and given its own addresses. It
 follows new commits and is archived, with its containers, volumes and
 addresses, when the pull request closes
 ([ADR 0056](../decisions/0056-preview-environments.md),
-[ADR 0077](../decisions/0077-previews-belong-to-services.md)).
+[ADR 0077](../decisions/0077-previews-belong-to-services.md),
+[ADR 0092](../decisions/0092-preview-database-copies.md)).
 
 ## Turn them on
 
@@ -16,7 +17,7 @@ them on, and its environment is the base the preview is cloned from.
 ```sh
 dock service previews on -s web -e staging                 # pull requests into staging/web's branch
 dock service previews on -s web -e staging --copy PUBLIC_API_URL
-dock service previews -s db -e staging --seed              # each preview's db starts from its newest snapshot
+dock service previews -s db -e staging --data             # each preview's db starts with a masked copy of staging's
 dock env previews set staging --max 5 --sleep-after 1h --copy SENTRY_DSN
 dock env previews                                          # who builds pull requests, open previews
 dock service previews off -s web -e staging                # no new previews; open ones stay until they close
@@ -42,7 +43,7 @@ project. A disconnected service builds no more pull requests.
 | Services and settings | The base's, like [`dock env clone`](deploying.md#clone-an-environment) |
 | Code | Services with previews on that deploy the pull request's repository and branch build its head commit. Other services run the base's current image |
 | Addresses | Each service with a domain in the base gets a generated one, `web-shop-pr-12.<base domain>` |
-| Volumes | New and empty. Never backed up, and removed when the preview closes |
+| Volumes | New, and empty unless the service's data setting copies its base's ([below](#data-in-previews)). Never backed up, and removed when the preview closes |
 | Variables | See below |
 | Domains, backups, releases | Its own; nothing of the base's |
 
@@ -55,16 +56,9 @@ nobody chose to give it:
   they point at the preview's own services. A reference to an org
   variable (`${{org.KEY}}`) is not: it reads the org's secret, so it is
   copied only when listed.
-- Database templates get new credentials for the preview's own, empty
-  database, unless it is seeded.
-- **Seeded services** (`dock service previews --seed`) start with
-  data: before a new preview's copy of the service first starts, its own
-  new volume is filled from the base service's latest snapshot on the
-  same server (`dock volume snapshot -s db`). A seeded template database
-  keeps the base's credentials, which the copied data files need. The
-  base's volume is never mounted. Without a snapshot it starts empty, and
-  the preview's last event says why. Take snapshots of what you seed
-  from: the seed is only as fresh as the newest one.
+- Database templates get new credentials for the preview's own
+  database, unless it starts from a snapshot (below), whose data files
+  need the base's.
 - **Every other value is left out**, unless the service lists it
   (`dock service previews -s web --copy KEY`), or its environment lists a
   shared one (`dock env previews set staging --copy KEY`). Nothing is
@@ -75,6 +69,51 @@ nobody chose to give it:
 Pull requests **from forks** never build a service unless it allows them
 (`dock service previews on --forks`). A fork is anyone on GitHub; with
 `--forks`, their code runs on your server with the listed values.
+
+## Data in previews
+
+Each service of the base says what its volumes start with in a new
+preview (`dock service previews -s db --data MODE`, or Settings › Source,
+Previews, Data in previews):
+
+| Mode | The preview's database starts with |
+|---|---|
+| `empty` (default) | Nothing |
+| `masked` (`--data` alone) | A copy of the base's database as the preview is made, with the Data panel's [sensitive columns](data.md) replaced while the base is read: NULL, or a value of their type that says nothing. Their values never reach the preview |
+| `copy` | The same copy, sensitive columns included |
+| `snapshot` | The base service's newest volume snapshot on the same server (`dock volume snapshot -s db`), as it is; any service with a volume. It keeps the base's credentials, which the data files need |
+
+`copy` and `masked` are for template databases (Postgres, MySQL,
+MariaDB, Redis, Valkey). The base keeps running and is only read:
+Postgres and MySQL are dumped from a consistent snapshot, without locks.
+A preview with data to copy deploys its databases first, and the pull
+request's code builds and starts only once they are filled.
+
+- **Mark first.** A masked copy masks what is marked sensitive in the
+  base's Data panel, nothing else: a value repeated in an unmarked column
+  is copied as it is. A Redis with sensitive key patterns starts empty
+  in masked mode, for now.
+- **Unmasked is real data.** `copy` and `snapshot` hand the pull
+  request's code the real data, and need the sensitive columns visible to
+  you to choose.
+- **Forks** start empty unless `--data-forks`.
+- **Limits.** Databases past `[previews] copy_max_mb` (2 GB), a disk
+  without room for two copies, or a base on another server than the
+  preview start empty. So does any failed copy: the preview never holds
+  part of one.
+- `dock env previews` shows each preview database's copy (masked columns,
+  size, time, or why it started empty); so does the preview's line on
+  the project page and the database's release.
+
+Copy the base again into an open preview (it is emptied first, then its
+other services restart so the pull request's migrations run):
+
+```sh
+dock env previews refresh pr-12               # every database that copies its base
+dock env previews refresh pr-12 --service db
+```
+
+Sleeping keeps a preview's data; closing it removes it.
 
 ## On the pull request
 

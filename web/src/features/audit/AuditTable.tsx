@@ -186,6 +186,11 @@ const words: Record<string, readonly [label: string, past: string]> = {
   "preview.close": ["close preview", "closed the preview"],
   "preview.create": ["open preview", "opened the preview"],
   "preview.update": ["update preview", "updated the preview"],
+  "preview.data": ["copy preview data", "copied data into the preview"],
+  "preview.refresh_data": [
+    "refresh preview data",
+    "refreshed the preview's data",
+  ],
   "previews.disable": ["turn off previews", "turned off previews for"],
   "project.archive": ["archive project", "archived project"],
   "project.create": ["create project", "created project"],

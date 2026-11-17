@@ -17,6 +17,7 @@ import { autofocus } from "../create/form";
 import {
   type EnvironmentPreviews,
   minutes,
+  previewDataText,
   previewQueries,
   previewsCli,
   useSetEnvironmentPreviews,
@@ -88,9 +89,9 @@ export function PreviewsSection({ project }: { project: string }) {
                           </>
                         )}
                       </>
-                    ) : sp.seed ? (
+                    ) : sp.data !== "empty" ? (
                       <span className="font-sans">
-                        seeds from the newest snapshot
+                        starts with its {previewDataText(sp.data)}
                       </span>
                     ) : (
                       <span className="font-sans text-mut">

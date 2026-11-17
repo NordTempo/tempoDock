@@ -79,7 +79,7 @@ func (h *handler) addPreviewTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "refresh_preview_data", "Copy a preview's databases from its base again",
-		"Empty a preview's databases and copy them from the base again, as when it was made (masked if set so), then restart its other services. Only for databases whose base service copies its data into previews. The base is only read.",
+		"Empty a preview's databases and copy them from its base again as set (masked or not), then restart its other services. The base is only read.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in RefreshPreviewDataInput) (mcpkit.Reply, error) {
 			pv, err := h.findPreview(ctx, c, in.PreviewInput)
 			if err != nil {

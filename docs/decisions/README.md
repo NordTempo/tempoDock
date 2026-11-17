@@ -69,7 +69,7 @@ line means a later record added to it without changing what it decided.
 | [0053](0053-moving-environments.md) | Moving an environment to another server | superseded in part by [0063](0063-moves-without-downtime-and-server-drains.md) |
 | [0054](0054-scheduled-jobs.md) | Scheduled jobs (cron) | accepted |
 | [0055](0055-uptime-checks.md) | Uptime checks from another server | accepted; amended by [0070](0070-sleeping-environments.md) (paused while asleep) and [0073](0073-public-status-pages.md) (day rows for 90 days) |
-| [0056](0056-preview-environments.md) | Preview environments per pull request | superseded in part by [0077](0077-previews-belong-to-services.md); amended by [0070](0070-sleeping-environments.md) (previews sleep) |
+| [0056](0056-preview-environments.md) | Preview environments per pull request | superseded in part by [0077](0077-previews-belong-to-services.md); amended by [0070](0070-sleeping-environments.md) (previews sleep); amended by [0092](0092-preview-database-copies.md) (database copies) |
 | [0057](0057-two-factor-sign-in.md) | Two-factor sign-in, step-ups and break-glass | accepted; amended by [0065](0065-sign-in-is-the-platforms.md) |
 | [0058](0058-sso-oidc.md) | Single sign-on with OpenID Connect | superseded in part by [0065](0065-sign-in-is-the-platforms.md) |
 | [0059](0059-analytics-area-and-slimmer-service-page.md) | An Analytics area, a slimmer service page, project settings and uptime checks that set themselves up | superseded in part by [0076](0076-service-page-in-nine-tabs.md) |
@@ -90,7 +90,7 @@ line means a later record added to it without changing what it decided.
 | [0074](0074-image-vulnerability-scanning.md) | Image vulnerability scanning | accepted |
 | [0075](0075-tracing-over-otlp.md) | Tracing over OTLP | accepted; phases 1 to 6 built |
 | [0076](0076-service-page-in-nine-tabs.md) | The service page in nine tabs, one save model, a failure said once | accepted; Requests built |
-| [0077](0077-previews-belong-to-services.md) | Previews belong to services | accepted |
+| [0077](0077-previews-belong-to-services.md) | Previews belong to services | accepted; amended by [0092](0092-preview-database-copies.md) (database copies) |
 | [0078](0078-deleting-archived-projects.md) | Renaming and deleting archived projects | accepted |
 | [0079](0079-dock-sends-its-own-email.md) | Dock sends its own email: the platform's SMTP server, an outbox, invites first | accepted; built, except the rows marked Later |
 | [0080](0080-permissions-roles-groups-and-agents.md) | Permissions, roles, groups and agents: area roles, groups as job functions, personal agents, protected environments, the platform apart | accepted; all seven phases built |
@@ -105,6 +105,7 @@ line means a later record added to it without changing what it decided.
 | [0089](0089-faster-builds.md) | Faster builds: half the server's cores (at least two) by default, zstd layers, Railpack images pinned, a hint for Dockerfiles without `.next/cache`, previews keep cold cache mounts; amended: BuildKit pushes through a relay, builders fetch Railpack's images ahead | accepted |
 | [0090](0090-wildcard-certificates.md) | Wildcard certificates for generated hostnames: `*.<base>` over ACME DNS-01 through Cloudflare, sent to servers with their routes, no CT log entries or TLS oracle | accepted |
 | [0091](0091-switches-without-reloads.md) | Traffic switches without Caddy reloads: each service's upstream in a file Caddy reads per request, and a move's hold on a fresh port | accepted |
+| [0092](0092-preview-database-copies.md) | Previews start with a copy of the base's database: empty, newest snapshot, copy, or masked (sensitive columns replaced while the base is read); forks get none unless allowed; refresh from base | accepted |
 
 ## Template
 

@@ -28,6 +28,7 @@ import { MoveStrip } from "../move/MoveStrip";
 import { previewsCli } from "../previews/data";
 import {
   ClosePreview,
+  PreviewData,
   PreviewLine,
   PullRequestLink,
 } from "../previews/PreviewParts";
@@ -297,6 +298,7 @@ export function EnvironmentTable({
         />
       )}
       {pr && <PreviewLine env={ref} />}
+      {pr && <PreviewData env={ref} canDeploy={canDeploy} />}
       {closing && <ClosePreview env={ref} onDone={() => setClosing(false)} />}
       {!moveOpen && (
         <MoveStrip

@@ -12,8 +12,9 @@ import type { EnvRef, ServiceRef } from "../../data/types";
 // preview environments.
 
 type Schemas = components["schemas"];
-export type Preview = Omit<Schemas["Preview"], "urls"> & {
+export type Preview = Omit<Schemas["Preview"], "urls" | "databases"> & {
   urls: Schemas["PreviewURL"][];
+  databases: Schemas["PreviewDatabase"][];
 };
 export type ServicePreviews = Omit<
   Schemas["ServicePreviews"],
@@ -48,6 +49,17 @@ export type PreviewSettings = Omit<
   environments: PreviewEnvironment[];
 };
 export type PullRequestRef = Schemas["PullRequestRef"];
+export type PreviewData = Schemas["ServicePreviews"]["data"];
+export type PreviewDatabase = Schemas["PreviewDatabase"];
+
+/** What a data setting starts a preview's volumes with, in words. */
+export const previewDataText = (d: PreviewData) =>
+  ({
+    empty: "empty",
+    snapshot: "newest snapshot",
+    copy: "copy",
+    masked: "masked copy",
+  })[d];
 
 /** The default and the most open previews a project may have. */
 export const PREVIEW_DEFAULT_MAX = 3;
@@ -58,6 +70,7 @@ export const PREVIEW_MAX = 20;
 const toPreview = (p: Schemas["Preview"]): Preview => ({
   ...p,
   urls: p.urls ?? [],
+  databases: p.databases ?? [],
 });
 
 const toServicePreviews = (s: Schemas["ServicePreviews"]): ServicePreviews => ({
@@ -188,6 +201,27 @@ export const useClosePreview = () =>
         ),
       ).then(toPreview),
     (env) => [...touched(env.project), keys.servers],
+  );
+
+/**
+ * Copies a preview's databases from its base again (ADR 0092): they are
+ * emptied and filled, then its other services restart.
+ */
+export const useRefreshPreviewData = () =>
+  useAction(
+    (env: EnvRef) =>
+      body(
+        api.POST(
+          "/api/v1/projects/{project}/environments/{environment}/preview/refresh-data",
+          {
+            params: {
+              path: { project: env.project, environment: env.environment },
+            },
+            body: {},
+          },
+        ),
+      ).then(toPreview),
+    (env) => touched(env.project),
   );
 
 /** `dock environment previews ...` with the project flag. */

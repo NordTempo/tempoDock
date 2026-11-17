@@ -198,7 +198,7 @@ func (c *Core) fillPreviewDB(ctx context.Context, a Actor, dst envScope, pv stor
 	if err != nil && pc.dirty {
 		up, rerr := c.emptyPreviewDB(ctx, pc.to)
 		if rerr != nil {
-			pc.finish(ctx, fmt.Errorf("%w; emptying it failed too (%v), so it stays stopped", err, rerr))
+			pc.finish(ctx, fmt.Errorf("%w; emptying it failed too (%w), so it stays stopped", err, rerr))
 			return
 		}
 		pc.up = up
@@ -251,18 +251,19 @@ func (pc *previewCopy) run(ctx context.Context, refresh bool) error {
 	if err != nil {
 		return err
 	}
-	_ = rt.RemoveVolume(ctx, scratch, c.labels(pc.to, 0))
-	if err := rt.EnsureVolume(ctx, scratch, c.labels(pc.to, 0)); err != nil {
+	_ = rt.RemoveVolume(ctx, scratch, pc.scratchLabels())
+	if err := rt.EnsureVolume(ctx, scratch, pc.scratchLabels()); err != nil {
 		return fmt.Errorf("create the copy's scratch volume: %w", c.nodeErr(pc.to.env.ServerID, err))
 	}
 	defer func() {
-		if err := rt.RemoveVolume(context.WithoutCancel(ctx), scratch, c.labels(pc.to, 0)); err != nil {
+		if err := rt.RemoveVolume(context.WithoutCancel(ctx), scratch, pc.scratchLabels()); err != nil {
 			c.log.Error("remove a preview copy's scratch volume", "volume", scratch, "err", err)
 		}
 	}()
 	pc.step(ctx, fmt.Sprintf("reading %s (%s)", pc.from, describeMode(pc.set.mode)))
 	dump, _ := dbcopy.DumpScript(engine)
-	out, err := c.runCopyJob(ctx, pc.to, node.JobSpec{
+	// The dump job is the base's: it joins the base's network.
+	out, err := c.runCopyJob(ctx, pc.from, node.JobSpec{
 		Name:  fmt.Sprintf("dock_p%d_e%d_s%d_copy_dump_%d", pc.to.project.ID, pc.to.env.ID, pc.to.svc.ID, now().UnixNano()),
 		Image: jobImage(pc.from), Env: dbcopy.DumpEnv(engine, src), Script: dump, Network: networkName(pc.from.envScope),
 		Mounts: []node.Mount{{Volume: scratch, Path: dbcopy.Path}},
@@ -276,7 +277,7 @@ func (pc *previewCopy) run(ctx context.Context, refresh bool) error {
 	pc.step(ctx, fmt.Sprintf("loading %s into the preview", megabytes(pc.stats.Bytes)))
 	load, _ := dbcopy.LoadScript(engine)
 	spec := node.JobSpec{
-		Name:   fmt.Sprintf("dock_p%d_e%d_s%d_copy_load_%d", pc.to.project.ID, pc.to.env.ID, pc.to.svc.ID, now().UnixNano()),
+		Name:  fmt.Sprintf("dock_p%d_e%d_s%d_copy_load_%d", pc.to.project.ID, pc.to.env.ID, pc.to.svc.ID, now().UnixNano()),
 		Image: jobImage(pc.to), Script: load,
 		Mounts: []node.Mount{{Volume: scratch, Path: dbcopy.Path}},
 	}
@@ -402,6 +403,15 @@ func (pc *previewCopy) target(ctx context.Context, engine dbcopy.Engine) (dbcopy
 // scratch is the Docker name of the copy's scratch volume, one per
 // preview database.
 func (pc *previewCopy) scratch() string { return volumeName(pc.to, "_copy") }
+
+// scratchLabels label the scratch volume with the project alone: the
+// dump job (the base's) and the load job (the preview's) both mount it,
+// and the runtime refuses a volume labelled for another service.
+func (pc *previewCopy) scratchLabels() node.Labels {
+	l := pc.c.labels(pc.to, 0)
+	l.Environment, l.Service = "", ""
+	return l
+}
 
 // volume is the preview database's template volume, created if its first
 // release hasn't yet.
@@ -765,7 +775,7 @@ func (c *Core) resumePreviewData(ctx context.Context) error {
 		}
 		pc := &previewCopy{c: c, to: ss, set: previewDataSetting{mode: apitypes.PreviewData(r.Mode)}, start: r.StartedAt}
 		if rt, err := c.runtimeFor(ss.env.ServerID); err == nil {
-			_ = rt.RemoveVolume(ctx, pc.scratch(), c.labels(ss, 0))
+			_ = rt.RemoveVolume(ctx, pc.scratch(), pc.scratchLabels())
 		}
 		msg := "started empty: a restart of Tempo Dock cut the copy short; refresh it from the base (`dock env previews refresh " + ss.env.Name + "`)"
 		if _, err := c.emptyPreviewDB(ctx, ss); err != nil {
