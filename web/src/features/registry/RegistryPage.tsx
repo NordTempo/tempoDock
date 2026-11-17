@@ -138,6 +138,12 @@ export function RegistryPage() {
             Last prune failed: {registry.last_prune_error}
           </p>
         )}
+        {registry.last_prune_skipped && (
+          <p className="text-warn-text">
+            The last prune passed over what it couldn't read or delete; the next
+            one tries again: {registry.last_prune_skipped.join("; ")}
+          </p>
+        )}
         <Migration registry={registry} />
         {registry.collect_pending && (
           <p className="text-warn-text">

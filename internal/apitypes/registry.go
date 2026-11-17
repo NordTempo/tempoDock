@@ -25,8 +25,13 @@ type Registry struct {
 	Pruning      bool       `json:"pruning"`
 	LastPruneAt  *time.Time `json:"last_prune_at,omitempty"`
 	// LastPruned is how many images the last prune deleted.
-	LastPruned     int    `json:"last_pruned"`
-	LastPruneError string `json:"last_prune_error,omitempty"`
+	LastPruned int `json:"last_pruned"`
+	// LastPruneError is why the last prune failed; LastPruneSkipped what
+	// the last prune that ran through passed over because it couldn't
+	// read or delete it (a repository and tag or digest, and why). The
+	// next prune tries those again.
+	LastPruneError   string   `json:"last_prune_error,omitempty"`
+	LastPruneSkipped []string `json:"last_prune_skipped,omitempty"`
 	// CollectPending: images were deleted whose layers aren't collected
 	// yet; the next prune collects them.
 	CollectPending bool `json:"collect_pending"`

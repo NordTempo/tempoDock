@@ -87,6 +87,9 @@ func printRegistry(g *globals, r apitypes.Registry) error {
 			g.io.Detail(fmt.Sprintf("Moved the images from %s to %s: %d objects, %s.", m.From, m.To, m.Objects, bytesize(m.Bytes)))
 		}
 	}
+	if len(r.LastPruneSkipped) > 0 {
+		g.io.Warnf("The last prune passed over what it couldn't read or delete; the next one tries again: %s", strings.Join(r.LastPruneSkipped, "; "))
+	}
 	if r.CollectPending {
 		g.io.Warnf("Deleted images' layers are still on disk; the next prune collects them.")
 	}

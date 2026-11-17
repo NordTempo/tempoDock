@@ -64,6 +64,8 @@ type imageUpkeep struct {
 	// console: how many manifests it deleted, and why it failed.
 	lastPruned int
 	lastErr    string
+	// lastSkipped is what the last prune that ran through skipped.
+	lastSkipped []string
 	// migration is the latest move of the images to other storage, which
 	// holds the gate while it runs (MigrateRegistry); migrateIDs are its
 	// connections (nil: local).
@@ -323,32 +325,51 @@ func (c *Core) maybePruneRegistry() {
 // both and records the outcome. A failed or stopped prune doesn't move
 // lastPrune, so the next deploy tries again; a stopped one (errPruneYielded)
 // is no failure: stopping a collection midway only leaves blobs for the
-// next one.
+// next one. A prune that skipped images it couldn't read or delete
+// (registry.Client.Prune) still counts as done, with an alert naming
+// them; the next prune tries them again.
 func (c *Core) pruneRegistry(ctx context.Context) (n int, err error) {
 	u := &c.images
+	var skipped []error
 	defer func() {
 		if err != nil && ctx.Err() != nil && c.ctx.Err() == nil {
 			err = errPruneYielded
 		}
 		u.gate.release()
-		if err != nil && !errors.Is(err, errPruneYielded) {
-			c.log.Warn("registry prune", "err", err)
-		}
-		u.mu.Lock()
-		defer u.mu.Unlock()
-		u.pruning = false
-		u.lastPruned = n
 		if errors.Is(err, errPruneYielded) {
+			u.mu.Lock()
+			u.pruning, u.lastPruned = false, n
+			u.mu.Unlock()
 			c.log.Info("registry prune stopped early: a build or pull needs the registry; the next prune goes on")
 			return
 		}
-		u.lastErr = ""
+		if err != nil {
+			c.log.Warn("registry prune", "err", err)
+		}
+		for _, e := range skipped {
+			c.log.Warn("registry prune skipped an image", "err", e)
+		}
+		u.mu.Lock()
+		u.pruning, u.lastPruned, u.lastErr = false, n, ""
 		if err != nil {
 			u.lastErr = err.Error()
-			c.connectionFailed(ctx, "registry:prune", "registry:prune", "The registry's prune is failing",
-				fmt.Sprintf("Pruning old images from the platform registry failed: %v. Its storage keeps growing until a prune works; the next deploy tries again.", err), "dock registry prune")
 		} else {
 			u.lastPrune = time.Now()
+			u.lastSkipped = nil
+			for _, e := range skipped {
+				u.lastSkipped = append(u.lastSkipped, e.Error())
+			}
+		}
+		u.mu.Unlock()
+		// The alert is written without u.mu, which the console's reads take.
+		switch {
+		case err != nil:
+			c.connectionFailed(ctx, "registry:prune", "registry:prune", "The registry's prune is failing",
+				fmt.Sprintf("Pruning old images from the platform registry failed: %v. Its storage keeps growing until a prune works; the next deploy tries again.", err), "dock registry prune")
+		case len(skipped) > 0:
+			c.connectionFailed(ctx, "registry:prune", "registry:prune", "The registry's prune skipped images it couldn't read",
+				fmt.Sprintf("The prune passed over what it couldn't read or delete, and pruned the rest: %s. Those images stay in storage until a prune gets through them; the next one tries again. One that keeps failing is likely an object stuck in the registry's bucket.", skippedSummary(skipped)), "dock registry prune")
+		default:
 			c.connectionWorks(ctx, "registry:prune")
 		}
 	}()
@@ -359,7 +380,7 @@ func (c *Core) pruneRegistry(ctx context.Context) (n int, err error) {
 	if len(keep) == 0 {
 		return 0, nil // nothing was ever pushed, or nothing is kept: leave it
 	}
-	n, err = c.reg.Prune(ctx, keep)
+	n, skipped, err = c.reg.Prune(ctx, keep)
 	u.mu.Lock()
 	collect := u.collect || n > 0
 	u.collect = collect
@@ -377,6 +398,21 @@ func (c *Core) pruneRegistry(ctx context.Context) (n int, err error) {
 	u.collect = false
 	u.mu.Unlock()
 	return n, nil
+}
+
+// skippedSummary names what a prune skipped for its alert: the first
+// few, each with its reason, and how many more.
+func skippedSummary(skipped []error) string {
+	const shown = 3
+	parts := make([]string, 0, shown)
+	for _, e := range skipped[:min(len(skipped), shown)] {
+		parts = append(parts, e.Error())
+	}
+	s := strings.Join(parts, "; ")
+	if more := len(skipped) - shown; more > 0 {
+		s += fmt.Sprintf("; and %d more (see the daemon's log)", more)
+	}
+	return s
 }
 
 // keepReleases is the rollback window: how many of a service's newest

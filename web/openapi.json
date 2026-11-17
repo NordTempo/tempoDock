@@ -12556,6 +12556,15 @@
           "last_prune_error": {
             "type": "string"
           },
+          "last_prune_skipped": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "last_pruned": {
             "format": "int64",
             "type": "integer"

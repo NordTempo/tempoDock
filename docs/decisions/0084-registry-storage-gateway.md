@@ -118,6 +118,16 @@ Caddy's admin API is a socket the registry can't open.
   gateway's listing).
 - Garbage collection runs while the gateway serves, strict. A spool
   that still holds objects is listed with the bucket, so GC sees them.
+- A stuck manifest makes the registry take minutes to answer for its
+  tag (the gateway's attempts, then registry:3's S3 client retrying the
+  503), and Distribution's garbage collection exits on it. Since
+  2026-11-17 a prune that can't get an answer reads the tag's link from
+  the bucket itself. If no release keeps that manifest, the prune
+  deletes it by digest (which doesn't read it), and the next collection
+  deletes the stuck object. A tag it can't read either is skipped and
+  named in the prune's alert, and the rest is pruned. A stuck manifest
+  that a release still keeps is only repaired by pushing it again, and
+  until then garbage collection fails on it.
 
 ## Out of scope
 

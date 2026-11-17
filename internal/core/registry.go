@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -29,8 +30,10 @@ type Registry interface {
 	// Digest returns the manifest digest (sha256:...) repo:tag points at.
 	Digest(ctx context.Context, repo, tag string) (string, error)
 	// Prune deletes the manifests whose digest isn't in keep and returns
-	// how many it deleted.
-	Prune(ctx context.Context, keep []string) (int, error)
+	// how many it deleted, and the tags or manifests it skipped because
+	// it couldn't read or delete them (each error names one); err only
+	// when it couldn't prune at all.
+	Prune(ctx context.Context, keep []string) (deleted int, skipped []error, err error)
 	// GarbageCollect removes blobs no manifest references any more. The
 	// registry is stopped while it runs, so core calls it only when no
 	// build or pull uses the registry, and ends ctx when one waits: it
@@ -115,6 +118,7 @@ func (c *Core) registryInfo(ctx context.Context) (apitypes.Registry, error) {
 	out.Pruning = u.pruning
 	out.LastPruned = u.lastPruned
 	out.LastPruneError = u.lastErr
+	out.LastPruneSkipped = slices.Clone(u.lastSkipped)
 	out.CollectPending = u.collect
 	if m := u.migration; m != nil {
 		cp := *m

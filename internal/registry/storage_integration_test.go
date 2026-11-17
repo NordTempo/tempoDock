@@ -106,8 +106,8 @@ func TestStorageInBucket(t *testing.T) {
 	pull(t, docker, rt, p, repo, second)
 
 	// Prune and collect in the bucket.
-	if n, err := p.Prune(ctx, []string{second}); err != nil || n != 1 {
-		t.Fatalf("prune = %d, %v", n, err)
+	if n, skipped, err := p.Prune(ctx, []string{second}); err != nil || n != 1 || len(skipped) != 0 {
+		t.Fatalf("prune = %d, skipped %v, %v", n, skipped, err)
 	}
 	var gcLog bytes.Buffer
 	p.Logs = &gcLog

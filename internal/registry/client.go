@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -37,13 +38,24 @@ type Client struct {
 // requestTimeout bounds one registry API call, its body included. The
 // calls are small (a HEAD, a DELETE, a page of the catalog), but the
 // registry answers only once its storage does: on 2026-11-13 one bucket
-// object made every HEAD for it hang. Without a limit, such a call keeps
-// a prune waiting for ever while it holds the lock every build and pull
-// takes. A minute is far above a healthy answer (milliseconds).
+// object made every HEAD for it hang. A minute is far above a healthy
+// answer (milliseconds), and deliberately not above what one stuck
+// object costs: the gateway gives a read three attempts of 20 s, and the
+// registry's S3 client retries the gateway's 503 three more times, so
+// waiting for the registry's own error would take minutes per object.
+// Prune reads such a tag's link from storage instead (TagLink).
 const requestTimeout = time.Minute
 
 // defaultHTTP is the client a Client without HTTP uses.
 var defaultHTTP = &http.Client{Timeout: requestTimeout}
+
+// timeout is how long one registry call may take.
+func (c *Client) timeout() time.Duration {
+	if c.HTTP != nil && c.HTTP.Timeout > 0 {
+		return c.HTTP.Timeout
+	}
+	return requestTimeout
+}
 
 // Manifest is one manifest in the registry and the tags that point at it.
 type Manifest struct {
@@ -75,38 +87,65 @@ func (c *Client) digest(ctx context.Context, token, repo, ref string) (string, e
 	return d, nil
 }
 
+// TagLink reads the digest repo:tag points at straight from the
+// registry's storage, without the registry, which reads the manifest
+// itself to answer and hangs with it when that object is stuck in a
+// bucket. Platform.TagLink is the one Prune uses.
+type TagLink func(ctx context.Context, repo, tag string) (string, error)
+
+// PruneResult is what Prune did: the manifests it deleted, and what it
+// passed over and went on without.
+type PruneResult struct {
+	Deleted []Manifest
+	// Skipped are the tags it couldn't read and the manifests it couldn't
+	// delete, each error naming its repository and tag or digest. The
+	// next prune tries them again.
+	Skipped []error
+}
+
 // Prune deletes every tagged manifest whose digest isn't in keep, and the
-// tags pointing at it, and returns what it deleted. keep holds digests
-// (sha256:...) or digest refs (name@sha256:...): every digest a release
-// in a rollback window or an active release uses. Blobs stay on disk
-// until GarbageCollect.
+// tags pointing at it. keep holds digests (sha256:...) or digest refs
+// (name@sha256:...): every digest a release in a rollback window or an
+// active release uses. Blobs stay until GarbageCollect, which removes
+// them once no manifest references them.
+//
+// A tag the registry can't read is looked up with link (nil: none),
+// which still finds the digest when only the manifest's own object is
+// stuck or missing; deleting that manifest then leaves its blob to the
+// next garbage collection. A tag neither can read, or a manifest the
+// registry doesn't delete, is skipped, so one broken old release doesn't
+// hold up the rest. Prune fails as a whole only when ctx ends, or when
+// the registry can't be reached or listed at all.
 //
 // An empty keep is refused rather than emptying the registry. Manifests
 // pushed without a tag aren't listed by the registry; GarbageCollect's
 // --delete-untagged removes them.
-func (c *Client) Prune(ctx context.Context, keep []string) ([]Manifest, error) {
+func (c *Client) Prune(ctx context.Context, keep []string, link TagLink) (PruneResult, error) {
+	var res PruneResult
 	if len(keep) == 0 {
-		return nil, errors.New("prune: no digests to keep; refusing to empty the registry")
+		return res, errors.New("prune: no digests to keep; refusing to empty the registry")
 	}
-	manifests, err := c.manifests(ctx)
+	manifests, err := c.manifests(ctx, link, &res.Skipped)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
-	var deleted []Manifest
 	for _, m := range unreferenced(manifests, keep) {
 		token := c.Signer.Mint("dock prune", TokenTTL, deleteAccess(m.Repo))
 		resp, err := c.do(ctx, http.MethodDelete, "/v2/"+m.Repo+"/manifests/"+m.Digest, token)
-		if err != nil {
-			return deleted, err
+		if err == nil {
+			err = check(resp, http.StatusAccepted, http.StatusNotFound)
+			_ = resp.Body.Close()
 		}
-		err = check(resp, http.StatusAccepted, http.StatusNotFound)
-		_ = resp.Body.Close()
 		if err != nil {
-			return deleted, fmt.Errorf("delete %s@%s: %w", m.Repo, m.Digest, err)
+			if fatal(ctx, err) {
+				return res, err
+			}
+			res.Skipped = append(res.Skipped, fmt.Errorf("delete %s:%s (%s): %w", m.Repo, strings.Join(m.Tags, ","), m.Digest, err))
+			continue
 		}
-		deleted = append(deleted, m)
+		res.Deleted = append(res.Deleted, m)
 	}
-	return deleted, nil
+	return res, nil
 }
 
 // unreferenced returns the manifests whose digest keep doesn't mention.
@@ -129,8 +168,9 @@ func unreferenced(manifests []Manifest, keep []string) []Manifest {
 
 // manifests lists every tagged manifest in the registry, sorted by
 // repository and digest: one catalog walk, one tag list per repository
-// and one HEAD per tag.
-func (c *Client) manifests(ctx context.Context) ([]Manifest, error) {
+// and one HEAD per tag. A repository whose tags can't be listed, or a
+// tag neither the registry nor link can read, is added to skipped.
+func (c *Client) manifests(ctx context.Context, link TagLink, skipped *[]error) ([]Manifest, error) {
 	var repos []string
 	err := c.pages(ctx, "/v2/_catalog?n=1000", c.Signer.Mint("dock prune", TokenTTL, catalogAccess), func(body []byte) error {
 		var page struct{ Repositories []string }
@@ -152,7 +192,11 @@ func (c *Client) manifests(ctx context.Context) ([]Manifest, error) {
 			return err
 		})
 		if err != nil {
-			return nil, fmt.Errorf("list tags of %s: %w", repo, err)
+			if fatal(ctx, err) {
+				return nil, err
+			}
+			*skipped = append(*skipped, fmt.Errorf("list the tags of %s: %w", repo, err))
+			continue
 		}
 		byDigest := map[string]*Manifest{}
 		for _, tag := range tags {
@@ -160,8 +204,23 @@ func (c *Client) manifests(ctx context.Context) ([]Manifest, error) {
 			if errors.Is(err, errNotFound) {
 				continue // untagged meanwhile
 			}
-			if err != nil {
+			if err != nil && fatal(ctx, err) {
 				return nil, err
+			}
+			if err != nil && link != nil {
+				var lerr error
+				if d, lerr = link(ctx, repo, tag); lerr == nil {
+					err = nil
+				} else {
+					err = fmt.Errorf("%w; reading its link from storage: %w", err, lerr)
+				}
+			}
+			if err != nil {
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				*skipped = append(*skipped, fmt.Errorf("read %s:%s: %w", repo, tag, err))
+				continue
 			}
 			if m := byDigest[d]; m != nil {
 				m.Tags = append(m.Tags, tag)
@@ -217,14 +276,48 @@ func nextPage(link string) string {
 	return u.RequestURI()
 }
 
+// do sends one request to the registry. A registry that doesn't take
+// the connection (restarting, or its container recreated by an update)
+// gets retryAttempts with backoff; a request it took and didn't answer in
+// time isn't sent again: the gateway retried the storage underneath.
 func (c *Client) do(ctx context.Context, method, path, token string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.URL, "/")+path, nil)
-	if err != nil {
-		return nil, err
+	for attempt := 1; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.URL, "/")+path, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Accept", manifestTypes)
+		resp, err := cmp.Or(c.HTTP, defaultHTTP).Do(req)
+		if err == nil || !unreachable(err) || attempt == retryAttempts {
+			return resp, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, err
+		case <-time.After(time.Duration(attempt) * retryBackoff):
+		}
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", manifestTypes)
-	return cmp.Or(c.HTTP, defaultHTTP).Do(req)
+}
+
+// retryAttempts and retryBackoff are do's retries of a registry that
+// doesn't take connections: 1 s, then 2 s, about the time a restart takes.
+const (
+	retryAttempts = 3
+	retryBackoff  = time.Second
+)
+
+// unreachable reports whether err means the registry didn't take or
+// dropped the connection, rather than took too long to answer.
+func unreachable(err error) bool {
+	return errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
+}
+
+// fatal reports whether err ends a prune rather than one tag or manifest:
+// ctx ended, or the registry can't be reached at all.
+func fatal(ctx context.Context, err error) bool {
+	return ctx.Err() != nil || unreachable(err)
 }
 
 // errNotFound is a 404 from the registry.
