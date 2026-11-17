@@ -35,7 +35,16 @@ type Nodes interface {
 }
 
 // NodesOf adapts the node hub to Nodes.
-func NodesOf(h *remote.Hub) Nodes { return hubNodes{h} }
+//
+// A nil hub gives a nil Nodes, never one wrapping nil: c.nodes != nil is
+// how Core tells that remote servers exist, and a wrapped nil hub would
+// panic on the first runtime lookup.
+func NodesOf(h *remote.Hub) Nodes {
+	if h == nil {
+		return nil
+	}
+	return hubNodes{h}
+}
 
 type hubNodes struct{ *remote.Hub }
 

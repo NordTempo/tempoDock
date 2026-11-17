@@ -17,6 +17,8 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -295,11 +297,34 @@ type Core struct {
 	disk      diskState
 }
 
+// checkRuntime refuses a runtime that would panic on its first call
+// instead of failing: a nil pointer in the interface (rt != nil, yet
+// every method dereferences nil) or a node.Local missing a part. Without
+// a runtime at all (admin commands) Core does no runtime work; Start
+// refuses it.
+func checkRuntime(rt node.Runtime) error {
+	if rt == nil {
+		return nil
+	}
+	if v := reflect.ValueOf(rt); v.Kind() == reflect.Pointer && v.IsNil() {
+		return fmt.Errorf("core: the runtime is a nil %T", rt)
+	}
+	if l, ok := rt.(node.Local); ok {
+		if m := l.Missing(); len(m) > 0 {
+			return fmt.Errorf("core: the local runtime has no %s", strings.Join(m, ", "))
+		}
+	}
+	return nil
+}
+
 // New creates the control plane and makes sure the local server is
 // registered. Call Start to recover state and begin background work.
 func New(ctx context.Context, o Options) (*Core, error) {
 	if o.Logger == nil {
 		o.Logger = slog.Default()
+	}
+	if err := checkRuntime(o.Runtime); err != nil {
+		return nil, err
 	}
 	shadowLog.Store(o.Logger)
 	for _, dir := range []string{"builds", "uploads", "requests", "sboms"} {
