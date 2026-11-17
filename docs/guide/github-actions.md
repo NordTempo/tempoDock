@@ -76,7 +76,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - id: dock
-        uses: NordTempo/deploy-action@v1
+        uses: NordTempo/deploy-action@v0
         with:
           server: ${{ vars.DOCK_URL }}
           token: ${{ secrets.DOCK_TOKEN }}
@@ -89,10 +89,11 @@ jobs:
           URL: ${{ steps.dock.outputs.url }}
 ```
 
-`@v1` gets the action's fixes and Dock's release keys as they change
-within v1. If your policy pins third-party actions to a commit SHA, pin
+`@v0` gets the action's fixes and Dock's release keys as they change; its
+inputs stay compatible within v0, which lasts while Dock is 0.x. If your
+policy pins third-party actions to a commit SHA, pin
 [NordTempo/deploy-action](https://github.com/NordTempo/deploy-action)'s
-newest `v1.x.y` tag's commit.
+newest `v0.x.y` tag's commit.
 
 ### A prebuilt image
 
@@ -105,7 +106,7 @@ credentials for its host once ([private registries](deploying.md#private-registr
         with:
           push: true
           tags: ghcr.io/acme/web:${{ github.sha }}
-      - uses: NordTempo/deploy-action@v1
+      - uses: NordTempo/deploy-action@v0
         with:
           server: ${{ vars.DOCK_URL }}
           token: ${{ secrets.DOCK_TOKEN }}
@@ -123,7 +124,7 @@ and apply it from CI: the action stages the file in the environment, then
 applies it, following every release that starts.
 
 ```yaml
-      - uses: NordTempo/deploy-action@v1
+      - uses: NordTempo/deploy-action@v0
         with:
           server: ${{ vars.DOCK_URL }}
           token: ${{ secrets.DOCK_TOKEN }}

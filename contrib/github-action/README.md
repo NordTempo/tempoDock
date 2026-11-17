@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - id: dock
-        uses: NordTempo/deploy-action@v1
+        uses: NordTempo/deploy-action@v0
         with:
           server: ${{ vars.DOCK_URL }}
           token: ${{ secrets.DOCK_TOKEN }}

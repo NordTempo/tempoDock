@@ -3,7 +3,7 @@
 # Action's own repository (ADR 0094): the directory as committed at HEAD
 # becomes the repository's root, with this repository's LICENSE. When that
 # changes the repository, it commits, tags the next minor version of its
-# major (v1.0.0, v1.1.0, ...) and moves the major tag (v1) there, which
+# major (v0.2.0, v0.3.0, ...) and moves the major tag (v0) there, which
 # workflows use.
 #
 #   scripts/release/sync-action.sh VERSION [--dry-run]
@@ -12,9 +12,12 @@
 # be able to push to the repository (`gh auth setup-git` with GH_TOKEN, a
 # token with Contents and Workflows write on NordTempo/deploy-action). With
 # --dry-run it prints what would change and pushes nothing.
-# DEPLOY_ACTION_REMOTE replaces the repository's URL (tests). A breaking
-# change of the action's inputs is a new major: tag v2.0.0 by hand once,
-# and the next syncs follow it.
+# DEPLOY_ACTION_REMOTE replaces the repository's URL (tests).
+#
+# The action stays on v0 while Dock is 0.x, keeping its inputs compatible
+# within it. When Dock reaches 1.0, tag the synced commit v1.0.0 (and v1)
+# by hand once: the next syncs follow the newest major, as they would a
+# later breaking change's v2.0.0.
 set -euo pipefail
 
 repo=NordTempo/deploy-action
@@ -45,7 +48,7 @@ git diff --cached --stat
 
 last="$(git tag --list 'v*.*.*' --sort=-version:refname | head -n 1)"
 if [ -z "$last" ]; then
-  next=v1.0.0
+  next=v0.1.0
 else
   IFS=. read -r major minor _ <<< "${last#v}"
   next="v$major.$((minor + 1)).0"

@@ -208,7 +208,7 @@ jobs:
             --file deploy/tempobase/Dockerfile "${tags[@]}" dist
 
       # NordTempo/deploy-action, the GitHub Action's own repository (ADR
-      # 0094), follows contrib/github-action: a new minor version, and v1
+      # 0094), follows contrib/github-action: a new minor version, and v0
       # moved to it, when the directory changed. Last, so a failure here
       # leaves the rest of the release done. Not for pre-releases.
       # DEPLOY_ACTION_TOKEN can write that repository's contents and
