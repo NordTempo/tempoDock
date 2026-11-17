@@ -110,9 +110,11 @@ func updateBaseline(o options) error {
 	return nil
 }
 
-// nearGate is the share of a benchmark's allocations gate past which it
-// warns (checkBench).
-const nearGate = 0.98
+// allocsNoise is the rise in a benchmark's allocations (a fraction, plus
+// 2 allocations) that counts as noise: map growth and the like move a
+// median of 5 runs by under 2% (and most by under 0.5%). A rise past it,
+// still within the gate, warns (checkBench).
+const allocsNoise = 0.01
 
 func checkBench(o options, t *table) error {
 	base, err := loadBaseline(o.baseline)
@@ -187,12 +189,13 @@ func checkBench(o options, t *table) error {
 			t.within("bench "+name, measured, budget, false)
 			continue
 		}
-		// Allocations are deterministic, so a count just under its gate
-		// fails the next change that adds a little, often a parallel PR
-		// that passed on its own (#307 and #306 on BenchmarkNewAPI). Warn
-		// while the change that got it there can still re-record it.
-		if limit := base.Benchmarks[name].AllocsOp*(1+o.allocsTol) + 2; r.AllocsOp > nearGate*limit && r.AllocsOp >= 100 {
-			t.add("bench "+name, measured, fmt.Sprintf("allocs within %.0f%% of their gate: re-record if intended", (1-nearGate)*100), warn)
+		// Allocations are all but deterministic, so any rise past noise is
+		// a change's own: it warns, so the pull request that made it fixes
+		// it or re-records it with the reason, instead of the next one
+		// failing on the sum (#366 added 855 allocations to
+		// BenchmarkCoreReads/Changes under a 15% gate, unnoticed).
+		if b := base.Benchmarks[name].AllocsOp; r.AllocsOp > b*(1+allocsNoise)+2 {
+			t.add("bench "+name, measured, "allocs above the baseline: fix it, or re-record it with the reason", warn)
 			continue
 		}
 		t.withinTiming("bench "+name, measured, budget, nsOK)
