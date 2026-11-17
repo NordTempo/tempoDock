@@ -612,11 +612,17 @@ func (c *Core) DisableHostnameAnalytics(ctx context.Context, a Actor, hostname s
 		return err
 	}
 	t := now()
+	var renamed string
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		if err := q.RemoveSiteHostname(ctx, host); err != nil {
 			return err
 		}
-		if err := q.AddSiteMarker(ctx, store.AddSiteMarkerParams{SiteID: site.ID, At: t, Kind: "removed", Message: host + " removed"}); err != nil {
+		// Named after host, it takes another hostname's name.
+		var err error
+		if renamed, err = renameSiteAfter(ctx, q, p.ID, site, host); err != nil {
+			return err
+		}
+		if err := q.AddSiteMarker(ctx, store.AddSiteMarkerParams{SiteID: site.ID, At: t, Kind: "removed", Message: renamedMarker(host+" removed", renamed)}); err != nil {
 			return err
 		}
 		n, err := q.CountSiteHostnames(ctx, site.ID)
@@ -632,8 +638,11 @@ func (c *Core) DisableHostnameAnalytics(ctx context.Context, a Actor, hostname s
 	if err := c.applyRoutes(ctx, env.ServerID); err != nil {
 		c.log.Error("apply routes after turning analytics off", "domain", host, "err", err)
 	}
-	c.audit(ctx, a, "analytics.disable", &p, &env, host, "analytics off for "+host+" (site "+site.Name+")")
-	c.renameSiteNamedAfter(ctx, a, p, env, host, site.ID)
+	summary := "analytics off for " + host + " (site " + site.Name + ")"
+	if renamed != "" {
+		summary += "; the site is now " + renamed
+	}
+	c.audit(ctx, a, "analytics.disable", &p, &env, host, summary)
 	return nil
 }
 
@@ -703,7 +712,16 @@ func (c *Core) siteDomainAdded(ctx context.Context, a Actor, ss svcScope, host, 
 			return err
 		}
 		if site.ArchivedAt == nil {
-			if err := q.AddSiteMarker(ctx, store.AddSiteMarkerParams{SiteID: site.ID, At: t, Kind: "removed", Message: host + " moved to a new site"}); err != nil {
+			// Named after host, the old site takes another hostname's name.
+			oldEnv, err := q.GetEnvironment(ctx, site.EnvironmentID)
+			if err != nil {
+				return err
+			}
+			renamed, err := renameSiteAfter(ctx, q, oldEnv.ProjectID, site, host)
+			if err != nil {
+				return err
+			}
+			if err := q.AddSiteMarker(ctx, store.AddSiteMarkerParams{SiteID: site.ID, At: t, Kind: "removed", Message: renamedMarker(host+" moved to a new site", renamed)}); err != nil {
 				return err
 			}
 			if n, err := q.CountSiteHostnames(ctx, site.ID); err != nil {
