@@ -363,6 +363,8 @@ ensure_prereqs() {
   command -v docker > /dev/null || missing+=("Docker Engine")
   command -v iptables > /dev/null || missing+=(iptables)
   if (( ${#missing[@]} )); then
+    local need="${missing[0]}"
+    (( ${#missing[@]} == 1 )) || need+=" and ${missing[1]}"
     if [[ -r /etc/os-release ]]; then
       # shellcheck disable=SC1091
       id="$(. /etc/os-release && printf '%s' "${ID:-}")"
@@ -371,9 +373,9 @@ ensure_prereqs() {
     fi
     [[ "$id" == ubuntu || "$like" == *ubuntu* ]] && id=ubuntu
     [[ "$id" == debian || "$id" == ubuntu ]] && [[ -n "$codename" ]] \
-      || die "this server needs ${missing[*]}: install Docker Engine 28 or newer (https://docs.docker.com/engine/install/) and iptables, then run this again"
-    confirm "This server needs ${missing[*]}. Install with apt (Docker Engine from download.docker.com)?" \
-      || die "this server needs ${missing[*]}; run again with --yes to install it (curl ... | sudo bash -s -- --yes), or install Docker Engine yourself: https://docs.docker.com/engine/install/"
+      || die "this server needs $need: install Docker Engine 28 or newer (https://docs.docker.com/engine/install/) and iptables, then run this again"
+    confirm "This server needs $need. Install with apt (Docker Engine from download.docker.com)?" \
+      || die "this server needs $need; run again with --yes to install it (curl ... | sudo bash -s -- --yes), or install Docker Engine yourself: https://docs.docker.com/engine/install/"
     install_prereqs "$id" "$codename"
   fi
   if ! docker info > /dev/null 2>&1; then
@@ -387,20 +389,21 @@ ensure_prereqs() {
 # install_prereqs ID CODENAME installs iptables and, when missing, Docker
 # Engine from https://download.docker.com/linux/ID (debian or ubuntu).
 install_prereqs() {
-  local id=$1 codename=$2
-  say "==> apt: iptables$(command -v docker > /dev/null || echo ', docker-ce')"
+  local id=$1 codename=$2 log=/var/log/dock-install-apt.log
+  say "==> apt: iptables$(command -v docker > /dev/null || echo ', docker-ce') (log: $log)"
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update -qq < /dev/null > /dev/null
-  apt-get install -y -qq ca-certificates curl iptables < /dev/null > /dev/null
+  { apt-get update -q && apt-get install -y -q ca-certificates curl iptables; } < /dev/null >> "$log" 2>&1 \
+    || { tail -n 15 "$log" >&2; die "apt failed (above; all of it in $log)"; }
   if ! command -v docker > /dev/null; then
     install -m 0755 -d /etc/apt/keyrings
     curl -fsSL "https://download.docker.com/linux/$id/gpg" -o /etc/apt/keyrings/docker.asc
     chmod a+r /etc/apt/keyrings/docker.asc
     printf 'deb [arch=%s signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/%s %s stable\n' \
       "$(dpkg --print-architecture)" "$id" "$codename" > /etc/apt/sources.list.d/docker.list
-    apt-get update -qq < /dev/null > /dev/null \
-      || die "apt can't read Docker's repository for $id $codename; install Docker Engine yourself: https://docs.docker.com/engine/install/"
-    apt-get install -y -qq docker-ce docker-ce-cli containerd.io < /dev/null > /dev/null
+    apt-get update -q < /dev/null >> "$log" 2>&1 \
+      || die "apt can't read Docker's repository for $id $codename (see $log); install Docker Engine yourself: https://docs.docker.com/engine/install/"
+    apt-get install -y -q docker-ce docker-ce-cli containerd.io < /dev/null >> "$log" 2>&1 \
+      || { tail -n 15 "$log" >&2; die "installing Docker Engine failed (above; all of it in $log)"; }
   fi
 }
 
@@ -455,6 +458,7 @@ summary() {
     say "  Apps      get hostnames once you set a domain with wildcard DNS to ${public:-this server}:"
     say "            dock server update $(hostname) --base-domain apps.example.com"
   fi
+  say "  Updates   the console's Updates page, or dock update"
   if [[ -n "$token" ]]; then
     say ""
     say "  For scripts and CI, an operator token (shown once; store it now):"
@@ -1180,7 +1184,6 @@ CONF
     if [[ -n "$node_listen" ]]; then
       say "  Nodes connect to $node_listen. Add a server: dock server add <name>"
     fi
-    say "  Updates: the console's Updates page, or dock update."
     if [[ -n "$restore" ]]; then
       say "  Restored from $restore."
       [[ ! -f /etc/dock/config.from-backup.toml ]] || say "  The old config.toml is in /etc/dock/config.from-backup.toml for reference."
