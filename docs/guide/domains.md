@@ -251,8 +251,10 @@ History is kept per minute for a day and per hour for 30 days.
   for a hostname, after asking the daemon whether the hostname belongs to a
   service. Unknown hostnames are refused, so pointing a random domain at the
   server can't trigger issuance.
-- HTTP requests for known hostnames redirect to HTTPS. Unknown hosts get a
-  small 404 page.
+- On a direct server, every plain-HTTP request redirects to HTTPS, known
+  hostname or not, so port 80 doesn't tell which hostnames exist
+  ([ADR 0087](../decisions/0087-unguessable-generated-hostnames.md)).
+  Through a tunnel, unknown hosts get a small 404 page.
 - Set `[caddy] acme_email` to get CA notices.
 - If the daemon is down, existing certificates keep working; new domains
   wait until it's back.
