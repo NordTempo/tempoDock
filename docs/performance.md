@@ -368,6 +368,7 @@ end) are not listed.
 | Caddy admin retry | `internal/node/caddy/caddy.go` | 100, 200, 400, 800 ms | Caddy's admin socket can't be reached (Caddy restarting) | one request |
 | Registry migration upload retry | `internal/registry/migrate.go` | 1 s, then 2 s | one object of a migration to or from a bucket failed (ADR 0034) | one upload |
 | BuildKit readiness | `internal/node/build/buildkitd.go` | 250 ms | BuildKit is starting for a build | one gRPC call |
+| Registry relay start | `internal/node/build/relay.go` | once, at most 10 s | a build that pushes starts its export (ADR 0089 amendment) | one timer, stopped once dock-probe relay listens in the BuildKit container |
 | Node event stream retry | `internal/node/remote/client.go` | 1 s | a node's event stream failed | one reconnect |
 | Node reconnect | `internal/node/remote/node.go` | jittered backoff, 1 s doubling to 30 s | a node lost its control plane | one dial (it rereads the control plane's address, so `dock node set-control-plane` needs no restart) |
 | Node link keepalive | `internal/node/remote` (`DefaultKeepAlive`) | after 15 s of silence on the link | a node is connected | one HTTP/2 ping each way, and TCP keepalives; an unanswered ping closes the link after 15 s more |

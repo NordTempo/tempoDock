@@ -168,9 +168,11 @@ func TestMoveEnvironment(t *testing.T) {
 	if pl, err := p.c.ListPlacements(p.ctx, testSystem, "shop"); err != nil || !slices.Contains(pl, apitypes.Placement{Kind: apitypes.KindNonProduction, Server: p.ids2name("cp")}) {
 		t.Errorf("placements = %+v, %v", pl, err)
 	}
-	if evs, err := p.c.ListAudit(p.ctx, testSystem, AuditFilter{Action: "environment.moved"}); err != nil || len(evs) != 1 {
-		t.Errorf("audit = %+v, %v", evs, err)
-	}
+	// Recorded just after the move reads as succeeded.
+	eventually(t, "the move's audit event", func() bool {
+		evs, err := p.c.ListAudit(p.ctx, testSystem, AuditFilter{Action: "environment.moved"})
+		return err == nil && len(evs) == 1
+	})
 }
 
 func TestMoveEnvironmentRefused(t *testing.T) {

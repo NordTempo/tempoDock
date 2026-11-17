@@ -403,6 +403,11 @@ type Builder interface {
 	// at most keepBytes are left. A server that doesn't build, or whose
 	// BuildKit isn't running, has nothing to prune.
 	PruneBuildCache(ctx context.Context, keepBytes int64) (PruneResult, error)
+	// WarmBuilder fetches what builds on this server need before the
+	// first one does: Railpack's images (ADR 0089 amendment), once per
+	// set of them, so a call when they are fetched already returns at
+	// once. Core calls it for builders only; builds work without it.
+	WarmBuilder(ctx context.Context) error
 }
 
 // PruneImagesRequest says which dangling images Containers.PruneImages may

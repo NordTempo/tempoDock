@@ -894,3 +894,16 @@ func TestPlainHTTPNode(t *testing.T) {
 		t.Fatalf("domain on a plain HTTP node: %+v, %v", d.Domain, err)
 	}
 }
+
+// Builders fetch Railpack's images ahead of their first build (ADR 0089
+// amendment): the control plane at start, a node once it connects as
+// one. A server that doesn't build never does.
+func TestWarmBuilders(t *testing.T) {
+	p, lab := labPool(t)
+	waitOps(t, p.rt, "warm builder")
+	if hasOp(lab.Ops(), "warm builder") {
+		t.Fatalf("homelab doesn't build but fetched build images: %v", lab.Ops())
+	}
+	p.withRegistry(&fakeRegistry{}) // homelab becomes the only builder
+	waitOps(t, lab, "warm builder")
+}

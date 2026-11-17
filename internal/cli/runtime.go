@@ -114,6 +114,9 @@ func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog
 		// One dock runtime per Docker host: the BuildKit container is
 		// this data dir's, and another runtime's is refused.
 		b.Owner = owner
+		// BuildKit pushes to the registry itself through dock-probe's
+		// relay; without the probe, Docker pushes (ADR 0089 amendment).
+		b.Probe, b.RelayDir = containers.Probe, filepath.Join(owner, "builds", "relay")
 		builder = b
 		// The vulnerability database downloads on the build network,
 		// which the app firewall covers (ADR 0074).
@@ -307,3 +310,5 @@ func (notBuilder) Build(context.Context, node.BuildRequest) (node.Built, error) 
 func (notBuilder) PruneBuildCache(context.Context, int64) (node.PruneResult, error) {
 	return node.PruneResult{}, nil
 }
+
+func (notBuilder) WarmBuilder(context.Context) error { return nil }

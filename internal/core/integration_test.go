@@ -25,6 +25,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/node/docker"
 	"github.com/NordTempo/tempoDock/internal/node/fake"
 	"github.com/NordTempo/tempoDock/internal/secrets"
+	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 // Core against a real Docker Engine. Routing is a no-op (no Caddy needed)
@@ -66,6 +67,8 @@ func (noBuilder) PruneBuildCache(context.Context, int64) (node.PruneResult, erro
 	return node.PruneResult{}, nil
 }
 
+func (noBuilder) WarmBuilder(context.Context) error { return nil }
+
 // dockerHarness starts Core on the local Docker Engine with a temp data
 // dir. DB IDs start at a random high number, so container labels and names
 // (dock_p<id>_...) can't match those of another daemon on the same Docker
@@ -85,6 +88,11 @@ func dockerHarnessWithProbe(t *testing.T, probe string) *Core {
 	ctx := context.Background()
 	dir := t.TempDir()
 	st := openTestStore(t, filepath.Join(dir, "dock.db"))
+	// No image scans: the Local below has no Scanner, and a scan would
+	// start once a test had been quiet for a minute (ADR 0074).
+	if err := st.SetScanning(ctx, store.SetScanningParams{Scanning: 0, UpdatedBy: "test", UpdatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
 	// Test databases are copies of one migrated image, so they share its
 	// install ID; parallel harnesses need their own (it names the restic
 	// and local backup volumes and labels everything they create).

@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bytes"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestRun probes real listeners on loopback: what passes, and what each
@@ -71,4 +75,63 @@ func TestRun(t *testing.T) {
 func port(t *testing.T, l net.Listener) string {
 	t.Helper()
 	return strconv.Itoa(l.Addr().(*net.TCPAddr).Port)
+}
+
+// TestRelay joins a TCP connection to a Unix socket both ways, passing
+// the end of stream on, and stops once standard input closes.
+func TestRelay(t *testing.T) {
+	sock := filepath.Join(t.TempDir(), "r.sock")
+	ul, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ul.Close() }()
+	go func() {
+		for {
+			c, err := ul.Accept()
+			if err != nil {
+				return
+			}
+			go func() { // echoes, upper-cased, until the client's end
+				defer func() { _ = c.Close() }()
+				b, _ := io.ReadAll(c)
+				_, _ = c.Write(bytes.ToUpper(b))
+			}()
+		}
+	}()
+	free, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := free.Addr().String()
+	_ = free.Close()
+
+	stdin, closeStdin := io.Pipe()
+	done := make(chan error, 1)
+	go func() { done <- relay(addr, sock, stdin) }()
+	var c net.Conn
+	for range 100 {
+		if c, err = net.Dial("tcp", addr); err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = c.Write([]byte("push"))
+	_ = c.(*net.TCPConn).CloseWrite()
+	got, err := io.ReadAll(c)
+	if err != nil || string(got) != "PUSH" {
+		t.Fatalf("relayed %q, %v; want PUSH", got, err)
+	}
+	_ = closeStdin.Close()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("relay still runs after its standard input closed")
+	}
 }

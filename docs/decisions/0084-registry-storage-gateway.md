@@ -3,7 +3,10 @@
 Status: accepted (decided by the agent on the coordinator's request,
 2026-11-16; the Console section is mock B). Amends
 [0034](0034-registry-object-storage.md) and
-[0014](0014-node-protocol.md) section 4.
+[0014](0014-node-protocol.md) section 4. Amended by
+[0089](0089-faster-builds.md#amendment-2026-11-17-buildkit-pushes-railpacks-images-ahead):
+while a push runs, uploaded objects keep their spool file for the pulls
+that follow.
 
 ## Context
 

@@ -75,6 +75,9 @@ func TestDiagnoseRules(t *testing.T) {
 			err: "build failed: push 127.0.0.1:5000/dock/p1_e1_s1:5: received unexpected HTTP status: 500 Internal Server Error (" + registryStorageSays +
 				bucketTrouble(&apitypes.RegistryBucket{State: "failing", Refusing: "spool", WaitingBytes: 20 << 30}) + ")"},
 			"push_failed", "The image built, but the platform registry didn't take it: the bucket is too slow, and the 20.0 GB of pushes waiting on the control plane's disk filled the spool; deploys work again as uploads free it, see `dock registry`"},
+		{"the pull back from the registry failed", diagInput{step: apitypes.ReleaseBuilding, code: apitypes.CodeBuildFailed, cfg: web,
+			err: "build failed: pull 127.0.0.1:5000/dock/p1_e1_s1:5: manifest unknown"},
+			"push_failed", "The image built and was pushed, but this server couldn't pull it back from the platform registry; deploy again, and if it keeps failing an operator checks `dock registry` and the registry's storage"},
 		{"a build step failed", diagInput{step: apitypes.ReleaseBuilding, code: apitypes.CodeBuildFailed, cfg: web,
 			err: "build failed: failed to solve: process \"/bin/sh -c pnpm build\" did not complete successfully: exit code: 1"},
 			"build_failed", "The build failed"},

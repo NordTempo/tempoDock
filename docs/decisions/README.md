@@ -97,12 +97,12 @@ line means a later record added to it without changing what it decided.
 | [0081](0081-named-identity-providers.md) | Named identity providers: Microsoft, GitLab, Okta, Auth0, Keycloak and Authentik by a tenant, domain or realm | accepted |
 | [0082](0082-open-source-license.md) | Open source under the AGPL, with a trademark policy and a CLA; CI safe for a public repo | accepted; public since 2026-11-16 at 0.x |
 | [0083](0083-app-templates.md) | App templates: a catalog of apps as project file fragments with inputs, embedded and pinned | accepted; first catalog built |
-| [0084](0084-registry-storage-gateway.md) | The registry's storage gateway: pushes land on local disk first and upload to the bucket in the background; bucket health from real traffic, stuck blobs repaired by the next push | accepted |
+| [0084](0084-registry-storage-gateway.md) | The registry's storage gateway: pushes land on local disk first and upload to the bucket in the background; bucket health from real traffic, stuck blobs repaired by the next push | accepted; amended by [0089](0089-faster-builds.md) |
 | [0085](0085-analytics-consent.md) | Analytics consent: replay waits for `dock.consent(true)` by default, a privacy status per site, policy text to copy | accepted |
 | [0086](0086-cancel-a-deploy.md) | Cancel a deploy: any step before the cutover, the serving release keeps serving, `canceled` is no failure | accepted |
 | [0087](0087-unguessable-generated-hostnames.md) | Generated hostnames nobody can guess: a random part in new ones, status page names per organization, plain HTTP alike for every host; what CT logs still show | accepted |
 | [0088](0088-signed-releases.md) | Signed releases: Ed25519 over `SHA256SUMS`, keys built into dock, checked on every download path from v0.56.0; build-provenance attestations | accepted |
-| [0089](0089-faster-builds.md) | Faster builds: half the server's cores (at least two) by default, zstd layers, Railpack images pinned, a hint for Dockerfiles without `.next/cache`, previews keep cold cache mounts | accepted |
+| [0089](0089-faster-builds.md) | Faster builds: half the server's cores (at least two) by default, zstd layers, Railpack images pinned, a hint for Dockerfiles without `.next/cache`, previews keep cold cache mounts; amended: BuildKit pushes through a relay, builders fetch Railpack's images ahead | accepted |
 | [0090](0090-wildcard-certificates.md) | Wildcard certificates for generated hostnames: `*.<base>` over ACME DNS-01 through Cloudflare, sent to servers with their routes, no CT log entries or TLS oracle | accepted |
 
 ## Template

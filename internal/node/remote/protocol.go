@@ -92,8 +92,10 @@ const (
 	// in exec form (ADR 0083, ExecFormProtocol). 30 sends a release's
 	// signature with an update (ADR 0088, SignedUpdateProtocol). 31 adds
 	// apply-routes' certificates: the wildcard of the server's base domain
-	// (ADR 0090, WildcardProtocol).
-	Protocol = 31
+	// (ADR 0090, WildcardProtocol). 32 adds warm-builder: builders fetch
+	// Railpack's images ahead of their first build (ADR 0089 amendment,
+	// WarmProtocol).
+	Protocol = 32
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1
@@ -170,6 +172,7 @@ const (
 	opLogs          = "logs"
 	opEvents        = "events"
 	opBuild         = "build"
+	opWarmBuilder   = "warm-builder" // protocol 32
 	opApplyRoutes   = "apply-routes"
 	opCheckDomain   = "check-domain"
 	opHostStats     = "host-stats"

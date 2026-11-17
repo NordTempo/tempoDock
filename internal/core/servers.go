@@ -267,6 +267,9 @@ func (c *Core) UpdateServer(ctx context.Context, a Actor, name string, req apity
 		if settings.BaseDomain != srv.BaseDomain {
 			c.kickWildcards() // and the worker gets a wildcard for it
 		}
+		if settings.Builder && !srv.Builder {
+			c.warmBuilder(ctx, srv.ID)
+		}
 		if srv.Local && settings.BaseDomain != srv.BaseDomain {
 			c.publicSitesChanged(ctx) // stats-<site>.<base domain> moved
 			c.statusPagesChanged(ctx) // and status pages' addresses

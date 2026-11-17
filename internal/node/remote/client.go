@@ -501,6 +501,22 @@ func (c *Client) PruneBuildCache(ctx context.Context, keepBytes int64) (node.Pru
 	return node.PruneResult(r), err
 }
 
+// WarmProtocol is the first protocol with warm-builder.
+const WarmProtocol = 32
+
+// warmTimeout bounds WarmBuilder: Railpack's images are about 460 MB.
+const warmTimeout = 30 * time.Minute
+
+// WarmBuilder implements node.Builder. An older node isn't asked: its
+// first Railpack build fetches the images, as before.
+func (c *Client) WarmBuilder(ctx context.Context) error {
+	if err := c.needProtocol(ctx, WarmProtocol, "fetch build images ahead"); err != nil {
+		return nil
+	}
+	_, err := callWithLogs[empty](ctx, c, opWarmBuilder, warmTimeout, empty{}, nil, nil)
+	return err
+}
+
 // HostStats implements node.Stats.
 func (c *Client) HostStats(ctx context.Context) (node.HostStats, error) {
 	r, err := unaryCall[wireHostStats](ctx, c, opHostStats, empty{})

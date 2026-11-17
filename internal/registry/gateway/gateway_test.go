@@ -232,6 +232,42 @@ func TestFullSpoolRefuses(t *testing.T) {
 	h.eventually("room again", func() bool { return h.g.Status().Refusing == "" })
 }
 
+// While a push runs, an object the bucket has keeps its spool file: the
+// pull after the push reads it from disk even with the bucket down. A
+// write that needs the room drops it, and so does the push's end.
+func TestUploadedKeptWhilePushing(t *testing.T) {
+	h := newHarness(t, func(o *Options) { o.MaxBytes = 8 })
+	spooled := func(key string) bool {
+		_, err := os.Stat(filepath.Join(h.dir, "obj", filepath.FromSlash(key)))
+		return err == nil
+	}
+	done := h.g.PushStarted()
+	if err := h.put(blobKey, "12345"); err != nil {
+		t.Fatal(err)
+	}
+	h.eventually("the upload", func() bool { _, ok := h.bucket.object(blobKey); return ok && h.g.Status().Waiting == 0 })
+	if !spooled(blobKey) {
+		t.Fatal("the spool file went while a push runs")
+	}
+	h.bucket.set(func(f *fakeS3) { f.down = true })
+	if got, err := h.read(blobKey); err != nil || got != "12345" {
+		t.Fatalf("read with the bucket down = %q, %v; want the spool's copy", got, err)
+	}
+	h.bucket.set(func(f *fakeS3) { f.down = false })
+
+	if err := h.put(linkKey, "6789"); err != nil { // 9 bytes > MaxBytes with the kept file
+		t.Fatalf("a write that needs the kept file's room: %v", err)
+	}
+	if spooled(blobKey) {
+		t.Error("the kept file stayed though the spool needed its room")
+	}
+	h.eventually("the second upload", func() bool { _, ok := h.bucket.object(linkKey); return ok && h.g.Status().Waiting == 0 })
+	done()
+	if spooled(linkKey) {
+		t.Error("the kept file stayed after the push ended")
+	}
+}
+
 // What waited to upload when the daemon stopped uploads after the next
 // start, and unfinished uploads from before are gone.
 func TestUploadsResumeAfterRestart(t *testing.T) {

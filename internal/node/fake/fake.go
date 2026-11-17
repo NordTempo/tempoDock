@@ -1423,6 +1423,14 @@ func (r *Runtime) PruneBuildCache(_ context.Context, keepBytes int64) (node.Prun
 	return node.PruneResult{}, nil
 }
 
+// WarmBuilder implements node.Builder, recorded as "warm builder".
+func (r *Runtime) WarmBuilder(context.Context) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.op("warm builder")
+	return nil
+}
+
 // ApplyRoutes implements node.Proxy, recorded as "routes <host->upstream
 // ...>", followed by " certs <names>" when there are certificates.
 func (r *Runtime) ApplyRoutes(ctx context.Context, routes []node.Route, certs []node.Certificate) error {
