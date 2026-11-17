@@ -254,28 +254,6 @@ func (q *Queries) GetServerDrain(ctx context.Context, id int64) (ServerDrain, er
 	return i, err
 }
 
-const getServerForward = `-- name: GetServerForward :one
-SELECT server_id, host_port, service_id, move_id, created_at FROM server_forwards WHERE server_id = +? AND host_port = +?
-`
-
-type GetServerForwardParams struct {
-	ServerID int64
-	HostPort int64
-}
-
-func (q *Queries) GetServerForward(ctx context.Context, arg GetServerForwardParams) (ServerForward, error) {
-	row := q.db.QueryRowContext(ctx, getServerForward, arg.ServerID, arg.HostPort)
-	var i ServerForward
-	err := row.Scan(
-		&i.ServerID,
-		&i.HostPort,
-		&i.ServiceID,
-		&i.MoveID,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const listDrainableEnvironments = `-- name: ListDrainableEnvironments :many
 SELECT environments.id, environments.name, environments.kind, environments.project_id,
        projects.name AS project_name, orgs.slug AS org_slug

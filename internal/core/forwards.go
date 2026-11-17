@@ -75,26 +75,26 @@ func (c *Core) ensureForwards(ctx context.Context, serverID int64) {
 		c.log.Error("list forwards", "server", serverID, "err", err)
 		return
 	}
-	want := map[int64]bool{}
+	want := map[int64]int64{} // port: the service its connections are for
 	for _, r := range rows {
-		want[r.HostPort] = true
+		want[r.HostPort] = r.ServiceID
 	}
 	c.fwd.mu.Lock()
 	defer c.fwd.mu.Unlock()
 	c.fwd.holdMu.Lock()
-	for k := range c.fwd.holding {
+	for k, id := range c.fwd.holding {
 		if k.server == serverID {
-			want[k.port] = true
+			want[k.port] = id
 		}
 	}
 	c.fwd.holdMu.Unlock()
 	for k, ln := range c.fwd.open {
-		if k.server == serverID && !want[k.port] {
+		if _, ok := want[k.port]; k.server == serverID && !ok {
 			_ = ln.Close()
 			delete(c.fwd.open, k)
 		}
 	}
-	for port := range want {
+	for port, svcID := range want {
 		k := forwardKey{serverID, port}
 		if _, ok := c.fwd.open[k]; ok {
 			continue
@@ -105,7 +105,7 @@ func (c *Core) ensureForwards(ctx context.Context, serverID int64) {
 			continue
 		}
 		c.fwd.open[k] = ln
-		c.wg.Go(func() { c.serveForward(k, ln) })
+		c.wg.Go(func() { c.serveForward(k, ln, svcID) })
 	}
 }
 
@@ -121,10 +121,13 @@ func (c *Core) closeForwards(serverID int64) {
 	}
 }
 
-// serveForward accepts a listener's connections until it closes. A
-// remote listener ends when the link drops; the reconnect opens a new
-// one.
-func (c *Core) serveForward(k forwardKey, ln net.Listener) {
+// serveForward accepts a listener's connections, for service svcID,
+// until it closes. A remote listener ends when the link drops; the
+// reconnect opens a new one. The service is the one its forward row or
+// hold had when it opened: a port's service never changes while it
+// listens, and a switch ends the target's forward rows while connections
+// accepted before it still wait in the hold.
+func (c *Core) serveForward(k forwardKey, ln net.Listener, svcID int64) {
 	stop := context.AfterFunc(c.ctx, func() { _ = ln.Close() })
 	defer stop()
 	defer func() {
@@ -142,19 +145,14 @@ func (c *Core) serveForward(k forwardKey, ln net.Listener) {
 			}
 			return
 		}
-		c.wg.Go(func() { c.forwardConn(k, conn) })
+		c.wg.Go(func() { c.forwardConn(k, conn, svcID) })
 	}
 }
 
-// forwardConn pipes one connection to the forwarded service's active
-// container, wherever it is now, once no move holds the service.
-func (c *Core) forwardConn(k forwardKey, in net.Conn) {
+// forwardConn pipes one connection to service svcID's active container,
+// wherever it is now, once no move holds the service.
+func (c *Core) forwardConn(k forwardKey, in net.Conn, svcID int64) {
 	defer func() { _ = in.Close() }()
-	svcID, err := c.forwardedService(k)
-	if err != nil {
-		c.log.Warn("forward a connection", "server", k.server, "port", k.port, "err", err)
-		return
-	}
 	c.waitHold(svcID)
 	ctx, cancel := context.WithTimeout(c.ctx, dialTimeout)
 	defer cancel()
@@ -179,20 +177,6 @@ func (c *Core) forwardConn(k forwardKey, in net.Conn) {
 
 // dialTimeout bounds connecting a forwarded connection.
 const dialTimeout = 10 * time.Second
-
-// forwardedService is the service a listener's connections are for: its
-// hold's (holdPort), or its forward row's. It is read before the
-// connection waits, since a switch ends the target's forward rows.
-func (c *Core) forwardedService(k forwardKey) (int64, error) {
-	c.fwd.holdMu.Lock()
-	id, ok := c.fwd.holding[k]
-	c.fwd.holdMu.Unlock()
-	if ok {
-		return id, nil
-	}
-	f, err := c.store.GetServerForward(c.ctx, store.GetServerForwardParams{ServerID: k.server, HostPort: k.port})
-	return f.ServiceID, err
-}
 
 // dialServiceID connects to a service's active container, wherever it is.
 func (c *Core) dialServiceID(ctx context.Context, svcID int64) (net.Conn, error) {
@@ -284,7 +268,7 @@ func (c *Core) holdFreshPort(ctx context.Context, serverID, svcID int64) (int64,
 	c.fwd.mu.Lock()
 	c.fwd.open[k] = ln
 	c.fwd.mu.Unlock()
-	c.wg.Go(func() { c.serveForward(k, ln) })
+	c.wg.Go(func() { c.serveForward(k, ln, svcID) })
 	return port, nil
 }
 
@@ -312,7 +296,7 @@ func (c *Core) holdPort(ctx context.Context, serverID, port, svcID int64) {
 	c.fwd.holdMu.Lock()
 	c.fwd.holding[k] = svcID
 	c.fwd.holdMu.Unlock()
-	c.wg.Go(func() { c.serveForward(k, ln) })
+	c.wg.Go(func() { c.serveForward(k, ln, svcID) })
 }
 
 // holdPorts are the ports a server holds for services in a move's hold,
