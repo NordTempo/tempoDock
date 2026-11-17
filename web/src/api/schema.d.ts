@@ -10422,6 +10422,7 @@ export interface components {
             /** Format: date-time */
             last_prune_at?: string;
             last_prune_error?: string;
+            last_prune_skipped?: string[] | null;
             /** Format: int64 */
             last_pruned: number;
             migration?: components["schemas"]["RegistryMigration"];

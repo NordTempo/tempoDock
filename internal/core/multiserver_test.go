@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -24,9 +25,10 @@ import (
 // fakeRegistry records what core asks of the platform registry. Tokens
 // name their access and repository, so tests can see which was used.
 type fakeRegistry struct {
-	mu     sync.Mutex
-	ops    []string
-	pruned int // what Prune reports deleting
+	mu      sync.Mutex
+	ops     []string
+	pruned  int     // what Prune reports deleting
+	skipped []error // and skipping
 	// migrateErr fails Migrate before it commits; gate, if set, holds
 	// Migrate until it is closed.
 	migrateErr error
@@ -62,9 +64,9 @@ func (r *fakeRegistry) Digest(_ context.Context, repo, tag string) (string, erro
 	return digestOf(repo + ":" + tag), nil
 }
 
-func (r *fakeRegistry) Prune(_ context.Context, keep []string) (int, error) {
+func (r *fakeRegistry) Prune(_ context.Context, keep []string) (int, []error, error) {
 	r.op("prune keep=%s", strings.Join(keep, ","))
-	return r.pruned, nil
+	return r.pruned, r.skipped, nil
 }
 
 func (r *fakeRegistry) GarbageCollect(ctx context.Context) error {
@@ -439,6 +441,31 @@ func TestRegistryInfoAndManualPrune(t *testing.T) {
 	}
 	if ops := reg.Ops(); ops[len(ops)-1] != "gc" {
 		t.Fatalf("registry ops: %v", ops)
+	}
+
+	// A prune that passed over an image it couldn't read still ran
+	// through: the console and an alert name what it skipped, until a
+	// prune gets through everything.
+	reg.skipped = []error{errors.New("read dock/p8_e34_s37:1: timed out")}
+	if _, err := p.c.PruneRegistry(p.ctx, testSystem); err != nil {
+		t.Fatal(err)
+	}
+	idle()
+	info, err = p.c.GetRegistry(p.ctx, testSystem)
+	if err != nil || info.LastPruneError != "" || len(info.LastPruneSkipped) != 1 || !strings.Contains(info.LastPruneSkipped[0], "dock/p8_e34_s37:1") {
+		t.Fatalf("after a prune that skipped: %+v, %v", info, err)
+	}
+	if a := p.openAlert("registry:prune", true); !strings.Contains(a.Message, "dock/p8_e34_s37:1") {
+		t.Fatalf("alert = %+v", a)
+	}
+	reg.skipped = nil
+	if _, err := p.c.PruneRegistry(p.ctx, testSystem); err != nil {
+		t.Fatal(err)
+	}
+	idle()
+	p.openAlert("registry:prune", false)
+	if info, err = p.c.GetRegistry(p.ctx, testSystem); err != nil || len(info.LastPruneSkipped) != 0 {
+		t.Fatalf("after a clean prune: %+v, %v", info, err)
 	}
 }
 

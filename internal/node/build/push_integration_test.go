@@ -125,12 +125,12 @@ func TestPushPullPrune(t *testing.T) {
 	t.Logf("token endpoint calls: %d", realmCalls.Load())
 
 	// Prune keeps referenced digests and deletes the rest.
-	if deleted, err := reg.Prune(ctx, []string{ref}); err != nil || len(deleted) != 0 {
-		t.Fatalf("prune with the digest kept: deleted %v, %v", deleted, err)
+	if res, err := reg.Prune(ctx, []string{ref}, nil); err != nil || len(res.Deleted)+len(res.Skipped) != 0 {
+		t.Fatalf("prune with the digest kept: %+v, %v", res, err)
 	}
-	deleted, err := reg.Prune(ctx, []string{"sha256:" + strings.Repeat("0", 64)})
-	if err != nil || len(deleted) != 1 || deleted[0].Digest != digest {
-		t.Fatalf("prune: deleted %v, %v", deleted, err)
+	res, err := reg.Prune(ctx, []string{"sha256:" + strings.Repeat("0", 64)}, nil)
+	if err != nil || len(res.Deleted) != 1 || res.Deleted[0].Digest != digest || len(res.Skipped) != 0 {
+		t.Fatalf("prune: %+v, %v", res, err)
 	}
 	if _, err := reg.Digest(ctx, repo, "staging-1"); err == nil {
 		t.Fatal("pruned manifest still resolves")

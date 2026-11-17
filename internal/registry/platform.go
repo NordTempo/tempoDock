@@ -7,7 +7,9 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -74,10 +76,65 @@ func (p *Platform) Digest(ctx context.Context, repo, tag string) (string, error)
 	return p.Client.Digest(ctx, repo, tag)
 }
 
-// Prune implements core.Registry.
-func (p *Platform) Prune(ctx context.Context, keep []string) (int, error) {
-	deleted, err := p.Client.Prune(ctx, keep)
-	return len(deleted), err
+// Prune implements core.Registry, reading the links of tags the
+// registry can't from storage (TagLink).
+func (p *Platform) Prune(ctx context.Context, keep []string) (deleted int, skipped []error, err error) {
+	res, err := p.Client.Prune(ctx, keep, p.TagLink)
+	return len(res.Deleted), res.Skipped, err
+}
+
+// TagLink returns the digest repo:tag points at from the registry's
+// storage (Distribution's tag link), without the registry: a
+// registry.TagLink. In a bucket it reads the bucket directly, where an
+// old release's link is (the gateway's spool only holds what waits to
+// upload). The read gets as long as a registry call.
+func (p *Platform) TagLink(ctx context.Context, repo, tag string) (string, error) {
+	if !validRepo(repo) || !validTag.MatchString(tag) {
+		return "", fmt.Errorf("not a repository and tag: %q:%q", repo, tag)
+	}
+	key := "docker/registry/v2/repositories/" + repo + "/_manifests/tags/" + tag + "/current/link"
+	var body []byte
+	var err error
+	if b := p.current(); b != nil {
+		ctx, cancel := context.WithTimeout(ctx, p.Client.timeout())
+		defer cancel()
+		var r io.ReadCloser
+		if r, err = (&s3.Client{Bucket: *b}).Get(ctx, BucketRoot+"/"+key); err == nil {
+			body, err = io.ReadAll(io.LimitReader(r, 1<<10))
+			_ = r.Close()
+		}
+	} else {
+		body, err = os.ReadFile(filepath.Join(p.StorageDir, filepath.FromSlash(key)))
+	}
+	if err != nil {
+		return "", err
+	}
+	d := strings.TrimSpace(string(body))
+	if !validDigest.MatchString(d) {
+		return "", fmt.Errorf("the link of %s:%s holds %q, not a digest", repo, tag, d)
+	}
+	return d, nil
+}
+
+// validTag, validDigest and validPart match Distribution's grammar for
+// tags, sha256 digests and a repository name's parts, so a name from the
+// registry never makes a storage path outside its repositories.
+var (
+	validTag    = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$`)
+	validDigest = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
+	validPart   = regexp.MustCompile(`^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$`)
+)
+
+// validRepo reports whether repo is a repository name Distribution
+// accepts: no empty or dot-only part can reach a parent directory.
+func validRepo(repo string) bool {
+	parts := strings.Split(repo, "/")
+	for _, part := range parts {
+		if !validPart.MatchString(part) {
+			return false
+		}
+	}
+	return len(repo) <= 255
 }
 
 // GarbageCollect implements core.Registry.
