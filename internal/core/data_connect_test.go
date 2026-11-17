@@ -271,3 +271,50 @@ func TestTunnelLimit(t *testing.T) {
 		t.Errorf("%d closes audited, want %d", len(evs), apitypes.TunnelsPerActor+2)
 	}
 }
+
+// A service that isn't a database Dock runs has no connection URL of its
+// own: `dock connect --show-url` shows one of its variables, and which
+// one is a setting whoever deploys can change. So it is shown only to
+// someone who may reveal variables there, whatever the data policy lets
+// them do; connecting without it stays as it was.
+func TestConnectURLOfAnAppIsAVariable(t *testing.T) {
+	h, _, web, _ := connectFixture(t)
+	const secret = "sk_live_51Hh-not-a-database-url"
+	h.setVars(web, map[string]string{"STRIPE_SECRET_KEY": secret})
+	api := ServiceRef{web.Project, web.Environment, "api"}
+	if _, err := h.c.CreateService(h.ctx, testSystem, api.Env(), apitypes.CreateServiceRequest{Name: "api", Image: "app:1"}); err != nil {
+		t.Fatal(err)
+	}
+	h.setVars(api, map[string]string{"SIGNING_KEY": "other-service-secret"})
+
+	dev := h.user("dev@x", apitypes.ScopeDeploy)
+	// The org lets deploy members write non-production data, unmasked.
+	if _, err := h.c.SetDataPolicy(h.ctx, testSystem, EnvRef{}, apitypes.UpdateDataPolicyRequest{Rules: []apitypes.DataPolicyRule{
+		{Subject: apitypes.SubjectDeployUsers, Kind: apitypes.KindNonProduction, Level: apitypes.LevelWrite, Sensitive: apitypes.SensitiveVisible},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	// A deploy member can't reveal secret values.
+	if _, err := h.c.ListVariables(h.ctx, dev, web.Env(), web.Service, true); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("a deploy member revealed variables: %v", err)
+	}
+	for _, tc := range []struct{ setting, want string }{
+		{"STRIPE_SECRET_KEY", secret},
+		{"api.SIGNING_KEY", "other-service-secret"},
+	} {
+		if _, err := h.c.UpdateDatabaseSettings(h.ctx, dev, web, apitypes.UpdateDatabaseSettingsRequest{DatabaseURLVariable: &tc.setting}); err != nil {
+			t.Fatalf("set database_url_variable: %v", err)
+		}
+		if info, err := h.c.ConnectInfo(h.ctx, dev, web, ConnectRequest{Reveal: true}); CodeOf(err) != apitypes.CodeForbidden || info.URL != "" {
+			t.Errorf("database_url_variable=%s shown to someone who can't reveal variables: %q, %v", tc.setting, info.URL, err)
+		}
+		// Without the URL they connect as before.
+		if _, err := h.c.ConnectInfo(h.ctx, dev, web, ConnectRequest{}); err != nil {
+			t.Errorf("connecting without the URL: %v", err)
+		}
+		// Someone who may reveal variables there is shown it.
+		if info, err := h.c.ConnectInfo(h.ctx, testSystem, web, ConnectRequest{Reveal: true}); err != nil || info.URL != tc.want {
+			t.Errorf("database_url_variable=%s for an admin: %q, %v", tc.setting, info.URL, err)
+		}
+	}
+}

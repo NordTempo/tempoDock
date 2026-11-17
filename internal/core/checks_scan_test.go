@@ -371,6 +371,7 @@ var orgChecksOfEnvPerms = map[string]string{
 	"revealsAt":                "only for actors grants don't decide; grants are asked at the place",
 	"requireReveal":            "through mayReveal, only for actors grants don't decide",
 	"CloneEnvironment":         "through mayReveal, only for actors grants don't decide",
+	"ConnectInfo":              "through mayReveal, only for actors grants don't decide",
 }
 
 // An environment permission that changes or reveals something is checked

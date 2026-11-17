@@ -52,6 +52,12 @@ used where a variable says `${{org.KEY}}`. They are never added to
 services by themselves. Admins set and reveal them; everyone sees which
 services use each.
 
+A reference hands the organization's value to the service that holds
+it, so adding one (`KEY=${{org.NAME}}`) needs the permission to edit
+variables across the whole organization. Someone whose access ends at a
+project, an environment or a kind of environment keeps the references
+their variables already have, and asks an admin to add another.
+
 ```sh
 dock org env set SENTRY_DSN=https://...
 dock env set 'SENTRY_DSN=${{org.SENTRY_DSN}}' --service web

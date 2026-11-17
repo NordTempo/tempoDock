@@ -52,6 +52,12 @@ access goes through the daemon's API, which enforces permissions.
   sends its own environment anywhere. Treat `deploy` on an environment as
   access to that environment's secrets, and limit tokens to the environments
   they need (an agent with `myapp/staging` never sees production secrets).
+  An environment's secrets include the organization variables its
+  services reference: a referenced one is in the service's environment
+  like any other. So a new reference to an organization variable is
+  added only by someone who edits variables across the whole
+  organization; a limited token or person can't pull one into the
+  environment they deploy to.
 
 ## People sign in with a second factor
 

@@ -56,6 +56,11 @@ type tunnelTarget struct {
 	// url is the connection URL with credentials; set only when asked
 	// for, "" when none is known.
 	url string
+	// urlIsVariable says url is the value of one of the service's
+	// variables (an app's DATABASE_URL, or the one its
+	// database_url_variable setting names), not the URL of a database
+	// Dock runs: showing it is revealing a variable.
+	urlIsVariable bool
 }
 
 // connectAccess checks the actor may open tunnels to a service: data
@@ -128,6 +133,7 @@ func (c *Core) tunnelTarget(ctx context.Context, ss svcScope, withURL bool) (tun
 		return tunnelTarget{}, invalid("%s has no port to connect to; set one with `dock service update --port` and deploy", ss)
 	}
 	if withURL {
+		t.urlIsVariable = true
 		switch v := ss.svc.DatabaseUrlVariable; {
 		case v != "":
 			if t.url, err = c.variableValue(ctx, ss, cfg.Env, v); err != nil {
@@ -145,7 +151,8 @@ func (c *Core) tunnelTarget(ctx context.Context, ss svcScope, withURL bool) (tun
 // ConnectInfo checks the actor may open tunnels to a service and says
 // what they reach (GET .../connect, what `dock connect` asks first).
 // req.Reveal adds the connection URL with its password, audited as
-// data.reveal.
+// data.reveal; for a service that isn't a database Dock runs, the URL is
+// a variable's value and needs the permission to reveal those.
 func (c *Core) ConnectInfo(ctx context.Context, a Actor, ref ServiceRef, req ConnectRequest) (apitypes.ConnectInfo, error) {
 	ss, perm, err := c.connectAccess(ctx, a, ref, req.Confirm)
 	if err != nil {
@@ -167,6 +174,15 @@ func (c *Core) ConnectInfo(ctx context.Context, a Actor, ref ServiceRef, req Con
 	if req.Reveal {
 		if t.url == "" {
 			return apitypes.ConnectInfo{}, invalid("%s has no connection URL (DATABASE_URL, REDIS_URL or the database_url_variable setting); connect without --show-url and log in with your own credentials", ss)
+		}
+		// A database Dock runs shows its URL to whoever the data policy
+		// lets connect. Any other service's URL is one of its variables,
+		// and which one is a setting anyone who deploys can change: it
+		// is shown to someone who may reveal variables there.
+		if t.urlIsVariable {
+			if err := a.mayReveal(ss.envScope, "revealing secret values"); err != nil {
+				return apitypes.ConnectInfo{}, err
+			}
 		}
 		info.URL = t.url
 		c.audit(ctx, a, apitypes.AuditDataReveal, &ss.project, &ss.env, ss.String(), "revealed the connection URL for `dock connect`")
