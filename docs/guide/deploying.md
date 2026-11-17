@@ -825,6 +825,11 @@ Webhooks): its Payload URL, content type `application/json`, the secret
 (shown once; `--rotate-secret` makes a new one) and "Just the push event".
 The UI does the same under the service's **Settings → Source**.
 
+A token stays with the repository it was given for: changing the branch
+or the directory keeps it, and connecting the service to another
+repository needs a token for that one (`--token-stdin`), or an empty one
+to go on without.
+
 | What arrives | What happens |
 |---|---|
 | A push to the branch | Queued, then deployed as a source release with the commit SHA, subject and author on it (`deploy abc1234 fix checkout`) |
