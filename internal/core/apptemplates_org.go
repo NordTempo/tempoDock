@@ -224,6 +224,9 @@ func (c *Core) RemoveAppTemplate(ctx context.Context, a Actor, name string) erro
 // AppTemplateFile returns a template's file: an organization's as saved,
 // Dock's own as it ships, to copy, edit and save as the organization's.
 func (c *Core) AppTemplateFile(ctx context.Context, a Actor, name string) (string, error) {
+	if err := a.readTemplates(); err != nil {
+		return "", err
+	}
 	if b, ok := apptemplates.File(name); ok {
 		return string(b), nil
 	}

@@ -140,6 +140,7 @@ var actionPerms = map[actionKey]Perm{
 	{apitypes.ScopeRead, "saving an organization template"}:                         PermEnvView,
 	{apitypes.ScopeAdmin, "removing an organization template"}:                      PermOrgSettings,
 	{apitypes.ScopeRead, "using a template"}:                                        PermEnvView,
+	{apitypes.ScopeRead, "reading templates"}:                                       PermEnvView,
 	{apitypes.ScopeDeploy, "creating an environment"}:                               PermEnvironmentsCreate,
 	{apitypes.ScopeDeploy, "deleting a snapshot"}:                                   PermConfigWrite,
 	{apitypes.ScopeAdmin, "deleting the organization"}:                              PermOrgSettings,
