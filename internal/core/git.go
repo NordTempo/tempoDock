@@ -258,7 +258,16 @@ func (c *Core) connectGit(ctx context.Context, a Actor, ss svcScope, req apitype
 			err = c.appTarget(ss, req, *pre, &repo, &t, !wasApp)
 		}
 	} else {
-		err = c.webhookTarget(ss.svc.ID, req, &t, !exists || wasApp)
+		fresh := !exists || wasApp
+		if !fresh && len(old.Token) > 0 && req.Token == nil && !strings.EqualFold(old.Repo, repo) {
+			// The token was given for the repository it was stored
+			// with. Whoever may change a service's repository hasn't
+			// been given the token (the API never shows it), and it may
+			// read more than this one: it doesn't follow the change.
+			err = invalid("%s's GitHub token was given for %s, so it isn't used for %s; pass a token for the new repository (--token-stdin), or an empty one to connect without", ss, old.Repo, repo)
+		} else {
+			err = c.webhookTarget(ss.svc.ID, req, &t, fresh)
+		}
 	}
 	if err != nil {
 		return apitypes.GitConnectResult{}, err

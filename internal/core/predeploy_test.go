@@ -259,3 +259,64 @@ func TestPreDeploySnapshotSkipsANewVolume(t *testing.T) {
 		t.Errorf("snapshots of web = %+v, %v; its new volume had nothing to copy", list.Snapshots, err)
 	}
 }
+
+// A failed pre-deploy command's last lines are in the release for
+// everyone who sees the environment, so the release's secret values are
+// masked in them, as the build log masks them for someone who can't
+// reveal: a migration tool that prints the URL it couldn't reach shows
+// the mask, also to someone who may not read the logs.
+func TestPreDeployOutputInTheReleaseIsMasked(t *testing.T) {
+	h := newHarness(t)
+	h.enforce()
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	const secret = "postgres://app:s3cr3t-Pa55w0rd@db.internal:5432/shop"
+	if _, err := h.c.SetVariables(h.ctx, testSystem, web.Env(), apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"DATABASE_URL": secret}, Apply: true}); err != nil {
+		t.Fatal(err)
+	}
+	h.wait(web, h.deploy(web, "app:1").Number)
+	if _, err := h.c.UpdateService(h.ctx, testSystem, web, apitypes.UpdateServiceRequest{PreDeployCommand: ptr("migrate up")}); err != nil {
+		t.Fatal(err)
+	}
+	// What a migration tool prints when it can't connect.
+	h.rt.OnJob(func(node.JobSpec) (node.JobResult, error) {
+		return node.JobResult{ExitCode: 1, Output: "connecting\nerror: dial " + secret + ": connection refused\n"}, nil
+	})
+	rel := h.deploy(web, "app:2")
+	if rel.Status != apitypes.ReleaseFailed {
+		t.Fatalf("release = %+v", rel)
+	}
+	admin := h.user("ada@example.com", apitypes.ScopeAdmin)
+	viewer := h.user("vw@example.com", apitypes.ScopeRead)                                           // Viewers: logs:view, no reveal
+	watcher := grantedPerson(h, admin, "st@example.com", apitypes.GrantRequest{Role: "deploy:view"}) // sees status only
+
+	// Control: the build log masks it for the Viewer, and refuses the watcher.
+	rc, err := h.c.BuildLog(h.ctx, viewer, web, rel.Number)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log, _ := io.ReadAll(rc)
+	_ = rc.Close()
+	if strings.Contains(string(log), "s3cr3t") || !strings.Contains(string(log), secretMask) {
+		t.Fatalf("the viewer's build log isn't masked: %s", log)
+	}
+	if _, err := h.c.BuildLog(h.ctx, watcher, web, rel.Number); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("deploy:view reading the build log: %v", err)
+	}
+
+	for _, a := range []Actor{viewer, watcher} {
+		full, err := h.c.GetRelease(h.ctx, a, web, rel.Number)
+		if err != nil {
+			t.Fatal(err)
+		}
+		shown := false
+		for _, e := range full.Events {
+			if strings.Contains(e.Message, "s3cr3t") {
+				t.Errorf("%s read DATABASE_URL from release %d's events: %q", a.Name, rel.Number, e.Message)
+			}
+			shown = shown || strings.Contains(e.Message, "error: dial "+secretMask+": connection refused")
+		}
+		if !shown {
+			t.Errorf("%s should see the command's last lines, masked: %+v", a.Name, full.Events)
+		}
+	}
+}

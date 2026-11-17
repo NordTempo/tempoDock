@@ -786,3 +786,41 @@ func TestPushWithUnreadableDockTomlIsNotQueuedAgain(t *testing.T) {
 		t.Fatalf("the next push's release: %+v", r)
 	}
 }
+
+// A connection's GitHub token was given for the repository it was stored
+// with: it stays through a change of branch or directory, and doesn't
+// follow a change of repository, which needs a token of its own or none.
+func TestGitTokenStaysWithItsRepository(t *testing.T) {
+	h, _ := gitHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	admin := h.user("ada@example.com", apitypes.ScopeAdmin)
+	dev := h.user("dev@example.com", apitypes.ScopeDeploy)
+	token := "github_pat_given_for_shop"
+	if _, err := h.c.GitConnect(h.ctx, admin, web, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main", Dir: "apps/web", Token: &token}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Another branch and directory of the same repository, however its
+	// name is cased: the token stays.
+	res, err := h.c.GitConnect(h.ctx, dev, web, apitypes.GitConnectRequest{Repo: "Acme/Shop", Branch: "release", Dir: "apps/api"})
+	if err != nil || !res.Connection.TokenSet {
+		t.Fatalf("a change within the repository: %+v, %v", res.Connection, err)
+	}
+	// Another repository, with no token sent: refused, and nothing changed.
+	_, err = h.c.GitConnect(h.ctx, dev, web, apitypes.GitConnectRequest{Repo: "acme/payroll", Branch: "main"})
+	if CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), "was given for") {
+		t.Fatalf("a change of repository with the stored token: %v", err)
+	}
+	if src, err := h.c.GitStatus(h.ctx, dev, web); err != nil || !strings.EqualFold(src.Connection.Repo, "acme/shop") || !src.Connection.TokenSet {
+		t.Fatalf("after the refusal: %+v, %v", src.Connection, err)
+	}
+	// With an empty token it connects without one; with its own, with that.
+	none := ""
+	if res, err = h.c.GitConnect(h.ctx, dev, web, apitypes.GitConnectRequest{Repo: "acme/payroll", Branch: "main", Token: &none}); err != nil || res.Connection.TokenSet {
+		t.Fatalf("a change of repository without a token: %+v, %v", res.Connection, err)
+	}
+	own := "github_pat_the_developers_own"
+	if res, err = h.c.GitConnect(h.ctx, dev, web, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main", Token: &own}); err != nil || !res.Connection.TokenSet {
+		t.Fatalf("a change of repository with a token of its own: %+v, %v", res.Connection, err)
+	}
+}

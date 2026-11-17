@@ -10,9 +10,10 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// Access request previews (ADR 0044): an admin reviewing a request that
+// Access request previews (ADR 0044): whoever reviews a request that
 // sets or unsets variables sees what approving it would change now, each
-// key's current value against the requested one, not only the raw call.
+// key's current value against the requested one, not only the raw call;
+// without the values, when they may not reveal them there.
 
 // requestVariables reads the variable changes in a request's stored
 // args, for the two calls that set variables: the API's set-variables
@@ -37,11 +38,12 @@ func requestVariables(via, op string, args json.RawMessage) (req apitypes.SetVar
 }
 
 // requestPreview diffs a variables request's args against the request's
-// environment as it is now (staged values over live ones), with values
-// revealed: only admins get it. Keys it wouldn't change are left out.
-// Other calls, and a preview that can't be built, get nil; the raw args
-// still show. Two queries.
-func (c *Core) requestPreview(ctx context.Context, r store.AccessRequest, args json.RawMessage) []apitypes.VariableChange {
+// environment as it is now (staged values over live ones). With reveal
+// the changes carry the values; without, only each key and what happens
+// to it, as a staged-changes diff does. Keys it wouldn't change are left
+// out. Other calls, and a preview that can't be built, get nil; the raw
+// args still show. Two queries.
+func (c *Core) requestPreview(ctx context.Context, r store.AccessRequest, args json.RawMessage, reveal bool) []apitypes.VariableChange {
 	req, ok := requestVariables(r.Via, r.Operation, args)
 	if !ok || len(req.Set)+len(req.Unset) == 0 {
 		return nil
@@ -51,7 +53,58 @@ func (c *Core) requestPreview(ctx context.Context, r store.AccessRequest, args j
 		c.log.Error("preview access request", "request", r.ID, "err", err)
 		return nil
 	}
+	if !reveal {
+		for i := range changes {
+			changes[i].Old, changes[i].New = nil, nil
+		}
+	}
 	return changes
+}
+
+// hiddenValue stands in for a value its reader may not reveal.
+const hiddenValue = "(hidden: you can't reveal values here)"
+
+// withoutVariableValues is a variables request's stored args with the
+// values it sets replaced by hiddenValue: the keys still show what is
+// asked. Args of other calls, and any it can't read, come back as they
+// are.
+func withoutVariableValues(via, op string, args json.RawMessage) json.RawMessage {
+	if _, ok := requestVariables(via, op, args); !ok {
+		return args
+	}
+	var whole map[string]json.RawMessage
+	if json.Unmarshal(args, &whole) != nil {
+		return args
+	}
+	// The API's args hold the request under Body; MCP's are the request.
+	body, inBody := whole, via == "api"
+	if inBody {
+		body = map[string]json.RawMessage{}
+		if json.Unmarshal(whole["Body"], &body) != nil {
+			return args
+		}
+	}
+	var set map[string]string
+	if json.Unmarshal(body["set"], &set) != nil || len(set) == 0 {
+		return args
+	}
+	for k := range set {
+		set[k] = hiddenValue
+	}
+	var err error
+	if body["set"], err = json.Marshal(set); err != nil {
+		return args
+	}
+	if inBody {
+		if whole["Body"], err = json.Marshal(body); err != nil {
+			return args
+		}
+	}
+	out, err := json.Marshal(whole)
+	if err != nil {
+		return args
+	}
+	return out
 }
 
 // variablesPreview builds the diff of req against environment envID's
