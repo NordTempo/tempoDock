@@ -117,7 +117,7 @@ func dockerHarnessWithProbe(t *testing.T, probe string) *Core {
 	cfg.DataDir = dir
 	base := freePortRange(t, slot)
 	cfg.HostPorts = config.PortRange{Min: base, Max: base + 99}
-	c, err := New(ctx, Options{Config: cfg, Store: st, Secrets: box, Runtime: node.Local{Containers: rt, Builder: noBuilder{}, Proxy: noProxy{}, Stats: noStats{}, Traffic: noStats{}, Tunnel: noProxy{}, Analytics: fake.New(), Prober: fake.New()}, Logger: slog.New(slog.DiscardHandler)})
+	c, err := New(ctx, Options{Config: cfg, Store: st, Secrets: box, Runtime: node.Local{Containers: rt, Builder: noBuilder{}, Proxy: noProxy{}, Stats: noStats{}, Traffic: noStats{}, Tunnel: noProxy{}, Analytics: fake.New(), Prober: fake.New(), Scanner: fake.New()}, Logger: slog.New(slog.DiscardHandler)})
 	if err != nil {
 		t.Fatal(err)
 	}
