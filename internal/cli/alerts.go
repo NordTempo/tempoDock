@@ -236,6 +236,9 @@ shown again.`,
 			return g.io.Print(created, func() error {
 				ch := created.Channel
 				g.io.Successf("Added %s channel %s: %s alerts and up go to %s", ch.Kind, ch.Name, ch.MinSeverity, ch.Target)
+				if created.Warning != "" {
+					g.io.Warnf("%s", created.Warning)
+				}
 				if created.Secret != "" {
 					_, _ = fmt.Fprintf(g.io.Out, "\nSigning secret (shown once; check the Dock-Signature header with it):\n\n  %s\n\n", created.Secret)
 				}
@@ -329,8 +332,11 @@ func newAlertChannelTestCmd(g *globals) *cobra.Command {
 				return err
 			}
 			if !res.OK {
-				return &output.Error{Exit: output.ExitUnreachable, Message: "test alert to " + args[0] + " failed: " + res.Error,
-					Hint: "Check the channel's URL or SMTP settings; to change them, remove the channel and add it again."}
+				hint := "Check the channel's URL; to change it, remove the channel and add it again."
+				if res.Channel.Kind == apitypes.ChannelEmail {
+					hint = "Email channels send through Dock's email server: an operator sets it up with `dock email set` and checks it with `dock email test`. The channel itself needs no change."
+				}
+				return &output.Error{Exit: output.ExitUnreachable, Message: "test alert to " + args[0] + " failed: " + res.Error, Hint: hint}
 			}
 			return nil
 		},

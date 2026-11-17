@@ -65,11 +65,11 @@ func (h *handler) addStatusTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "status_incident_open", "Open a status page incident",
-		"Open an incident on a status page, as a draft unless asked to post. Public text: no service, server or error names.",
+		"Open an incident on a status page. It is public at once unless draft is true: pass draft unless the user asked to post. Public text: no service, server or error names.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			Page string `json:"page"`
 			apitypes.OpenIncidentRequest
-			Draft bool `json:"draft,omitempty"`
+			Draft bool `json:"draft,omitempty" doc:"Keep it unpublished for the user to review."`
 		}) (mcpkit.Reply, error) {
 			req := in.OpenIncidentRequest
 			if in.Draft {

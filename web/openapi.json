@@ -1156,6 +1156,10 @@
           "dock": {
             "type": "boolean"
           },
+          "error": {
+            "description": "Why the chart can't be read, such as an aggregation its metric doesn't take; unpin it or pin it with one of aggs",
+            "type": "string"
+          },
           "kind": {
             "type": "string"
           },
@@ -3773,6 +3777,10 @@
             "$ref": "#/components/schemas/AlertChannel"
           },
           "secret": {
+            "type": "string"
+          },
+          "warning": {
+            "description": "Why the channel can't send yet, such as an email channel while Dock's email isn't set up",
             "type": "string"
           }
         },

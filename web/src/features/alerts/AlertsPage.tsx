@@ -477,7 +477,23 @@ function AddChannel({ onClose }: { onClose: () => void }) {
   // An email channel's recipients, comma separated.
   const [to, setTo] = useState("");
   const [secret, setSecret] = useState<string>();
+  // Why the new channel can't send yet: email while it isn't set up.
+  const [warning, setWarning] = useState<string>();
 
+  if (warning) {
+    return (
+      <div className="flex max-w-[760px] flex-col gap-2.5 border-t border-line pt-3.5">
+        <p role="status" className="text-warn">
+          {warning}
+        </p>
+        <div>
+          <Button small onClick={onClose}>
+            OK
+          </Button>
+        </div>
+      </div>
+    );
+  }
   if (secret) {
     return (
       <div className="flex max-w-[760px] flex-col gap-2.5 rounded-panel border border-ok-edge bg-ok-bg/30 p-4">
@@ -540,7 +556,11 @@ function AddChannel({ onClose }: { onClose: () => void }) {
         }
         create.mutate(input, {
           onSuccess: (created) =>
-            created.secret ? setSecret(created.secret) : onClose(),
+            created.secret
+              ? setSecret(created.secret)
+              : created.warning
+                ? setWarning(created.warning)
+                : onClose(),
         });
       }}
     >
