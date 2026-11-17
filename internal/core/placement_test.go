@@ -142,6 +142,14 @@ func newPool(t *testing.T, local poolServer, remotes ...poolServer) *pool {
 	}
 	h.nodes = p.nodes
 	h.restart()
+	// Each remote server's watcher subscribes to its events in its own
+	// goroutine: wait for them, or an event a test emits right away (a
+	// node's wake request) is lost on a slow runner.
+	for name, id := range p.ids {
+		if rt := p.rts[id]; rt != nil {
+			eventually(t, name+"'s events followed", func() bool { return rt.Subscribers() > 0 })
+		}
+	}
 	return p
 }
 

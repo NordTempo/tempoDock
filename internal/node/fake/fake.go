@@ -407,6 +407,15 @@ func (r *Runtime) AddContainer(c node.Container) {
 	r.containers[c.ID] = &c
 }
 
+// Subscribers is how many Events streams are open: a test that emits an
+// event waits for its follower first, since Emit reaches only those
+// already subscribed (as a real node's stream does).
+func (r *Runtime) Subscribers() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.subs)
+}
+
 // Emit sends a container event to all Events subscribers and applies it to
 // the container's state (die → exited, start → running, oom → OOMKilled,
 // health_status → Health).
