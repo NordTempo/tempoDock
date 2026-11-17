@@ -24,11 +24,11 @@ check its sums, run `dock deploy --json`. That left four problems:
 ### 1. An official action (built)
 
 **Deploy to Tempo Dock**, a composite action: `action.yml` plus a bash
-script, no Node, no build step, nothing to keep patched. It lives in
-`contrib/github-action/` and is used as
-`NordTempo/tempoDock/contrib/github-action@<sha>` until it is published
-in its own repository, which GitHub's Marketplace requires
-(`NordTempo/deploy-action`, the name awaiting Saile's confirmation).
+script, no Node, no build step, nothing to keep patched. It is
+developed in `contrib/github-action/` and published as
+[NordTempo/deploy-action](https://github.com/NordTempo/deploy-action),
+since GitHub's Marketplace needs `action.yml` at a repository's root.
+Workflows use `NordTempo/deploy-action@v1`.
 
 - **Inputs**: `server`, `token`, `project`, `environment`, `service`,
   `mode` (`source`, `image`, `apply`), `path`, `image`, `wait`,
@@ -65,8 +65,22 @@ failed. Considered: progress on stderr under `--json` (breaks "stderr is
 one error object"), and parsing human output (never). A CLI older than
 the flag gets `--json` from the action, without progress, with a warning.
 
-**Tests** run on a GitHub-hosted runner with nothing outside it: the
-workflow builds `dock` from the checkout, starts it on the fake runtime
+**Publishing.** The release workflow's last step runs
+`scripts/release/sync-action.sh`: the directory as committed becomes the
+repository's root (with the LICENSE), and when that changed it commits,
+tags the next minor (`v1.1.0`, ...) and moves `v1` there, so `@v1` gets
+fixes and rotated release keys. Not for pre-releases. A breaking change
+of inputs is a `v2.0.0` tagged by hand. It pushes with
+`DEPLOY_ACTION_TOKEN`, a fine-grained token with Contents and Workflows
+write on that repository only (the directory carries the repository's own
+test workflow, `.github/workflows/test.yml`, which GitHub doesn't run
+from a subdirectory here); unset, the step only says so. The Marketplace
+listing is a release with "Publish this Action to the GitHub
+Marketplace" checked, which only the web UI does.
+
+**Tests** run on a GitHub-hosted runner with nothing outside it: here
+the workflow builds `dock` from the checkout (in deploy-action, the
+`test` workflow takes Dock's latest release), starts it on the fake runtime
 on 127.0.0.1 (`test/fake-dock.sh`), and deploys to it with the script's
 cases (`test/local.sh`, which also runs on a laptop) and through
 `action.yml`, including the signed install of the latest release.
@@ -124,9 +138,10 @@ repository deploys with no stored secret.
 - A team deploys from GitHub Actions with five lines of YAML, sees the
   build in the job's log and a link to the release, and a failed release
   fails the job with the reason.
-- The action is pinned to Dock's release key: rotating the key (0088's
-  steps) means releasing the action with the new key too; the test fails
-  until the copy matches.
+- The action carries Dock's release keys: a rotation (0088's steps)
+  reaches it through the copy, which the test keeps equal, and the next
+  release's sync moves `v1` to it. A workflow pinned to an older tag or
+  SHA keeps trusting only the keys it was pinned with.
 - `--json-file` is one more global flag, useful to any CI.
 - Until part 2 ships, every repository that deploys holds a token; the
   guide limits each to one environment.
