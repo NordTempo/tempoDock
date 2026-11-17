@@ -248,7 +248,9 @@ func everyKind(entries []grantEntry) Perms {
 // level in that kind (agentCap.data): the data policy still decides data
 // access (ADR 0080, until it moves into grants), and the agent may use
 // no more of it than its person allows. Below full, sensitive columns
-// stay masked.
+// stay masked, and the agent doesn't manage the panel: managing is
+// setting it up and saying which columns are sensitive, which is what
+// the masking rests on.
 func capAgentData(perm apitypes.DataPermission, level string) apitypes.DataPermission {
 	if level == agentAll || level == "full" || level == "" {
 		return perm
@@ -257,6 +259,7 @@ func capAgentData(perm apitypes.DataPermission, level string) apitypes.DataPermi
 	if level != agentOff {
 		limit = apitypes.DataLevel(level)
 	}
+	perm.Manage = false
 	if perm.Level.Min(limit) == perm.Level && perm.Sensitive != apitypes.SensitiveVisible {
 		return perm
 	}

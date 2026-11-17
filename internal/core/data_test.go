@@ -883,3 +883,56 @@ func TestSuspendedOrgDataReadOnly(t *testing.T) {
 		t.Fatal("an admin proposed a change in a suspended org")
 	}
 }
+
+// An agent the organization's agent rules (or its person's setting) hold
+// below full in the Data panel doesn't manage it either: it can't say
+// which columns are sensitive, which is what its own masking rests on.
+func TestAgentDataCapTakesManageAway(t *testing.T) {
+	h, _, db, ss := fakeDatabase(t)
+	h.enforce()
+	admin := h.user("ada@example.com", apitypes.ScopeAdmin)
+	created, err := h.c.createToken(h.ctx, admin, apitypes.CreateTokenRequest{Name: "bot", Scope: apitypes.ScopeAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The org lets agents use the Data panel at read in production.
+	if _, err := h.c.SetAgentRules(h.ctx, admin, apitypes.AgentSettings{Settings: []apitypes.AgentSetting{
+		{Area: "data", Kind: "production", Level: "read"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	bot, err := h.c.AuthenticateToken(h.ctx, created.Secret, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var info apitypes.DataInfo
+	if info.Access, err = h.c.dataPermission(h.ctx, bot, ss.envScope); err != nil {
+		t.Fatal(err)
+	}
+	if info.Access.Level != apitypes.LevelRead || info.Access.Sensitive != apitypes.SensitiveMasked {
+		t.Fatalf("the rule didn't cap the agent: %+v", info.Access)
+	}
+	// The cap holds for revealing...
+	if _, err := h.c.DataRows(h.ctx, bot, db, apitypes.DataPageRequest{Table: "public.customers", Reveal: true}); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("a capped agent revealed: %v", err)
+	}
+	// ...and for the marks the masking rests on, and setting the panel up.
+	if _, err := h.c.SetSensitiveColumns(h.ctx, bot, db, apitypes.SetSensitiveColumnsRequest{}); CodeOf(err) != apitypes.CodeForbidden {
+		t.Errorf("a capped agent changed the sensitive columns: %v", err)
+	}
+	if info.Access.Manage {
+		t.Error("a capped agent still manages the Data panel")
+	}
+	// The same token under no rule manages it, as an admin's does.
+	if _, err := h.c.SetAgentRules(h.ctx, admin, apitypes.AgentSettings{Settings: []apitypes.AgentSetting{
+		{Area: "data", Kind: "production", Level: "all"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if bot, err = h.c.AuthenticateToken(h.ctx, created.Secret, ""); err != nil {
+		t.Fatal(err)
+	}
+	if free, err := h.c.dataPermission(h.ctx, bot, ss.envScope); err != nil || !free.Manage {
+		t.Errorf("an admin token under no rule: %+v, %v", free, err)
+	}
+}
