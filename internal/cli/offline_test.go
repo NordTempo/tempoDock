@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/cli/output"
@@ -16,9 +17,10 @@ import (
 func TestServerOffline(t *testing.T) {
 	setup(t)
 	const env = "/api/v1/projects/shop/environments/staging"
+	seen := time.Now() // reported before the server went offline
 	web := apitypes.Service{
 		Project: "shop", Environment: "staging", Name: "web",
-		Status: apitypes.ServiceStatus{State: apitypes.ServiceRunning, ServerOffline: true, Server: "t3node", ServerStatus: apitypes.ServerOffline},
+		Status: apitypes.ServiceStatus{State: apitypes.ServiceRunning, ServerOffline: true, Server: "t3node", ServerStatus: apitypes.ServerOffline, UpdatedAt: &seen},
 	}
 	overview := apitypes.ProjectOverview{Environments: []apitypes.EnvironmentOverview{{
 		Environment: apitypes.Environment{Project: "shop", Name: "staging", Server: "t3node"},
