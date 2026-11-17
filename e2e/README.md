@@ -11,6 +11,7 @@ the CLI and real traffic through the proxy.
 | `templates.sh` | every app template deploys and serves |
 | `traces.sh`, `metrics.sh` | OTLP traces and metrics, on their own servers |
 | `analytics-*.sh` | Dock Analytics with a headless browser, on their own containers |
+| `drain.sh` | `dock server drain` of a node under load: Postgres, Redis, a volume and stateless apps move with no failed request and every acknowledged write kept |
 | `upgrade/run.sh` | one published release updated to another, with data checks |
 | `fresh-install.sh` | the README's install on bare Debian 12/13 and Ubuntu 22.04/24.04: piped install with Docker, CLI login, a template, re-run, uninstall |
 | `nightly.sh` | all of the above that fits one cycle, every night (below) |
@@ -37,6 +38,7 @@ Two slots never touch each other's servers, so give each its own subnet:
 | `e2e-nightly` | `10.250.251.0/24` | `nightly.sh` only |
 | `e2e-nightly-fresh` | `10.250.252.0/24` | `nightly.sh`'s `fresh-install.sh` |
 | `e2e-fresh` | `10.250.255.0/24` | `fresh-install.sh` by hand (`E2E_FRESH_SLOT`, `E2E_FRESH_SUBNET`) |
+| `e2e-rw`, `e2e-rw-*` | `10.250.241.0/24` to `10.250.249.0/24` | real-world tests by hand (drains, SSO, alert channels, Cloudflare, GitHub Apps): `e2e-rw` has .241, `e2e-rw-sso` .242, `e2e-rw-slack` .243 |
 
 A new scenario names containers through `$SLOT` and addresses through
 `$SUBNET_PREFIX` (both from `lib.sh`), never `e2e2-*` or `10.250.250.*`,
