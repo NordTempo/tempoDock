@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { queries, useAuditLog } from "../../data/queries";
 import type { AuditEvent } from "../../data/types";
+import { csv } from "../../ui/csv";
 import { Act, actorLabel, Button, Page, PageBar } from "../../ui/kit";
 import { OrgSettingsBar } from "../org/SettingsBar";
 import { AuditTable } from "./AuditTable";
@@ -40,27 +41,32 @@ const platformActions = [
 /** Every filter control is this tall, so the row lines up. */
 const control = "h-[28px]";
 
+/** The events as CSV; names people typed can't run as formulas (ui/csv.ts). */
 function toCsv(events: AuditEvent[]) {
-  const cell = (v: string | undefined) =>
-    `"${(v ?? "").replaceAll('"', '""')}"`;
-  const rows = events.map((e) =>
+  return csv([
     [
-      e.created_at,
-      e.actor,
-      e.actor_kind,
-      e.action,
-      e.project,
-      e.environment,
-      e.target,
-      e.summary,
-    ]
-      .map(cell)
-      .join(","),
-  );
-  return [
-    "time,actor,actor_kind,action,project,environment,target,summary",
-    ...rows,
-  ].join("\n");
+      "time",
+      "actor",
+      "actor_kind",
+      "action",
+      "project",
+      "environment",
+      "target",
+      "summary",
+    ],
+    ...events.map((e) =>
+      [
+        e.created_at,
+        e.actor,
+        e.actor_kind,
+        e.action,
+        e.project,
+        e.environment,
+        e.target,
+        e.summary,
+      ].map((v) => v ?? ""),
+    ),
+  ]);
 }
 
 function download(name: string, text: string) {

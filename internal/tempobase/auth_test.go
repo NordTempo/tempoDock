@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/tempobase/tbstore"
 	"github.com/NordTempo/tempoDock/internal/tempobase/tbtypes"
 )
 
@@ -28,7 +29,7 @@ func TestSetupCode(t *testing.T) {
 	if !act.IsAdmin() || !strings.HasPrefix(secret, sessionPrefix) {
 		t.Fatalf("setup made %+v with session %q", act, secret[:4])
 	}
-	if _, err := h.AuthenticateSession(h.ctx, secret); err != nil {
+	if _, err := h.AuthenticateSession(h.ctx, secret, false); err != nil {
 		t.Fatal(err)
 	}
 	req.Email = "second@example.com"
@@ -84,16 +85,16 @@ func TestSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, s := range []string{first, second} {
-		_, err := h.AuthenticateSession(h.ctx, s)
+		_, err := h.AuthenticateSession(h.ctx, s, false)
 		wantCode(t, err, apitypes.CodeUnauthorized)
 	}
-	if _, err := h.AuthenticateSession(h.ctx, third); err != nil {
+	if _, err := h.AuthenticateSession(h.ctx, third, false); err != nil {
 		t.Fatal(err)
 	}
 
 	// Expired: refused and deleted.
 	h.clock = h.clock.Add(SessionTTL + time.Second)
-	_, err = h.AuthenticateSession(h.ctx, third)
+	_, err = h.AuthenticateSession(h.ctx, third, false)
 	wantCode(t, err, apitypes.CodeUnauthorized)
 	if _, err := h.store.GetSessionUser(h.ctx, hashSecret(third)); err == nil {
 		t.Fatal("expired session was kept")
@@ -107,7 +108,7 @@ func TestSessions(t *testing.T) {
 	if _, err := h.UpdateUser(h.ctx, System, viewer.UserID, tbtypes.UpdateUserRequest{Disabled: new(true)}); err != nil {
 		t.Fatal(err)
 	}
-	_, err = h.AuthenticateSession(h.ctx, fresh)
+	_, err = h.AuthenticateSession(h.ctx, fresh, false)
 	wantCode(t, err, apitypes.CodeUnauthorized)
 }
 
@@ -262,7 +263,7 @@ func TestLinks(t *testing.T) {
 	if _, _, _, err := h.UseLink(h.ctx, code, tbtypes.UseLinkRequest{Password: "a new long password"}, "10.0.0.4"); err != nil {
 		t.Fatal(err)
 	}
-	_, err = h.AuthenticateSession(h.ctx, session)
+	_, err = h.AuthenticateSession(h.ctx, session, false)
 	wantCode(t, err, apitypes.CodeUnauthorized)
 	if _, _, _, err := h.Login(h.ctx, "new@example.com", "a new long password", "10.0.0.5"); err != nil {
 		t.Fatal(err)
@@ -298,4 +299,28 @@ func TestKeepsAnAdmin(t *testing.T) {
 	viewer := h.user("viewer@example.com", tbtypes.RoleViewer)
 	_, err = h.ListUsers(h.ctx, viewer)
 	wantCode(t, err, apitypes.CodeForbidden)
+}
+
+// A cookie under its bare name over HTTPS signs in only a session from
+// before the cookie was locked to the host, never a newer one.
+func TestSessionUnderBareCookie(t *testing.T) {
+	h := newHarness(t)
+	h.admin()
+	viewer := h.user("viewer@example.com", tbtypes.RoleViewer)
+	fresh, _, _, err := h.Login(h.ctx, "viewer@example.com", testPassword, "10.0.0.2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = h.AuthenticateSession(h.ctx, fresh, true)
+	wantCode(t, err, apitypes.CodeUnauthorized)
+
+	before, hash := newSecret(legacySessionPrefix)
+	if err := h.store.CreateSession(h.ctx, tbstore.CreateSessionParams{UserID: viewer.UserID, SecretHash: hash, CreatedAt: h.clock, ExpiresAt: h.clock.Add(SessionTTL)}); err != nil {
+		t.Fatal(err)
+	}
+	for _, legacy := range []bool{true, false} {
+		if act, err := h.AuthenticateSession(h.ctx, before, legacy); err != nil || act.UserID != viewer.UserID {
+			t.Fatalf("a session from before, legacy %v: %+v, %v", legacy, act, err)
+		}
+	}
 }

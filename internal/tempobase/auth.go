@@ -22,10 +22,14 @@ import (
 )
 
 // Secret prefixes make leaked credentials easy to recognise and scan for.
+// A session's also says how its cookie is named: tbs2_ sessions began
+// once the cookie took the __Host- prefix over HTTPS (httpkit.CookieName),
+// tbs_ ones before that.
 const (
-	sessionPrefix = "tbs_"
-	tokenPrefix   = "tbt_"
-	linkPrefix    = "tbl_"
+	sessionPrefix       = "tbs2_"
+	legacySessionPrefix = "tbs_"
+	tokenPrefix         = "tbt_"
+	linkPrefix          = "tbl_"
 )
 
 // SessionTTL is how long a sign-in lasts; it doesn't slide, so requests
@@ -62,9 +66,13 @@ var errUnauthenticated = errf(apitypes.CodeUnauthorized, "invalid, expired or re
 
 // AuthenticateSession resolves a session cookie to its user, with one
 // query. An expired session is deleted when presented: nothing sweeps
-// them on a timer.
-func (a *App) AuthenticateSession(ctx context.Context, secret string) (Actor, error) {
-	if !strings.HasPrefix(secret, sessionPrefix) {
+// them on a timer. legacy says the cookie came under its bare name over
+// HTTPS (httpkit.SessionSecret), which only a session from before the
+// __Host- prefix may: those end within SessionTTL of the upgrade, and
+// legacySessionPrefix can go with them.
+func (a *App) AuthenticateSession(ctx context.Context, secret string, legacy bool) (Actor, error) {
+	old := strings.HasPrefix(secret, legacySessionPrefix)
+	if !old && (legacy || !strings.HasPrefix(secret, sessionPrefix)) {
 		return Actor{}, errUnauthenticated
 	}
 	row, err := a.store.GetSessionUser(ctx, hashSecret(secret))

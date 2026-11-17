@@ -18,16 +18,40 @@ import (
 const UICSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; " +
 	"font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 
+// The headers Guard sets on every response that never vary. Shared
+// slices, assigned as they are: a response's own Set or Add replaces or
+// copies them, so nothing is allocated per request for them.
+var (
+	// A page another site opens (or that opens another site) shares no
+	// window with it: neither can navigate or script the other's.
+	openerPolicy = []string{"same-origin"}
+	// The UIs use none of these; a page they are tricked into showing
+	// can't either.
+	permissionsPolicy = []string{"camera=(), geolocation=(), microphone=(), payment=(), usb=()"}
+	// A year, for this hostname only: apps live on sibling hostnames and
+	// decide for themselves.
+	strictTransport = []string{"max-age=31536000"}
+)
+
 // Guard adds security headers to every response and refuses cross-site
 // requests that could ride on a session cookie (CSRF; see
 // CheckBrowserRequest). rawBody, when set, allows non-JSON bodies on some
-// routes (Dock's source uploads).
-func Guard(next http.Handler, rawBody RawBody) http.Handler {
+// routes (Dock's source uploads). secure reports whether a request
+// arrived over HTTPS, by the test the server names its cookies with:
+// those get Strict-Transport-Security, so the browser never goes back to
+// plain HTTP for this hostname; a plain HTTP address (a tailnet's,
+// `make dev`) never does.
+func Guard(next http.Handler, rawBody RawBody, secure func(*http.Request) bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "same-origin")
 		h.Set("X-Frame-Options", "DENY")
+		h["Cross-Origin-Opener-Policy"] = openerPolicy
+		h["Permissions-Policy"] = permissionsPolicy
+		if secure(r) {
+			h["Strict-Transport-Security"] = strictTransport
+		}
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			// Responses carry tokens and secret values; never cache them.
 			h.Set("Cache-Control", "no-store")

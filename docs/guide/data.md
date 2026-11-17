@@ -74,6 +74,11 @@ dock db saved save open-orders "select * from orders where status = 'open'"
 dock db saved run open-orders
 ```
 
+- `--csv` writes values as they are, for scripts. A spreadsheet runs a
+  cell that starts with `=`, `+`, `-` or `@` as a formula, and a database
+  holds what its app's users typed: the web UI's **CSV** button (and
+  Activity's **Export CSV**) puts an apostrophe before such a cell, so it
+  shows as text; plain numbers stay numbers.
 - Pages are keyset pages (100 rows, at most 1 000), never `OFFSET`; the
   cursor for the next one is printed on stderr. Row counts are estimates
   (`~N`); tables never analysed are counted exactly when small, else `?`.

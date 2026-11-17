@@ -99,8 +99,8 @@ export function ReplaysView({
       )}
       {!data.recording && (
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-warn-text">
-          Session replay is off for this site. Inputs are always masked when
-          it's on.
+          Session replay is off for this site. Field values are always masked
+          when it's on.
           <Link
             to="/$org/analytics/$project/$site/settings"
             params={{ org, project, site: site.name }}
@@ -141,7 +141,7 @@ export function ReplaysView({
               {data.recording
                 ? `${data.sample_rate}% of page loads recorded · `
                 : ""}
-              kept {kept} days · inputs masked
+              kept {kept} days · field values masked
             </span>
             <span className="seg">
               {(["All", "With errors"] as const).map((label) => (

@@ -6,6 +6,7 @@ import type { components } from "../api/schema";
 import { useAction, useLogin, useLoginVerify } from "../data/mutations";
 import { currentMe, keys, queries } from "../data/queries";
 import { useSignInMethods, useStartSSO } from "../features/sso/data";
+import { ssoFailure } from "../features/sso/failures";
 import { ProviderMark } from "../features/sso/ProviderMark";
 import { CodeInput } from "../ui/CodeInput";
 import { cliInstallLine } from "../ui/cliInstall";
@@ -13,16 +14,25 @@ import { ErrorText } from "../ui/kit";
 
 /**
  * The sign-in page's query: where to go afterwards, and where a sign-in
- * through an identity provider comes back to (ADR 0065): `error` says why
- * it failed, `second` that it needs the Dock second factor (the pending
- * sign-in's cookie is already set).
+ * through an identity provider comes back to (ADR 0065): `error` is why
+ * it failed, as a reason the page has its own sentence for
+ * (features/sso/failures.ts), with the `provider` it went through;
+ * `second` that it needs the Dock second factor (the pending sign-in's
+ * cookie is already set). Nothing in the query is shown as it is: anyone
+ * can make a link to this page.
  */
-type LoginSearch = { redirect?: string; error?: string; second?: true };
+type LoginSearch = {
+  redirect?: string;
+  error?: string;
+  provider?: string;
+  second?: true;
+};
 
 export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>): LoginSearch => ({
     ...(typeof search.redirect === "string" && { redirect: search.redirect }),
     ...(typeof search.error === "string" && { error: search.error }),
+    ...(typeof search.provider === "string" && { provider: search.provider }),
     ...((search.second === 1 || search.second === true) && {
       second: true,
     }),
@@ -165,7 +175,7 @@ const ssoFactors: SecondFactor[] = ["totp", "passkey", "recovery"];
 const passkeys = window.isSecureContext && "PublicKeyCredential" in window;
 
 function Login() {
-  const { redirect: back, error, second } = Route.useSearch();
+  const { redirect: back, error, provider, second } = Route.useSearch();
   const navigate = useNavigate();
   const login = useLogin();
   const passkeyLogin = usePasskeyLogin();
@@ -181,6 +191,12 @@ function Login() {
   const start = useStartSSO();
   const passwords = methods.data?.password ?? true;
   const providers = methods.data?.providers ?? [];
+  // Why a single sign-on failed, in this page's words; nothing for a
+  // reason it doesn't know.
+  const failure =
+    error === undefined
+      ? undefined
+      : ssoFailure(error, providers.find((p) => p.name === provider)?.label);
   // Set while the password (or single sign-on) was right and a second
   // factor is due.
   const [factors, setFactors] = useState<SecondFactor[] | null>(
@@ -226,9 +242,9 @@ function Login() {
           />
         ) : (
           <div className="flex flex-col gap-3.5">
-            {error && (
+            {failure && (
               <p role="alert" className="text-fail">
-                {sentence(error)}
+                {failure}
               </p>
             )}
             {providers.length > 0 && (

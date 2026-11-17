@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -90,19 +92,24 @@ func TestSSOCallbackRedirects(t *testing.T) {
 		t.Fatalf("me: %s", body)
 	}
 
-	// A used state, or a browser without the binding cookie, goes back to
-	// the sign-in page with the reason.
-	for name, try := range map[string]func() redirect{
-		"replayed": func() redirect { return f.ssoCallback(req.State, code, binding) },
-		"another browser": func() redirect {
+	// A used state, a browser without the binding cookie, or a provider
+	// that says no goes back to the sign-in page with the reason as a
+	// word the page has a sentence for and the provider's name: never
+	// with words of the server's, or the provider's, in the address.
+	for want, try := range map[string]func() redirect{
+		"/login?error=expired": func() redirect { return f.ssoCallback(req.State, code, binding) },
+		"/login?error=other_browser&provider=corp": func() redirect {
 			req, _ := f.ssoStart()
 			return f.ssoCallback(req.State, idp.Authorize(req, idp.Claims(req, "ada-sub", "ada@example.com")), nil)
 		},
+		"/login?error=not_accepted&provider=corp": func() redirect {
+			req, binding := f.ssoStart()
+			other, _ := f.ssoStart()
+			return f.ssoCallback(req.State, idp.Authorize(other, idp.Claims(other, "ada-sub", "ada@example.com")), binding)
+		},
 	} {
-		r := try()
-		loc, _ := url.Parse(r.location)
-		if r.status != http.StatusSeeOther || loc.Path != "/login" || loc.Query().Get("error") == "" {
-			t.Errorf("%s: %+v", name, r)
+		if r := try(); r.status != http.StatusSeeOther || r.location != want {
+			t.Errorf("want %s: %+v", want, r)
 		}
 	}
 
@@ -110,7 +117,22 @@ func TestSSOCallbackRedirects(t *testing.T) {
 	// on the page that says so, signed in to nothing.
 	req, binding = f.ssoStart()
 	r = f.ssoCallback(req.State, idp.Authorize(req, idp.Claims(req, "eve-sub", "eve@example.com")), binding)
-	if r.status != http.StatusSeeOther || r.location != "/invite-only?email=eve%40example.com&provider=Corp+ID" || r.cookies[sessionCookie] != nil {
+	if r.status != http.StatusSeeOther || r.location != "/invite-only?email=eve%40example.com&provider=corp" || r.cookies[sessionCookie] != nil {
 		t.Fatalf("invite only: %+v", r)
+	}
+}
+
+// The sign-in page has a sentence of its own for every reason a failed
+// single sign-on sends the browser back with.
+func TestSSOReasonsHaveWords(t *testing.T) {
+	const page = "../../web/src/features/sso/failures.ts"
+	src, err := os.ReadFile(page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, reason := range core.SSOReasons {
+		if !regexp.MustCompile(`(?m)^  ` + regexp.QuoteMeta(reason) + `: `).Match(src) {
+			t.Errorf("%s has no sentence for %q: add one, in the words of core's error", page, reason)
+		}
 	}
 }

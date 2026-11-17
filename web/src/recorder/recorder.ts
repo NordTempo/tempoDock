@@ -1,4 +1,5 @@
 import { record } from "@rrweb/record";
+import { recordOptions, scrubber } from "./privacy";
 
 // Dock Analytics' session recorder (ADR 0037, phase A3), served by every
 // Dock server at /_dock/a/r.js and loaded by s.js only for the page loads
@@ -7,8 +8,11 @@ import { record } from "@rrweb/record";
 //
 // Each page load is a segment with a random ID: nothing is stored in the
 // browser, and the store stitches a visitor's segments into sessions.
-// Inputs are always masked, all text when the site asks (dock.r.m), and
-// elements with data-dock-block are left out. Events go every few
+// Form fields' values are always masked, hidden ones too, all text when
+// the site asks (dock.r.m), and elements with data-dock-block are left
+// out. The page's address, links and form actions go without their query
+// and fragment, and <meta> tags without their content (privacy.ts), so a
+// token in any of them stays in the browser. Events go every few
 // seconds as gzipped chunks; a page load stops recording past its byte
 // budget or at a chunk too big to send.
 //
@@ -61,7 +65,8 @@ async function flush(hidden: boolean) {
     b: String(last),
     c: String(Date.now()),
     n: String(chunk.length),
-    u: location.href,
+    // The ingest reads only the path: no query or fragment is sent.
+    u: location.origin + location.pathname,
   });
   const body = await gzip(JSON.stringify(chunk));
   sent += body.size;
@@ -78,20 +83,16 @@ async function flush(hidden: boolean) {
   }).catch(() => {});
 }
 
+const scrub = scrubber();
 const stop = config.off
   ? undefined
   : record({
       emit(e) {
+        scrub(e);
         events.push(e);
         if (events.length >= maxEvents) void flush(false);
       },
-      maskAllInputs: true,
-      maskTextSelector: config.m ? "*" : undefined,
-      blockSelector: "[data-dock-block]",
-      sampling: { mousemove: 50, scroll: 150, input: "last" },
-      recordCanvas: false,
-      collectFonts: false,
-      inlineImages: false,
+      ...recordOptions(!!config.m),
     });
 
 const timer = setInterval(() => void flush(false), every);

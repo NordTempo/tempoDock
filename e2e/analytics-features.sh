@@ -9,7 +9,9 @@
 #       alerts once, however often it is thrown again.
 #   A3: a sampled page load is recorded and replays: its chunks reach the
 #       store, the replay lists with the error on its timeline, what was
-#       typed into an input is masked, and watching it is audited.
+#       typed into an input is masked, a hidden field, a meta tag and the
+#       queries of the page and its links are left out, and watching it is
+#       audited.
 #   A4: a public dashboard is served through Caddy at
 #       stats-<site>.<base domain>, shows errors only when allowed, and is
 #       gone at once when turned off.
@@ -91,9 +93,10 @@ wait_for "the store" 180 sh -c 'dock analytics --json | jq -e .store_running'
 web=$(x "$CP" "docker ps --format '{{.Names}}' | grep -m1 '^dock_p'")
 [[ -n $web ]] || fail "no container of the site"
 docker exec -i "$CP" docker exec -i "$web" sh -c 'cat > /usr/share/nginx/html/form.html' <<'HTML'
-<!doctype html><html><head><title>Checkout</title><script src="/_dock/a/s.js" defer></script></head>
+<!doctype html><html><head><title>Checkout</title><meta name="csrf-token" content="Secretmeta"><script src="/_dock/a/s.js" defer></script></head>
 <body><h1>Checkout</h1><p>Card holder</p>
-<input id="name" type="text"><button id="pay">Pay</button>
+<input id="name" type="text"><input type="hidden" name="csrf" value="Secrethidden"><button id="pay">Pay</button>
+<a href="/account?session=Secretlink">Account</a>
 <script>
   // Type a secret, then throw: what a visitor would do.
   setTimeout(function () {
@@ -111,7 +114,7 @@ browse() {
 	for i in $(seq "$1"); do
 		"$CHROME" --no-sandbox --headless --disable-gpu --user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 e2e-$i" \
 			--host-resolver-rules="MAP $HOST $(ip "$CP")" --virtual-time-budget=15000 --run-all-compositor-stages-before-draw \
-			--dump-dom "http://$HOST/form.html" >/dev/null 2>&1 || true
+			--dump-dom "http://$HOST/form.html?token=Secretquery" >/dev/null 2>&1 || true
 	done
 }
 
@@ -139,6 +142,8 @@ curl -sf -H "Authorization: Bearer $DOCK_TOKEN" "$DOCK_URL/api/v1/projects/shop/
 grep -q '"type":2' "$rec" || fail "the recording has no full snapshot"
 grep -q 'Checkout' "$rec" || fail "the recording doesn't have the page's text"
 ! grep -q 'Secretname' "$rec" || fail "what was typed is in the recording"
+# A hidden field, a meta tag, a link's query and the page's own (ADR 0037, "Masking").
+! grep -qE 'Secret(hidden|meta|link|query)' "$rec" || fail "the recording holds $(grep -oE 'Secret(hidden|meta|link|query)' "$rec" | sort -u | tr '\n' ' ')"
 grep -q '\*\*\*\*' "$rec" || fail "the masked input isn't in the recording"
 dock audit -p shop --json 2>/dev/null | jq -e '[.[] | select(.action == "analytics.replay_view")] | length >= 1' >/dev/null || fail "watching the replay wasn't audited"
 say "PASS A3: replay $replay, $(wc -c < "$rec") bytes of events, the error on its timeline, the input masked, the view audited"

@@ -35,3 +35,28 @@ func TestCheckBrowserRequest(t *testing.T) {
 		}
 	}
 }
+
+// Every response says no other site shares a window with it and which
+// browser features it uses (none); only one that arrived over HTTPS tells
+// the browser to stay on HTTPS, for this hostname alone.
+func TestGuardHeaders(t *testing.T) {
+	ok := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	for _, secure := range []bool{true, false} {
+		h := Guard(ok, nil, func(*http.Request) bool { return secure })
+		for _, path := range []string{"/", "/api/v1/me"} {
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://dock.local"+path, nil))
+			got := w.Header()
+			if got.Get("Cross-Origin-Opener-Policy") != "same-origin" || !strings.Contains(got.Get("Permissions-Policy"), "camera=()") {
+				t.Errorf("%s: headers %v", path, got)
+			}
+			want := ""
+			if secure {
+				want = "max-age=31536000"
+			}
+			if sts := got.Get("Strict-Transport-Security"); sts != want {
+				t.Errorf("%s, over HTTPS %v: Strict-Transport-Security %q, want %q", path, secure, sts, want)
+			}
+		}
+	}
+}

@@ -327,7 +327,8 @@ function Player({
             Skip idle
           </label>
           <span className="text-faint">
-            Page {Math.max(page, 1)} of {Math.max(pages, 1)} · Inputs masked
+            Page {Math.max(page, 1)} of {Math.max(pages, 1)} · Field values
+            masked
           </span>
           <button
             type="button"

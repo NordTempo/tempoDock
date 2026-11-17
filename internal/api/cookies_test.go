@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/httpkit"
 )
 
 // https sends a request as Caddy forwards an HTTPS one, with cookies.
@@ -48,7 +49,7 @@ func TestSessionCookieOverHTTPS(t *testing.T) {
 	clearsBare := false
 	for _, c := range login.Cookies() {
 		switch c.Name {
-		case hostPrefix + sessionCookie:
+		case httpkit.HostPrefix + sessionCookie:
 			session = c
 		case sessionCookie:
 			clearsBare = c.MaxAge < 0

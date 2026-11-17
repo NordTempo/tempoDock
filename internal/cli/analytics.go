@@ -862,7 +862,7 @@ func (sf *siteSettingFlags) add(cmd *cobra.Command) {
 	fl.StringVar(&sf.consent, "consent", "", "what waits for the visitor's consent (dock.consent(true) in the page): replay, all, or none when the script loads only after consent")
 	fl.StringVar(&sf.replay, "replay", "", "record sessions: on or off (phase A3)")
 	fl.IntVar(&sf.sample, "replay-sample", 0, "percent of page loads recorded, 1 to 100")
-	fl.StringVar(&sf.maskText, "mask-text", "", "mask all text in replays: on or off (inputs are always masked)")
+	fl.StringVar(&sf.maskText, "mask-text", "", "mask all text in replays: on or off (field values are always masked)")
 	fl.StringVar(&sf.errors, "errors", "", "collect errors and Web Vitals: on or off (phase A2)")
 	fl.IntVar(&sf.events, "event-retention-days", 0, "days raw events are kept (daily totals stay)")
 	fl.IntVar(&sf.replays, "replay-retention-days", 0, "days replays are kept")

@@ -86,9 +86,26 @@ func (c client) ssoLanding(res core.SSOResult) *ssoCallbackOutput {
 }
 
 // blockedLanding is where an invite-only Dock sends a person a provider
-// signed in who has no account and no invite: a page that says so.
+// signed in who has no account and no invite: a page that says so, with
+// the provider's name (the page shows its label only if it is one of
+// this Dock's) and the email it vouched for.
 func blockedLanding(b *core.SSOBlocked) string {
 	return "/invite-only?" + url.Values{"provider": {b.Provider}, "email": {b.Email}}.Encode()
+}
+
+// failedLanding is where a single sign-on that failed sends the browser:
+// the sign-in page, with why as a reason it has words for
+// (core.SSOFailure) and the provider's name, never a sentence, which in
+// an address could be anyone's.
+func failedLanding(err error) string {
+	q := url.Values{"error": {core.SSOFailed}}
+	if f, ok := errors.AsType[*core.SSOFailure](err); ok {
+		q.Set("error", f.Reason)
+		if f.Provider != "" {
+			q.Set("provider", f.Provider)
+		}
+	}
+	return "/login?" + q.Encode()
 }
 
 func registerSSO(s *Server, a huma.API) {
@@ -120,19 +137,14 @@ func registerSSO(s *Server, a huma.API) {
 		OperationID: "sso-callback", Method: http.MethodGet, Path: core.SSOCallbackPath,
 		Summary: "Finish signing in through an identity provider",
 		Description: "The identity provider sends the browser here (the redirect URL to register at it). Redirects to the page the sign-in started from with the session cookie, " +
-			"to /login?second=1 when the user has a second factor, to /invite-only when this Dock has no account for them and they have no invite, or to /login?error=<reason>.",
+			"to /login?second=1 when the user has a second factor, to /invite-only when this Dock has no account for them and they have no invite, " +
+			"or to /login?error=<reason>&provider=<name>, where the reason is a short word the page has a sentence for (cancelled, expired, unverified, ...; failed for anything else).",
 		Tags: []string{"auth"}, DefaultStatus: http.StatusSeeOther,
 	}, func(ctx context.Context, in *ssoCallbackInput) (*ssoCallbackOutput, error) {
 		res, err := s.core.FinishSSO(ctx, core.SSOCallback{State: in.State, Code: in.Code, Error: in.Error, Binding: in.binding}, in.client.ip)
 		if err != nil {
-			reason := "signing in failed; try again"
-			if ae, ok := errors.AsType[*apitypes.Error](s.problem(err)); ok && ae.Code != apitypes.CodeInternal {
-				reason = ae.Detail
-			}
-			return &ssoCallbackOutput{
-				Status: http.StatusSeeOther, Location: "/login?" + url.Values{"error": {reason}}.Encode(),
-				SetCookie: []http.Cookie{in.client.ssoCookie("")},
-			}, nil
+			_ = s.problem(err) // logs an unexpected one
+			return &ssoCallbackOutput{Status: http.StatusSeeOther, Location: failedLanding(err), SetCookie: []http.Cookie{in.client.ssoCookie("")}}, nil
 		}
 		if res.Blocked != nil {
 			return &ssoCallbackOutput{Status: http.StatusSeeOther, Location: blockedLanding(res.Blocked), SetCookie: []http.Cookie{in.client.ssoCookie("")}}, nil

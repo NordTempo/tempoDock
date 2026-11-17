@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/httpkit"
 	"github.com/NordTempo/tempoDock/internal/tempobase"
 	"github.com/NordTempo/tempoDock/internal/tempobase/tbtypes"
 )
@@ -18,10 +19,19 @@ import (
 // testServer runs tempoBase over a temp data directory and returns it
 // with its setup code.
 func testServer(t testing.TB) (*httptest.Server, *tempobase.App, string) {
+	return testServerAt(t, "")
+}
+
+// testServerAt is testServer with a base URL: an https one makes every
+// client a secure one, as behind a TLS proxy.
+func testServerAt(t testing.TB, baseURL string) (*httptest.Server, *tempobase.App, string) {
 	t.Helper()
 	cfg, err := tempobase.LoadConfig("", func(k string) string {
-		if k == "TEMPOBASE_DATA_DIR" {
+		switch k {
+		case "TEMPOBASE_DATA_DIR":
 			return t.TempDir()
+		case "TEMPOBASE_BASE_URL":
+			return baseURL
 		}
 		return ""
 	})
@@ -79,7 +89,7 @@ func (c *apiClient) call(method, path string, body, out any) (int, []byte) {
 	defer func() { _ = res.Body.Close() }()
 	b, _ := io.ReadAll(res.Body)
 	for _, ck := range res.Cookies() {
-		if ck.Name == sessionCookie {
+		if ck.Name == httpkit.CookieName(sessionCookie, ck.Secure) {
 			c.cookie = ck
 		}
 	}
@@ -170,5 +180,64 @@ func TestAPI(t *testing.T) {
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusOK || !strings.HasPrefix(res.Header.Get("Content-Type"), "text/html") {
 		t.Fatalf("UI route = %d %s", res.StatusCode, res.Header.Get("Content-Type"))
+	}
+}
+
+// Over HTTPS the session cookie is __Host-tempobase_session, which an app
+// on a sibling hostname can't set, and one sent under the bare name
+// neither replaces it nor signs a new session in.
+func TestSessionCookieOverHTTPS(t *testing.T) {
+	srv, _, code := testServerAt(t, "https://tempobase.example.com")
+	admin := &apiClient{t: t, srv: srv}
+	admin.must(http.StatusOK, http.MethodPost, "/setup", tbtypes.SetupRequest{Code: code, Email: "admin@example.com", Name: "Admin", Password: "correct horse battery"}, nil)
+	session := admin.cookie
+	if session == nil || session.Name != httpkit.HostPrefix+sessionCookie || !session.Secure || !session.HttpOnly || session.Path != "/" || session.Domain != "" {
+		t.Fatalf("the session cookie over HTTPS: %+v", session)
+	}
+	me := func(cookies ...*http.Cookie) int {
+		req, _ := http.NewRequest(http.MethodGet, srv.URL+Prefix+"/me", nil)
+		for _, c := range cookies {
+			req.AddCookie(c)
+		}
+		res, err := srv.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = res.Body.Close()
+		return res.StatusCode
+	}
+	if got := me(session); got != http.StatusOK {
+		t.Fatalf("the session = %d", got)
+	}
+	// What a browser sends once another host set the bare name for the
+	// parent domain with a longer path: that one first.
+	if got := me(&http.Cookie{Name: sessionCookie, Value: "set-by-another-host"}, session); got != http.StatusOK {
+		t.Fatalf("with a cookie under the bare name ahead of the session's = %d", got)
+	}
+	if got := me(&http.Cookie{Name: sessionCookie, Value: session.Value}); got != http.StatusUnauthorized {
+		t.Fatalf("a new session under the bare name = %d", got)
+	}
+	// Signing out ends the session.
+	admin.must(http.StatusNoContent, http.MethodPost, "/auth/logout", nil, nil)
+	if got := me(session); got != http.StatusUnauthorized {
+		t.Fatalf("after logout = %d", got)
+	}
+}
+
+// A tempoBase served over HTTPS tells browsers to stay on HTTPS; one on
+// plain HTTP doesn't, whatever a client claims in X-Forwarded-Proto.
+func TestStrictTransportSecurity(t *testing.T) {
+	for baseURL, want := range map[string]string{"https://tempobase.example.com": "max-age=31536000", "": ""} {
+		srv, _, _ := testServerAt(t, baseURL)
+		req, _ := http.NewRequest(http.MethodGet, srv.URL+"/login", nil)
+		req.Header.Set("X-Forwarded-Proto", "https") // not from a trusted proxy
+		res, err := srv.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = res.Body.Close()
+		if got := res.Header.Get("Strict-Transport-Security"); got != want {
+			t.Errorf("base URL %q: Strict-Transport-Security %q, want %q", baseURL, got, want)
+		}
 	}
 }

@@ -291,10 +291,60 @@ type SSOResult struct {
 }
 
 // SSOBlocked is a person a provider signed in whom an invite-only Dock
-// has no account for: the provider's label and their email.
+// has no account for: the provider's name and their email.
 type SSOBlocked struct {
 	Provider, Email string
 }
+
+// SSOFailure is why a single sign-on ended without a session. The browser
+// is sent back to the sign-in page with Reason and the provider's name,
+// never with the sentence: the page has its own words for each reason, so
+// what it shows can't be written by whoever made the link. The error it
+// wraps keeps the sentence, for the audit log and the tests.
+type SSOFailure struct {
+	// Reason is one of the SSO* reasons below.
+	Reason string
+	// Provider is the provider's name, "" before the flow was found.
+	Provider string
+	err      error
+}
+
+func (f *SSOFailure) Error() string { return f.err.Error() }
+
+// Unwrap is the coded error with the sentence.
+func (f *SSOFailure) Unwrap() error { return f.err }
+
+// Why a single sign-on fails, as the sign-in page knows them
+// (web/src/features/sso/failures.ts has the words; keep the two in step).
+const (
+	SSOExpired             = "expired"
+	SSOProviderChanged     = "provider_changed"
+	SSOOtherBrowser        = "other_browser"
+	SSOCancelled           = "cancelled"
+	SSORefused             = "refused"
+	SSONoCode              = "no_code"
+	SSONotAccepted         = "not_accepted"
+	SSOBadAnswer           = "bad_answer"
+	SSONoEmail             = "no_email"
+	SSONoEmailGitHub       = "no_email_github"
+	SSOUnverified          = "unverified"
+	SSOUnverifiedGitHub    = "unverified_github"
+	SSOUnverifiedMicrosoft = "unverified_microsoft"
+	SSODisabled            = "disabled"
+	SSOStartAgain          = "start_again"
+	// SSOFailed is every other failure: the page says only that it failed.
+	SSOFailed = "failed"
+)
+
+// SSOReasons are the reasons above, for the test that the sign-in page
+// has words for each.
+var SSOReasons = []string{
+	SSOExpired, SSOProviderChanged, SSOOtherBrowser, SSOCancelled, SSORefused, SSONoCode, SSONotAccepted, SSOBadAnswer,
+	SSONoEmail, SSONoEmailGitHub, SSOUnverified, SSOUnverifiedGitHub, SSOUnverifiedMicrosoft, SSODisabled, SSOStartAgain, SSOFailed,
+}
+
+// ssoFail is err as an SSOFailure for reason.
+func ssoFail(reason string, err error) error { return &SSOFailure{Reason: reason, err: err} }
 
 // errInviteOnly is ssoUser's refusal of a person with no account and no
 // invite on an invite-only Dock.
@@ -307,12 +357,12 @@ func (c *Core) FinishSSO(ctx context.Context, cb SSOCallback, clientIP string) (
 	cer, err := c.sso.flows.take(cb.State, ceremonySSO, 0, 0)
 	if err != nil {
 		c.log.Warn("sso: unknown, used or expired state", "ip", clientIP)
-		return SSOResult{}, errf(apitypes.CodeExpired, "this sign-in expired or was used already; start again")
+		return SSOResult{}, ssoFail(SSOExpired, errf(apitypes.CodeExpired, "this sign-in expired or was used already; start again"))
 	}
 	f := cer.sso
 	p, err := c.store.GetSSOProvider(ctx, f.providerID)
 	if store.IsNotFound(err) || err == nil && (p.Issuer != f.issuer || p.Kind != f.kind) {
-		return SSOResult{}, errf(apitypes.CodeExpired, "the identity provider changed during the sign-in; start again")
+		return SSOResult{}, ssoFail(SSOProviderChanged, errf(apitypes.CodeExpired, "the identity provider changed during the sign-in; start again"))
 	}
 	if err != nil {
 		return SSOResult{}, err
@@ -322,7 +372,7 @@ func (c *Core) FinishSSO(ctx context.Context, cb SSOCallback, clientIP string) (
 	if errors.Is(err, errInviteOnly) {
 		c.audit(ctx, Actor{Kind: "user", Name: email}, "user.sso_refused", nil, nil, "sso "+p.Name,
 			fmt.Sprintf("refused a sign-in through %s from %s: no account and no open invite, and sign-up is invite only", p.Name, clientIP))
-		return SSOResult{Blocked: &SSOBlocked{Provider: p.Label, Email: email}}, nil
+		return SSOResult{Blocked: &SSOBlocked{Provider: p.Name, Email: email}}, nil
 	}
 	if err != nil {
 		reason := err.Error()
@@ -331,7 +381,12 @@ func (c *Core) FinishSSO(ctx context.Context, cb SSOCallback, clientIP string) (
 		}
 		c.audit(ctx, Actor{Kind: "user", Name: cmp.Or(email, "unknown")}, "user.sso_refused", nil, nil, "sso "+p.Name,
 			fmt.Sprintf("refused a sign-in through %s from %s: %s", p.Name, clientIP, reason))
-		return SSOResult{}, err
+		f, ok := errors.AsType[*SSOFailure](err)
+		if !ok {
+			f = &SSOFailure{Reason: SSOFailed, err: err}
+		}
+		f.Provider = p.Name
+		return SSOResult{}, f
 	}
 	return SSOResult{LoginResult: res, To: c.ssoLanding(ctx, f.to)}, nil
 }
@@ -353,7 +408,7 @@ func (c *Core) ssoLanding(ctx context.Context, to string) string {
 // errSSOAnswer is the refusal for an answer from provider label that
 // doesn't check out; the details go to the log.
 func errSSOAnswer(label string) error {
-	return errf(apitypes.CodeUnauthorized, "%s's answer didn't check out; try again, or ask an operator to check the %s provider in the console", label, label)
+	return ssoFail(SSOBadAnswer, errf(apitypes.CodeUnauthorized, "%s's answer didn't check out; try again, or ask an operator to check the %s provider in the console", label, label))
 }
 
 // ssoPerson is who a provider says signed in, and when the provider last
@@ -371,16 +426,16 @@ type ssoPerson struct {
 func (c *Core) finishSSO(ctx context.Context, p store.SsoProvider, f *ssoFlow, cb SSOCallback, clientIP string, email *string) (LoginResult, error) {
 	log := c.log.With("provider", p.Name, "ip", clientIP)
 	if cb.Binding == "" || subtle.ConstantTimeCompare([]byte(hashSecret(cb.Binding)), []byte(f.binding)) != 1 {
-		return LoginResult{}, errf(apitypes.CodeUnauthorized, "this sign-in was started in another browser, or its cookie was lost; start again here")
+		return LoginResult{}, ssoFail(SSOOtherBrowser, errf(apitypes.CodeUnauthorized, "this sign-in was started in another browser, or its cookie was lost; start again here"))
 	}
 	switch {
 	case cb.Error == "access_denied":
-		return LoginResult{}, errf(apitypes.CodeDenied, "the sign-in was cancelled at %s", p.Label)
+		return LoginResult{}, ssoFail(SSOCancelled, errf(apitypes.CodeDenied, "the sign-in was cancelled at %s", p.Label))
 	case cb.Error != "":
 		log.Warn("sso: provider refused", "error", cb.Error)
-		return LoginResult{}, errf(apitypes.CodeDenied, "%s refused the sign-in; ask an operator to check the %s provider in the console", p.Label, p.Label)
+		return LoginResult{}, ssoFail(SSORefused, errf(apitypes.CodeDenied, "%s refused the sign-in; ask an operator to check the %s provider in the console", p.Label, p.Label))
 	case cb.Code == "":
-		return LoginResult{}, invalid("%s sent no sign-in code; start again", p.Label)
+		return LoginResult{}, ssoFail(SSONoCode, invalid("%s sent no sign-in code; start again", p.Label))
 	}
 	secret, err := c.box.Open(p.ClientSecret, ssoSecretAAD(p.Name))
 	if err != nil {
@@ -390,7 +445,7 @@ func (c *Core) finishSSO(ctx context.Context, p store.SsoProvider, f *ssoFlow, c
 	tok, err := c.oauthConfig(p, f.provider, string(secret)).Exchange(hctx, cb.Code, oauth2.VerifierOption(f.verifier))
 	if err != nil {
 		log.Warn("sso: code exchange failed", "err", err)
-		return LoginResult{}, errf(apitypes.CodeUnauthorized, "%s didn't accept the sign-in; start again, or ask an operator to check the %s provider's client ID and secret", p.Label, p.Label)
+		return LoginResult{}, ssoFail(SSONotAccepted, errf(apitypes.CodeUnauthorized, "%s didn't accept the sign-in; start again, or ask an operator to check the %s provider's client ID and secret", p.Label, p.Label))
 	}
 	var who ssoPerson
 	if f.provider == nil {
@@ -456,17 +511,17 @@ func oidcPerson(ctx context.Context, log *slog.Logger, p store.SsoProvider, f *s
 		who.authAt = time.Unix(int64(claims.AuthTime), 0)
 	}
 	if who.email == "" {
-		return who, errf(apitypes.CodeForbidden, "%s sent no email address; ask an operator to let Dock read it (the email scope)", p.Label)
+		return who, ssoFail(SSONoEmail, errf(apitypes.CodeForbidden, "%s sent no email address; ask an operator to let Dock read it (the email scope)", p.Label))
 	}
 	switch {
 	case p.Kind == string(apitypes.SSOMicrosoft):
 		// Entra ID sends no email_verified, and a tenant's admins may set
 		// any address; only xms_edov vouches for it (ADR 0081).
 		if !emailVerified(claims.EmailDomainVerified) && !emailVerified(claims.EmailVerified) {
-			return who, errf(apitypes.CodeForbidden, "Microsoft didn't say %s is verified; ask an operator to add the optional claims email and xms_edov to the ID token of Dock's app registration (Token configuration)", who.email)
+			return who, ssoFail(SSOUnverifiedMicrosoft, errf(apitypes.CodeForbidden, "Microsoft didn't say %s is verified; ask an operator to add the optional claims email and xms_edov to the ID token of Dock's app registration (Token configuration)", who.email))
 		}
 	case !emailVerified(claims.EmailVerified):
-		return who, errf(apitypes.CodeForbidden, "%s hasn't verified %s; verify it there and try again", p.Label, who.email)
+		return who, ssoFail(SSOUnverified, errf(apitypes.CodeForbidden, "%s hasn't verified %s; verify it there and try again", p.Label, who.email))
 	}
 	who.name = cmp.Or(strings.TrimSpace(claims.Name), strings.TrimSpace(claims.PreferredUsername))
 	return who, nil
@@ -499,12 +554,12 @@ func (c *Core) githubPerson(ctx context.Context, log *slog.Logger, p store.SsoPr
 		if e.Primary {
 			who.email = strings.TrimSpace(e.Email)
 			if !e.Verified {
-				return who, errf(apitypes.CodeForbidden, "GitHub hasn't verified %s, your primary email; verify it at GitHub and try again", who.email)
+				return who, ssoFail(SSOUnverifiedGitHub, errf(apitypes.CodeForbidden, "GitHub hasn't verified %s, your primary email; verify it at GitHub and try again", who.email))
 			}
 		}
 	}
 	if who.email == "" {
-		return who, errf(apitypes.CodeForbidden, "GitHub sent no primary email address; ask an operator to check the %s provider asks for the user:email scope", p.Label)
+		return who, ssoFail(SSONoEmailGitHub, errf(apitypes.CodeForbidden, "GitHub sent no primary email address; ask an operator to check the %s provider asks for the user:email scope", p.Label))
 	}
 	return who, nil
 }
@@ -554,7 +609,7 @@ func (c *Core) ssoUser(ctx context.Context, p store.SsoProvider, who ssoPerson) 
 		return store.User{}, err
 	}
 	if u.DisabledAt != nil {
-		return store.User{}, errf(apitypes.CodeForbidden, "your Dock account is disabled; ask an operator")
+		return store.User{}, ssoFail(SSODisabled, errf(apitypes.CodeForbidden, "your Dock account is disabled; ask an operator"))
 	}
 	if linked {
 		return u, nil
@@ -690,7 +745,7 @@ func (c *Core) ssoNewUser(ctx context.Context, p store.SsoProvider, who ssoPerso
 		return nil
 	})
 	if store.IsUnique(err) {
-		return store.User{}, conflict("another sign-in created your account meanwhile; start again")
+		return store.User{}, ssoFail(SSOStartAgain, conflict("another sign-in created your account meanwhile; start again"))
 	}
 	if err != nil {
 		return store.User{}, err

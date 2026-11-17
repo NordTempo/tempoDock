@@ -176,7 +176,7 @@ func TestSSONewAccounts(t *testing.T) {
 
 	// Invite only: nobody invited, no account, and the page says why.
 	res, err := h.ssoSignIn(idp, "eve-sub", "eve@example.com", nil)
-	if err != nil || res.Blocked == nil || res.Blocked.Provider != "Corp ID" || res.Blocked.Email != "eve@example.com" || res.Secret != "" {
+	if err != nil || res.Blocked == nil || res.Blocked.Provider != "corp" || res.Blocked.Email != "eve@example.com" || res.Secret != "" {
 		t.Fatalf("uninvited on an invite-only Dock: %+v, %v", res, err)
 	}
 	if _, err := h.store.GetUserByEmail(h.ctx, "eve@example.com"); !store.IsNotFound(err) {
