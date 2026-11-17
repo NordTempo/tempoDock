@@ -1,0 +1,100 @@
+name: test
+
+# The action against a throwaway Dock on this runner: `dock serve` from
+# Dock's latest release on the fake runtime (no Docker), on 127.0.0.1
+# only, gets deploys from deploy.sh's cases (test/local.sh) and from
+# action.yml as a workflow uses it. Nothing outside the runner is reached
+# but GitHub's releases.
+#
+# This repository is a copy of NordTempo/tempoDock's contrib/github-action,
+# synced on each Dock release (scripts/release/sync-action.sh there); its
+# github-action workflow runs the same cases with dock built from source.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  action:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: Dock's latest release
+        run: |
+          base=https://github.com/NordTempo/tempoDock/releases/latest/download
+          cd "$RUNNER_TEMP"
+          curl -fsSL -O "$base/dock-linux-amd64" -O "$base/SHA256SUMS"
+          grep '  dock-linux-amd64$' SHA256SUMS | sha256sum --check
+          install -m 0755 dock-linux-amd64 dock
+          ./dock --version
+      - name: deploy.sh's cases
+        run: test/local.sh "$RUNNER_TEMP/dock" 17470
+      - name: Start a fake Dock for action.yml
+        run: test/fake-dock.sh "$RUNNER_TEMP/dock" "$RUNNER_TEMP/fake" 17500 >> "$GITHUB_ENV"
+
+      - id: source
+        uses: ./
+        with:
+          server: ${{ env.DOCK_TEST_URL }}
+          token: ${{ env.DOCK_TEST_TOKEN }}
+          project: shop
+          environment: staging
+          service: web
+          path: test/app
+          cli: ${{ runner.temp }}/dock
+      - name: Source deploy's outputs
+        run: |
+          test "$RELEASE" = 1 && test "$STATUS" = active && test "$EXIT_CODE" = 0
+          test "$URL" = "$DOCK_TEST_URL/default/shop/staging/web/history/1"
+        env:
+          RELEASE: ${{ steps.source.outputs.release }}
+          STATUS: ${{ steps.source.outputs.status }}
+          URL: ${{ steps.source.outputs.url }}
+          EXIT_CODE: ${{ steps.source.outputs.exit-code }}
+
+      # The CLI the server runs, installed and its signature checked.
+      - id: image
+        uses: ./
+        with:
+          server: ${{ env.DOCK_TEST_URL }}
+          token: ${{ env.DOCK_TEST_TOKEN }}
+          project: shop
+          environment: staging
+          service: api
+          mode: image
+          image: busybox:1.37
+      - name: Image deploy's outputs, and dock on PATH for later steps
+        run: |
+          test "$RELEASE" = 1 && test "$STATUS" = active
+          dock --version
+        env:
+          RELEASE: ${{ steps.image.outputs.release }}
+          STATUS: ${{ steps.image.outputs.status }}
+
+      - id: refused
+        continue-on-error: true
+        uses: ./
+        with:
+          server: ${{ env.DOCK_TEST_URL }}
+          token: ${{ env.DOCK_TEST_TOKEN }}
+          project: shop
+          environment: production
+          service: web
+          mode: image
+          image: busybox:1.37
+          cli: ${{ runner.temp }}/dock
+      - name: A deploy outside the token's grants fails the step with exit 3
+        run: test "$OUTCOME" = failure && test "$EXIT_CODE" = 3
+        env:
+          OUTCOME: ${{ steps.refused.outcome }}
+          EXIT_CODE: ${{ steps.refused.outputs.exit-code }}
+
+      - name: The fake Dock's log
+        if: always()
+        run: |
+          kill "$(cat "$RUNNER_TEMP/fake/pid")" 2> /dev/null || true
+          tail -n 50 "$RUNNER_TEMP/fake/daemon.log" || true

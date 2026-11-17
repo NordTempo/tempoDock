@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - id: dock
-        uses: NordTempo/tempoDock/contrib/github-action@main  # pin a commit SHA
+        uses: NordTempo/deploy-action@v1
         with:
           server: ${{ vars.DOCK_URL }}
           token: ${{ secrets.DOCK_TOKEN }}
@@ -36,18 +36,20 @@ and output, exit codes and production tokens:
 
 ## Developing
 
+This repository is published from
+[NordTempo/tempoDock](https://github.com/NordTempo/tempoDock)'s
+`contrib/github-action` on each Dock release: changes and issues go there.
+
 `deploy.sh` is the action; `action.yml` passes it the inputs as
 `INPUT_*` variables. `install-cli.sh` is a copy of the release's
-installer, kept equal by a test in `internal/update`: after changing the
-original, `cp scripts/release/install-cli.sh contrib/github-action/`.
+installer, with Dock's release keys, kept equal by a test in tempoDock.
 
 Test locally against a throwaway Dock on the fake runtime (127.0.0.1, no
-Docker needed):
+Docker needed), with a `dock` binary from a release or a tempoDock build:
 
 ```sh
-go build -o /tmp/dock ./cmd/dock
-contrib/github-action/test/local.sh /tmp/dock
+test/local.sh path/to/dock
 ```
 
-The `github-action` workflow runs the same cases, and the action through
+The `test` workflow runs the same cases, and the action through
 `action.yml`, on a GitHub-hosted runner.
