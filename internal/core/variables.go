@@ -226,33 +226,43 @@ func (r *resolver) value(scope, key string) (string, error) {
 	defer delete(r.visiting, id)
 
 	raw := r.vars[scope][key]
+	if !strings.Contains(raw, "${{") {
+		// No reference: most values. The regexp would only copy it.
+		r.done[id] = raw
+		return raw, nil
+	}
 	var firstErr error
+	// broken records the first reference that doesn't resolve, saying what
+	// to do next: fix the value or drop the staged change. Built only then:
+	// values resolve on every read of staged changes.
+	broken := func(m, why string, withFix bool) {
+		if firstErr != nil {
+			return
+		}
+		msg := fmt.Sprintf("variable %s of %s references %s, but %s", key, scope, m, why)
+		switch {
+		case !withFix:
+		case scope == sharedScope:
+			msg += fmt.Sprintf("; fix it with `dock env set --shared %s=...` or drop it with `dock discard %s --shared`", key, key)
+		default:
+			msg += fmt.Sprintf("; fix it with `dock env set -s %s %s=...` or drop it with `dock discard %s -s %s`", scope, key, key, scope)
+		}
+		firstErr = invalid("%s", msg)
+	}
 	out := refRe.ReplaceAllStringFunc(raw, func(m string) string {
 		sub := refRe.FindStringSubmatch(m)
 		refScope, refKey := sub[1], sub[2]
-		where := fmt.Sprintf("variable %s of %s references %s", key, scope, m)
-		// What to do next: fix the value or drop the staged change.
-		fix := fmt.Sprintf("; fix it with `dock env set -s %s %s=...` or drop it with `dock discard %s -s %s`", scope, key, key, scope)
-		if scope == sharedScope {
-			fix = fmt.Sprintf("; fix it with `dock env set --shared %s=...` or drop it with `dock discard %s --shared`", key, key)
-		}
 		vars, ok := r.vars[refScope]
 		if !ok {
-			if firstErr == nil {
-				firstErr = invalid("%s, but there is no service %q in %s%s", where, refScope, r.env, fix)
-			}
+			broken(m, fmt.Sprintf("there is no service %q in %s", refScope, r.env), true)
 			return ""
 		}
 		if _, ok := vars[refKey]; !ok && refScope == orgScope {
-			if firstErr == nil {
-				firstErr = invalid("%s, but the organization has no variable %s; add it in organization settings or with `dock org env set %s=...`", where, refKey, refKey)
-			}
+			broken(m, fmt.Sprintf("the organization has no variable %s; add it in organization settings or with `dock org env set %s=...`", refKey, refKey), false)
 			return ""
 		}
 		if _, ok := vars[refKey]; !ok {
-			if firstErr == nil {
-				firstErr = invalid("%s, but %s has no variable %s%s", where, refScope, refKey, fix)
-			}
+			broken(m, fmt.Sprintf("%s has no variable %s", refScope, refKey), true)
 			return ""
 		}
 		v, err := r.value(refScope, refKey)
