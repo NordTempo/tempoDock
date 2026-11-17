@@ -121,7 +121,7 @@ func (c *Core) ApplyProject(ctx context.Context, a Actor, project string, req ap
 			if err != nil {
 				return err
 			}
-			if err := c.stageEnv(ctx, q, es, le, ep); err != nil {
+			if err := c.stageEnv(ctx, q, &a, es, le, ep); err != nil {
 				return err
 			}
 			after, _, _, err := c.stagedChanges(ctx, q, es, true)
@@ -1058,7 +1058,9 @@ func gitText(repo, branch, dir string) string {
 }
 
 // stageEnv stages an environment's plan in the caller's transaction.
-func (c *Core) stageEnv(ctx context.Context, q *store.Queries, es envScope, le *liveEnv, ep envPlan) error {
+// author is whose file the plan came from, held to what they may put in
+// a variable (orgRefsAllowed); nil for a template's own values.
+func (c *Core) stageEnv(ctx context.Context, q *store.Queries, author *Actor, es envScope, le *liveEnv, ep envPlan) error {
 	byName := map[string]store.Service{}
 	for name, ls := range le.svcs {
 		byName[name] = ls.row
@@ -1117,7 +1119,12 @@ func (c *Core) stageEnv(ctx context.Context, q *store.Queries, es envScope, le *
 				err = discardVariable(ctx, q, cur)
 			}
 		default:
-			err = c.stageSet(ctx, q, es.env.ID, owner, v.key, v.value)
+			if author != nil {
+				err = c.orgRefsAllowed(ctx, q, *author, es.env.ID, owner, v.key, v.value)
+			}
+			if err == nil {
+				err = c.stageSet(ctx, q, es.env.ID, owner, v.key, v.value)
+			}
 		}
 		if err != nil {
 			return err
