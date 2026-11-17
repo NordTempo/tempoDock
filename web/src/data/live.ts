@@ -22,7 +22,7 @@ import { applyUptimeEvent } from "../features/uptime/data";
 import { useOrg } from "../shell/location";
 import { recordLiveEvent } from "./feed";
 import { setLiveStatus, useLiveAttempt } from "./liveStatus";
-import { signedOut } from "./mutations";
+import { refetchedOnSettle, signedOut } from "./mutations";
 import { followProjectRename, reconcileProjectNames } from "./projectRename";
 import { findService, keys, queries } from "./queries";
 import type {
@@ -676,14 +676,18 @@ function invalidateStatusPages(queryClient: QueryClient) {
 
 /**
  * Every mutation is audited, so audit events also say what someone else (or
- * the CLI) just changed.
+ * the CLI) just changed. Queries a call from this page will refetch once it
+ * settles are left to it: its own event arrives before its answer.
  */
 function invalidateForAudit(
   queryClient: QueryClient,
   audit: components["schemas"]["AuditEvent"] | undefined,
 ) {
   const invalidate = (queryKey: readonly unknown[]) =>
-    queryClient.invalidateQueries({ queryKey });
+    queryClient.invalidateQueries({
+      queryKey,
+      predicate: (q) => !refetchedOnSettle(q.queryKey),
+    });
   invalidate(["audit"]);
   if (!audit || auditedReads.has(audit.action)) return;
   if (audit.action === "project.rename") return; // Its typed event moves the cache.
@@ -757,7 +761,15 @@ function invalidateForAudit(
     invalidate(keys.overview(audit.project));
     return;
   }
-  // Everything else in a project (variables, settings, changes, services,
+  // Staged variables change the environment's variables and changes, and
+  // the overview's counts; not its releases or anything else.
+  if (audit.action === "variables.set" && audit.environment) {
+    const env = { project: audit.project, environment: audit.environment };
+    for (const queryKey of keys.staged(env)) invalidate(queryKey);
+    invalidate(keys.overview(audit.project));
+    return;
+  }
+  // Everything else in a project (settings, changes, services,
   // environments) refetches.
   invalidate(
     audit.environment

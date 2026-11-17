@@ -31,7 +31,12 @@ tests/          dev-only browser fixtures (`*.html`, with `*.test.ts(x)`
 - Nothing polls. `src/data/live.ts` patches or invalidates the query cache
   from `/api/v1/events`; a new event type is handled there (or in its
   feature's data.ts). Mutations use `useAction`, naming the cache
-  subtrees they touch. `src/data` is in the initial bundle, so a mutation
+  subtrees they touch: only what the action changes, and the same
+  subtrees its audit event invalidates in `live.ts`, since other pages
+  refetch from that event. While a call is in flight, live.ts leaves
+  its subtrees to it, so the page that made the change fetches once
+  (a hand-written `useMutation` that invalidates fetches twice).
+  `src/data` is in the initial bundle, so a mutation
   only one screen uses lives in that screen's feature.
 - A route's `beforeLoad` also runs when a hovered link preloads it
   (`defaultPreload: "intent"`). Change nothing global there (the org,

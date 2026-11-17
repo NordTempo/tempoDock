@@ -1,4 +1,5 @@
 import {
+  partialMatchKey,
   type QueryClient,
   type QueryKey,
   useMutation,
@@ -31,6 +32,20 @@ import type {
 // is in the initial bundle: hooks only one screen uses live with that
 // screen's feature, built on useAction.
 
+// The subtrees of calls still waiting for their answer. Every mutation is
+// audited and the server publishes the audit event before it answers, so
+// that event usually arrives first: live.ts leaves these subtrees to the
+// refetch the call makes once it settles (always later than the event)
+// instead of fetching them twice.
+const awaiting = new Set<readonly QueryKey[]>();
+
+/** True while a call in flight will refetch the query once it settles. */
+export function refetchedOnSettle(queryKey: QueryKey) {
+  for (const touched of awaiting)
+    if (touched.some((t) => partialMatchKey(queryKey, t))) return true;
+  return false;
+}
+
 export function useAction<Vars, Data>(
   mutationFn: (vars: Vars) => Promise<Data>,
   touches: (vars: Vars) => QueryKey[],
@@ -42,7 +57,15 @@ export function useAction<Vars, Data>(
 ) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn,
+    mutationFn: async (vars: Vars) => {
+      const touched = touches(vars);
+      awaiting.add(touched);
+      try {
+        return await mutationFn(vars);
+      } finally {
+        awaiting.delete(touched);
+      }
+    },
     onSuccess:
       said &&
       ((data, vars) => {
@@ -142,9 +165,16 @@ function setVariables({ env, service, ...edit }: VariableEdit) {
   );
 }
 
-/** Stages setting and unsetting variables. */
+/**
+ * Stages setting and unsetting variables: their lists, the changes and
+ * the overview's counts. With apply, releases start too.
+ */
 export const useStageVariables = () =>
-  useAction(setVariables, ({ env }) => staging(env));
+  useAction(setVariables, ({ env, apply }) =>
+    apply
+      ? staging(env)
+      : [...keys.staged(env), keys.overview(env.project), ["audit"]],
+  );
 
 /** Stages service settings. */
 export const useStageSettings = () =>

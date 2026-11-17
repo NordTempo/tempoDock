@@ -59,6 +59,11 @@ export const keys = {
   overview: (project: string) => ["project", project, "overview"],
   env: envKey,
   changes: (e: EnvRef, reveal = false) => [...envKey(e), "changes", reveal],
+  /** What staging variables changes: the environment's changes and variables. */
+  staged: (e: EnvRef) => [
+    [...envKey(e), "changes"],
+    [...envKey(e), "variables"],
+  ],
   variables: (e: EnvRef, service: string | null, reveal = false) => [
     ...envKey(e),
     "variables",
