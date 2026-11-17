@@ -87,9 +87,13 @@ func (f field) parse(p string) (uint64, error) {
 		rng, stepText, hasStep := strings.Cut(item, "/")
 		step := 1
 		if hasStep {
+			// A step past the field's values would only ever pick the
+			// first one, and one near the largest int would overflow the
+			// loop below.
+			most := f.max - f.min + 1
 			n, err := strconv.Atoi(stepText)
-			if err != nil || n < 1 {
-				return 0, fmt.Errorf("%s: step %q must be a positive number", f.name, stepText)
+			if err != nil || n < 1 || n > most {
+				return 0, fmt.Errorf("%s: step %q must be a number from 1 to %d", f.name, stepText, most)
 			}
 			step = n
 		}
