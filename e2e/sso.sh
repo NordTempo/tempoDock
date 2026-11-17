@@ -6,8 +6,9 @@
 #
 # Covers the oidc kind and the keycloak preset, invite only, accepting an
 # invite on the first sign-in, linking a second provider by email, an
-# unverified email, a disabled account, logout, removing a provider, and
-# a step-up making Keycloak ask for the password despite its own session.
+# unverified email, a disabled account, removing a provider, a step-up
+# making Keycloak ask for the password despite its own session, and
+# signing out of Dock signing out of Keycloak too (RP-initiated logout).
 #
 #   e2e/vm/up.sh 0 && source /tmp/$E2E_SLOT/env && e2e/sso.sh
 #
@@ -65,7 +66,8 @@ kc() { docker exec "$KC" /opt/keycloak/bin/kcadm.sh "$@"; }
 kc config credentials --server http://localhost:8080 --realm master --user admin --password admin >/dev/null
 kc create realms -s realm=dock -s enabled=true >/dev/null
 kc create clients -r dock -s clientId=dock -s publicClient=false -s secret=dock-secret -s standardFlowEnabled=true \
-	-s "redirectUris=[\"${DOCK_URL%/}/api/v1/auth/sso/callback\"]" >/dev/null
+	-s "redirectUris=[\"${DOCK_URL%/}/api/v1/auth/sso/callback\"]" \
+	-s "attributes.\"post.logout.redirect.uris\"=${DOCK_URL%/}/login" >/dev/null
 person() { # person NAME VERIFIED: NAME-$RUN@example.com, password pw-NAME
 	kc create users -r dock -s "username=$1" -s "email=$1-$RUN@example.com" -s "emailVerified=$2" -s enabled=true -s firstName="$1" -s lastName=Test >/dev/null
 	kc set-password -r dock --username "$1" --new-password "pw-$1" >/dev/null
@@ -126,8 +128,14 @@ sso_signin "sso-kc-$RUN" ann "$A" true
 check "a step-up makes Keycloak ask for the password despite its session" test "$FORM/$(who "$A")" = "yes/ann-$RUN@example.com"
 
 log "signing out and cutting people off"
-C -b "$A" -c "$A" -o /dev/null -X POST "$API/auth/logout"
+end=$(C -b "$A" -c "$A" -X POST "$API/auth/logout" | jq -r '.end_session_url // empty')
 check "logging out ends the Dock session" test -z "$(who "$A")"
+check "logging out answers with Keycloak's end-session URL and the ID token" grep -q "^$KC_URL/realms/dock/.*id_token_hint=" <<<"$end"
+back=$(C -b "$A" -c "$A" -o /dev/null -w '%{http_code} %{redirect_url}' "$end")
+check "Keycloak signs out and sends the browser back to Dock's sign-in page" test "$back" = "302 ${DOCK_URL%/}/login"
+sso_signin "sso-kc-$RUN" ann "$A"
+check "after logout, Continue with Keycloak asks for the password again" test "$FORM/$(who "$A")" = "yes/ann-$RUN@example.com"
+C -b "$A" -c "$A" -o /dev/null -X POST "$API/auth/logout"
 api POST /org/invites "{\"email\":\"ben-$RUN@example.com\",\"role\":\"read\"}" >/dev/null
 B=$W/ben
 sso_signin "sso-kc-$RUN" ben "$B"
