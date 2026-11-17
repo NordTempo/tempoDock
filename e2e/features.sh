@@ -417,12 +417,16 @@ scenario_move() {
 		if [[ $(move_status $p) == succeeded ]]; then pass "moved $old -> $to"; else fail "move $old -> $to: $(move_status $p): $out"; continue; fi
 		check "the move printed how long requests were held" out_has 'requests held|downtime' echo "$out"
 		check "the environment runs on $to" test "$(env_server $p)" = "$to"
-		# The old server forwards the generated domain (ADR 0063); the move
-		# names the one that serves it on the new server.
+		# The old server forwards the generated domain (ADR 0063); the
+		# service has one under the new server's base domain too: the move
+		# names it when it made it, and moving back reuses the old one.
 		check "$h still serves through $old" wait_for 30 body_has "$h" / "web v1"
-		local next
-		next=$(sed -n "s/.*generated domain $h works while server $old forwards it; \([^ ]*\) serves it on $to too.*/\1/p" <<<"$out")
-		if [[ -n $next ]]; then pass "the move named $next on $to"; else fail "the move named no domain on $to for $h: $out"; fi
+		check "the move says $old forwards $h" out_has "generated domain $h works while server $old forwards it" echo "$out"
+		local next base
+		base=$(api GET /servers | jq -r --arg s "$to" '.[] | select(.name == $s) | .base_domain')
+		next=$(api GET "$(svc_path $p web)/domains" | jq -r --arg b "$base" '[.[] | select(.generated and (.hostname | sub("^[^.]*[.]"; "")) == $b)][0].hostname // empty')
+		if [[ -n $next ]]; then pass "web has $next on $to"; else fail "web has no generated domain under $to's base $base: $out"; fi
+		if [[ $out == *"$to serves web's generated domain $next"* ]] || [[ $to == "$from" ]]; then pass "the move named $next"; else fail "the move named no domain on $to for web: $out"; fi
 		use_proxy_of $p
 		h=${next:-$h}
 		check "$h serves v1 from $to" wait_for 60 body_has "$h" / "web v1"

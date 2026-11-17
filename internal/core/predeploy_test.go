@@ -237,3 +237,25 @@ func TestPreDeploySnapshotFailureStopsTheRelease(t *testing.T) {
 		t.Fatalf("active release = %v, %v", svc.ActiveRelease, err)
 	}
 }
+
+// A volume added to a running service exists only once the release that
+// mounts it starts: the pre-deploy snapshot of that release skips it.
+func TestPreDeploySnapshotSkipsANewVolume(t *testing.T) {
+	h := newHarness(t)
+	h.snapshotJobs(nil)
+	web := h.service("web", apitypes.CreateServiceRequest{PreDeployCommand: "migrate up", PreDeploySnapshot: true})
+	h.deploy(web, "app:1")
+	if _, err := h.c.AddVolume(h.ctx, testSystem, web, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
+		t.Fatal(err)
+	}
+	applied, err := h.c.ApplyChanges(h.ctx, testSystem, web.Env())
+	if err != nil || len(applied.Releases) != 1 {
+		t.Fatalf("apply = %+v, %v", applied, err)
+	}
+	if r := h.wait(web, applied.Releases[0].Number); r.Status != apitypes.ReleaseActive {
+		t.Fatalf("release with the new volume = %+v", r)
+	}
+	if list, err := h.c.ServiceSnapshots(h.ctx, testSystem, web); err != nil || len(list.Snapshots) != 0 {
+		t.Errorf("snapshots of web = %+v, %v; its new volume had nothing to copy", list.Snapshots, err)
+	}
+}

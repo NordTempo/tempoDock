@@ -24,7 +24,8 @@ type InsertLiveVariableParams struct {
 }
 
 // A variable that is live from the start: a cloned environment's
-// variables, where nothing runs yet (ADR 0022).
+// variables, where nothing runs yet (ADR 0022), or one a rollback puts
+// back.
 func (q *Queries) InsertLiveVariable(ctx context.Context, arg InsertLiveVariableParams) error {
 	_, err := q.db.ExecContext(ctx, insertLiveVariable,
 		arg.EnvironmentID,

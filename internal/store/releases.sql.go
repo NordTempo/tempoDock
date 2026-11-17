@@ -642,6 +642,70 @@ func (q *Queries) ListReleases(ctx context.Context, arg ListReleasesParams) ([]R
 	return items, nil
 }
 
+const listReleasesSince = `-- name: ListReleasesSince :many
+SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried, image_digest, built_on_server_id, promoted_from_release_id, commit_sha, commit_message, commit_author, history_trimmed, logs_server_id, image_scan_id, pinned_ref, base_image, base_digest FROM releases WHERE service_id = +? AND number > +? ORDER BY number
+`
+
+type ListReleasesSinceParams struct {
+	ServiceID int64
+	Number    int64
+}
+
+// A service's releases after number, oldest first: what a rollback to
+// number undoes.
+func (q *Queries) ListReleasesSince(ctx context.Context, arg ListReleasesSinceParams) ([]Release, error) {
+	rows, err := q.db.QueryContext(ctx, listReleasesSince, arg.ServiceID, arg.Number)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Release
+	for rows.Next() {
+		var i Release
+		if err := rows.Scan(
+			&i.ID,
+			&i.ServiceID,
+			&i.Number,
+			&i.Status,
+			&i.Source,
+			&i.FromRelease,
+			&i.ImageRef,
+			&i.ImageID,
+			&i.Config,
+			&i.ContainerID,
+			&i.HostPort,
+			&i.Error,
+			&i.ErrorCode,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.FinishedAt,
+			&i.Carried,
+			&i.ImageDigest,
+			&i.BuiltOnServerID,
+			&i.PromotedFromReleaseID,
+			&i.CommitSha,
+			&i.CommitMessage,
+			&i.CommitAuthor,
+			&i.HistoryTrimmed,
+			&i.LogsServerID,
+			&i.ImageScanID,
+			&i.PinnedRef,
+			&i.BaseImage,
+			&i.BaseDigest,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRetiredPortHolders = `-- name: ListRetiredPortHolders :many
 SELECT releases.id FROM releases
 JOIN services ON services.id = releases.service_id

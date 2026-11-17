@@ -112,9 +112,10 @@ GitHub and Cloudflare connections and backup runs; their shapes are in
   staged. Each release records the changes it carried; if it fails (or
   the daemon stops before it finishes) they are staged again, so live
   values always match the active release. A source or image deploy of a
-  service takes that service's own staged changes with it, and a failed
-  one puts the image setting back; shared variables wait for an explicit
-  apply because they affect every service.
+  service takes that service's own staged changes with it (redeploying
+  the services that reference a changed variable, as an apply does), and
+  a failed one puts the image setting back; shared variables wait for an
+  explicit apply because they affect every service.
 - **Locked environments** ([ADR 0044](decisions/0044-environment-lock.md)):
   tokens can't change anything in them; what they try becomes an access
   request a person approves. The check is core's `checkEnv`. See the

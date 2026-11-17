@@ -10083,6 +10083,7 @@ export interface components {
             environment: string;
             last_failure?: string;
             project: string;
+            redeploys: string[] | null;
             services: components["schemas"]["ServiceStaging"][] | null;
             settings: components["schemas"]["SettingChange"][] | null;
             variables: components["schemas"]["VariableChange"][] | null;

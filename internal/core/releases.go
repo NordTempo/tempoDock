@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"crypto/rand"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -555,6 +557,12 @@ type releaseSpec struct {
 	done func(ok bool)
 }
 
+// takesStaged reports whether the release takes its service's own staged
+// changes live: upload and image deploys, and promotions that ask.
+func (spec releaseSpec) takesStaged() bool {
+	return spec.source == apitypes.SourceUpload || spec.source == apitypes.SourceImage || spec.applyStaged
+}
+
 var errNoActiveRelease = errors.New("service has no active release")
 
 // startRelease creates a queued release and starts deploying it in the
@@ -578,9 +586,21 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 	}
 	// A deploy during a move waits for it (deployment.waitForMove).
 	var rel store.Release
+	var deps []queuedRelease
 	err := c.store.Tx(ctx, func(q *store.Queries) error {
+		var before map[int64]map[string]string
+		if spec.takesStaged() {
+			var err error
+			if before, _, err = c.resolveEnvs(ctx, q, ss.envScope, false); err != nil {
+				return err
+			}
+		}
 		var err error
 		ss, rel, err = c.createRelease(ctx, q, a, ss, spec)
+		if err != nil || before == nil {
+			return err
+		}
+		deps, err = c.queueDependents(ctx, q, a, ss, before)
 		return err
 	})
 	if store.IsUnique(err) {
@@ -590,7 +610,59 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 		return rel, err
 	}
 	c.launch(ctx, a, ss, rel, spec)
+	if len(deps) > 0 {
+		names := make([]string, len(deps))
+		for i, d := range deps {
+			c.launch(ctx, a, d.ss, d.rel, d.spec)
+			names[i] = fmt.Sprintf("%s (release %d)", d.ss.svc.Name, d.rel.Number)
+		}
+		c.releaseEvent(ctx, ss, rel, "Redeploying "+strings.Join(names, ", ")+": they reference a variable this deploy changed")
+	}
 	return rel, nil
+}
+
+// queuedRelease is a release created in a transaction, launched once it
+// commits.
+type queuedRelease struct {
+	ss   svcScope
+	rel  store.Release
+	spec releaseSpec
+}
+
+// queueDependents creates, in q's transaction, a config release for each
+// running service whose resolved variables changed from before because
+// ss's deploy took its own staged variables live: the services that
+// reference them get the new values as an apply gives them. One that is
+// deploying keeps its old values until its next release; a broken
+// reference refuses the deploy, as it refuses an apply.
+func (c *Core) queueDependents(ctx context.Context, q *store.Queries, a Actor, ss svcScope, before map[int64]map[string]string) ([]queuedRelease, error) {
+	after, broken, err := c.resolveEnvs(ctx, q, ss.envScope, false)
+	if err != nil {
+		return nil, err
+	}
+	svcs, err := q.ListServices(ctx, ss.env.ID)
+	if err != nil {
+		return nil, err
+	}
+	var out []queuedRelease
+	for _, s := range svcs {
+		if s.ID == ss.svc.ID || s.ArchivedAt != nil || maps.Equal(before[s.ID], after[s.ID]) {
+			continue
+		}
+		if err := broken[s.ID]; err != nil {
+			return nil, err
+		}
+		spec := releaseSpec{source: apitypes.SourceConfig}
+		dss, rel, err := c.createRelease(ctx, q, a, svcScope{ss.envScope, s}, spec)
+		switch {
+		case errors.Is(err, errNoActiveRelease), CodeOf(err) == apitypes.CodeDeployInProgress:
+			continue // gets the new values on its next release
+		case err != nil:
+			return nil, fmt.Errorf("release %s: %w", dss, err)
+		}
+		out = append(out, queuedRelease{dss, rel, spec})
+	}
+	return out, nil
 }
 
 // canDeploy refuses a release in env while the daemon is shutting down or
@@ -627,7 +699,7 @@ func (c *Core) createRelease(ctx context.Context, q *store.Queries, a Actor, ss 
 	}
 	ss.svc = svc
 	ch := spec.carried
-	takesStaged := spec.source == apitypes.SourceUpload || spec.source == apitypes.SourceImage || spec.applyStaged
+	takesStaged := spec.takesStaged()
 	if svc.Staged == "create" && !takesStaged {
 		// Promote, restart and rollback don't apply staged changes, so
 		// they'd run a service whose creation isn't applied (ADR 0049).
@@ -991,12 +1063,112 @@ func (c *Core) Rollback(ctx context.Context, a Actor, ref ServiceRef, number int
 	if from.Status != string(apitypes.ReleaseSuperseded) && from.Status != string(apitypes.ReleaseActive) {
 		return apitypes.Release{}, invalid("release %d never went live (status %s); roll back to a release that served traffic", number, from.Status)
 	}
-	rel, err := c.startRelease(ctx, a, ss, releaseSpec{source: apitypes.SourceRollback, from: &from})
+	undo, shared, err := c.rollbackVariables(ctx, ss, from)
 	if err != nil {
 		return apitypes.Release{}, err
 	}
-	c.audit(ctx, a, "release.rollback", &ss.project, &ss.env, ss.String(), fmt.Sprintf("release %d rolls back to release %d", rel.Number, number))
+	rel, err := c.startRelease(ctx, a, ss, releaseSpec{source: apitypes.SourceRollback, from: &from, carried: undo})
+	if err != nil {
+		return apitypes.Release{}, err
+	}
+	summary := fmt.Sprintf("release %d rolls back to release %d", rel.Number, number)
+	if len(undo.Variables) > 0 {
+		if err := c.store.Tx(ctx, func(q *store.Queries) error { return setLiveVariables(ctx, q, ss.env.ID, undo) }); err != nil {
+			return apitypes.Release{}, err
+		}
+		keys := make([]string, len(undo.Variables))
+		for i, v := range undo.Variables {
+			keys[i] = v.Key
+		}
+		note := fmt.Sprintf("%s's variables are release %d's again: %s", ss.svc.Name, number, strings.Join(keys, ", "))
+		c.releaseEvent(ctx, ss, rel, note)
+		summary += "; " + note
+	}
+	if len(shared) > 0 {
+		c.releaseEvent(ctx, ss, rel, fmt.Sprintf("Release %d used older shared %s; the next deploy uses the current values", number, strings.Join(shared, ", ")))
+	}
+	c.audit(ctx, a, "release.rollback", &ss.project, &ss.env, ss.String(), summary)
 	return c.toRelease(ctx, ss, rel, false)
+}
+
+// rollbackVariables is what rolling ss back to from does to its own
+// variables: the changes that went live with every release since, undone,
+// as the rollback's carried changes (each key back to its value before
+// the first of them). The rollback runs from's resolved config, so the
+// live values must follow it, or the next apply or deploy would bring
+// the newer ones back. Shared variables changed since are only named:
+// they affect other services too, so they keep their current values.
+// Failed releases are skipped: their changes were staged again.
+func (c *Core) rollbackVariables(ctx context.Context, ss svcScope, from store.Release) (carried, []string, error) {
+	since, err := c.store.ListReleasesSince(ctx, store.ListReleasesSinceParams{ServiceID: ss.svc.ID, Number: from.Number})
+	if err != nil {
+		return carried{}, nil, err
+	}
+	before := map[string][]byte{} // key → its value at from (nil: unset)
+	var order, shared []string
+	seenShared := map[string]bool{}
+	for _, r := range since {
+		if r.Status != string(apitypes.ReleaseActive) && r.Status != string(apitypes.ReleaseSuperseded) {
+			continue
+		}
+		ch, err := decodeCarried(r.Carried)
+		if err != nil {
+			return carried{}, nil, fmt.Errorf("read release %d's changes: %w", r.Number, err)
+		}
+		for _, v := range ch.Variables {
+			switch {
+			case v.ServiceID == nil:
+				if !seenShared[v.Key] {
+					seenShared[v.Key] = true
+					shared = append(shared, v.Key)
+				}
+			case *v.ServiceID != ss.svc.ID:
+			default:
+				if _, ok := before[v.Key]; !ok {
+					before[v.Key] = v.Old
+					order = append(order, v.Key)
+				}
+			}
+		}
+	}
+	var undo carried
+	for _, k := range order {
+		cur, err := c.store.GetVariable(ctx, store.GetVariableParams{EnvironmentID: ss.env.ID, ServiceID: &ss.svc.ID, Key: k})
+		if err != nil && !store.IsNotFound(err) {
+			return carried{}, nil, err
+		}
+		if bytes.Equal(cur.Value, before[k]) {
+			continue // the same value again (or still unset)
+		}
+		undo.Variables = append(undo.Variables, carriedVar{ServiceID: &ss.svc.ID, Key: k, Old: cur.Value, New: before[k]})
+	}
+	slices.Sort(shared)
+	return undo, shared, nil
+}
+
+// setLiveVariables makes ch's variable changes live (each key's New), in
+// q's transaction, keeping whatever is staged on top.
+func setLiveVariables(ctx context.Context, q *store.Queries, envID int64, ch carried) error {
+	for _, v := range ch.Variables {
+		cur, err := q.GetVariable(ctx, store.GetVariableParams{EnvironmentID: envID, ServiceID: v.ServiceID, Key: v.Key})
+		missing := store.IsNotFound(err)
+		if err != nil && !missing {
+			return err
+		}
+		switch {
+		case missing && v.New == nil:
+		case missing:
+			err = q.InsertLiveVariable(ctx, store.InsertLiveVariableParams{EnvironmentID: envID, ServiceID: v.ServiceID, Key: v.Key, Value: v.New, UpdatedAt: now()})
+		case v.New == nil && cur.Pending != "set":
+			err = q.DeleteVariable(ctx, cur.ID) // nothing live, nothing staged to keep
+		default:
+			err = q.RestoreVariable(ctx, store.RestoreVariableParams{Value: v.New, Pending: cur.Pending, PendingValue: cur.PendingValue, UpdatedAt: now(), ID: cur.ID})
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Restart creates a new release identical to the active one.

@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -336,5 +337,141 @@ func TestApplyServedImageStartsNoRelease(t *testing.T) {
 	}
 	if svc, _ := h.c.GetService(h.ctx, testSystem, web); svc.Image != "app:1" {
 		t.Fatalf("live image %q", svc.Image)
+	}
+}
+
+// Rolling back puts the service's own variables back to the release's, so
+// the next unrelated apply doesn't bring the newer values back; shared
+// variables keep their values and the rollback says it ran older ones.
+func TestRollbackPutsVariablesBack(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	if _, err := h.c.SetVariables(h.ctx, testSystem, web.Env(), apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"KEEP": "k"}}); err != nil {
+		t.Fatal(err)
+	}
+	h.wait(web, h.deploy(web, "app:1").Number) // r1 takes KEEP live
+	h.setVars(web, map[string]string{"VERSION": "v2", "KEEP": "k2"})
+	shared := apitypes.SetVariablesRequest{Set: map[string]string{"REGION": "eu"}, Apply: true}
+	res, err := h.c.SetVariables(h.ctx, testSystem, web.Env(), shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := h.wait(web, res.Applied.Releases[0].Number)
+	if _, err := h.c.SetVariables(h.ctx, testSystem, web.Env(), apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"STAGED": "s"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	rb, err := h.c.Rollback(h.ctx, testSystem, web, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := h.wait(web, rb.Number); r.Status != apitypes.ReleaseActive || r.Number != last.Number+1 {
+		t.Fatalf("rollback = %+v", r)
+	}
+	if got := h.revealed(web); got["KEEP"] != "k" || got["VERSION"] != "" {
+		t.Errorf("live variables after the rollback = %v, want release 1's", got)
+	}
+	r, _ := h.c.GetRelease(h.ctx, testSystem, web, rb.Number)
+	events := fmt.Sprint(r.Events)
+	if !strings.Contains(events, "web's variables are release 1's again: KEEP, VERSION") || !strings.Contains(events, "older shared REGION") {
+		t.Errorf("rollback events = %s", events)
+	}
+	if p, _ := h.c.GetChanges(h.ctx, testSystem, web.Env(), false); p.Count != 1 {
+		t.Errorf("the staged change is gone or more were staged: %+v", p)
+	}
+
+	// The next apply ships the rolled-back values, the staged one and the
+	// shared one's current value.
+	applied, err := h.c.ApplyChanges(h.ctx, testSystem, web.Env())
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := h.wait(web, applied.Releases[0].Number)
+	spec, _ := h.rt.Spec(h.ctr(web, next.Number))
+	if spec.Env["KEEP"] != "k" || spec.Env["VERSION"] != "" || spec.Env["STAGED"] != "s" || spec.Env["REGION"] != "eu" {
+		t.Errorf("the apply after the rollback runs %v", spec.Env)
+	}
+}
+
+// A deploy that takes a service's staged variable live redeploys the
+// services referencing it, as an apply does, and its events name them.
+func TestDeployRedeploysReferencingServices(t *testing.T) {
+	h := newHarness(t)
+	api := h.service("api", apitypes.CreateServiceRequest{Image: "app:1"})
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	h.wait(api, h.deploy(api, "app:1").Number)
+	h.wait(web, h.deploy(web, "app:1").Number)
+	h.setVars(api, map[string]string{"SECRET_KEY": "hunter3"})
+	h.setVars(web, map[string]string{"API_SECRET": "${{api.SECRET_KEY}}"})
+	webLive, _ := h.c.GetService(h.ctx, testSystem, web)
+
+	if _, err := h.c.SetVariables(h.ctx, testSystem, api.Env(), apitypes.SetVariablesRequest{Service: "api", Set: map[string]string{"SECRET_KEY": "hunter4"}}); err != nil {
+		t.Fatal(err)
+	}
+	rel := h.wait(api, h.deploy(api, "app:2").Number)
+	next := h.wait(web, *webLive.ActiveRelease+1)
+	if next.Status != apitypes.ReleaseActive || next.Source != apitypes.SourceConfig {
+		t.Fatalf("web after api's deploy = %+v", next)
+	}
+	if spec, _ := h.rt.Spec(h.ctr(web, next.Number)); spec.Env["API_SECRET"] != "hunter4" {
+		t.Errorf("web runs API_SECRET=%q, want api's new value", spec.Env["API_SECRET"])
+	}
+	r, _ := h.c.GetRelease(h.ctx, testSystem, api, rel.Number)
+	if !strings.Contains(fmt.Sprint(r.Events), "Redeploying web (release") {
+		t.Errorf("api's release events don't name web: %v", r.Events)
+	}
+	if p, _ := h.c.GetChanges(h.ctx, testSystem, api.Env(), false); p.Count != 0 {
+		t.Errorf("staged after the deploy: %+v", p)
+	}
+}
+
+// Staged changes name the services applying would redeploy: running ones,
+// not those that take the change with their first deploy.
+func TestChangesNameRedeploys(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	h.wait(web, h.deploy(web, "app:1").Number)
+	h.service("api", apitypes.CreateServiceRequest{Image: "app:1"}) // never deployed
+	shared := apitypes.SetVariablesRequest{Set: map[string]string{"REGION": "eu"}}
+	if _, err := h.c.SetVariables(h.ctx, testSystem, web.Env(), shared); err != nil {
+		t.Fatal(err)
+	}
+	p, err := h.c.GetChanges(h.ctx, testSystem, web.Env(), false)
+	if err != nil || !slices.Equal(p.Affected, []string{"api", "web"}) || !slices.Equal(p.Redeploys, []string{"web"}) {
+		t.Fatalf("affected %v, redeploys %v, %v", p.Affected, p.Redeploys, err)
+	}
+}
+
+// Unsetting a variable that isn't there says so instead of staging
+// nothing; a shared one unset on a service names --shared.
+func TestUnsetUnknownVariable(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	if _, err := h.c.SetVariables(h.ctx, testSystem, web.Env(), apitypes.SetVariablesRequest{Set: map[string]string{"LOG_LEVEL": "debug"}}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := h.c.SetVariables(h.ctx, testSystem, web.Env(), apitypes.SetVariablesRequest{Service: "web", Unset: []string{"LOG_LEVEL"}})
+	if CodeOf(err) != apitypes.CodeNotFound || !strings.Contains(err.Error(), "--shared") {
+		t.Errorf("unset a shared variable on web: %v", err)
+	}
+	if _, err := h.c.SetVariables(h.ctx, testSystem, web.Env(), apitypes.SetVariablesRequest{Service: "web", Unset: []string{"NOPE"}}); CodeOf(err) != apitypes.CodeNotFound {
+		t.Errorf("unset NOPE: %v", err)
+	}
+	if _, err := h.c.SetVariables(h.ctx, testSystem, web.Env(), apitypes.SetVariablesRequest{Unset: []string{"LOG_LEVEL"}}); err != nil {
+		t.Errorf("unset the shared one: %v", err)
+	}
+}
+
+// A broken reference refuses the apply and says how to fix or drop it.
+func TestBrokenReferenceSaysWhatToDo(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	h.wait(web, h.deploy(web, "app:1").Number)
+	if _, err := h.c.SetVariables(h.ctx, testSystem, web.Env(), apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"BAD": "${{nosuch.KEY}}"}}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := h.c.ApplyChanges(h.ctx, testSystem, web.Env())
+	if CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), "`dock discard BAD -s web`") {
+		t.Errorf("apply with a broken reference: %v", err)
 	}
 }

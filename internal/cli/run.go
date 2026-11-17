@@ -262,7 +262,11 @@ func runExit(r apitypes.CommandRun) error {
 		apitypes.RunCanceled:    "Run it again: a run stops when `dock run` ends.",
 		apitypes.RunInterrupted: "Run it again once the server is back: `dock status`.",
 	}[r.Status]
-	if hint == "" {
+	switch {
+	case hint != "":
+	case strings.Contains(r.Error, "/bin/sh") && strings.Contains(r.Error, "no such file"):
+		hint = "The image has no /bin/sh, and `dock run` runs the command with it; run it in an image with a shell (distroless and scratch images have none)."
+	default:
 		hint = "Check that the service has a release (`dock status`) and its server is online (`dock server list`)."
 	}
 	msg := strings.ReplaceAll(string(r.Status), "_", " ")

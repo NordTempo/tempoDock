@@ -11411,6 +11411,15 @@
           "project": {
             "type": "string"
           },
+          "redeploys": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "services": {
             "items": {
               "$ref": "#/components/schemas/ServiceStaging"
@@ -11457,7 +11466,8 @@
           "volumes",
           "services",
           "domains",
-          "affected"
+          "affected",
+          "redeploys"
         ],
         "type": "object"
       },

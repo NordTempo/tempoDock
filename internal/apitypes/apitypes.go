@@ -735,6 +735,11 @@ type PendingChanges struct {
 	// change through shared variables or references to another service's.
 	// The ones with an active release get a config release.
 	Affected []string `json:"affected"`
+	// Redeploys are the affected services applying starts a release for:
+	// those running a release (not staged for archiving), and new ones
+	// that run from an image. The rest pick the changes up on their first
+	// deploy.
+	Redeploys []string `json:"redeploys"`
 	// LastFailure explains why changes are staged again: the release that
 	// carried them failed, so they never went live.
 	LastFailure string `json:"last_failure,omitempty"`

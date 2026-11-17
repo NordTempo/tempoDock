@@ -291,3 +291,23 @@ func TestUnhealthyDiagnosis(t *testing.T) {
 		t.Fatalf("diagnoses = %v %+v", err, list)
 	}
 }
+
+// An app that exited during its health check never answered: the port
+// rules say so instead of "the port answered". A path that answered 5xx
+// exists, so changing the health check path is no fix.
+func TestDiagnoseExitedAndServerErrors(t *testing.T) {
+	web := releaseConfig{Port: 8080, Published: true, HealthCheckPath: "/health", HealthCheckTimeout: 60}
+	health := func(msg string) *diagInput {
+		return &diagInput{step: apitypes.ReleaseHealthChecking, code: apitypes.CodeHealthCheckFailed, err: msg, cfg: web, health: node.ParseHealthFailure(msg)}
+	}
+	exited := health("health check failed: " + node.ExitedError(3, false, 0).Error())
+	for _, rule := range []func(*diagInput) diagVerdict{rulePortMismatch, ruleLoopbackOnly, ruleNotListening} {
+		if v := rule(exited); v.matched || v.why != "it exited before the port could answer" {
+			t.Errorf("port rule on an exit: %+v", v)
+		}
+	}
+	v := ruleHealthPath(health("health check timed out after 1m0s: GET http://127.0.0.1:20001/health returned 500 Internal Server Error"))
+	if !v.matched || v.fix != nil {
+		t.Errorf("health path answering 500: %+v", v)
+	}
+}

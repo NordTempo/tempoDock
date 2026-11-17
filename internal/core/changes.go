@@ -744,7 +744,7 @@ func (c *Core) stagedChanges(ctx context.Context, q *store.Queries, es envScope,
 		})
 	}
 	out.Count = len(out.Variables) + len(out.Settings) + len(out.Volumes) + len(out.Services) + len(out.Domains)
-	out.Affected = []string{}
+	out.Affected, out.Redeploys = []string{}, []string{}
 	return out, svcs, vars, nil
 }
 
@@ -791,9 +791,33 @@ func (c *Core) pendingChanges(ctx context.Context, q *store.Queries, es envScope
 	if err != nil {
 		return out, err
 	}
+	actives, err := q.ListEnvironmentActiveReleases(ctx, es.env.ID)
+	if err != nil {
+		return out, err
+	}
+	running := map[int64]bool{}
+	for _, r := range actives {
+		running[r.ServiceID] = true
+	}
+	staged := map[string]apitypes.ChangeAction{}
+	for _, sv := range out.Services {
+		staged[sv.Service] = sv.Action
+	}
 	for _, s := range svcs { // by name
-		if s.ArchivedAt == nil && (own[s.Name] || broken[s.ID] != nil || !maps.Equal(live[s.ID], next[s.ID])) {
-			out.Affected = append(out.Affected, s.Name)
+		if s.ArchivedAt != nil || !own[s.Name] && broken[s.ID] == nil && maps.Equal(live[s.ID], next[s.ID]) {
+			continue
+		}
+		out.Affected = append(out.Affected, s.Name)
+		switch staged[s.Name] {
+		case apitypes.ChangeRemove:
+		case apitypes.ChangeAdd:
+			if s.Image != "" || s.Template != "" {
+				out.Redeploys = append(out.Redeploys, s.Name)
+			}
+		default:
+			if running[s.ID] {
+				out.Redeploys = append(out.Redeploys, s.Name)
+			}
 		}
 	}
 	return out, nil

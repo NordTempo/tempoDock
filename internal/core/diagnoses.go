@@ -165,6 +165,11 @@ func (d *deployment) assemble(ctx context.Context, code apitypes.ErrorCode, msg 
 		if in.health.Kind == node.HealthFailOOM && b.Failure.Exit != nil {
 			b.Failure.Exit.OOMKilled = true // Docker clears it on restart
 		}
+		if e := b.Failure.Exit; e != nil && e.Running && e.ExitCode == nil && in.health.Kind == node.HealthFailExited {
+			// It exited during the check and Docker started it again
+			// before the capture: "running again after exit N".
+			e.ExitCode = ptr(in.health.ExitCode)
+		}
 	}
 	last, err := c.lastGoodRelease(ctx, d.ss.svc.ID, d.rel.Number)
 	if err != nil {

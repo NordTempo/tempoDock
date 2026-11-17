@@ -175,6 +175,7 @@ func printJob(g *globals, j apitypes.Job) error {
 // newJobRemoveCmd is `dock job remove <name>`.
 func newJobRemoveCmd(g *globals) *cobra.Command {
 	var f targetFlags
+	var yes bool
 	cmd := &cobra.Command{
 		Use:     "remove <name>",
 		Aliases: []string{"rm"},
@@ -186,6 +187,11 @@ func newJobRemoveCmd(g *globals) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if !yes {
+				if err := g.io.Confirm(fmt.Sprintf("Remove job %s of %s and its run history?", args[0], t), "yes"); err != nil {
+					return err
+				}
+			}
 			if err := del(cmd.Context(), s, jobPath(t, args[0])); err != nil {
 				return err
 			}
@@ -196,6 +202,7 @@ func newJobRemoveCmd(g *globals) *cobra.Command {
 		},
 	}
 	f.add(cmd, needService)
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
 	return cmd
 }
 

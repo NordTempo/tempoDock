@@ -494,12 +494,24 @@ func (in *diagInput) unreachable() bool {
 	return in.health.Kind == node.HealthFailNotListening || in.health.Kind == node.HealthFailNoAnswer
 }
 
+// reachedWhy says why the port rules are ruled out when the check didn't
+// find the port unreachable: it answered, or the app ended first.
+func (in *diagInput) reachedWhy() string {
+	switch in.health.Kind {
+	case node.HealthFailExited:
+		return "it exited before the port could answer"
+	case node.HealthFailKilled, node.HealthFailOOM:
+		return "it was killed before the port could answer"
+	}
+	return "the port answered"
+}
+
 func rulePortMismatch(in *diagInput) diagVerdict {
 	if !in.checksHealth() || in.port() == 0 {
 		return diagVerdict{skip: true}
 	}
 	if !in.unreachable() {
-		return diagVerdict{why: "the port answered"}
+		return diagVerdict{why: in.reachedWhy()}
 	}
 	_, port, at := in.listening()
 	switch {
@@ -519,7 +531,7 @@ func ruleLoopbackOnly(in *diagInput) diagVerdict {
 		return diagVerdict{skip: true}
 	}
 	if !in.unreachable() {
-		return diagVerdict{why: "the port answered"}
+		return diagVerdict{why: in.reachedWhy()}
 	}
 	host, port, at := in.listening()
 	if at < 0 || port != in.port() {
@@ -547,7 +559,9 @@ func ruleHealthPath(in *diagInput) diagVerdict {
 		return diagVerdict{matched: true, why: "it answered 404", fix: fix,
 			summary: fmt.Sprintf("GET %s answered 404: the app has no such path", path)}
 	case s >= 500:
-		v := diagVerdict{matched: true, why: fmt.Sprintf("it answered %d", s), fix: fix,
+		// The path exists and the app failed on it: its output and what
+		// changed say why, not the setting.
+		v := diagVerdict{matched: true, why: fmt.Sprintf("it answered %d", s),
 			summary: fmt.Sprintf("GET %s answered %d: the app failed to serve it", path, s)}
 		if line, ok := firstErrorLine(diagLines(in.container)); ok {
 			v.detail = line
@@ -582,7 +596,7 @@ func ruleNotListening(in *diagInput) diagVerdict {
 			summary: summary,
 			fix:     &apitypes.DiagnosisFix{Setting: "health_check_timeout", CLI: "dock service update --health-check-timeout 120s " + in.flags()}}
 	}
-	return diagVerdict{why: "the port answered"}
+	return diagVerdict{why: in.reachedWhy()}
 }
 
 func ruleExited(in *diagInput) diagVerdict {

@@ -65,3 +65,43 @@ func TestPromote(t *testing.T) {
 		t.Fatalf("all skipped --json: exit %d, %v %s", code, err, stdout)
 	}
 }
+
+// A promotion that stopped at a service it couldn't start is a deploy
+// failure (exit 6), even though the services before it went live.
+func TestPromoteStoppedIsADeployFailure(t *testing.T) {
+	err := promoteStopped([]apitypes.SkippedService{
+		{Service: "web", Reason: apitypes.SkipFailed, Message: "web couldn't start in qa: variable API_SECRET of web references ${{api.SECRET_KEY}}"},
+		{Service: "worker", Reason: apitypes.SkipFailed, Message: "not promoted: web failed first"},
+	})
+	var oe *output.Error
+	if !errors.As(err, &oe) || oe.Exit != output.ExitDeployFailed || !strings.Contains(oe.Message, "web wasn't promoted: web couldn't start") {
+		t.Fatalf("err = %v", err)
+	}
+	if err := promoteStopped([]apitypes.SkippedService{{Service: "db", Reason: apitypes.SkipMissingInTarget}}); err != nil {
+		t.Errorf("a service missing in the target: %v", err)
+	}
+}
+
+// `dock rollback` without a number skips releases that run what is live:
+// after a restart, the release before it is the one restarted.
+func TestRollbackSkipsCopiesOfTheLiveRelease(t *testing.T) {
+	setup(t)
+	srv := newTestServer(t)
+	t.Setenv(clientconfig.EnvURL, srv.url)
+	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeDeploy])
+	exec(t, "project", "create", "shop")
+	for _, args := range [][]string{
+		{"deploy", "-p", "shop", "-e", "production", "-s", "web", "--image", "web:1"},
+		{"deploy", "-p", "shop", "-e", "production", "-s", "web", "--image", "web:2"},
+		{"restart", "-p", "shop", "-e", "production", "-s", "web"},
+		{"restart", "-p", "shop", "-e", "production", "-s", "web"},
+	} {
+		if code, _, stderr := exec(t, args...); code != 0 {
+			t.Fatalf("%v: %s", args, stderr)
+		}
+	}
+	back := ok[apitypes.Release](t, "rollback", "-p", "shop", "-e", "production", "-s", "web")
+	if back.FromRelease != 1 || back.ImageRef != "web:1" {
+		t.Fatalf("rollback copied release %d (%s), want 1", back.FromRelease, back.ImageRef)
+	}
+}
