@@ -449,25 +449,28 @@ func swapUnderTraffic(t *testing.T, keyed bool) {
 	}
 }
 
-// TestIntegrationHeldRequestSurvivesReload: a held route's request that
-// the upstream accepted and keeps waiting (a move's hold, where the
-// control plane listens on the port) survives reloads, past the grace
-// period too. Caddy's own retries would end at the first reload.
-func TestIntegrationHeldRequestSurvivesReload(t *testing.T) {
-	tc := startCaddy(t, "", true)
-	ctx := context.Background()
-	held := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		time.Sleep(testGracePeriod + 2*time.Second)
-		_, _ = io.WriteString(w, "held")
+// slowUpstream answers every request with body after d, and tells arrived
+// when a request reached it: a test that reloads Caddy under a request
+// waits for that, not a sleep. A request still on its way to Caddy during
+// a reload races it and may be dropped (see the package comment), which
+// is not what these tests are about.
+func slowUpstream(t *testing.T, body string, d time.Duration) (addr string, arrived <-chan struct{}) {
+	t.Helper()
+	got := make(chan struct{}, 16)
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		got <- struct{}{}
+		time.Sleep(d)
+		_, _ = io.WriteString(w, body)
 	}))
-	t.Cleanup(held.Close)
-	route := node.Route{Hostnames: []string{"held.test"}, Upstream: strings.TrimPrefix(held.URL, "http://"), Hold: true}
-	if err := tc.proxy.ApplyRoutes(ctx, []node.Route{route}, nil); err != nil {
-		t.Fatal(err)
-	}
+	t.Cleanup(s.Close)
+	return strings.TrimPrefix(s.URL, "http://"), got
+}
+
+// getAsync GETs url and sends its "status body", or its error.
+func (tc *testCaddy) getAsync(url string) <-chan string {
 	done := make(chan string, 1)
 	go func() {
-		resp, err := tc.client.Get(tc.url("http", "held.test", "/"))
+		resp, err := tc.client.Get(url)
 		if err != nil {
 			done <- err.Error()
 			return
@@ -476,14 +479,39 @@ func TestIntegrationHeldRequestSurvivesReload(t *testing.T) {
 		_ = resp.Body.Close()
 		done <- fmt.Sprintf("%d %s", resp.StatusCode, b)
 	}()
-	time.Sleep(300 * time.Millisecond)
-	for _, host := range []string{"a.test", "b.test"} {
+	return done
+}
+
+// waitArrived waits until a request reached the upstream.
+func waitArrived(t *testing.T, arrived <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-arrived:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the request never reached the upstream")
+	}
+}
+
+// TestIntegrationHeldRequestSurvivesReload: a held route's request that
+// the upstream accepted and keeps waiting (a move's hold, where the
+// control plane listens on the port) survives reloads back to back, as
+// two deploys or a domain edit right after a switch make them, past the
+// grace period too. Caddy's own retries would end at the first reload.
+func TestIntegrationHeldRequestSurvivesReload(t *testing.T) {
+	tc := startCaddy(t, "", true)
+	ctx := context.Background()
+	up, arrived := slowUpstream(t, "held", testGracePeriod+2*time.Second)
+	route := node.Route{Hostnames: []string{"held.test"}, Upstream: up, Hold: true}
+	tc.applyRoutes(t, []node.Route{route})
+	done := tc.getAsync(tc.url("http", "held.test", "/"))
+	waitArrived(t, arrived)
+	for _, host := range []string{"a.test", "b.test", "c.test"} {
 		if err := tc.proxy.ApplyRoutes(ctx, []node.Route{route, {Hostnames: []string{host}, Upstream: backend(t, host)}}, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if got := <-done; got != "200 held" {
-		t.Errorf("held request across two reloads: %q, want 200 held", got)
+		t.Errorf("held request across three reloads: %q, want 200 held", got)
 	}
 }
 
@@ -492,34 +520,17 @@ func TestIntegrationHeldRequestSurvivesReload(t *testing.T) {
 func TestIntegrationInFlightRequestSurvivesReload(t *testing.T) {
 	tc := startCaddy(t, "", true)
 	ctx := context.Background()
-	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		time.Sleep(2 * time.Second)
-		_, _ = io.WriteString(w, "slow")
-	}))
-	t.Cleanup(slow.Close)
-	if err := tc.proxy.ApplyRoutes(ctx, []node.Route{{Hostnames: []string{"slow.test"}, Upstream: strings.TrimPrefix(slow.URL, "http://")}}, nil); err != nil {
-		t.Fatal(err)
-	}
-
-	done := make(chan string, 1)
-	go func() {
-		resp, err := tc.client.Get(tc.url("http", "slow.test", "/"))
-		if err != nil {
-			done <- err.Error()
-			return
-		}
-		b, _ := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		done <- string(b)
-	}()
-	time.Sleep(300 * time.Millisecond)
+	up, arrived := slowUpstream(t, "slow", 2*time.Second)
+	tc.applyRoutes(t, []node.Route{{Hostnames: []string{"slow.test"}, Upstream: up}})
+	done := tc.getAsync(tc.url("http", "slow.test", "/"))
+	waitArrived(t, arrived)
 	start := time.Now()
 	if err := tc.proxy.ApplyRoutes(ctx, []node.Route{{Hostnames: []string{"other.test"}, Upstream: backend(t, "O")}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("reload with a slow request in flight took %v", time.Since(start))
-	if body := <-done; body != "slow" {
-		t.Errorf("in-flight request got %q, want %q", body, "slow")
+	if got := <-done; got != "200 slow" {
+		t.Errorf("in-flight request got %q, want 200 slow", got)
 	}
 }
 
