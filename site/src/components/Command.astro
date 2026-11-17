@@ -1,0 +1,18 @@
+---
+/**
+ * A shell command to copy: one click selects all of it (CSS
+ * user-select: all, so the page stays free of JavaScript), and the
+ * prompt sign isn't part of the selection.
+ */
+interface Props {
+  command: string;
+  class?: string;
+}
+
+const { command, class: className } = Astro.props;
+---
+
+<div class:list={["flex items-baseline gap-2.5 overflow-x-auto border border-edge bg-panel px-4 py-3.5 font-mono text-[13px]", className]}>
+  <span class="select-none text-meta" aria-hidden="true">$</span>
+  <code class="whitespace-nowrap text-white select-all">{command}</code>
+</div>

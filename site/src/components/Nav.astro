@@ -1,5 +1,5 @@
 ---
-import { earlyAccessHref, site } from "../site";
+import { site } from "../site";
 import Button from "./Button.astro";
 import Logo from "./Logo.astro";
 
@@ -19,5 +19,5 @@ const links = [
   ))}
   <span class="flex-1"></span>
   <a href={site.consoleUrl} class="hidden text-[15px] text-neutral-400 hover:text-white sm:inline">Sign in</a>
-  <Button href={earlyAccessHref} size="sm">Get early access →</Button>
+  <Button href={site.repoUrl} size="sm">GitHub →</Button>
 </nav>
