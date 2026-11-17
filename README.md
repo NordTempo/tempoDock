@@ -13,6 +13,26 @@ platform never competes with the apps it hosts.
 Built by NordTempo, for NordTempo first, and open source under the
 [AGPL-3.0](LICENSE) (see [vision](docs/vision.md)).
 
+## Install
+
+On a server running Debian 12 or 13, or Ubuntu 22.04 or 24.04 (Docker is
+installed if it's missing):
+
+```sh
+curl -fsSL https://dock.nordtempo.com/install.sh | sudo bash
+```
+
+It ends with the console's address, your login, and the line that installs
+the CLI on your laptop and signs it in (macOS, Linux, or Windows in WSL):
+
+```sh
+curl -fsSL https://dock.nordtempo.com/cli.sh | sh -s -- http://localhost:7070
+brew install nordtempo/tap/dock   # or with Homebrew, then: dock login <url>
+```
+
+Downloads are checked against the release's signed checksums. Options,
+other systems, nodes and uninstalling: the [install guide](docs/guide/install.md).
+
 ## Status
 
 Milestones M0 to M5 are done and Dock runs NordTempo's production; M6
@@ -45,9 +65,9 @@ make perf              # performance budgets (docs/performance.md)
 ```
 
 `cd web && pnpm dev` serves the UI with hot reload, proxying `/api` to the
-daemon. Install on a server from a release with
-[`deploy/install.sh`](deploy/install.sh), and the CLI on laptops and CI
-with `install-cli.sh` ([install guide](docs/guide/install.md#install)).
+daemon. [`deploy/install.sh`](deploy/install.sh) installs a server and
+[`install-cli.sh`](scripts/release/install-cli.sh) the CLI;
+`e2e/fresh-install.sh` runs both on bare servers.
 `make release-local VERSION=v0.0.0-dev` builds a release's artifacts into
 `dist/`; pushing a `v*` tag publishes one.
 
