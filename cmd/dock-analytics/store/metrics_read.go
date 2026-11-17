@@ -84,11 +84,14 @@ func (s *Traces) QueryMetrics(ctx context.Context, q analytics.MetricsQuery) (an
 			continue
 		}
 		out.Unit, out.Kind, out.Shape, out.Series = cs.unit, cs.kind, analytics.ShapeOf(cs.kind, cs.monotonic, cs.cumulative), cs.count
-		aggs := analytics.Aggs(out.Shape)
 		if out.Agg == "" {
-			out.Agg = aggs[0]
-		} else if !slices.Contains(aggs, out.Agg) {
-			return res, &QueryError{fmt.Sprintf("%s is a %s: use %s", c.Name, out.Shape, joinAggs(aggs))}
+			out.Agg = analytics.Aggs(out.Shape)[0]
+		} else if out.Error = analytics.AggError(c.Name, out.Shape, out.Agg); out.Error != "" {
+			// This chart can't be read; the others still are, so one
+			// pinned with an aggregation its metric doesn't take costs
+			// that chart, not the dashboard.
+			res.Charts = append(res.Charts, out)
+			continue
 		}
 		if err := s.readChart(ctx, q, cs, &out); err != nil {
 			return res, fmt.Errorf("read %s: %w", c.Name, err)
@@ -96,15 +99,6 @@ func (s *Traces) QueryMetrics(ctx context.Context, q analytics.MetricsQuery) (an
 		res.Charts = append(res.Charts, out)
 	}
 	return res, nil
-}
-
-// joinAggs is aggs as a list for an error: "sum, max, min or avg".
-func joinAggs(aggs []analytics.MetricAgg) string {
-	s := make([]string, len(aggs))
-	for i, a := range aggs {
-		s[i] = string(a)
-	}
-	return strings.Join(s[:len(s)-1], ", ") + " or " + s[len(s)-1]
 }
 
 // chartSeries reads, for each of names, its series' most common shape

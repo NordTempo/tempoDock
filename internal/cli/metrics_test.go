@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json/v2"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -66,5 +67,51 @@ func TestMetricsCommands(t *testing.T) {
 	one := ok[apitypes.AppMetricChartResult](t, append([]string{"metrics", "show", "orders.created", "--range", "1h"}, at...)...)
 	if one.Chart.Shape != "counter" || len(one.Chart.Lines) != 1 {
 		t.Errorf("show = %+v", one)
+	}
+
+	// A level's p99 isn't pinned. Pinned before its metric sent points,
+	// it costs only its own chart, and unpin takes it off.
+	if code, _, stderr := exec(t, append([]string{"metrics", "pin", "v8js.memory.heap.used", "--agg", "p99"}, at...)...); code == 0 || !strings.Contains(stderr, "is a level") {
+		t.Errorf("pin a level's p99: exit %d\n%s", code, stderr)
+	}
+	if code, _, stderr := exec(t, append([]string{"metrics", "pin", "queue.depth", "--agg", "p99"}, at...)...); code != 0 || !strings.Contains(stderr, "sent no queue.depth") {
+		t.Fatalf("pin a metric not sent yet: exit %d\n%s", code, stderr)
+	}
+	b, _ := json.Marshal(analytics.MetricPoint{Org: claims.Org, Project: claims.Project, Env: claims.Env, Service: claims.Service, Release: claims.Release,
+		Name: "queue.depth", Kind: analytics.MetricGauge, Time: time.Now().Add(-time.Minute).Unix(), Value: 4})
+	srv.rt.AppendMetrics(b)
+	for deadline := time.Now().Add(5 * time.Second); len(srv.rt.TraceStore().Points()) != 3; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the point didn't reach the trace store")
+		}
+	}
+	code, stdout, stderr = exec(t, append([]string{"metrics", "--range", "1h"}, at...)...)
+	if code != 0 || !strings.Contains(stdout, "queue.depth p99 can't be read: queue.depth is a level") || !strings.Contains(stdout, "dock metrics unpin queue.depth --agg p99") {
+		t.Fatalf("metrics with a broken chart: exit %d\n%s%s", code, stdout, stderr)
+	}
+	if charts = ok[apitypes.MetricCharts](t, append([]string{"metrics", "unpin", "queue.depth", "--agg", "p99"}, at...)...); len(charts.Charts) != 1 {
+		t.Errorf("unpinned the broken chart = %+v", charts)
+	}
+}
+
+// A split chart's latest is its lines' sum only where lines add up: a
+// sum of p95s is no latency.
+func TestLineStats(t *testing.T) {
+	v := func(x float64) []*float64 { return []*float64{&x} }
+	lines := []apitypes.AppMetricLine{{Label: "/slow", Values: v(0.499)}, {Label: "/", Values: v(0.0078)}, {Label: "/fail", Values: v(0.0078)}}
+	for _, tc := range []struct {
+		agg  string
+		aggs []string
+		want float64
+	}{
+		{"p95", nil, 0.499},
+		{"", []string{"p95", "p50"}, 0.499},
+		{"min", nil, 0.0078},
+		{"", []string{"rate", "sum"}, 0.5146},
+	} {
+		now, _, hi := lineStats(apitypes.AppMetricChart{MetricChartSpec: apitypes.MetricChartSpec{Agg: tc.agg}, Aggs: tc.aggs, Lines: lines})
+		if now == nil || math.Abs(*now-tc.want) > 1e-9 || *hi != 0.499 {
+			t.Errorf("%q %v: now %v, max %v; want now %v", tc.agg, tc.aggs, now, hi, tc.want)
+		}
 	}
 }

@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/analytics"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/core"
 	"github.com/NordTempo/tempoDock/internal/traces"
 )
 
@@ -57,5 +59,26 @@ func TestMetricTools(t *testing.T) {
 	one := call(t, s, "metrics", map[string]any{"service": "web", "name": "v8js.memory.heap.used", "agg": "max"})
 	if !strings.Contains(one.summary, "v8js.memory.heap.used max 212 MB now") {
 		t.Fatalf("metrics with name = %q", one.summary)
+	}
+
+	// A chart pinned before its metric sent points, with an aggregation
+	// the metric turns out not to take, is named with its way out; the
+	// other charts still read.
+	ref := core.ServiceRef{Project: "shop", Environment: "staging", Service: "web"}
+	pins := []apitypes.MetricChartSpec{{Name: "v8js.memory.heap.used"}, {Name: "queue.depth", Agg: "p99"}}
+	if _, err := f.core.SetMetricCharts(context.Background(), sys, ref, apitypes.SetMetricChartsRequest{Charts: pins}); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(analytics.MetricPoint{Org: claims.Org, Project: claims.Project, Env: claims.Env, Service: claims.Service, Release: claims.Release,
+		Name: "queue.depth", Kind: analytics.MetricGauge, Time: now.Add(-time.Minute).Unix(), Value: 4})
+	f.rt.AppendMetrics(b)
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		got = call(t, s, "metrics", map[string]any{"service": "web"})
+		if strings.Contains(got.summary, "can't be read") || time.Now().After(deadline) {
+			break
+		}
+	}
+	if !strings.Contains(got.summary, "212 MB now") || !strings.Contains(got.summary, "queue.depth is a level") || !strings.Contains(got.summary, "dock metrics unpin queue.depth --agg p99") {
+		t.Fatalf("a dashboard with a broken chart = %q", got.summary)
 	}
 }

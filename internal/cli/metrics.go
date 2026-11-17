@@ -58,12 +58,19 @@ runtime metrics the app sends.`,
 				}
 				_, _ = fmt.Fprintf(g.io.Out, "%s, last %s:\n", pinned, m.Range)
 				tb := g.io.Table("chart", "now", "min", "max", "lines")
+				var broken []apitypes.AppMetricChart
 				for _, c := range m.Charts {
 					now, lo, hi := lineStats(c)
 					tb.Row(chartName(c.MetricChartSpec, c.Agg), metricValue(now, c), metricValue(lo, c), metricValue(hi, c), strconv.Itoa(len(c.Lines)+c.More))
+					if c.Error != "" {
+						broken = append(broken, c)
+					}
 				}
 				if err := tb.Flush(); err != nil {
 					return err
+				}
+				for _, c := range broken {
+					_, _ = fmt.Fprintf(g.io.Out, "\n%s can't be read: %s. Unpin it with `dock metrics unpin %s%s`.\n", chartName(c.MetricChartSpec, c.Agg), c.Error, c.Name, chartFlags(c.MetricChartSpec))
 				}
 				_, _ = fmt.Fprintf(g.io.Out, "\nMetrics sent, last %s:\n", m.Range)
 				tb = g.io.Table("metric", "kind", "unit", "series", "cut")
@@ -127,7 +134,7 @@ func newMetricShowCmd(g *globals) *cobra.Command {
 					g.io.Successf("No points of %s from %s in the last %s.", spec.Name, t, r.Range)
 					return nil
 				}
-				_, _ = fmt.Fprintf(g.io.Out, "%s, a %s (%s), %s of %s, last %s:\n", spec.Name, dash(c.Shape), dash(c.Unit), strconv.Itoa(c.Series)+" series", c.Agg, r.Range)
+				_, _ = fmt.Fprintf(g.io.Out, "%s, a %s (%s), %s of %s, last %s:\n", spec.Name, dash(c.Shape), dash(c.Unit), strconv.Itoa(c.Series)+" series", dash(chartAgg(c)), r.Range)
 				label := "line"
 				if spec.By != "" {
 					label = spec.By
@@ -215,6 +222,9 @@ func newMetricPinCmd(g *globals, pin bool) *cobra.Command {
 					verb = "Unpinned"
 				}
 				g.io.Successf("%s %s on %s: %s.", verb, chartName(spec, spec.Agg), t, plural(len(out.Charts), "chart"))
+				if pin && !slices.ContainsFunc(m.Metrics, func(x apitypes.AppMetric) bool { return x.Name == spec.Name }) {
+					g.io.Warnf("%s sent no %s in the last hour; the chart stays empty until it does (`dock metrics` lists what it sends).", t, spec.Name)
+				}
 				return nil
 			})
 		},
@@ -237,15 +247,47 @@ func chartName(s apitypes.MetricChartSpec, agg string) string {
 	return out
 }
 
-// lineStats are a chart's latest value (of its lines, summed) and its
-// lowest and highest of any line.
+// chartFlags are the flags that name a chart's aggregation and
+// attribute in a command: " --agg p99 --by route".
+func chartFlags(s apitypes.MetricChartSpec) string {
+	out := ""
+	if s.Agg != "" {
+		out += " --agg " + s.Agg
+	}
+	if s.By != "" {
+		out += " --by " + s.By
+	}
+	return out
+}
+
+// chartAgg is the aggregation a chart was read with: its own, or its
+// metric's default (the first of Aggs).
+func chartAgg(c apitypes.AppMetricChart) string {
+	if c.Agg == "" && len(c.Aggs) > 0 {
+		return c.Aggs[0]
+	}
+	return c.Agg
+}
+
+// lineStats are a chart's latest value and its lowest and highest of any
+// line. With several lines, the latest is their sum where lines add up
+// (a sum or a rate), the lowest line's for min, and the highest line's
+// otherwise: p95s or averages summed are no latency or level.
 func lineStats(c apitypes.AppMetricChart) (now, lo, hi *float64) {
-	var sum float64
-	var seen bool
+	agg := chartAgg(c)
 	for _, l := range c.Lines {
 		n, a, b := valuesStats(l.Values)
-		if n != nil {
-			sum, seen = sum+*n, true
+		switch {
+		case n == nil:
+		case now == nil:
+			v := *n
+			now = &v
+		case agg == "sum" || agg == "rate":
+			*now += *n
+		case agg == "min":
+			*now = min(*now, *n)
+		default:
+			*now = max(*now, *n)
 		}
 		if a != nil && (lo == nil || *a < *lo) {
 			lo = a
@@ -253,9 +295,6 @@ func lineStats(c apitypes.AppMetricChart) (now, lo, hi *float64) {
 		if b != nil && (hi == nil || *b > *hi) {
 			hi = b
 		}
-	}
-	if seen {
-		now = &sum
 	}
 	return now, lo, hi
 }
@@ -284,7 +323,7 @@ func metricValue(v *float64, c apitypes.AppMetricChart) string {
 		return "-"
 	}
 	x := *v
-	if c.Shape == "counter" && c.Agg == "rate" || c.Shape == "histogram" && c.Agg == "rate" {
+	if chartAgg(c) == "rate" {
 		return compact(x) + "/min"
 	}
 	switch c.Unit {

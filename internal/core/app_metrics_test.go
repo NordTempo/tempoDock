@@ -8,6 +8,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/analytics"
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 // A service that pinned nothing has Dock's default charts of the runtime
@@ -69,6 +70,24 @@ func TestAppMetricsDashboard(t *testing.T) {
 	events, err := h.c.ListAudit(h.ctx, testSystem, AuditFilter{Project: "shop", Environment: "production", Service: "web"})
 	if err != nil || len(events) == 0 || events[0].Action != "service.charts" || !strings.Contains(events[0].Summary, "pinned orders.created") {
 		t.Errorf("audit = %+v, %v", events, err)
+	}
+
+	// A level's p99 isn't pinned; one saved before that check costs its
+	// own chart, not the dashboard, and unpinning it works.
+	bad := apitypes.MetricChartSpec{Name: "v8js.memory.heap.used", Agg: "p99"}
+	if _, err := h.c.SetMetricCharts(h.ctx, testSystem, ref, apitypes.SetMetricChartsRequest{Charts: append(pins.Charts, bad)}); CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), "is a level: use sum, max, min or avg") {
+		t.Errorf("a level's p99: %v", err)
+	}
+	raw, _ := json.Marshal(append(pins.Charts, bad))
+	if err := h.store.SetMetricDashboard(h.ctx, store.SetMetricDashboardParams{ServiceID: h.serviceID(ref), Charts: string(raw), UpdatedBy: "x", UpdatedAt: now()}); err != nil {
+		t.Fatal(err)
+	}
+	m, err = h.c.AppMetrics(h.ctx, testSystem, ref, apitypes.AppMetrics1h)
+	if err != nil || len(m.Charts) != 3 || m.Charts[2].Error == "" || len(m.Charts[2].Lines) != 0 || m.Charts[1].Error != "" || len(m.Charts[1].Lines) != 1 {
+		t.Fatalf("a dashboard with a bad chart = %+v, %v", m.Charts, err)
+	}
+	if _, err := h.c.SetMetricCharts(h.ctx, testSystem, ref, pins); err != nil {
+		t.Errorf("unpinning the bad chart: %v", err)
 	}
 
 	if _, err := h.c.DisableTraces(h.ctx, testSystem); err != nil {

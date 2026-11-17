@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json/jsontext"
+	"fmt"
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
+	"strings"
 )
 
 // App metrics over OTLP (ADR 0075, phase 6) take the spans' path: every
@@ -241,6 +244,20 @@ func Aggs(shape MetricShape) []MetricAgg {
 	return []MetricAgg{AggSum, AggMax, AggMin, AggAvg}
 }
 
+// AggError says why a metric of shape can't be read with agg ("heap is a
+// level: use sum, max, min or avg"), "" when it can: a chart's Error.
+func AggError(name string, shape MetricShape, agg MetricAgg) string {
+	aggs := Aggs(shape)
+	if slices.Contains(aggs, agg) {
+		return ""
+	}
+	s := make([]string, len(aggs))
+	for i, a := range aggs {
+		s[i] = string(a)
+	}
+	return fmt.Sprintf("%s is a %s: use %s or %s", name, shape, strings.Join(s[:len(s)-1], ", "), s[len(s)-1])
+}
+
 // MetricChartQuery is one chart of a MetricsQuery: a metric, how its
 // points combine ("" is its shape's default) and the attribute that
 // splits it into lines ("" for one line).
@@ -287,7 +304,9 @@ type MetricAttr struct {
 // shape (of its most common series, when they differ), the aggregation
 // used, its series in the range, the top MaxLines lines by total and how
 // many more there were, and its attributes. A metric with no points in
-// the range has no lines.
+// the range has no lines. Error says why a chart has none although its
+// metric has points: an aggregation its shape doesn't take ("x is a
+// level: use sum, max, min or avg"); the query's other charts are read.
 type MetricChart struct {
 	Name   string       `json:"name"`
 	Unit   string       `json:"unit,omitzero"`
@@ -299,6 +318,7 @@ type MetricChart struct {
 	Lines  []MetricLine `json:"lines"`
 	More   int          `json:"more,omitzero"`
 	Attrs  []MetricAttr `json:"attrs"`
+	Error  string       `json:"error,omitzero"`
 }
 
 // MetricsResult answers a MetricsQuery, a chart each in its order.

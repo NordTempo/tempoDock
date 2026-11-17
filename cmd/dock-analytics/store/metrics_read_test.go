@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -135,10 +134,13 @@ func TestQueryMetrics(t *testing.T) {
 		t.Errorf("cumulative counter = %+v", got)
 	}
 
-	var bad *QueryError
-	if _, err := s.QueryMetrics(context.Background(), analytics.MetricsQuery{Org: 1, Service: 4, From: start, To: start + 60, Step: 60,
-		Charts: []analytics.MetricChartQuery{{Name: "heap", Agg: analytics.AggRate}}}); !errors.As(err, &bad) {
-		t.Errorf("a level's rate: %v, want a query error", err)
+	// A level's rate is that chart's error; the query's other charts read.
+	res = query(start, start+60, 60, analytics.MetricChartQuery{Name: "heap", Agg: analytics.AggRate}, analytics.MetricChartQuery{Name: "heap"})
+	if got := res.Charts[0]; got.Error != "heap is a level: use sum, max, min or avg" || len(got.Lines) != 0 {
+		t.Errorf("a level's rate = %+v, want the chart's error", got)
+	}
+	if got := res.Charts[1]; got.Error != "" || len(got.Lines) != 1 {
+		t.Errorf("the chart beside it = %+v", got)
 	}
 
 	// Rolled up into hours: the level's average an hour.

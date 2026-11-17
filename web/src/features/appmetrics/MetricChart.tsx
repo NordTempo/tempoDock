@@ -94,11 +94,13 @@ export const MetricChart = memo(function MetricChart({
           .filter((x) => x.v !== null && x.v !== undefined)
           .slice(0, 6);
   const described = `${typeof title === "string" ? title : c.name}: ${
-    c.lines.length === 0
-      ? "no points in this range"
-      : one !== null
-        ? `now ${format(one)}`
-        : `${c.lines.length + (c.more ?? 0)} lines`
+    c.error
+      ? c.error
+      : c.lines.length === 0
+        ? "no points in this range"
+        : one !== null
+          ? `now ${format(one)}`
+          : `${c.lines.length + (c.more ?? 0)} lines`
   }`;
 
   return (
@@ -186,10 +188,18 @@ export const MetricChart = memo(function MetricChart({
                 />
               ))}
           </svg>
-          {c.lines.length === 0 && (
-            <p className="absolute inset-0 grid place-items-center text-xs text-mut">
-              No points in this range.
+          {c.error ? (
+            // Pinned with an aggregation its metric doesn't take: Edit
+            // unpins it.
+            <p className="absolute inset-0 grid place-items-center px-2 text-center text-xs text-fail">
+              {c.error}
             </p>
+          ) : (
+            c.lines.length === 0 && (
+              <p className="absolute inset-0 grid place-items-center text-xs text-mut">
+                No points in this range.
+              </p>
+            )
           )}
           {active !== null && reading && reading.length > 0 && (
             <>
