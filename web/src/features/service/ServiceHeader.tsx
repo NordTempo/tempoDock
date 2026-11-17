@@ -467,7 +467,7 @@ export function StatusSentence({ view }: { view: ServiceView }) {
         <span className="text-mut">○</span> Stopped by{" "}
         {mono(service.stopped_by || "unknown")} {ago(service.stopped_at)}.{" "}
         {mut(
-          `Its domains answer 503. ${serving ? `r${serving}, ` : ""}volumes and variables are kept.`,
+          `${view.domains.length ? "Its domains answer 503. " : ""}${serving ? `r${serving}, volumes` : "Volumes"} and variables are kept.`,
         )}
       </>
     );

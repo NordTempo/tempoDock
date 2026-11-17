@@ -303,31 +303,31 @@ function CompareTable({
           <thead>
             <tr>
               <th className="w-[120px]">Service</th>
-              <th className="w-[24%] border-l border-line pl-4">
+              <th className="w-[24%] pl-4">
                 {from.environment.name}{" "}
                 <EnvServer environment={from.environment} />
               </th>
-              <th className="w-[24%] border-l border-line pl-4">
+              <th className="w-[24%] pl-4">
                 {to.environment.name} <EnvServer environment={to.environment} />
               </th>
-              <th className="border-l border-line pl-4">Differences</th>
+              <th className="pl-4">Differences</th>
             </tr>
           </thead>
           <tbody>
             {shown.map(({ name, a, b, diffs }) => (
               <tr key={name}>
                 <td className="py-2.5 font-medium">{name}</td>
-                <td className="border-l border-line py-2.5 pl-4">
+                <td className="py-2.5 pl-4">
                   <Side
                     view={a}
                     project={project}
                     diff={diffs.some((d) => d.kind === "image")}
                   />
                 </td>
-                <td className="border-l border-line py-2.5 pl-4">
+                <td className="py-2.5 pl-4">
                   <Side view={b} project={project} diff={false} />
                 </td>
-                <td className="border-l border-line py-2.5 pl-4 whitespace-normal">
+                <td className="py-2.5 pl-4 whitespace-normal">
                   {diffs.length === 0 ? (
                     <span className="text-mut">same</span>
                   ) : (

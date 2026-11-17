@@ -97,7 +97,7 @@ export const topics: Record<TopicId, Topic> = {
       },
     ],
     watch: [
-      "Every button shows its dock command on hover; ⌘K finds pages and commands.",
+      "Every button shows its dock command on hover; Ctrl K (⌘K on a Mac) finds pages and commands.",
       "Saved changes wait for Apply: the service header counts them.",
     ],
     related: ["deploying", "services", "cli"],
@@ -849,7 +849,7 @@ export const topics: Record<TopicId, Topic> = {
       { what: "Match the CLI to the server", cli: "dock self-update" },
     ],
     watch: [
-      "Hover a button to see its command; ⌘K finds commands too.",
+      "Hover a button to see its command; Ctrl K (⌘K on a Mac) finds commands too.",
       "--json output and exit codes are stable for scripts.",
     ],
     related: ["agents", "start", "deploying"],

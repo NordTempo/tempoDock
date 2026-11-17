@@ -144,7 +144,7 @@ export function EnvSwitch({
                 <span className="font-mono text-2xs text-faint">
                   {twin.service.active_release
                     ? `r${twin.service.active_release}`
-                    : "none"}
+                    : "not deployed"}
                 </span>
               </Link>
             ) : (

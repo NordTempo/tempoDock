@@ -226,7 +226,7 @@ export function NotFound() {
           </a>
           {m.up.length > 1 && (
             <Link to="/" className="btn">
-              All projects
+              Go to overview
             </Link>
           )}
         </div>

@@ -495,7 +495,7 @@ function Title({ release }: { release: Release }) {
     case "active":
       return (
         <>
-          <span className="text-ok">●</span> {r} is live
+          <span className="text-ok">●</span> {r} is serving
         </>
       );
     case "superseded":

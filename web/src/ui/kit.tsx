@@ -190,15 +190,16 @@ export function CopyButton({
 }
 
 /**
- * A quiet "Copy command" for a dialog's `dock` equivalent: the command is
- * its tooltip and goes to the clipboard on click.
+ * "Copy command" for a dialog's `dock` equivalent: the command is its
+ * tooltip and goes to the clipboard on click. A small bordered button in
+ * every dialog, whether it renders inside the page's main or not.
  */
 function CopyCommand({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
       type="button"
-      className="lnk"
+      className="btn sm"
       title={text}
       aria-label={`Copy command: ${text}`}
       onClick={async () => {

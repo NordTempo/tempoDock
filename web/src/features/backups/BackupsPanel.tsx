@@ -170,7 +170,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         </dd>
         <dt>Snapshots</dt>
         <dd>
-          volume copies on {snaps.snapshots[0]?.server || "its server"}, the
+          Volume copies on {snaps.snapshots[0]?.server || "its server"}, the
           service paused while copied; keeps {plural(snaps.keep, "snapshot")}{" "}
           for {plural(snaps.keep_days, "day")}
         </dd>
