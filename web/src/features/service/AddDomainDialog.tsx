@@ -1,10 +1,13 @@
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useAddDomain } from "../../data/mutations";
+import { queries } from "../../data/queries";
 import type { Domain, ServiceRef } from "../../data/types";
 import { Dialog } from "../../ui/Dialog";
 import { Check } from "../../ui/kit";
 import { useCloudflareZones } from "../cloudflare/data";
 import { Footer, invalid, useValidation } from "../create/form";
+import { defaultZone } from "./defaultZone";
 
 /**
  * Adds a hostname: your own (you create its DNS record), or from a zone
@@ -31,7 +34,20 @@ export default function AddDomainDialog({
   // A hostname that collected analytics before carries its site's history
   // here unless this is set (ADR 0037).
   const [newSite, setNewSite] = useState(false);
-  const picked = zone || zones[0]?.name || "";
+  // The project's hostnames, from the overview the service's page is on.
+  const domains = useSuspenseQuery({
+    ...queries.overview(ref.project),
+    select: (o) =>
+      o.environments.flatMap((e) => e.services.flatMap((s) => s.domains)),
+  }).data;
+  // Until one is chosen, the zone that fits the project (defaultZone).
+  const picked =
+    zone ||
+    defaultZone(
+      zones.map((z) => z.name),
+      ref,
+      domains,
+    );
   // A full hostname typed into the name field keeps one zone.
   const sub = name
     .trim()
