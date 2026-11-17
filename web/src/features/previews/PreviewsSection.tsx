@@ -45,13 +45,15 @@ export function PreviewsSection({ project }: { project: string }) {
         </SectionHead>
         {settings.error && <ErrorText error={settings.error} />}
         {s && s.services.length === 0 && (
-          <p className="text-mut">
-            None. Turn previews on for a service connected to GitHub in its
-            Settings › Source:{" "}
-            <code className="font-mono text-sec">
+          <>
+            <p className="text-mut">
+              None. Turn previews on for a service connected to GitHub in its
+              Settings › Source, or with:
+            </p>
+            <code className="mt-1 font-mono text-xs text-sec">
               dock service previews on -s web -e staging
             </code>
-          </p>
+          </>
         )}
         {s && s.services.length > 0 && (
           <ul className="border-line border-t">
@@ -124,7 +126,7 @@ export function PreviewsSection({ project }: { project: string }) {
       </section>
 
       <section aria-labelledby="preview-open" className="flex flex-col">
-        <SectionHead id="preview-open">Open</SectionHead>
+        <SectionHead id="preview-open">Open previews</SectionHead>
         {s && s.previews.length === 0 && (
           <p className="text-mut">No open previews.</p>
         )}

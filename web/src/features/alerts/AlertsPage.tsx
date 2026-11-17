@@ -262,7 +262,7 @@ function AlertTable({
           <tr>
             <th>Severity</th>
             <th>Alert</th>
-            <th>Where</th>
+            <th className="pr-7">Where</th>
             <th>{resolvable ? "Open for" : "Resolved"}</th>
             <th />
           </tr>
@@ -297,7 +297,7 @@ function AlertRow({
         {a.title}
         {text && <span className="block text-mut">{text}</span>}
       </td>
-      <td className="py-2 font-mono">{where(a)}</td>
+      <td className="py-2 pr-7 font-mono">{where(a)}</td>
       <td className="py-2 whitespace-nowrap text-mut">
         {a.resolved_at ? `${since(a.resolved_at)} ago` : since(a.opened_at)}
       </td>

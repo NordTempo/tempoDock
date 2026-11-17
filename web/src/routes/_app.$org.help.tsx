@@ -1,4 +1,9 @@
-import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Link,
+  Outlet,
+  useMatch,
+} from "@tanstack/react-router";
 import { useIsOperator } from "../data/queries";
 import { TopicList, topicItem } from "../features/help/Topic";
 import { topics } from "../features/help/topics";
@@ -15,6 +20,11 @@ export const Route = createFileRoute("/_app/$org/help")({
 function HelpPages() {
   const org = useOrg();
   const operator = useIsOperator();
+  // Every guide page is under The full guide, so it stays marked there.
+  const inGuide = !!useMatch({
+    from: "/_app/$org/help/guide/$page",
+    shouldThrow: false,
+  });
   return (
     <>
       <PageBar title="Help" />
@@ -38,7 +48,7 @@ function HelpPages() {
             to="/$org/help/guide/$page"
             params={{ org, page: "README" }}
             className={`${topicItem} mt-3`}
-            activeProps={{ "aria-current": "true" }}
+            aria-current={inGuide ? "true" : undefined}
           >
             The full guide
           </Link>

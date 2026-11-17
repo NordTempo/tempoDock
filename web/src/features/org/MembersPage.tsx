@@ -156,8 +156,10 @@ function Members() {
                       <th title="Whether they sign in with a second factor">
                         Two-factor
                       </th>
-                      <th>Access</th>
-                      <th>Added</th>
+                      {/* Access and Added are left out on a narrow page, so
+                          the row's actions stay in view. */}
+                      <th className="@max-[900px]:hidden">Access</th>
+                      <th className="@max-[900px]:hidden">Added</th>
                       <th />
                     </tr>
                   </thead>
@@ -447,7 +449,7 @@ function MemberRow({
           )}
         </td>
       )}
-      <td className="min-w-[240px] py-2">
+      <td className="min-w-[150px] py-2 @min-[1000px]:min-w-[240px]">
         <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
           {groups.map((g) => (
             <span key={g} className="whitespace-nowrap">
@@ -499,11 +501,13 @@ function MemberRow({
         />
       </td>
       <td
-        className={`py-2 whitespace-nowrap ${access ? "text-mut" : "text-faint"}`}
+        className={`py-2 @max-[900px]:hidden ${access ? "text-mut" : "text-faint"}`}
       >
         {access || "none"}
       </td>
-      <td className="py-2 text-faint">{day(member.created_at)}</td>
+      <td className="py-2 text-faint @max-[900px]:hidden">
+        {day(member.created_at)}
+      </td>
       <td className="w-full py-1.5 text-right">
         {!you && (
           <Button danger small onClick={() => setAsking(true)}>
@@ -602,12 +606,12 @@ function InviteRow({
         </>
       )}
       <td />
-      <td className="py-2 whitespace-nowrap text-faint">
+      <td className="py-2 whitespace-nowrap text-faint @max-[900px]:hidden">
         {invite.expired ? "expired" : `until ${day(expires_at)}`}
       </td>
-      <td />
+      <td className="@max-[900px]:hidden" />
       <td className="w-full py-1.5 text-right">
-        <span className="inline-flex gap-1.5">
+        <span className="inline-flex flex-wrap justify-end gap-1.5">
           <Button small onClick={() => setRenewing(true)}>
             New link
           </Button>

@@ -205,6 +205,12 @@ export const statusState: Record<ComponentStatus, State> = {
   major_outage: { tone: "fail", glyph: "✕", label: "major outage" },
 };
 
+/** A page's publishing as a state: the Status pages list and Overview. */
+export const publishState = (published: boolean): State =>
+  published
+    ? { tone: "ok", glyph: "●", label: "published" }
+    : { tone: "mut", glyph: "○", label: "unpublished" };
+
 export const useOpenIncident = (slug: string) =>
   useAction(
     (req: Schema["OpenIncidentRequest"]) =>

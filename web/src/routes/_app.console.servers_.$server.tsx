@@ -79,12 +79,12 @@ function ServerNotFound() {
             Servers
           </Link>
         }
-        title={<span className="font-mono">{server}</span>}
+        title="Not found"
       />
       <Page gap="gap-2">
-        <h2 className="text-md font-normal">
-          Server <b className="font-mono">{server}</b> not found
-        </h2>
+        <p className="text-md">
+          There's no server called <b className="font-mono">{server}</b>.
+        </p>
         <p className="text-mut">It may have been removed or renamed.</p>
         <Link to="/console/servers" className="btn pri mt-2 self-start">
           Back to servers

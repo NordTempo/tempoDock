@@ -1,5 +1,5 @@
 import { Link, useMatchRoute, useNavigate } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { useCurrentContext, useOrg } from "../../shell/location";
 import { notify } from "../../ui/notice";
 import { orgPlaces, type Place, projectPlaces, servicePlaces } from "./places";
@@ -85,7 +85,7 @@ export function TopicBody({
           params={{ org, page: guide.page }}
           hash={guide.hash}
           onClick={onGuide}
-          className="lnk"
+          className={helpLink}
         >
           Guide
         </Link>
@@ -114,14 +114,14 @@ function DoRow({
             type="button"
             title="Copy"
             aria-label={`Copy: ${cli}`}
-            className="self-start text-left font-mono text-xs break-words text-fg hover:text-info"
+            className="self-start text-left font-mono text-xs text-fg hover:text-info"
             onClick={() =>
               navigator.clipboard
                 .writeText(cli)
                 .then(() => notify("Command copied"))
             }
           >
-            {cli}
+            <CliWords cli={cli} />
           </button>
         )}
       </div>
@@ -206,6 +206,34 @@ function PlaceLink({
     </button>
   );
 }
+
+/**
+ * A command that wraps only between its words, so a flag (--memory)
+ * stays whole; a word wider than the line still breaks inside.
+ */
+function CliWords({ cli }: { cli: string }) {
+  let at = 0;
+  const words = cli.split(" ").map((word) => {
+    const w = { word, at };
+    at += word.length + 1;
+    return w;
+  });
+  return words.map(({ word, at }) => (
+    <Fragment key={at}>
+      {at > 0 && " "}
+      <span className="inline-block max-w-full [overflow-wrap:anywhere]">
+        {word}
+      </span>
+    </Fragment>
+  ));
+}
+
+/**
+ * A related topic or the guide, a plain small link in the panel and on
+ * the help page alike (not `lnk`, which is a bordered button on pages).
+ */
+export const helpLink =
+  "inline-flex min-h-[24px] min-w-[24px] items-center text-xs text-mut underline-offset-3 hover:text-fg hover:underline";
 
 /** A topic in TopicList: the current one marked by aria-current. */
 export const topicItem =

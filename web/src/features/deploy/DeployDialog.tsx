@@ -77,9 +77,10 @@ export default function DeployDialog({
       ? `r${view.deploying.number} is deploying; deploy again once it finishes`
       : undefined);
 
+  // The same order as New service's sources: Image, Folder, GitHub.
   const modes: [DeployMode, string][] = [
-    ["folder", "Folder"],
     ["image", "Image"],
+    ["folder", "Folder"],
     ...(conn ? [["git", "GitHub"] satisfies [DeployMode, string]] : []),
   ];
 

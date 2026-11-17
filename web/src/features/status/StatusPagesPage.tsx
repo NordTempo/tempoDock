@@ -14,7 +14,7 @@ import {
   Panel,
   StateText,
 } from "../../ui/kit";
-import { statusQueries, useCreateStatusPage } from "./data";
+import { publishState, statusQueries, useCreateStatusPage } from "./data";
 
 /**
  * The organization's public status pages (ADR 0073): each lists
@@ -59,7 +59,7 @@ export function StatusPagesPage() {
               <thead>
                 <tr>
                   <th>Name</th>
-                  <th>Title</th>
+                  <th className="pr-7">Title</th>
                   <th>State</th>
                   <th>Components</th>
                   <th>Address</th>
@@ -78,15 +78,9 @@ export function StatusPagesPage() {
                         {p.slug}
                       </Link>
                     </td>
-                    <td>{p.title}</td>
+                    <td className="pr-7">{p.title}</td>
                     <td>
-                      <StateText
-                        state={
-                          p.published
-                            ? { tone: "ok", glyph: "●", label: "published" }
-                            : { tone: "mut", glyph: "○", label: "unpublished" }
-                        }
-                      />
+                      <StateText state={publishState(p.published)} />
                     </td>
                     <td className="tabular-nums">{p.components}</td>
                     <td className="w-full font-mono text-sec">

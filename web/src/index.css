@@ -225,10 +225,6 @@
     cursor: not-allowed;
   }
 
-  input[type="radio"] {
-    accent-color: var(--color-fg);
-  }
-
   /*
    * One checkbox everywhere: a dark 16px box with the control border, white
    * with a black tick when checked, dimmed when disabled. No bright native
@@ -263,11 +259,39 @@
     cursor: not-allowed;
   }
 
-  /* Radios are 16px with a margin: a 24px target. */
+  /*
+   * One radio everywhere, like the checkbox: a dark 16px ring with the
+   * field edge, a white ring and dot when picked, never shrunk by its row.
+   * 16px with a margin: a 24px target.
+   */
   input[type="radio"] {
+    appearance: none;
+    flex: none;
     width: 16px;
     height: 16px;
     margin: 4px;
+    border: 1px solid var(--color-field);
+    border-radius: 999px;
+    background: var(--color-page);
+    cursor: pointer;
+    transition:
+      border-color 0.1s,
+      box-shadow 0.1s;
+  }
+
+  input[type="radio"]:hover:not(:disabled) {
+    border-color: var(--color-mut);
+  }
+
+  input[type="radio"]:checked {
+    border-color: var(--color-fg);
+    box-shadow: inset 0 0 0 3px var(--color-page);
+    background: var(--color-fg);
+  }
+
+  input[type="radio"]:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 
   /*

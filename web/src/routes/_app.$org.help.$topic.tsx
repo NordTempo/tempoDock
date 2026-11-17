@@ -1,5 +1,5 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { TopicBody } from "../features/help/Topic";
+import { helpLink, TopicBody } from "../features/help/Topic";
 import { isTopicId } from "../features/help/topics";
 
 // One help topic at its own address, for links and reading at full width.
@@ -21,7 +21,7 @@ function HelpTopic() {
           <Link
             to="/$org/help/$topic"
             params={{ org, topic: id }}
-            className="lnk"
+            className={helpLink}
           >
             {label}
           </Link>

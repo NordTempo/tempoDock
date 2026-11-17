@@ -32,7 +32,7 @@ export function Placements({ project }: { project: string }) {
               <th>Kind</th>
               <th>Server</th>
               <th>Environments</th>
-              <th />
+              <th>How</th>
             </tr>
           </thead>
           <tbody>

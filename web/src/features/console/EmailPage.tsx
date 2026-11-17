@@ -282,7 +282,7 @@ function SettingsForm({ settings: st }: { settings: EmailSettings }) {
           </Field>
         </div>
       </section>
-      <section className="flex flex-col gap-3 border-b border-line py-4">
+      <section className="flex flex-col gap-3 py-4">
         <h2 className="font-semibold">Sender</h2>
         <div className="grid gap-3 sm:grid-cols-3">
           <Field label="From name">

@@ -21,6 +21,7 @@ import {
 } from "../../ui/kit";
 import {
   incidentState,
+  publishState,
   type StatusComponent,
   type StatusComponentInput,
   type StatusHook,
@@ -69,7 +70,7 @@ export function StatusPageEditor({ slug }: { slug: string }) {
   ]);
   const pageState = page.published
     ? statusState[page.status]
-    : ({ tone: "mut", glyph: "○", label: "unpublished" } as const);
+    : publishState(false);
   // Opened by a name the page had before: move to its name now.
   if (page.slug !== slug)
     return (
@@ -83,7 +84,11 @@ export function StatusPageEditor({ slug }: { slug: string }) {
     <>
       <PageBar
         parent={
-          <Link to="/$org/status-pages" params={{ org }}>
+          <Link
+            to="/$org/status-pages"
+            params={{ org }}
+            className="hover:text-fg"
+          >
             Status pages
           </Link>
         }
@@ -488,8 +493,7 @@ function Settings({ page, admin }: { page: StatusPage; admin: boolean }) {
               </Act>
               {page.base_domain && renamed && renamed !== page.slug && (
                 <span className="basis-full text-sec">
-                  The address becomes status-{renamed}.{page.base_domain};
-                  status-{page.slug}.{page.base_domain} redirects to it.
+                  {`The address becomes status-${renamed}.${page.base_domain}; status-${page.slug}.${page.base_domain} redirects to it.`}
                 </span>
               )}
             </form>

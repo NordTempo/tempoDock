@@ -125,7 +125,7 @@ function TokenRow({
               className="block text-2xs text-warn"
               title="From before platform tokens (ADR 0080): it also runs the platform until an operator splits it in Console › Tokens"
             >
-              legacy: also the platform's
+              also runs the platform
             </span>
           )}
         </td>

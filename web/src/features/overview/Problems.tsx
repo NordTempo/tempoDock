@@ -91,7 +91,9 @@ export function Problems({
   return (
     <section aria-labelledby="problems">
       <SectionHead id="problems">{plural(n, "problem")}</SectionHead>
-      <ol className="panel">
+      {/* One grid for every row (each row a subgrid), so the times and
+          actions line up whatever the width of each. */}
+      <ol className="panel grid grid-cols-[172px_150px_minmax(0,1fr)_auto_auto] gap-x-4">
         {problems.map(({ problem, more }, i) => (
           <ProblemRow
             key={problemKey(problem)}
@@ -523,17 +525,19 @@ function Row({
   children: ReactNode;
 }) {
   return (
-    <li className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-soft py-2.5 last:border-0">
-      <span className="flex w-[172px] items-baseline gap-2.5 whitespace-nowrap">
+    <li className="col-span-full grid grid-cols-subgrid items-center border-b border-soft py-2.5 last:border-0">
+      <span className="flex items-baseline gap-2.5 whitespace-nowrap">
         {n ? <kbd>{n}</kbd> : <span className="w-[15px]" />}
         <span className={toneText[tone]}>
           <Glyph char={glyph} /> {title}
         </span>
       </span>
-      <span className="w-[150px] font-mono">{where}</span>
-      <span className="min-w-0 flex-[1_1_360px]">{children}</span>
-      {time && <span className="text-xs text-faint">{time}</span>}
-      {action}
+      <span className="min-w-0 truncate font-mono" title={where}>
+        {where}
+      </span>
+      <span className="min-w-0">{children}</span>
+      <span className="text-right text-xs text-faint">{time}</span>
+      <span className="justify-self-end">{action}</span>
     </li>
   );
 }
