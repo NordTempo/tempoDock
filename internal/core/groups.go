@@ -394,11 +394,24 @@ func (a Actor) refuseGrant(need apitypes.Scope, action, place string) error {
 			Fix:    "tell the server's operator; Dock's log names the check",
 		})
 	}
-	return a.refuse(apitypes.Refusal{
+	r := apitypes.Refusal{
 		DecidedBy: apitypes.RefusedGrants, Action: action, Need: perm.String(), Place: place,
 		Reason: fmt.Sprintf("%s can't do %s %s: it needs %s, which none of their groups or grants gives there", a, action, where, perm),
 		Fix:    fmt.Sprintf("someone who manages the members of %s adds them to a group that has it, in Settings › Members (`dock group add <group> %s`)", a.orgName(), a.who()),
-	})
+	}
+	switch {
+	case !a.actsForPerson():
+		// An org token: its grants and groups are its own, and the
+		// organization's agent rules cap them.
+		r.Reason = fmt.Sprintf("%s can't do %s %s: it needs %s, which none of its grants or groups gives there, or the organization's agent rules keep agents from it", a, action, where, perm)
+		r.Fix = fmt.Sprintf("an admin of %s gives the token a role there (`dock token grant %s <role>`, or `dock group add <group> --agent %s`), or changes the agent rules in Settings › Agent rules", a.orgName(), a.Name, a.Name)
+	case a.agent != nil:
+		// A person's `dock login`: the person may hold it, and their agent
+		// setting or the organization's agent rules keep their agents from it.
+		r.Reason = fmt.Sprintf("%s can't do %s %s: it needs %s, which their groups and grants don't give there, or their agent setting or the organization's agent rules keep their agents from it", a, action, where, perm)
+		r.Fix = fmt.Sprintf("if %s holds it, they loosen their agent setting on their Account page in the browser (an admin changes the agent rules in Settings › Agent rules); otherwise %s", a.who(), r.Fix)
+	}
+	return a.refuse(r)
 }
 
 // approves reports whether the actor may decide access requests in an

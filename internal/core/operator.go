@@ -272,7 +272,7 @@ func (c *Core) OperatorAddMember(ctx context.Context, a Actor, slug string, req 
 		return apitypes.User{}, err
 	}
 	c.auditBoth(ctx, a, o, "org.member_add", fmt.Sprintf("the platform's operator added %s as %s", u.Email, req.Role))
-	return toUser(u, string(req.Role)), nil
+	return c.memberView(ctx, o.ID, u.ID)
 }
 
 // OperatorSetMemberRole changes a member's role in any org, keeping it an

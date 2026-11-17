@@ -182,7 +182,7 @@ func (c *Core) SetMemberRole(ctx context.Context, a Actor, userID int64, req api
 		return apitypes.User{}, err
 	}
 	c.audit(ctx, a, "org.member_role", nil, nil, u.Email, fmt.Sprintf("made %s %s", u.Email, req.Role))
-	return toUser(u, string(req.Role)), nil
+	return c.memberView(ctx, a.OrgID, u.ID)
 }
 
 // RemoveMember takes a member out of the org; their account stays. Use
