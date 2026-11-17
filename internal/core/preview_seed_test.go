@@ -25,7 +25,7 @@ func seedHarness(t *testing.T) (*harness, string, func() []node.JobSpec) {
 		}
 		return nil
 	})
-	h.servicePreviews(ServiceRef{"shop", "staging", "db"}, apitypes.SetServicePreviewsRequest{Seed: true})
+	h.servicePreviews(ServiceRef{"shop", "staging", "db"}, apitypes.SetServicePreviewsRequest{Data: apitypes.PreviewDataSnapshot})
 	return h, appHook, func() []node.JobSpec {
 		mu.Lock()
 		defer mu.Unlock()
@@ -33,12 +33,13 @@ func seedHarness(t *testing.T) (*harness, string, func() []node.JobSpec) {
 	}
 }
 
-// waitPreviewEvent waits until preview env's last event contains want.
+// waitPreviewEvent waits until a preview.data audit event of env
+// contains want.
 func (h *harness) waitPreviewEvent(env, want string) {
 	h.t.Helper()
 	// The audit event: the preview's last event moves on with its deploys.
-	eventually(h.t, "preview.seed "+want, func() bool {
-		evs, err := h.c.ListAudit(h.ctx, testSystem, AuditFilter{Project: "shop", Environment: env, Action: "preview.seed"})
+	eventually(h.t, "preview.data "+want, func() bool {
+		evs, err := h.c.ListAudit(h.ctx, testSystem, AuditFilter{Project: "shop", Environment: env, Action: "preview.data"})
 		return err == nil && slices.ContainsFunc(evs, func(e apitypes.AuditEvent) bool { return strings.Contains(e.Summary, want) })
 	})
 }
@@ -61,7 +62,7 @@ func TestPreviewSeedFromSnapshot(t *testing.T) {
 	if r := h.wait(db, h.waitReleases(db, 1)[0].Number); r.Status != apitypes.ReleaseActive {
 		t.Fatalf("db release %+v", r)
 	}
-	h.waitPreviewEvent("pr-7", "db seeded from snapshot")
+	h.waitPreviewEvent("pr-7", "newest snapshot of shop/staging/db")
 	jobs := restores()
 	if len(jobs) != 1 || jobs[0].Env["SNAPSHOT"] != itoa(s.ID) {
 		t.Fatalf("restore jobs %+v, want one of snapshot %d", jobs, s.ID)
@@ -106,7 +107,7 @@ func TestPreviewSeedWithoutSnapshot(t *testing.T) {
 	if r := h.wait(db, h.waitReleases(db, 1)[0].Number); r.Status != apitypes.ReleaseActive {
 		t.Fatalf("db release %+v", r)
 	}
-	h.waitPreviewEvent("pr-8", "db starts empty: shop/staging/db has no snapshot")
+	h.waitPreviewEvent("pr-8", "started empty: shop/staging/db has no snapshot")
 	if jobs := restores(); len(jobs) != 0 {
 		t.Fatalf("restored without a snapshot: %+v", jobs)
 	}
@@ -122,11 +123,11 @@ func TestPreviewSeedSettings(t *testing.T) {
 	}
 	deployer := Actor{Kind: "token", OrgID: 1, Name: "deploy", Scope: apitypes.ScopeDeploy}
 	db := ServiceRef{"shop", "staging", "db"}
-	if _, err := h.c.SetServicePreviews(h.ctx, deployer, db, apitypes.SetServicePreviewsRequest{Seed: true}); CodeOf(err) != apitypes.CodeForbidden {
+	if _, err := h.c.SetServicePreviews(h.ctx, deployer, db, apitypes.SetServicePreviewsRequest{Data: apitypes.PreviewDataSnapshot}); CodeOf(err) != apitypes.CodeForbidden {
 		t.Fatalf("deploy scope set a seed: %v", err)
 	}
 	// api has no volume to seed.
-	if _, err := h.c.SetServicePreviews(h.ctx, testSystem, ServiceRef{"shop", "staging", "api"}, apitypes.SetServicePreviewsRequest{Seed: true}); CodeOf(err) != apitypes.CodeValidation {
+	if _, err := h.c.SetServicePreviews(h.ctx, testSystem, ServiceRef{"shop", "staging", "api"}, apitypes.SetServicePreviewsRequest{Data: apitypes.PreviewDataSnapshot}); CodeOf(err) != apitypes.CodeValidation {
 		t.Fatalf("seed api: %v", err)
 	}
 }

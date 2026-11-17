@@ -84,6 +84,15 @@ type Config struct {
 	Status Status `toml:"status"`
 	// Scan configures image vulnerability scanning (ADR 0074).
 	Scan Scan `toml:"scan"`
+	// Previews bounds copies of databases into previews (ADR 0092).
+	Previews Previews `toml:"previews"`
+}
+
+// Previews configures preview environments. Control plane only.
+type Previews struct {
+	// CopyMaxMB is the largest database a preview copies from its base
+	// (ADR 0092), 2048 when unset; a larger one starts empty.
+	CopyMaxMB int `toml:"copy_max_mb"`
 }
 
 // Status configures public status pages (ADR 0073). Control plane only.

@@ -197,6 +197,36 @@ func (q *Queries) DeleteServiceDomains(ctx context.Context, serviceID int64) ([]
 	return items, nil
 }
 
+const finishPreviewData = `-- name: FinishPreviewData :exec
+UPDATE preview_data SET status = ?, message = ?, bytes = ?, masked_tables = ?, masked_columns = ?, finished_at = ?
+WHERE service_id = +?
+`
+
+type FinishPreviewDataParams struct {
+	Status        string
+	Message       string
+	Bytes         int64
+	MaskedTables  int64
+	MaskedColumns int64
+	FinishedAt    *time.Time
+	ServiceID     int64
+}
+
+// A preview database's copy ends: copied, with its numbers, or empty with
+// the reason.
+func (q *Queries) FinishPreviewData(ctx context.Context, arg FinishPreviewDataParams) error {
+	_, err := q.db.ExecContext(ctx, finishPreviewData,
+		arg.Status,
+		arg.Message,
+		arg.Bytes,
+		arg.MaskedTables,
+		arg.MaskedColumns,
+		arg.FinishedAt,
+		arg.ServiceID,
+	)
+	return err
+}
+
 const getEnvironmentPreviews = `-- name: GetEnvironmentPreviews :one
 
 SELECT environment_id, max_previews, sleep_after_minutes, copy_shared, updated_by, updated_at FROM environment_previews WHERE environment_id = +?
@@ -392,7 +422,7 @@ func (q *Queries) GetPreviewByEnvironment(ctx context.Context, environmentID int
 }
 
 const getServicePreviews = `-- name: GetServicePreviews :one
-SELECT service_id, build, allow_forks, copy_variables, seed, updated_by, updated_at FROM service_previews WHERE service_id = +?
+SELECT service_id, build, allow_forks, copy_variables, updated_by, updated_at, data, data_forks FROM service_previews WHERE service_id = +?
 `
 
 // A service's preview settings (ADR 0077).
@@ -404,9 +434,10 @@ func (q *Queries) GetServicePreviews(ctx context.Context, serviceID int64) (Serv
 		&i.Build,
 		&i.AllowForks,
 		&i.CopyVariables,
-		&i.Seed,
 		&i.UpdatedBy,
 		&i.UpdatedAt,
+		&i.Data,
+		&i.DataForks,
 	)
 	return i, err
 }
@@ -574,6 +605,64 @@ func (q *Queries) ListClosedPreviewsLeft(ctx context.Context) ([]Preview, error)
 	return items, nil
 }
 
+const listCopyingPreviewData = `-- name: ListCopyingPreviewData :many
+SELECT preview_data.service_id, preview_data.preview_id, preview_data.from_service_id, preview_data.mode, preview_data.status, preview_data.message, preview_data.bytes, preview_data.masked_tables, preview_data.masked_columns, preview_data.started_at, preview_data.finished_at, previews.environment_id FROM preview_data
+JOIN previews ON previews.id = preview_data.preview_id
+WHERE preview_data.status = 'copying'
+`
+
+type ListCopyingPreviewDataRow struct {
+	ServiceID     int64
+	PreviewID     int64
+	FromServiceID int64
+	Mode          string
+	Status        string
+	Message       string
+	Bytes         int64
+	MaskedTables  int64
+	MaskedColumns int64
+	StartedAt     time.Time
+	FinishedAt    *time.Time
+	EnvironmentID int64
+}
+
+// Copies a restart cut short, to end them at the next start.
+func (q *Queries) ListCopyingPreviewData(ctx context.Context) ([]ListCopyingPreviewDataRow, error) {
+	rows, err := q.db.QueryContext(ctx, listCopyingPreviewData)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCopyingPreviewDataRow
+	for rows.Next() {
+		var i ListCopyingPreviewDataRow
+		if err := rows.Scan(
+			&i.ServiceID,
+			&i.PreviewID,
+			&i.FromServiceID,
+			&i.Mode,
+			&i.Status,
+			&i.Message,
+			&i.Bytes,
+			&i.MaskedTables,
+			&i.MaskedColumns,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.EnvironmentID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listEnvGitConnections = `-- name: ListEnvGitConnections :many
 SELECT git_connections.id, git_connections.service_id, git_connections.hook_id, git_connections.repo, git_connections.branch, git_connections.dir, git_connections.secret, git_connections.token, git_connections.post_status, git_connections.pending_sha, git_connections.pending_message, git_connections.pending_author, git_connections.pending_by, git_connections.pending_force, git_connections.last_event, git_connections.last_event_at, git_connections.created_by, git_connections.created_at, git_connections.installation_id, git_connections.repo_id, git_connections.pending_approved FROM git_connections
 JOIN services ON services.id = git_connections.service_id
@@ -629,7 +718,7 @@ func (q *Queries) ListEnvGitConnections(ctx context.Context, environmentID int64
 }
 
 const listEnvServicePreviews = `-- name: ListEnvServicePreviews :many
-SELECT service_previews.service_id, service_previews.build, service_previews.allow_forks, service_previews.copy_variables, service_previews.seed, service_previews.updated_by, service_previews.updated_at, services.name
+SELECT service_previews.service_id, service_previews.build, service_previews.allow_forks, service_previews.copy_variables, service_previews.updated_by, service_previews.updated_at, service_previews.data, service_previews.data_forks, services.name
 FROM services JOIN service_previews ON service_previews.service_id = services.id
 WHERE services.environment_id = +? AND services.archived_at IS NULL
 ORDER BY services.name
@@ -640,9 +729,10 @@ type ListEnvServicePreviewsRow struct {
 	Build         bool
 	AllowForks    bool
 	CopyVariables string
-	Seed          bool
 	UpdatedBy     string
 	UpdatedAt     time.Time
+	Data          string
+	DataForks     bool
 	Name          string
 }
 
@@ -662,9 +752,10 @@ func (q *Queries) ListEnvServicePreviews(ctx context.Context, environmentID int6
 			&i.Build,
 			&i.AllowForks,
 			&i.CopyVariables,
-			&i.Seed,
 			&i.UpdatedBy,
 			&i.UpdatedAt,
+			&i.Data,
+			&i.DataForks,
 			&i.Name,
 		); err != nil {
 			return nil, err
@@ -823,6 +914,74 @@ func (q *Queries) ListPreviewServiceStates(ctx context.Context, arg ListPreviewS
 	return items, nil
 }
 
+const listProjectPreviewData = `-- name: ListProjectPreviewData :many
+SELECT preview_data.service_id, preview_data.preview_id, preview_data.from_service_id, preview_data.mode, preview_data.status, preview_data.message, preview_data.bytes, preview_data.masked_tables, preview_data.masked_columns, preview_data.started_at, preview_data.finished_at, services.name AS service, base.name AS from_service, environments.name AS from_environment
+FROM previews
+JOIN preview_data ON preview_data.preview_id = previews.id
+JOIN services ON services.id = preview_data.service_id
+JOIN services AS base ON base.id = preview_data.from_service_id
+JOIN environments ON environments.id = base.environment_id
+WHERE previews.project_id = +? AND previews.closed_at IS NULL
+ORDER BY preview_data.preview_id, services.name
+`
+
+type ListProjectPreviewDataRow struct {
+	ServiceID       int64
+	PreviewID       int64
+	FromServiceID   int64
+	Mode            string
+	Status          string
+	Message         string
+	Bytes           int64
+	MaskedTables    int64
+	MaskedColumns   int64
+	StartedAt       time.Time
+	FinishedAt      *time.Time
+	Service         string
+	FromService     string
+	FromEnvironment string
+}
+
+// The copies of a project's open previews, with the preview database's
+// and its base service's names, for the previews list.
+func (q *Queries) ListProjectPreviewData(ctx context.Context, projectID int64) ([]ListProjectPreviewDataRow, error) {
+	rows, err := q.db.QueryContext(ctx, listProjectPreviewData, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListProjectPreviewDataRow
+	for rows.Next() {
+		var i ListProjectPreviewDataRow
+		if err := rows.Scan(
+			&i.ServiceID,
+			&i.PreviewID,
+			&i.FromServiceID,
+			&i.Mode,
+			&i.Status,
+			&i.Message,
+			&i.Bytes,
+			&i.MaskedTables,
+			&i.MaskedColumns,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.Service,
+			&i.FromService,
+			&i.FromEnvironment,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProjectPreviewEnvironments = `-- name: ListProjectPreviewEnvironments :many
 SELECT environment_id, repo, number, title, author, html_url, closed_at FROM previews WHERE project_id = +?
 `
@@ -871,7 +1030,7 @@ func (q *Queries) ListProjectPreviewEnvironments(ctx context.Context, projectID 
 }
 
 const listProjectServicePreviews = `-- name: ListProjectServicePreviews :many
-SELECT service_previews.service_id, service_previews.build, service_previews.allow_forks, service_previews.copy_variables, service_previews.seed, service_previews.updated_by, service_previews.updated_at, services.name AS service, environments.id AS environment_id, environments.name AS environment,
+SELECT service_previews.service_id, service_previews.build, service_previews.allow_forks, service_previews.copy_variables, service_previews.updated_by, service_previews.updated_at, service_previews.data, service_previews.data_forks, services.name AS service, environments.id AS environment_id, environments.name AS environment,
        CAST(coalesce(git_connections.repo, '') AS TEXT) AS repo, CAST(coalesce(git_connections.branch, '') AS TEXT) AS branch,
        CAST(coalesce(git_connections.dir, '') AS TEXT) AS dir, CAST(coalesce(git_connections.repo_id, 0) AS INTEGER) AS repo_id
 FROM environments
@@ -887,9 +1046,10 @@ type ListProjectServicePreviewsRow struct {
 	Build         bool
 	AllowForks    bool
 	CopyVariables string
-	Seed          bool
 	UpdatedBy     string
 	UpdatedAt     time.Time
+	Data          string
+	DataForks     bool
 	Service       string
 	EnvironmentID int64
 	Environment   string
@@ -917,9 +1077,10 @@ func (q *Queries) ListProjectServicePreviews(ctx context.Context, projectID int6
 			&i.Build,
 			&i.AllowForks,
 			&i.CopyVariables,
-			&i.Seed,
 			&i.UpdatedBy,
 			&i.UpdatedAt,
+			&i.Data,
+			&i.DataForks,
 			&i.Service,
 			&i.EnvironmentID,
 			&i.Environment,
@@ -955,6 +1116,21 @@ func (q *Queries) SetPreviewComment(ctx context.Context, arg SetPreviewCommentPa
 	return err
 }
 
+const setPreviewDataMessage = `-- name: SetPreviewDataMessage :exec
+UPDATE preview_data SET message = ? WHERE service_id = +? AND status = 'copying'
+`
+
+type SetPreviewDataMessageParams struct {
+	Message   string
+	ServiceID int64
+}
+
+// The step a copy in progress is at.
+func (q *Queries) SetPreviewDataMessage(ctx context.Context, arg SetPreviewDataMessageParams) error {
+	_, err := q.db.ExecContext(ctx, setPreviewDataMessage, arg.Message, arg.ServiceID)
+	return err
+}
+
 const setPreviewEvent = `-- name: SetPreviewEvent :exec
 UPDATE previews SET last_event = ?, updated_at = ? WHERE id = +?
 `
@@ -967,6 +1143,37 @@ type SetPreviewEventParams struct {
 
 func (q *Queries) SetPreviewEvent(ctx context.Context, arg SetPreviewEventParams) error {
 	_, err := q.db.ExecContext(ctx, setPreviewEvent, arg.LastEvent, arg.UpdatedAt, arg.ID)
+	return err
+}
+
+const startPreviewData = `-- name: StartPreviewData :exec
+INSERT INTO preview_data (service_id, preview_id, from_service_id, mode, status, message, started_at)
+VALUES (?, ?, ?, ?, 'copying', ?, ?)
+ON CONFLICT (service_id) DO UPDATE SET
+    mode = excluded.mode, status = 'copying', message = excluded.message, bytes = 0, masked_tables = 0, masked_columns = 0,
+    started_at = excluded.started_at, finished_at = NULL
+`
+
+type StartPreviewDataParams struct {
+	ServiceID     int64
+	PreviewID     int64
+	FromServiceID int64
+	Mode          string
+	Message       string
+	StartedAt     time.Time
+}
+
+// A preview database's copy starts (ADR 0092): at the preview's creation,
+// or again on a refresh from its base.
+func (q *Queries) StartPreviewData(ctx context.Context, arg StartPreviewDataParams) error {
+	_, err := q.db.ExecContext(ctx, startPreviewData,
+		arg.ServiceID,
+		arg.PreviewID,
+		arg.FromServiceID,
+		arg.Mode,
+		arg.Message,
+		arg.StartedAt,
+	)
 	return err
 }
 
@@ -1042,11 +1249,11 @@ func (q *Queries) UpsertEnvironmentPreviews(ctx context.Context, arg UpsertEnvir
 }
 
 const upsertServicePreviews = `-- name: UpsertServicePreviews :exec
-INSERT INTO service_previews (service_id, build, allow_forks, copy_variables, seed, updated_by, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO service_previews (service_id, build, allow_forks, copy_variables, data, data_forks, updated_by, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (service_id) DO UPDATE SET
     build = excluded.build, allow_forks = excluded.allow_forks, copy_variables = excluded.copy_variables,
-    seed = excluded.seed, updated_by = excluded.updated_by, updated_at = excluded.updated_at
+    data = excluded.data, data_forks = excluded.data_forks, updated_by = excluded.updated_by, updated_at = excluded.updated_at
 `
 
 type UpsertServicePreviewsParams struct {
@@ -1054,7 +1261,8 @@ type UpsertServicePreviewsParams struct {
 	Build         bool
 	AllowForks    bool
 	CopyVariables string
-	Seed          bool
+	Data          string
+	DataForks     bool
 	UpdatedBy     string
 	UpdatedAt     time.Time
 }
@@ -1065,7 +1273,8 @@ func (q *Queries) UpsertServicePreviews(ctx context.Context, arg UpsertServicePr
 		arg.Build,
 		arg.AllowForks,
 		arg.CopyVariables,
-		arg.Seed,
+		arg.Data,
+		arg.DataForks,
 		arg.UpdatedBy,
 		arg.UpdatedAt,
 	)

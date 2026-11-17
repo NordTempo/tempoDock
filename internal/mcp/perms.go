@@ -27,6 +27,7 @@ var toolPerms = map[string]core.Perm{
 	"metrics":                   core.PermEnvView,
 	"get_previews":              core.PermEnvView,
 	"get_preview":               core.PermEnvView,
+	"refresh_preview_data":      core.PermDeploy,
 	"wake_environment":          core.PermEnvView,
 	"list_vulnerabilities":      core.PermEnvView,
 	"logs":                      core.PermLogsRead,

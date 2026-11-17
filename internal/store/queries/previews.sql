@@ -16,11 +16,11 @@ ON CONFLICT (environment_id) DO UPDATE SET
 SELECT * FROM service_previews WHERE service_id = +?;
 
 -- name: UpsertServicePreviews :exec
-INSERT INTO service_previews (service_id, build, allow_forks, copy_variables, seed, updated_by, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO service_previews (service_id, build, allow_forks, copy_variables, data, data_forks, updated_by, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (service_id) DO UPDATE SET
     build = excluded.build, allow_forks = excluded.allow_forks, copy_variables = excluded.copy_variables,
-    seed = excluded.seed, updated_by = excluded.updated_by, updated_at = excluded.updated_at;
+    data = excluded.data, data_forks = excluded.data_forks, updated_by = excluded.updated_by, updated_at = excluded.updated_at;
 
 -- name: StopServicePreviewBuilds :exec
 -- A disconnected service builds no more pull requests.
@@ -198,3 +198,40 @@ WHERE environments.archived_at IS NOT NULL;
 SELECT * FROM volume_snapshots
 WHERE service_id = +? AND +server_id = ? AND status = 'ready'
 ORDER BY id DESC LIMIT 1;
+
+-- name: StartPreviewData :exec
+-- A preview database's copy starts (ADR 0092): at the preview's creation,
+-- or again on a refresh from its base.
+INSERT INTO preview_data (service_id, preview_id, from_service_id, mode, status, message, started_at)
+VALUES (?, ?, ?, ?, 'copying', ?, ?)
+ON CONFLICT (service_id) DO UPDATE SET
+    mode = excluded.mode, status = 'copying', message = excluded.message, bytes = 0, masked_tables = 0, masked_columns = 0,
+    started_at = excluded.started_at, finished_at = NULL;
+
+-- name: SetPreviewDataMessage :exec
+-- The step a copy in progress is at.
+UPDATE preview_data SET message = ? WHERE service_id = +? AND status = 'copying';
+
+-- name: FinishPreviewData :exec
+-- A preview database's copy ends: copied, with its numbers, or empty with
+-- the reason.
+UPDATE preview_data SET status = ?, message = ?, bytes = ?, masked_tables = ?, masked_columns = ?, finished_at = ?
+WHERE service_id = +?;
+
+-- name: ListProjectPreviewData :many
+-- The copies of a project's open previews, with the preview database's
+-- and its base service's names, for the previews list.
+SELECT preview_data.*, services.name AS service, base.name AS from_service, environments.name AS from_environment
+FROM previews
+JOIN preview_data ON preview_data.preview_id = previews.id
+JOIN services ON services.id = preview_data.service_id
+JOIN services AS base ON base.id = preview_data.from_service_id
+JOIN environments ON environments.id = base.environment_id
+WHERE previews.project_id = +? AND previews.closed_at IS NULL
+ORDER BY preview_data.preview_id, services.name;
+
+-- name: ListCopyingPreviewData :many
+-- Copies a restart cut short, to end them at the next start.
+SELECT preview_data.*, previews.environment_id FROM preview_data
+JOIN previews ON previews.id = preview_data.preview_id
+WHERE preview_data.status = 'copying';

@@ -121,7 +121,7 @@ type previewOf struct {
 }
 
 // previewsOf builds a project's open previews (or the one in environment
-// envID) in four queries: previews, their services' newest releases,
+// envID) in a fixed number of queries: previews, their services' newest releases,
 // their domains and the servers.
 func (c *Core) previewsOf(ctx context.Context, p store.Project, envID int64) ([]previewOf, error) {
 	rows, err := c.store.ListOpenPreviews(ctx, p.ID)
@@ -141,6 +141,10 @@ func (c *Core) previewsOf(ctx context.Context, p store.Project, envID int64) ([]
 		return nil, err
 	}
 	envs, err := c.store.ListEnvironments(ctx, p.ID)
+	if err != nil {
+		return nil, err
+	}
+	data, err := c.store.ListProjectPreviewData(ctx, p.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -168,9 +172,22 @@ func (c *Core) previewsOf(ctx context.Context, p store.Project, envID int64) ([]
 			}
 			pv.URLs = append(pv.URLs, apitypes.PreviewURL{Service: d.Service, URL: hostURL(d.Hostname, plain)})
 		}
+		for _, d := range data {
+			if d.PreviewID == r.ID {
+				pv.Databases = append(pv.Databases, previewDatabase(d))
+			}
+		}
 		out = append(out, previewOf{pv, r.EnvironmentID})
 	}
 	return out, nil
+}
+
+// previewDatabase is a preview_data row as the API has it.
+func previewDatabase(d store.ListProjectPreviewDataRow) apitypes.PreviewDatabase {
+	return apitypes.PreviewDatabase{
+		Service: d.Service, From: d.FromEnvironment + "/" + d.FromService, Mode: apitypes.PreviewData(d.Mode), Status: apitypes.PreviewDataStatus(d.Status),
+		Message: d.Message, Bytes: d.Bytes, MaskedTables: int(d.MaskedTables), MaskedColumns: int(d.MaskedColumns), StartedAt: d.StartedAt, FinishedAt: d.FinishedAt,
+	}
 }
 
 // toPreview is one preview, open or closed.
@@ -193,7 +210,7 @@ func (c *Core) toPreview(ctx context.Context, es envScope, r store.Preview) (api
 func basePreview(env string, r store.Preview) apitypes.Preview {
 	return apitypes.Preview{
 		Environment: env, Repo: r.Repo, Number: r.Number, Title: r.Title, Author: r.Author, PullURL: r.HtmlUrl,
-		Branch: r.HeadBranch, Commit: r.HeadSha, Fork: r.Fork, URLs: []apitypes.PreviewURL{}, Event: r.LastEvent,
+		Branch: r.HeadBranch, Commit: r.HeadSha, Fork: r.Fork, URLs: []apitypes.PreviewURL{}, Databases: []apitypes.PreviewDatabase{}, Event: r.LastEvent,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, ClosedAt: r.ClosedAt, Status: apitypes.PreviewClosed,
 	}
 }
@@ -553,7 +570,7 @@ func (c *Core) createPreview(ctx context.Context, a Actor, base envScope, setup 
 		return "", err
 	}
 	allowed := setup.copyVariables
-	seeded := seedLiterals(svcs, setup.seed)
+	seeded := seedLiterals(svcs, snapshotSeeds(setup, head.fork))
 	rules := cloneRules{literal: func(v apitypes.VariableRef) bool { return slices.Contains(allowed, v.String()) || seeded(v) }, orgRefsLiteral: true}
 	clone := apitypes.CloneResult{Services: []string{}, Generated: []apitypes.VariableRef{}, Skipped: []apitypes.VariableRef{}, CopiedAcrossKinds: []apitypes.VariableRef{}}
 	var dst envScope
@@ -637,7 +654,16 @@ func (c *Core) createPreview(ctx context.Context, a Actor, base envScope, setup 
 			promoted = append(promoted, s.Name)
 		}
 	}
-	promoted = c.seedPreview(a, base, dst, pv.ID, setup.seed, svcs, promoted)
+	// Databases with data to copy go first, and the rest once they are
+	// filled (ADR 0092).
+	if plans := previewDataPlans(base, setup, svcs, promoted); len(plans) > 0 {
+		rest := slices.DeleteFunc(promoted, func(name string) bool {
+			return slices.ContainsFunc(plans, func(p previewDataPlan) bool { return p.from.svc.Name == name })
+		})
+		c.startPreviewData(a, base, dst, pv, plans, rest, conns)
+		c.refreshPreview(pv.ID)
+		return fmt.Sprintf("%s: preview %s created for %s", pr, name, shortSHA(head.sha)), nil
+	}
 	if len(promoted) > 0 {
 		if _, err := c.promote(ctx, a, base, dst, promoted, true); err != nil {
 			c.setPreviewEvent(pv.ID, "the base's images weren't deployed: "+c.errorLine(err))

@@ -129,6 +129,7 @@ var actionPerms = map[actionKey]Perm{
 	{apitypes.ScopeDeploy, "cloning an environment"}:                                PermEnvironmentsCreate,
 	{apitypes.ScopeRead, "cloning an environment"}:                                  PermEnvView,
 	{apitypes.ScopeDeploy, "closing a preview"}:                                     PermDeploy,
+	{apitypes.ScopeDeploy, "refreshing a preview's data"}:                           PermDeploy,
 	{apitypes.ScopeDeploy, "connecting a GitHub repository"}:                        PermConfigWrite,
 	{apitypes.ScopeRead, "connecting to a service"}:                                 PermEnvView,
 	{apitypes.ScopeAdmin, "copying values into a clone"}:                            PermVariablesReadSecret,

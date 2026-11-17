@@ -71,4 +71,14 @@ func registerPreviews(s *Server, a huma.API) {
 	}, func(ctx context.Context, actor core.Actor, in *EnvPath) (*out[apitypes.Preview], error) {
 		return reply(s.core.ClosePreview(ctx, actor, in.ref()))
 	})
+	authed(s, a, huma.Operation{
+		OperationID: "refresh-preview-data", Method: http.MethodPost, Path: envPathT + "/preview/refresh-data",
+		Summary: "Copy a preview's databases from its base again", Tags: tags,
+		Description: "Each database whose base service copies its data into previews is stopped, emptied and filled again as at the preview's creation (ADR 0092); then the preview's other services restart. The base is only read. Answers at once; the preview's databases show how it goes. Scope: deploy.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		EnvPath
+		Body apitypes.RefreshPreviewDataRequest
+	}) (*out[apitypes.Preview], error) {
+		return reply(s.core.RefreshPreviewData(ctx, actor, in.ref(), in.Body))
+	})
 }

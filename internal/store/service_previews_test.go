@@ -8,7 +8,8 @@ import (
 // A project's preview settings move to its base's services and the base
 // itself (ADR 0077): connected services build pull requests with the
 // project's forks setting, web.KEY copies go to web, shared.KEY ones and
-// the numbers to the base, and seeded services keep seeding.
+// the numbers to the base, and seeded services keep seeding: from their
+// newest snapshot (data snapshot, ADR 0092).
 func TestServicePreviewsMigration(t *testing.T) {
 	ctx := context.Background()
 	path := openBefore(t, "_service_previews.sql",
@@ -34,13 +35,13 @@ func TestServicePreviewsMigration(t *testing.T) {
 		t.Fatalf("staging = %+v, %v", ep, err)
 	}
 	want := map[int64]ServicePreview{
-		1: {Build: true, AllowForks: true, CopyVariables: `["API_URL","FLAG"]`},
-		2: {Build: true, AllowForks: true, CopyVariables: `[]`},
-		3: {CopyVariables: `[]`, Seed: true},
+		1: {Build: true, AllowForks: true, CopyVariables: `["API_URL","FLAG"]`, Data: "empty"},
+		2: {Build: true, AllowForks: true, CopyVariables: `[]`, Data: "empty"},
+		3: {CopyVariables: `[]`, Data: "snapshot"},
 	}
 	for id, w := range want {
 		sp, err := s.GetServicePreviews(ctx, id)
-		if err != nil || sp.Build != w.Build || sp.AllowForks != w.AllowForks || sp.CopyVariables != w.CopyVariables || sp.Seed != w.Seed {
+		if err != nil || sp.Build != w.Build || sp.AllowForks != w.AllowForks || sp.CopyVariables != w.CopyVariables || sp.Data != w.Data || sp.DataForks {
 			t.Fatalf("service %d = %+v, %v; want %+v", id, sp, err, w)
 		}
 	}

@@ -3,7 +3,9 @@ package cli
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -31,6 +33,7 @@ pull request closes.`,
 		Example: `  dock env previews
   dock service previews on -s web -e staging --copy PUBLIC_API_URL
   dock env previews set staging --max 5 --sleep-after 1h
+  dock env previews refresh pr-12
   dock env previews close pr-12`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -46,7 +49,7 @@ pull request closes.`,
 		},
 	}
 	f.add(cmd, needProject)
-	cmd.AddCommand(newPreviewsSetCmd(g), newPreviewsCloseCmd(g))
+	cmd.AddCommand(newPreviewsSetCmd(g), newPreviewsCloseCmd(g), newPreviewsRefreshCmd(g))
 	return cmd
 }
 
@@ -98,8 +101,9 @@ replaced as a whole: pass every one again. Needs admin on the environment.`,
 // rest. What isn't passed stays as it is.
 func newServicePreviewsCmd(g *globals) *cobra.Command {
 	var f targetFlags
-	var forks, seed bool
+	var forks, dataForks bool
 	var copies []string
+	var data string
 	cmd := &cobra.Command{
 		Use:   "previews [on|off]",
 		Short: "Whether pull requests build a service in a preview environment, and what previews copy from it",
@@ -114,12 +118,21 @@ environment of a project.
 
 Previews run a pull request's code, so none of the service's literal
 variable values is copied unless --copy names it (repeatable; the list is
-replaced). --seed fills a new preview's copy of the service's volumes from
-its newest snapshot; otherwise they start empty. --forks also previews pull
-requests from forks. Needs admin on the environment.`,
+replaced). --forks also previews pull requests from forks.
+
+--data says what the service's volumes start with in a new preview (ADR
+0092): empty (the default), snapshot (its newest volume snapshot), copy (a
+copy of this database as the preview is made) or masked (that copy with
+the Data panel's sensitive columns replaced while it is read, so their
+values never reach the preview). --data alone is masked. Copies are for
+template databases; Redis masked copies start empty while it has
+sensitive key patterns. Pull requests from forks start empty unless
+--data-forks. An unmasked copy, a snapshot, or data for forks needs the
+sensitive columns visible to you. Needs admin on the environment.`,
 		Example: `  dock service previews -s web
   dock service previews on -s web --copy PUBLIC_API_URL
-  dock service previews -s db --seed
+  dock service previews -s db --data
+  dock service previews -s db --data snapshot
   dock service previews off -s web`,
 		Args:      cobra.MaximumNArgs(1),
 		ValidArgs: []string{"on", "off"},
@@ -133,11 +146,11 @@ requests from forks. Needs admin on the environment.`,
 			if err != nil {
 				return err
 			}
-			changed := len(args) > 0 || cmd.Flags().Changed("forks") || cmd.Flags().Changed("copy") || cmd.Flags().Changed("seed")
+			changed := len(args) > 0 || cmd.Flags().Changed("forks") || cmd.Flags().Changed("copy") || cmd.Flags().Changed("data") || cmd.Flags().Changed("data-forks")
 			if !changed {
 				return g.io.Print(cur, func() error { return g.printServicePreviews(t, cur) })
 			}
-			req := apitypes.SetServicePreviewsRequest{Build: cur.Build, AllowForks: cur.AllowForks, CopyVariables: cur.CopyVariables, Seed: cur.Seed}
+			req := apitypes.SetServicePreviewsRequest{Build: cur.Build, AllowForks: cur.AllowForks, CopyVariables: cur.CopyVariables, Data: cur.Data, DataForks: cur.DataForks}
 			if len(args) > 0 {
 				switch args[0] {
 				case "on":
@@ -154,8 +167,18 @@ requests from forks. Needs admin on the environment.`,
 			if cmd.Flags().Changed("copy") {
 				req.CopyVariables = copies
 			}
-			if cmd.Flags().Changed("seed") {
-				req.Seed = seed
+			if cmd.Flags().Changed("data") {
+				mode := apitypes.PreviewData(data)
+				if !slices.Contains([]apitypes.PreviewData{apitypes.PreviewDataEmpty, apitypes.PreviewDataSnapshot, apitypes.PreviewDataCopy, apitypes.PreviewDataMasked}, mode) {
+					return usageError(fmt.Sprintf("--data is empty, snapshot, copy or masked, not %q", data), "`dock service previews -s db --data masked`.")
+				}
+				req.Data = mode
+				if mode == apitypes.PreviewDataEmpty {
+					req.DataForks = false
+				}
+			}
+			if cmd.Flags().Changed("data-forks") {
+				req.DataForks = dataForks
 			}
 			sp, err := send[apitypes.ServicePreviews](cmd.Context(), s, http.MethodPut, path, req)
 			if err != nil {
@@ -170,7 +193,9 @@ requests from forks. Needs admin on the environment.`,
 	f.add(cmd, needService)
 	cmd.Flags().BoolVar(&forks, "forks", false, "also build pull requests from forks")
 	cmd.Flags().StringArrayVar(&copies, "copy", nil, "a variable of the service whose literal value previews copy, by key (repeatable; replaces the list)")
-	cmd.Flags().BoolVar(&seed, "seed", false, "fill a new preview's volumes from the service's newest snapshot")
+	cmd.Flags().StringVar(&data, "data", "", "what the service's volumes start with in a new preview: empty, snapshot, copy or masked (--data alone)")
+	cmd.Flags().Lookup("data").NoOptDefVal = string(apitypes.PreviewDataMasked)
+	cmd.Flags().BoolVar(&dataForks, "data-forks", false, "give pull requests from forks the data too")
 	return cmd
 }
 
@@ -185,7 +210,7 @@ func (g *globals) printServicePreviews(t target, sp apitypes.ServicePreviews) er
 		"pull requests", map[bool]string{true: "build it in a preview", false: "don't build it (`dock service previews on`)"}[sp.Build],
 		"forks", onOff(sp.AllowForks),
 		"copied", dash(strings.Join(sp.CopyVariables, ", ")),
-		"seeded", map[bool]string{true: "from its newest snapshot", false: "no, previews start empty"}[sp.Seed],
+		"data", previewDataText(sp),
 		"updated", dash(updated),
 	)
 }
@@ -202,8 +227,30 @@ func servicePreviewRules(sp apitypes.ServicePreviews) string {
 	if len(sp.CopyVariables) > 0 {
 		s += ", copying " + strings.Join(sp.CopyVariables, ", ")
 	}
-	if sp.Seed {
-		s += ", seeded from its newest snapshot"
+	if sp.Data != "" && sp.Data != apitypes.PreviewDataEmpty {
+		s += ", previews start with " + previewDataText(sp)
+	}
+	return s
+}
+
+// previewDataText says what a service's volumes start with in previews.
+func previewDataText(sp apitypes.ServicePreviews) string {
+	var s string
+	switch sp.Data {
+	case apitypes.PreviewDataSnapshot:
+		s = "its newest snapshot"
+	case apitypes.PreviewDataCopy:
+		s = "a copy of it, sensitive columns included"
+	case apitypes.PreviewDataMasked:
+		s = "a masked copy of it"
+		if sp.Masked != nil {
+			s += fmt.Sprintf(" (%d sensitive columns marked)", sp.Masked.Columns)
+		}
+	default:
+		return "empty"
+	}
+	if sp.DataForks {
+		s += ", forks too"
 	}
 	return s
 }
@@ -268,7 +315,7 @@ func (g *globals) printPreviews(project string, set apitypes.PreviewSettings) er
 	if !set.Enabled {
 		g.io.Successf("No service of %s builds pull requests. Turn previews on for one with `dock service previews on -s <service> -e <environment>`.", project)
 	} else {
-		tb := g.io.Table("service", "source", "pull requests", "copied", "seeded")
+		tb := g.io.Table("service", "source", "pull requests", "copied", "data")
 		for _, sp := range set.Services {
 			source := ""
 			if sp.Repo != "" {
@@ -284,7 +331,11 @@ func (g *globals) printPreviews(project string, set apitypes.PreviewSettings) er
 					build += ", forks too"
 				}
 			}
-			tb.Row(sp.Environment+"/"+sp.Service, dash(source), build, dash(strings.Join(sp.CopyVariables, ", ")), map[bool]string{true: "yes", false: "-"}[sp.Seed])
+			data := "-"
+			if sp.Data != "" && sp.Data != apitypes.PreviewDataEmpty {
+				data = string(sp.Data)
+			}
+			tb.Row(sp.Environment+"/"+sp.Service, dash(source), build, dash(strings.Join(sp.CopyVariables, ", ")), data)
 		}
 		if err := tb.Flush(); err != nil {
 			return err
@@ -308,7 +359,79 @@ func (g *globals) printPreviews(project string, set apitypes.PreviewSettings) er
 		}
 		tb.Row(pv.Environment, cut(fmt.Sprintf("#%d %s", pv.Number, pv.Title), 40), string(pv.Status), dash(addr), pv.Commit[:min(7, len(pv.Commit))])
 	}
-	return tb.Flush()
+	if err := tb.Flush(); err != nil {
+		return err
+	}
+	for _, pv := range set.Previews {
+		for _, d := range pv.Databases {
+			g.io.Detail(pv.Environment + "/" + previewDatabaseText(d))
+		}
+	}
+	return nil
+}
+
+// previewDatabaseText is a preview database's copy in one line.
+func previewDatabaseText(d apitypes.PreviewDatabase) string {
+	switch d.Status {
+	case apitypes.PreviewDataCopying:
+		return fmt.Sprintf("%s: copying from %s, %s", d.Service, d.From, d.Message)
+	case apitypes.PreviewDataCopied:
+		return fmt.Sprintf("%s: %s, %s", d.Service, d.Message, ago(*cmpTime(d.FinishedAt, d.StartedAt)))
+	}
+	return d.Service + ": " + d.Message
+}
+
+// cmpTime is t, or def when t is nil.
+func cmpTime(t *time.Time, def time.Time) *time.Time {
+	if t == nil {
+		return &def
+	}
+	return t
+}
+
+// newPreviewsRefreshCmd copies a preview's databases from its base again.
+func newPreviewsRefreshCmd(g *globals) *cobra.Command {
+	var f targetFlags
+	var yes bool
+	var services []string
+	cmd := &cobra.Command{
+		Use:   "refresh <environment> [-s service ...]",
+		Short: "Copy a preview's databases from its base again",
+		Long: `Copy a preview's databases from its base again, as when the preview was
+made (ADR 0092): each database whose base service copies its data into
+previews (` + "`dock service previews --data`" + `) is stopped, emptied and filled
+with a new copy, masked if its setting says so. Then the preview's other
+services restart, so the pull request's migrations run on the new data.
+The base is only read. --service limits it to those databases. Needs deploy
+on the preview.`,
+		Example: `  dock env previews refresh pr-12
+  dock env previews refresh pr-12 --service db`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, t, err := g.open(f, needProject)
+			if err != nil {
+				return err
+			}
+			t.Environment = args[0]
+			if !yes {
+				if err := g.io.Confirm(fmt.Sprintf("Refresh the data of preview %s? Its databases are emptied and copied again, and its services restart.", t), "yes"); err != nil {
+					return err
+				}
+			}
+			pv, err := send[apitypes.Preview](cmd.Context(), s, http.MethodPost, t.envPath()+"/preview/refresh-data", apitypes.RefreshPreviewDataRequest{Services: services})
+			if err != nil {
+				return err
+			}
+			return g.io.Print(pv, func() error {
+				g.io.Successf("Refreshing the data of preview %s from its base. `dock env previews` shows how it goes.", t)
+				return nil
+			})
+		},
+	}
+	f.add(cmd, needProject)
+	cmd.Flags().StringArrayVar(&services, "service", nil, "a database of the preview to refresh (repeatable; default every one that copies its base)")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
+	return cmd
 }
 
 // pullRequestText names an environment's pull request in a table: "#12

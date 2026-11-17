@@ -581,6 +581,13 @@ func (c *Core) Start(ctx context.Context) error {
 	if err := c.resumePreviews(ctx); err != nil {
 		return fmt.Errorf("archive closed previews: %w", err)
 	}
+	// Preview copies a restart cut short end empty (ADR 0092); in the
+	// background, as they run jobs.
+	c.wg.Go(func() {
+		if err := c.resumePreviewData(c.ctx); err != nil {
+			c.log.Error("end preview copies cut short", "err", err)
+		}
+	})
 	// A move a restart cut short rolls back, or finishes its clean-up.
 	c.resumeMoves(ctx, true)
 	// This server's forwards of services that moved away listen again,

@@ -69,21 +69,30 @@ func (c *Core) Promote(ctx context.Context, a Actor, project string, req apitype
 // service's own staged changes live with it, as an image deploy does: a
 // clone's volumes stay staged until its services first deploy.
 func (c *Core) promote(ctx context.Context, a Actor, src, dst envScope, names []string, applyStaged bool) (apitypes.PromoteResult, error) {
+	out, _, err := c.promoteSteps(ctx, a, src, dst, names, applyStaged)
+	return out, err
+}
+
+// promoteSteps is promote, also returning the last release's step (nil
+// when none started): its done closes once every release of the
+// promotion finished, since each waits for the one before. Preview copies
+// (ADR 0092) wait on it before loading a database.
+func (c *Core) promoteSteps(ctx context.Context, a Actor, src, dst envScope, names []string, applyStaged bool) (apitypes.PromoteResult, *promoteStep, error) {
 	out := apitypes.PromoteResult{From: src.env.Name, To: dst.env.Name, Promoted: []apitypes.PromotedService{}, Skipped: []apitypes.SkippedService{}}
 	if _, err := c.runtimeFor(dst.env.ServerID); err != nil {
-		return out, err
+		return out, nil, err
 	}
 	srcSvcs, err := c.store.ListServices(ctx, src.env.ID)
 	if err != nil {
-		return out, err
+		return out, nil, err
 	}
 	dstSvcs, err := c.store.ListServices(ctx, dst.env.ID)
 	if err != nil {
-		return out, err
+		return out, nil, err
 	}
 	actives, err := c.store.ListPromotableReleases(ctx, src.env.ID)
 	if err != nil {
-		return out, err
+		return out, nil, err
 	}
 	live := func(svcs []store.Service, name string) (store.Service, bool) {
 		i := slices.IndexFunc(svcs, func(s store.Service) bool { return s.Name == name && s.ArchivedAt == nil })
@@ -94,7 +103,7 @@ func (c *Core) promote(ctx context.Context, a Actor, src, dst envScope, names []
 	}
 	for _, name := range names {
 		if _, ok := live(srcSvcs, name); !ok {
-			return out, notFound("service %s not found in %s", name, src)
+			return out, nil, notFound("service %s not found in %s", name, src)
 		}
 	}
 	if len(names) == 0 {
@@ -141,7 +150,7 @@ func (c *Core) promote(ctx context.Context, a Actor, src, dst envScope, names []
 			continue
 		}
 		if err != nil && prev == nil {
-			return out, err // nothing started
+			return out, nil, err // nothing started
 		}
 		if err != nil {
 			// Earlier releases are deploying: stop here, as a failed
@@ -162,7 +171,7 @@ func (c *Core) promote(ctx context.Context, a Actor, src, dst envScope, names []
 		out.Promoted = append(out.Promoted, apitypes.PromotedService{Service: name, FromRelease: from.Number, Release: r})
 	}
 	c.audit(ctx, a, "release.promote", &dst.project, &dst.env, dst.String(), promoteSummary(out))
-	return out, failed
+	return out, prev, failed
 }
 
 // promotedImage is the image a promoted release runs: the source

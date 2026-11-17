@@ -11,14 +11,12 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// Preview seeds (ADR 0056): a preview's stateful services start with new,
-// empty volumes, unless their service_previews.seed is set (ADR 0077). A
-// seeded service's volumes are filled from its base service's latest
-// ready snapshot (ADR 0047) before its first deploy: the snapshot is
-// copied into the preview's own new volumes, the base's are never
-// mounted. The copy runs in the background, so the webhook answers at
-// once; the service is promoted when it is done. Without a snapshot the
-// service starts empty, and the preview's last event says so.
+// Preview seeds (ADR 0056): a service whose service_previews.data is
+// snapshot (ADR 0092; seed in ADR 0077) has its volumes filled from its
+// base service's latest ready snapshot (ADR 0047) before its first
+// deploy: the snapshot is copied into the preview's own new volumes, the
+// base's are never mounted. preview_data.go runs it, with the other
+// kinds of data; without a snapshot the service starts empty.
 
 // previewSeeds checks the services previews seed from snapshots: each a
 // live service of the base with a volume. Returns the JSON list stored in
@@ -72,43 +70,16 @@ func seedLiterals(svcs []store.Service, seeds []string) func(apitypes.VariableRe
 	return func(v apitypes.VariableRef) bool { return keys[v] }
 }
 
-// seedPreview starts seeding a new preview's services named in seeds
-// (service_previews.seed) and returns promoted (the base services createPreview
-// promotes now) without them: each seeded one is promoted on its own in
-// the background, once its volumes are filled.
-func (c *Core) seedPreview(a Actor, base, dst envScope, previewID int64, seeds []string, svcs []store.Service, promoted []string) []string {
-	rest := make([]string, 0, len(promoted))
-	for _, name := range promoted {
-		i := slices.IndexFunc(svcs, func(s store.Service) bool { return s.Name == name && s.ArchivedAt == nil })
-		if i < 0 || !slices.Contains(seeds, name) {
-			rest = append(rest, name)
-			continue
+// snapshotSeeds are the services a new preview fills from their newest
+// snapshot: none of a fork's pull request without data_forks.
+func snapshotSeeds(setup previewSetup, fork bool) []string {
+	var out []string
+	for name, set := range setup.data {
+		if set.mode == apitypes.PreviewDataSnapshot && (!fork || set.forks) {
+			out = append(out, name)
 		}
-		from := svcScope{base, svcs[i]}
-		c.wg.Go(func() { c.seedService(a, from, dst, previewID) })
 	}
-	return rest
-}
-
-// seedService fills from's clone in the preview dst from from's latest
-// snapshot, then promotes it. When there is nothing to copy or the copy
-// fails, the clone is promoted with empty volumes; either way the
-// preview's last event says which.
-func (c *Core) seedService(a Actor, from svcScope, dst envScope, previewID int64) {
-	ctx := c.ctx
-	msg, err := c.fillPreviewSeed(ctx, from, dst)
-	if ctx.Err() != nil {
-		return
-	}
-	if err != nil {
-		msg = fmt.Sprintf("%s starts empty: %s", from.svc.Name, c.errorLine(err))
-	}
-	c.audit(ctx, System, "preview.seed", &dst.project, &dst.env, dst.String()+"/"+from.svc.Name, msg)
-	c.setPreviewEvent(previewID, msg)
-	if _, err := c.promote(ctx, a, from.envScope, dst, []string{from.svc.Name}, true); err != nil {
-		c.setPreviewEvent(previewID, fmt.Sprintf("%s wasn't deployed: %s", from.svc.Name, c.errorLine(err)))
-	}
-	c.refreshPreview(previewID)
+	return out
 }
 
 // fillPreviewSeed copies from's newest ready snapshot on dst's server into
