@@ -21,9 +21,11 @@ import (
 // uptimeEntry is a check in the scheduler's heap.
 type uptimeEntry struct {
 	chk store.ListUptimeScheduleRow
-	// accessKey is the sealed access key of the check's service when the
-	// check's host is one of its domains behind a Dock login: its probes
-	// run on the control plane and carry a session (probeCookie).
+	// access is how the check's service is protected when the check's
+	// host is one of its domains, "" when it is public: its probes then
+	// run on the control plane and carry a session (probeCookie), signed
+	// for a Dock login with accessKey, the service's sealed access key.
+	access    apitypes.AccessMode
 	accessKey []byte
 	interval  time.Duration
 	due       time.Time
@@ -134,15 +136,15 @@ func (c *Core) loadUptime(ctx context.Context, old uptimeHeap, now time.Time) (u
 		return nil, nil, err
 	}
 	slices.SortFunc(servers, func(a, b store.Server) int { return cmp.Compare(a.ID, b.ID) })
-	var login map[string]store.ListLoginDomainsRow
+	var protected map[string]store.ListProtectedDomainsRow
 	if len(rows) > 0 {
-		domains, err := c.store.ListLoginDomains(ctx)
+		domains, err := c.store.ListProtectedDomains(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
-		login = make(map[string]store.ListLoginDomainsRow, len(domains))
+		protected = make(map[string]store.ListProtectedDomainsRow, len(domains))
 		for _, d := range domains {
-			login[d.Hostname] = d
+			protected[d.Hostname] = d
 		}
 	}
 	prev := make(map[int64]*uptimeEntry, len(old))
@@ -156,8 +158,8 @@ func (c *Core) loadUptime(ctx context.Context, old uptimeHeap, now time.Time) (u
 		// Only for a domain of the check's own service, never by hostname
 		// alone: a session must not go to anyone else's site.
 		if u, err := url.Parse(r.Url); err == nil {
-			if d, ok := login[u.Hostname()]; ok && d.ServiceID == r.ServiceID {
-				e.accessKey = d.Key
+			if d, ok := protected[u.Hostname()]; ok && d.ServiceID == r.ServiceID {
+				e.access, e.accessKey = apitypes.AccessMode(d.Mode), d.Key
 			}
 		}
 		if p, ok := prev[r.ID]; ok && p.interval == e.interval {
@@ -183,7 +185,7 @@ func (c *Core) loadUptime(ctx context.Context, old uptimeHeap, now time.Time) (u
 			st = &checkState{state: apitypes.UptimeUnknown}
 			u.checks[e.chk.ID] = st
 		}
-		st.login = e.accessKey != nil
+		st.protected = e.access != ""
 	}
 	u.mu.Unlock()
 
@@ -228,32 +230,39 @@ func (c *Core) startProbe(e *uptimeEntry, servers []store.Server) {
 	u.inFlight++
 	u.orgInFlight[chk.OrgID]++
 	u.mu.Unlock()
-	srv := c.uptimeProber(servers, chk.ID, chk.ServerID, e.accessKey != nil)
+	srv := c.uptimeProber(servers, chk.ID, chk.ServerID, e.access != "")
 	c.wg.Add(1)
-	go c.runProbe(chk, srv, e.accessKey)
+	go c.runProbe(e, srv)
 }
 
-// probeCookie is the session a probe of chk carries through its
-// service's Dock login (ADR 0030, "Uptime probes"), made anew for each
+// probeCookie is the session a probe of e's check carries through its
+// service's protection (ADR 0030, "Uptime probes"), made anew for each
 // probe: bound to the URL's host, a domain of that service (loadUptime),
-// and valid for a minute. Opening the key and signing take microseconds.
-func (c *Core) probeCookie(chk store.ListUptimeScheduleRow, sealed []byte) (string, error) {
+// and valid for a minute. A Dock login takes one signed with the
+// service's access key, a password one signed with its probe key
+// (probeKey). Getting the key and signing take microseconds.
+func (c *Core) probeCookie(e *uptimeEntry) (string, error) {
+	chk := e.chk
 	u, err := url.Parse(chk.Url)
 	if err != nil {
 		return "", err
 	}
-	key, err := c.box.Open(sealed, accessKeyAAD(chk.ServiceID))
-	if err != nil {
-		return "", fmt.Errorf("open access key of service %d: %w", chk.ServiceID, err)
+	key := c.probeKey(chk.ServiceID)
+	if e.access == apitypes.AccessLogin {
+		if key, err = c.box.Open(e.accessKey, accessKeyAAD(chk.ServiceID)); err != nil {
+			return "", fmt.Errorf("open access key of service %d: %w", chk.ServiceID, err)
+		}
 	}
 	return access.ProbeCookie(key, u.Hostname(), time.Now()), nil
 }
 
 // runProbe probes a check on srv and records the result. When srv can't
 // probe (it went offline since it was chosen), the control plane does.
-// With accessKey (uptimeEntry.accessKey) srv is the control plane's own
-// server and the probe carries a session: it never crosses the node link.
-func (c *Core) runProbe(chk store.ListUptimeScheduleRow, srv store.Server, accessKey []byte) {
+// For a protected domain (uptimeEntry.access) srv is the control plane's
+// own server and the probe carries a session: it never crosses the node
+// link.
+func (c *Core) runProbe(e *uptimeEntry, srv store.Server) {
+	chk := e.chk
 	defer c.wg.Done()
 	defer func() {
 		u := &c.uptime
@@ -269,10 +278,10 @@ func (c *Core) runProbe(chk store.ListUptimeScheduleRow, srv store.Server, acces
 	}()
 	timeout := time.Duration(chk.TimeoutMs) * time.Millisecond
 	req := node.ProbeRequest{URL: chk.Url, ExpectStatus: int(chk.ExpectStatus), Timeout: timeout}
-	if accessKey != nil {
-		cookie, err := c.probeCookie(chk, accessKey)
+	if e.access != "" {
+		cookie, err := c.probeCookie(e)
 		if err != nil {
-			// Probed without: the login's 401 then shows on the check.
+			// Probed without: the protection's 401 then shows on the check.
 			c.log.Warn("uptime: sign a probe's session", "check", chk.ID, "err", err)
 		}
 		req.Cookie = cookie
@@ -307,9 +316,9 @@ func (c *Core) runProbe(chk store.ListUptimeScheduleRow, srv store.Server, acces
 // checks spread over them. The control plane's own server is always a
 // candidate (it probes in process) and the fallback when there is no
 // other. servers is sorted by ID and holds the local server. A check
-// behind a Dock login (login) is always the control plane's: the session
-// its probe carries is made there and stays there.
-func (c *Core) uptimeProber(servers []store.Server, checkID, envServer int64, login bool) store.Server {
+// of a protected domain (protected) is always the control plane's: the
+// session its probe carries is made there and stays there.
+func (c *Core) uptimeProber(servers []store.Server, checkID, envServer int64, protected bool) store.Server {
 	var local store.Server
 	cands := make([]store.Server, 0, len(servers))
 	for _, s := range servers {
@@ -317,7 +326,7 @@ func (c *Core) uptimeProber(servers []store.Server, checkID, envServer int64, lo
 			local = s
 		}
 		switch {
-		case login:
+		case protected:
 		case s.ID == envServer || s.RevokedAt != nil:
 		case s.Local:
 			cands = append(cands, s)

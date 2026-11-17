@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -230,7 +231,7 @@ func (c *Core) GrantAccess(ctx context.Context, a Actor, req apitypes.AccessGran
 func (c *Core) routeAccess(d store.ListRoutableDomainsRow) (*node.Access, error) {
 	switch apitypes.AccessMode(d.AccessMode) {
 	case apitypes.AccessPassword:
-		return &node.Access{Username: d.AccessUsername, PasswordHash: d.AccessPasswordHash}, nil
+		return &node.Access{Username: d.AccessUsername, PasswordHash: d.AccessPasswordHash, ProbeKey: c.probeKey(d.ServiceID)}, nil
 	case apitypes.AccessLogin:
 		key, err := c.box.Open(d.AccessKey, accessKeyAAD(d.ServiceID))
 		if err != nil {
@@ -239,6 +240,14 @@ func (c *Core) routeAccess(d store.ListRoutableDomainsRow) (*node.Access, error)
 		return &node.Access{Key: key, LoginURL: c.dockURL() + "/access"}, nil
 	}
 	return nil, nil
+}
+
+// probeKey signs the sessions of uptime probes of a password-protected
+// service (ADR 0030, "Uptime probes"): derived from the secrets key and
+// the service, so nothing is stored, and of no use to anyone but a probe,
+// as the route passes only a session naming access.ProbeUser with it.
+func (c *Core) probeKey(serviceID int64) []byte {
+	return c.box.Tag("access probe key", []byte(strconv.FormatInt(serviceID, 10)))
 }
 
 // dockURL is where people reach Dock's UI: its public address, or the

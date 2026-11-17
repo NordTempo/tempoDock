@@ -140,33 +140,40 @@ func (q *Queries) LastUptimeDay(ctx context.Context) (int64, error) {
 	return column_1, err
 }
 
-const listLoginDomains = `-- name: ListLoginDomains :many
-SELECT domains.hostname, domains.service_id, service_access.key
+const listProtectedDomains = `-- name: ListProtectedDomains :many
+SELECT domains.hostname, domains.service_id, service_access.mode, service_access.key
 FROM service_access
 CROSS JOIN domains ON domains.service_id = service_access.service_id
-WHERE service_access.mode = 'login' AND domains.verified_at IS NOT NULL AND domains.redirect_to = ''
+WHERE domains.verified_at IS NOT NULL AND domains.redirect_to = ''
 `
 
-type ListLoginDomainsRow struct {
+type ListProtectedDomainsRow struct {
 	Hostname  string
 	ServiceID int64
+	Mode      string
 	Key       []byte
 }
 
-// The verified, serving domains of services behind a Dock login, with the
-// service's sealed access key: where the scheduler's probes carry a
-// session (ADR 0030). service_access holds protected services only, so
-// it leads (CROSS JOIN keeps the order) and domains are read by service.
-func (q *Queries) ListLoginDomains(ctx context.Context) ([]ListLoginDomainsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listLoginDomains)
+// The verified, serving domains of services behind a password or a Dock
+// login, with the mode and (for a login) the sealed access key: where the
+// scheduler's probes carry a session (ADR 0030). service_access holds
+// protected services only, so it leads (CROSS JOIN keeps the order) and
+// domains are read by service.
+func (q *Queries) ListProtectedDomains(ctx context.Context) ([]ListProtectedDomainsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listProtectedDomains)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListLoginDomainsRow
+	var items []ListProtectedDomainsRow
 	for rows.Next() {
-		var i ListLoginDomainsRow
-		if err := rows.Scan(&i.Hostname, &i.ServiceID, &i.Key); err != nil {
+		var i ListProtectedDomainsRow
+		if err := rows.Scan(
+			&i.Hostname,
+			&i.ServiceID,
+			&i.Mode,
+			&i.Key,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

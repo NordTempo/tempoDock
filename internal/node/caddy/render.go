@@ -131,10 +131,12 @@ type route struct {
 }
 
 type match struct {
-	Host     []string            `json:"host"`
+	Host     []string            `json:"host,omitempty"`
 	Path     []string            `json:"path,omitempty"`
 	Header   map[string][]string `json:"header,omitempty"`
 	RemoteIP *remoteIP           `json:"remote_ip,omitempty"`
+	// Not matches requests none of its matchers do.
+	Not []match `json:"not,omitempty"`
 }
 
 // remoteIP matches the immediate peer's address.
@@ -171,6 +173,9 @@ type handler struct {
 	LoadBalancing *loadBalancing `json:"load_balancing,omitempty"`
 	// Span names the tracing handler's spans (edgeTrace).
 	Span string `json:"span,omitempty"`
+	// Routes are a subroute handler's: each one whose matchers fit adds
+	// its handlers to the chain (passwordAccess).
+	Routes []route `json:"routes,omitempty"`
 }
 
 // loadBalancing is reverse_proxy's retry settings: Caddy tries the
@@ -467,7 +472,7 @@ func Render(opts Options, routes []node.Route, certs []node.Certificate) ([]byte
 			if r.Access.Login() {
 				handle = append(handle, loginAccess(opts.accessCheck, r.Access)...)
 			} else {
-				handle = append(handle, passwordAccess(r.Access)...)
+				handle = append(handle, passwordAccess(opts.accessCheck, r.Access)...)
 			}
 		}
 		if r.Wake != "" && r.RedirectTo == "" && r.Stopped == "" {
@@ -758,6 +763,9 @@ func otlpRoute(addr string) route {
 const (
 	accessKeyHeader   = "X-Dock-Access-Key"
 	accessLoginHeader = "X-Dock-Access-Login"
+	// accessProbeHeader asks the check to pass Dock's uptime probe only
+	// (a password-protected route, probeAccess).
+	accessProbeHeader = "X-Dock-Access-Probe"
 	forwardedMethod   = "X-Forwarded-Method"
 	forwardedURI      = "X-Forwarded-Uri"
 )
@@ -769,8 +777,52 @@ const (
 const userHeaderAlias = "X_Dock_User"
 
 // passwordAccess asks for HTTP basic auth and tells the app who signed in
-// (access.UserHeader), replacing any value the client sent.
-func passwordAccess(a *node.Access) []handler {
+// (access.UserHeader), replacing any value the client sent. With a probe
+// key, a request that says it is Dock's uptime probe and brings a session
+// cookie is asked for no password: the access check decides it instead
+// (probeAccess). Everyone else meets basic auth exactly as without the
+// key, at no extra cost.
+func passwordAccess(check accessCheck, a *node.Access) []handler {
+	basic := basicAuth(a)
+	if len(a.ProbeKey) == 0 || check.dial == "" {
+		return basic
+	}
+	probe := match{Header: map[string][]string{"User-Agent": {uptimeAgent}, "Cookie": {"*" + accessCookie + "=*"}}}
+	return []handler{{Handler: "subroute", Routes: []route{
+		{Match: []match{probe}, Handle: probeAccess(check, a)},
+		{Match: []match{{Not: []match{probe}}}, Handle: basic},
+	}}}
+}
+
+// probeAccess lets Dock's uptime probe through a password-protected
+// route (ADR 0030, "Uptime probes"): like loginAccess, but the check
+// passes only a session naming access.ProbeUser, signed with the route's
+// probe key, and answers anything else with a 401.
+func probeAccess(check accessCheck, a *node.Access) []handler {
+	return []handler{
+		{Handler: "headers", Request: &headerOps{Set: map[string][]string{
+			accessKeyHeader:   {base64.RawURLEncoding.EncodeToString(a.ProbeKey)},
+			accessProbeHeader: {"1"},
+			forwardedMethod:   {"{http.request.method}"},
+			forwardedURI:      {"{http.request.uri}"},
+		}}},
+		{
+			Handler:   "reverse_proxy",
+			Upstreams: []upstream{{Dial: check.dial}},
+			Rewrite:   &rewrite{Method: http.MethodGet, URI: check.path},
+			HandleResponse: []responseHandler{{
+				Match: responseMatch{StatusCode: []int{2}},
+				Routes: []route{{Handle: []handler{{Handler: "headers", Request: &headerOps{
+					Delete: []string{accessKeyHeader, accessProbeHeader, forwardedMethod, forwardedURI, userHeaderAlias},
+					Set:    map[string][]string{access.UserHeader: {"{http.reverse_proxy.header." + access.UserHeader + "}"}},
+				}}}}},
+			}},
+		},
+	}
+}
+
+// basicAuth is passwordAccess for everyone but the probe.
+func basicAuth(a *node.Access) []handler {
 	return []handler{
 		{Handler: "authentication", Providers: &authProviders{HTTPBasic: httpBasic{
 			Accounts:  []account{{Username: a.Username, Password: a.PasswordHash}},
@@ -790,7 +842,7 @@ func passwordAccess(a *node.Access) []handler {
 // client as it is.
 func loginAccess(check accessCheck, a *node.Access) []handler {
 	return []handler{
-		{Handler: "headers", Request: &headerOps{Set: map[string][]string{
+		{Handler: "headers", Request: &headerOps{Delete: []string{accessProbeHeader}, Set: map[string][]string{
 			accessKeyHeader:   {base64.RawURLEncoding.EncodeToString(a.Key)},
 			accessLoginHeader: {a.LoginURL},
 			forwardedMethod:   {"{http.request.method}"},

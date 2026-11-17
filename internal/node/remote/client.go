@@ -967,7 +967,7 @@ const ProbeProtocol = 19
 // those stay on the control plane (node.ProbeRequest.Cookie).
 func (c *Client) Probe(ctx context.Context, req node.ProbeRequest) (node.ProbeResult, error) {
 	if req.Cookie != "" {
-		return node.ProbeResult{}, errors.New("a probe of a login-protected domain runs on the control plane only")
+		return node.ProbeResult{}, errors.New("a probe of a protected domain runs on the control plane only")
 	}
 	if err := c.needProtocol(ctx, ProbeProtocol, "run uptime checks"); err != nil {
 		return node.ProbeResult{}, err

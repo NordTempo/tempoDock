@@ -1140,6 +1140,11 @@ type Access struct {
 	// Username and PasswordHash (bcrypt) ask visitors for HTTP basic auth.
 	Username     string
 	PasswordHash string
+	// ProbeKey, with a password, signs the session of Dock's uptime
+	// probes (access.ProbeCookie), which the route lets through without
+	// the password. A node that doesn't know it asks the probe for the
+	// password too.
+	ProbeKey []byte
 	// Key asks for a Dock login instead: Caddy has the server's access
 	// check verify the visitor's session cookie, signed with Key
 	// (internal/access), on every request, and visitors without one are

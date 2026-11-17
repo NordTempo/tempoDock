@@ -194,12 +194,14 @@ Notes:
   public address.
 - Requests from scripts to a `login` service get `401`; use `password` for
   machine traffic and webhooks.
-- [Uptime checks](#uptime-checks) of a `login` service's domains pass the
-  login: Dock's own probe signs itself in for that hostname, a minute at
-  a time, and the app sees `X-Dock-User: dock-uptime`. Such a check is
-  always probed from the control plane. A `password` service answers a
-  probe `401`; give its check `--status 401`, which still shows that the
-  domain answers.
+- [Uptime checks](#uptime-checks) of a protected service's domains pass
+  the password or the login: Dock's own probe signs itself in for that
+  hostname, a minute at a time, and the app sees
+  `X-Dock-User: dock-uptime`. Such a check is always probed from the
+  control plane. Only the probe gets past a password this way; a
+  visitor's Dock login never does. A `password` service on a server whose
+  dock is older than this keeps answering the probe `401` until the
+  server is updated.
 - Turning `login` off and on again signs everyone out. A disabled user can
   keep a sign-in for up to 12 hours.
 - `X-Dock-User` is always set by Dock; a value the client sends is

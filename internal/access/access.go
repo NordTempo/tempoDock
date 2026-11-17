@@ -106,7 +106,7 @@ func mac(key []byte, payload string) []byte {
 }
 
 // ProbeCookie is the Cookie header that lets one of Dock's uptime probes
-// through the login on host: a session naming ProbeUser, bound to host
+// through the login or the password on host: a session naming ProbeUser, bound to host
 // like every session and valid for ProbeTTL from now. Only the control
 // plane makes one, for a check of a domain of the service key belongs to.
 func ProbeCookie(key []byte, host string, now time.Time) string {
