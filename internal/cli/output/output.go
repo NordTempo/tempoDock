@@ -39,6 +39,11 @@ type IO struct {
 	Out, Err io.Writer
 	// JSON selects machine-readable output (--json).
 	JSON bool
+	// JSONFile is --json-file: Print also writes the --json value there,
+	// replacing what was in it, and PrintError appends the error object,
+	// one compact line each, while human output and progress go on as
+	// usual (CI logs that show a deploy's progress and keep its result).
+	JSONFile string
 	// Interactive means stdin is a terminal, so prompting is allowed.
 	Interactive bool
 	// OutColor and ErrColor enable ANSI colors on Out and Err.
@@ -65,7 +70,18 @@ func isTerminal(f *os.File) bool { return term.IsTerminal(int(f.Fd())) }
 // Print writes v as indented JSON in --json mode, otherwise runs human.
 // v should be a struct with json tags or a slice of them: that shape is the
 // command's documented, stable output.
+//
+// With JSONFile set, v is written there too, in either mode.
 func (o *IO) Print(v any, human func() error) error {
+	if o.JSONFile != "" {
+		b, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(o.JSONFile, append(b, '\n'), 0o600); err != nil {
+			return fmt.Errorf("write --json-file: %w", err)
+		}
+	}
 	if !o.JSON {
 		return human()
 	}
@@ -171,26 +187,34 @@ func (t *Table) Row(cells ...string) {
 func (t *Table) Flush() error { return t.tw.Flush() }
 
 // PrintError writes err to Err: "error: message" plus the hint in human
-// mode, a JSON object in --json mode.
+// mode, a JSON object in --json mode. With JSONFile set, the JSON object
+// is also appended there, after the result if one was printed.
 func (o *IO) PrintError(err error) {
 	e, ok := errors.AsType[*Error](err)
 	if !ok {
 		e = &Error{Exit: ExitError, Err: err}
 	}
+	code := e.Code
+	if code == "" {
+		code = e.Exit.String()
+	}
+	type body struct {
+		Code     string `json:"code"`
+		ExitCode int    `json:"exitCode"`
+		Message  string `json:"message"`
+		Hint     string `json:"hint,omitempty"`
+	}
+	v := struct {
+		Error body `json:"error"`
+	}{body{code, int(e.Exit), err.Error(), e.Hint}}
+	if o.JSONFile != "" {
+		if f, ferr := os.OpenFile(o.JSONFile, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600); ferr == nil {
+			_ = json.NewEncoder(f).Encode(v)
+			_ = f.Close()
+		}
+	}
 	if o.JSON {
-		code := e.Code
-		if code == "" {
-			code = e.Exit.String()
-		}
-		type body struct {
-			Code     string `json:"code"`
-			ExitCode int    `json:"exitCode"`
-			Message  string `json:"message"`
-			Hint     string `json:"hint,omitempty"`
-		}
-		_ = json.NewEncoder(o.Err).Encode(struct {
-			Error body `json:"error"`
-		}{body{code, int(e.Exit), err.Error(), e.Hint}})
+		_ = json.NewEncoder(o.Err).Encode(v)
 		return
 	}
 	line(o.Err, paint(o.ErrColor, red, "error:")+" "+err.Error())

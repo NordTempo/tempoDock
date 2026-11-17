@@ -352,6 +352,59 @@ func TestDeployFailureExitCodes(t *testing.T) {
 	}
 }
 
+// --json-file keeps a deploy's progress on stderr and writes its result
+// to the file, a failed one followed by the error; a path it can't write
+// stops the command before anything is deployed.
+func TestJSONFile(t *testing.T) {
+	setup(t)
+	srv := newTestServer(t)
+	appDir(t)
+	t.Setenv(clientconfig.EnvURL, srv.url)
+	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeDeploy])
+	exec(t, "project", "create", "shop")
+	file := filepath.Join(t.TempDir(), "release.json")
+	// A release's error is a string, the error object's an object.
+	type line struct {
+		Number int64
+		Status apitypes.ReleaseStatus
+		Error  json.RawMessage
+	}
+	read := func() []line {
+		t.Helper()
+		b, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var lines []line
+		for l := range strings.Lines(string(b)) {
+			var v line
+			if err := json.Unmarshal([]byte(l), &v); err != nil {
+				t.Fatalf("--json-file line %q: %v", l, err)
+			}
+			lines = append(lines, v)
+		}
+		return lines
+	}
+
+	code, stdout, stderr := exec(t, "deploy", "-p", "shop", "-e", "production", "-s", "web", "--json-file", file)
+	if l := read(); code != 0 || len(l) != 1 || l[0].Number != 1 || l[0].Status != apitypes.ReleaseActive ||
+		!strings.Contains(stderr, "Uploading ") || strings.HasPrefix(stdout, "{") {
+		t.Fatalf("deploy: exit %d %+v\nstdout %s\nstderr %s", code, l, stdout, stderr)
+	}
+
+	srv.rt.FailHealthCheck(func(node.ContainerSpec) error { return errors.New("connection refused") })
+	code, _, stderr = exec(t, "deploy", "-p", "shop", "-e", "production", "-s", "web", "--json-file", file)
+	if l := read(); code != int(output.ExitDeployFailed) || len(l) != 2 || l[0].Number != 2 || l[0].Status != apitypes.ReleaseFailed ||
+		!strings.Contains(string(l[1].Error), `"code":"health_check_failed"`) || !strings.Contains(stderr, "connection refused") {
+		t.Fatalf("failed deploy: exit %d %+v\n%s", code, l, stderr)
+	}
+
+	code, _, _ = exec(t, "deploy", "-p", "shop", "-e", "production", "-s", "web", "--json-file", filepath.Join(file, "nope"))
+	if rels := ok[[]apitypes.Release](t, "releases", "-p", "shop", "-e", "production", "-s", "web"); code != int(output.ExitUsage) || len(rels) != 2 {
+		t.Fatalf("unwritable --json-file: exit %d, %d releases", code, len(rels))
+	}
+}
+
 // `dock release cancel` stops the deploying release (ADR 0086); following
 // a canceled release exits deploy_canceled, not deploy_failed.
 func TestReleaseCancel(t *testing.T) {

@@ -34,6 +34,8 @@ type globals struct {
 	ctx  context.Context
 	io   *output.IO
 	json bool
+	// jsonFile is --json-file: where the --json value goes as well.
+	jsonFile string
 	// org is --org: the organization to act in, over DOCK_ORG, the link's
 	// and the context's.
 	org string
@@ -107,12 +109,23 @@ func newRoot(g *globals) *cobra.Command {
 		Version:       version.Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		PersistentPreRun: func(*cobra.Command, []string) {
+		PersistentPreRunE: func(*cobra.Command, []string) error {
 			g.started = true
 			g.io.JSON = g.json
+			if g.jsonFile == "" {
+				return nil
+			}
+			// Emptied now, so a bad path fails before anything is done and
+			// no stale result is left behind.
+			if err := os.WriteFile(g.jsonFile, nil, 0o600); err != nil {
+				return &output.Error{Exit: output.ExitUsage, Err: err, Hint: "Pass --json-file a path in a directory that exists and you can write to."}
+			}
+			g.io.JSONFile = g.jsonFile
+			return nil
 		},
 	}
 	root.PersistentFlags().BoolVar(&g.json, "json", false, "print stable, machine-readable JSON (see docs/cli.md)")
+	root.PersistentFlags().StringVar(&g.jsonFile, "json-file", "", "also write the --json result to this file, keeping human output and progress (for CI logs)")
 	root.PersistentFlags().StringVar(&g.org, "org", "", "organization to act in (default: the linked one, then the context's, set with dock org use)")
 	root.PersistentFlags().StringVar(&g.reason, "reason", "", "why you make this change; shown to the admin if a locked environment turns it into an access request")
 	addGroup(root, "start", "Getting started:",

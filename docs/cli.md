@@ -13,6 +13,16 @@ What scripts, CI and agents can rely on. The goals behind these are in
   is the secret `dock token create` returns, once.
 - Streaming commands (`dock logs`, `dock db query`) print one JSON object
   per line instead.
+- `--json-file FILE` writes the `--json` value to FILE as well, while the
+  output stays human and progress goes on: a CI log shows the build, and
+  the job reads the result from the file. The file holds one compact JSON
+  value per line: the result (what `--json` prints on stdout), then, if
+  the command failed, the error object (what `--json` prints on stderr).
+  A failed deploy writes both its release and the error; an error before
+  any result writes only the error. The file is emptied when the command
+  starts, and a path it can't write is a usage error before anything is
+  done. Read it with `jq`, which takes a stream of values:
+  `jq -r 'select(.error) | .error.code' FILE`.
 - `dock run --json` sends the command's output to stderr and prints only
   the run on stdout once it ended ([`dock run`](#dock-run)).
 - Progress (deploy steps, build output) goes to stderr and is silent with
