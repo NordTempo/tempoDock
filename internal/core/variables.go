@@ -113,6 +113,9 @@ func (c *Core) SetVariables(ctx context.Context, a Actor, ref EnvRef, req apityp
 	blind := !a.revealsIn(es)
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		for k, v := range req.Set {
+			if err := c.orgRefsAllowed(ctx, q, a, es.env.ID, serviceID, k, v); err != nil {
+				return err
+			}
 			if err := c.stageSetAs(ctx, q, es.env.ID, serviceID, k, v, blind); err != nil {
 				return err
 			}
@@ -134,6 +137,52 @@ func (c *Core) SetVariables(ctx context.Context, a Actor, ref EnvRef, req apityp
 		c.audit(ctx, a, "variables.set", &es.project, &es.env, target, describeVariableChange(req))
 	}
 	return c.changeResult(ctx, a, es, req.Apply)
+}
+
+// orgRefsAllowed refuses a value that adds a reference to an organization
+// variable (${{org.KEY}}) unless the caller edits variables across the
+// whole organization. An organization variable is the same secret in
+// every project, and a reference hands it to the service that holds the
+// reference, whose code whoever deploys there chooses: someone whose
+// access ends at one environment or one kind of environment would read
+// it from there. References the variable has already (live or staged)
+// stay theirs to keep; who may add one can set it for them.
+func (c *Core) orgRefsAllowed(ctx context.Context, q *store.Queries, a Actor, envID int64, serviceID *int64, key, value string) error {
+	orgRefs := func(v string) (keys []string) {
+		for _, m := range refRe.FindAllStringSubmatch(v, -1) {
+			if m[1] == orgScope {
+				keys = append(keys, m[2])
+			}
+		}
+		return keys
+	}
+	asked := orgRefs(value)
+	if len(asked) == 0 || a.covers(permsOf(PermVariablesWrite), 0, 0, uint8(allKinds)) {
+		return nil
+	}
+	var has []string
+	cur, err := q.GetVariable(ctx, store.GetVariableParams{EnvironmentID: envID, ServiceID: serviceID, Key: key})
+	switch {
+	case err == nil:
+		aad := variableAAD(envID, serviceID, key)
+		for _, sealed := range [][]byte{cur.Value, cur.PendingValue} {
+			if v, err := c.openValue(sealed, aad, key); err == nil && v != nil {
+				has = append(has, orgRefs(*v)...)
+			}
+		}
+	case !store.IsNotFound(err):
+		return err
+	}
+	for _, k := range asked {
+		if !slices.Contains(has, k) {
+			return a.refuse(apitypes.Refusal{
+				DecidedBy: apitypes.RefusedGrants, Action: "referencing an organization variable", Need: "variables.write", Place: "the whole organization",
+				Reason: fmt.Sprintf("%s=... would reference the organization's variable %s, which is the same secret in every project: adding a reference to one needs the permission to edit variables across the whole organization, which %s holds only in part of it", key, k, a),
+				Fix:    "ask someone who edits variables everywhere (an admin) to set this variable",
+			})
+		}
+	}
+	return nil
 }
 
 // stageSet stages value for a variable, or un-stages the variable when
