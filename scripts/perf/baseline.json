@@ -260,14 +260,39 @@
       "bytes_op": 130776,
       "allocs_op": 2082
     },
+    "core.BenchmarkNewRedactor/values=20": {
+      "ns_op": 13100.6,
+      "bytes_op": 21955,
+      "allocs_op": 30
+    },
+    "core.BenchmarkNewRedactor/values=20020": {
+      "ns_op": 13295030.9,
+      "bytes_op": 16325049,
+      "allocs_op": 75
+    },
     "core.BenchmarkRedactBuildLog": {
       "ns_op": 1310557,
-      "bytes_op": 82175,
+      "bytes_op": 82591,
       "allocs_op": 6
     },
     "core.BenchmarkRedactLine": {
       "ns_op": 169.2,
-      "bytes_op": 2,
+      "bytes_op": 1,
+      "allocs_op": 0
+    },
+    "core.BenchmarkRedactLineValues/values=1020": {
+      "ns_op": 309.1,
+      "bytes_op": 1,
+      "allocs_op": 0
+    },
+    "core.BenchmarkRedactLineValues/values=20": {
+      "ns_op": 118.4,
+      "bytes_op": 1,
+      "allocs_op": 0
+    },
+    "core.BenchmarkRedactLineValues/values=20020": {
+      "ns_op": 309,
+      "bytes_op": 1,
       "allocs_op": 0
     },
     "core.BenchmarkRetentionPass": {

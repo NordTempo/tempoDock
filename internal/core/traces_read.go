@@ -7,7 +7,6 @@ import (
 	"errors"
 	"net/http"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/analytics"
@@ -250,13 +249,6 @@ func decodedSize(raw []byte) int {
 	return len(raw) + 96*(bytes.Count(raw, []byte{'{'})+bytes.Count(raw, []byte{'['})) + 32*bytes.Count(raw, []byte{','})
 }
 
-// maxTraceMaskWork is how much one read searches for secret values:
-// bytes searched times the values searched for (spend). A service has
-// tens of values and a trace up to 33 MB of text, a quarter of this at
-// 30 values; a read that runs out masks what is left whole instead of
-// searching it, so its cost is about a second of CPU at worst.
-const maxTraceMaskWork int64 = 4 << 30
-
 // traceReadSlot waits up to 10 s for one of maxTraceReads slots and
 // returns its release, or that Dock is busy.
 func (c *Core) traceReadSlot(ctx context.Context) (func(), error) {
@@ -316,12 +308,12 @@ func (c *Core) releasesByID(ctx context.Context, ids []int64) (map[int64]store.R
 
 // traceMask masks a release's secret values in what a trace shows; nil
 // masks nothing. Values are masked once decoded, so a secret with a quote
-// or a backslash, which JSON escapes, is masked too.
+// or a backslash, which JSON escapes, is masked too. What masking a
+// string costs depends on its length alone, not on how many values the
+// service has (redactor), so a read's masking is bounded by what it
+// decodes (maxTraceDecode).
 type traceMask struct {
 	r *redactor
-	// work is what is left of the read's maxTraceMaskWork, shared by
-	// the read's masks.
-	work *int64
 	// all masks every string whole: for a release whose values are gone.
 	all bool
 }
@@ -348,15 +340,6 @@ func (s traceMaskSet) of(serviceID, releaseID int64) traceMask {
 	return traceMask{all: true}
 }
 
-// newTraceMask is a mask of r's values with a read's work of its own.
-func newTraceMask(r *redactor) traceMask {
-	if r == nil {
-		return traceMask{}
-	}
-	work := maxTraceMaskWork
-	return traceMask{r: r, work: &work}
-}
-
 // traceMasks are the masks of the releases in rels for a, each opened
 // once a request: a release's values are decrypted once, not per span.
 // A reader who may reveal secret values in ss's environment gets none for
@@ -364,7 +347,6 @@ func newTraceMask(r *redactor) traceMask {
 func (c *Core) traceMasks(a Actor, ss svcScope, rels map[int64]store.Release, inEnv func(serviceID int64) bool) (traceMaskSet, error) {
 	reveal := a.revealsIn(ss.envScope)
 	out := make(map[int64]traceMask, len(rels))
-	work := maxTraceMaskWork
 	for id, rel := range rels {
 		if reveal && inEnv(rel.ServiceID) {
 			out[id] = traceMask{}
@@ -374,49 +356,18 @@ func (c *Core) traceMasks(a Actor, ss svcScope, rels map[int64]store.Release, in
 		if err != nil {
 			return traceMaskSet{}, err
 		}
-		out[id] = traceMask{r: r, work: &work}
+		out[id] = traceMask{r: r}
 	}
 	return traceMaskSet{by: out, reveal: reveal, inEnv: inEnv}, nil
 }
 
-// spend takes a search of n bytes from the read's work, reporting
-// whether there was that much left. A search costs its bytes, and 16
-// more for what looking for a value in the shortest string costs, for
-// each value.
-func (m traceMask) spend(n int) bool {
-	*m.work -= int64(n+16) * int64(len(m.r.secrets))
-	return *m.work >= 0
-}
-
-// mask masks s. Every search is paid for from the read's work (spend):
-// once that is gone, a string is masked whole, so a read's cost is
-// bounded whatever the values and the text are.
+// mask masks s.
 func (m traceMask) mask(s string) string {
 	if m.all && s != "" {
 		return secretMask
 	}
-	if m.r == nil || s == "" {
-		return s
-	}
-	if !m.spend(len(s)) {
-		return secretMask
-	}
-	if !slices.ContainsFunc(m.r.secrets, func(v string) bool { return strings.Contains(s, v) }) {
-		return s
-	}
-	src, pos, out := []byte(s), 0, make([]byte, 0, len(s))
-	for {
-		if !m.spend(len(src) - pos) {
-			return secretMask
-		}
-		at, n := m.r.next(src[pos:])
-		if at < 0 {
-			break
-		}
-		out = append(append(out, src[pos:pos+at]...), secretMask...)
-		pos += at + n
-	}
-	return string(append(out, src[pos:]...))
+	out, _ := m.r.line(s)
+	return out
 }
 
 // value masks the strings in a decoded JSON value, in place.

@@ -16,10 +16,22 @@ WHERE services.id IN (sqlc.slice(ids));
 -- name: ListReleasesByIDs :many
 SELECT * FROM releases WHERE id IN (sqlc.slice(ids));
 
--- ListReleaseServices is the service of each release named: the trace
--- forwarder keeps only spans whose release is their service's.
+-- ListReleaseServices is the service of each release named, and when it
+-- stopped being its service's release: the trace forwarder keeps only
+-- spans whose release is their service's, and not long over. A failed
+-- release ended when it finished. A superseded one ended when the release
+-- that replaced it went live, replaced_at: the first of the service's
+-- active or superseded releases to finish after it did (releases_finished
+-- holds exactly those, by finish time, so it is one seek a release), NULL
+-- when none did (its service was archived).
 -- name: ListReleaseServices :many
-SELECT id, service_id FROM releases WHERE id IN (sqlc.slice(ids));
+SELECT r.id, r.service_id, r.status, r.finished_at, n.finished_at AS replaced_at
+FROM releases r
+LEFT JOIN releases n ON r.status = 'superseded' AND n.id = (
+    SELECT x.id FROM releases x
+    WHERE x.service_id = r.service_id AND x.status IN ('active', 'superseded') AND x.finished_at > r.finished_at
+    ORDER BY x.finished_at LIMIT 1)
+WHERE r.id IN (sqlc.slice(ids));
 
 -- name: GetMetricDashboard :one
 -- A service's pinned charts; no row is Dock's defaults.

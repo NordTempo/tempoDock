@@ -131,10 +131,10 @@ func (c *Core) startPreviewData(a Actor, base, dst envScope, pv store.Preview, p
 	for _, p := range plans {
 		c.beginPreviewData(ctx, dst, pv.ID, p, "waiting to start")
 	}
-	c.wg.Go(func() {
+	c.goCounted("filling a preview's databases", func() {
 		var wg sync.WaitGroup
 		for _, p := range plans {
-			wg.Go(func() { c.fillPreviewDB(ctx, a, dst, pv, p, false) })
+			goIn(&wg, c.log, "filling a preview database", func() { c.fillPreviewDB(ctx, a, dst, pv, p, false) })
 		}
 		wg.Wait()
 		if ctx.Err() != nil {
@@ -191,7 +191,9 @@ func (c *Core) fillPreviewDB(ctx context.Context, a Actor, dst envScope, pv stor
 		return
 	}
 	pc := &previewCopy{c: c, a: a, from: p.from, to: svcScope{dst, svc}, pv: pv, set: p.set, start: now(), up: refresh}
-	err = pc.run(ctx, refresh)
+	// Through caught: a copy that panics is a failed copy, ended and
+	// recorded below like any other.
+	err = caughtErr(c.log, "filling a preview database", func() error { return pc.run(ctx, refresh) })
 	if ctx.Err() != nil {
 		return // shutting down: the next start ends it (resumePreviewData)
 	}
@@ -720,7 +722,7 @@ func (c *Core) RefreshPreviewData(ctx context.Context, a Actor, ref EnvRef, req 
 	for _, p := range plans {
 		c.beginPreviewData(ctx, es, pv.ID, p, "waiting to start")
 	}
-	c.wg.Go(func() { c.refreshPreviewData(a, es, pv, plans) })
+	c.goCounted("refreshing a preview's data", func() { c.refreshPreviewData(a, es, pv, plans) })
 	return c.toPreview(ctx, es, pv)
 }
 
@@ -734,7 +736,7 @@ func (c *Core) refreshPreviewData(a Actor, es envScope, pv store.Preview, plans 
 	}
 	var wg sync.WaitGroup
 	for _, p := range plans {
-		wg.Go(func() { c.fillPreviewDB(ctx, a, es, pv, p, true) })
+		goIn(&wg, c.log, "filling a preview database", func() { c.fillPreviewDB(ctx, a, es, pv, p, true) })
 	}
 	wg.Wait()
 	if ctx.Err() != nil {

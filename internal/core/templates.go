@@ -314,7 +314,7 @@ func (c *Core) afterActive(ctx context.Context, ss svcScope) {
 		return
 	}
 	// The retries run in the background: the deploy is done.
-	c.wg.Go(func() {
+	c.goCounted("setting up a template database", func() {
 		ctx := c.ctx
 		delay := setupRetryDelay
 		for attempt := 2; ; attempt++ {

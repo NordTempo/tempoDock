@@ -412,7 +412,7 @@ func (c *Core) startServerDrain(id int64) {
 	}
 	c.drains.driving[id] = true
 	c.drains.mu.Unlock()
-	c.wg.Go(func() {
+	c.goCounted("draining a server", func() {
 		defer func() {
 			c.drains.mu.Lock()
 			delete(c.drains.driving, id)

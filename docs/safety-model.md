@@ -164,7 +164,12 @@ tailnet. Apps and builds reach the public internet, nothing private:
 - **Firewall by default.** Traffic from app networks and from BuildKit to
   private, CGNAT/Tailscale, link-local and IPv6 ULA addresses is dropped, and
   so is traffic to the server itself (API, SSH), except Caddy's ports and
-  DNS. LAN hosts an app needs go on an explicit allowlist
+  DNS. An IPv6 address that carries one of those IPv4 addresses is
+  dropped the same way: the blocked ranges inside NAT64 (`64:ff9b::/96`)
+  and 6to4 (`2002::/16`), so a server on an IPv6-only network still
+  reaches the public IPv4 internet, and all of the local-use NAT64 prefix
+  (`64:ff9b:1::/48`), Teredo and the IPv4-compatible and IPv4-mapped
+  forms. LAN hosts an app needs go on an explicit allowlist
   (`[network] allow_private`). Root installs the rules
   (`dock-firewall.service`); the daemon can't change them, or read them.
   Applying them leaves a marker under `/run`, and a daemon that starts

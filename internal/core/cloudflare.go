@@ -853,14 +853,15 @@ func (c *Core) checkCloudflare(ctx context.Context, token, accountID string) (cl
 	sem := make(chan struct{}, cfCheckParallel)
 	var wg sync.WaitGroup
 	for i, z := range zones {
-		wg.Go(func() {
+		goErr(&wg, c.log, "checking a Cloudflare zone", &errs[i], func() error {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			err := cl.CheckDNS(ctx, z.ID)
 			if e, ok := cloudflare.AsError(err); ok && e.Denied() {
-				return // no DNS permission there: not managed
+				return nil // no DNS permission there: not managed
 			}
-			readable[i], errs[i] = err == nil, err
+			readable[i] = err == nil
+			return err
 		})
 	}
 	wg.Wait()

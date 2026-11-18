@@ -62,3 +62,28 @@ func TestSiteDeploysPlan(t *testing.T) {
 		t.Errorf("ListSiteDeploys: %s", got)
 	}
 }
+
+// The trace forwarder's releases are read by ID, and the release that
+// replaced each superseded one by a seek of its service's releases by
+// finish time: nothing is scanned, however many releases a service has.
+func TestReleaseServicesPlan(t *testing.T) {
+	f := newDataFixture(t)
+	rows, err := f.s.DB.Query("EXPLAIN QUERY PLAN "+listReleaseServices, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	var plan []string
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		plan = append(plan, detail)
+	}
+	got := strings.Join(plan, "; ")
+	if !strings.Contains(got, "SEARCH x USING INDEX releases_finished (service_id=? AND finished_at>?)") || strings.Contains(got, "SCAN") || strings.Contains(got, "TEMP B-TREE") {
+		t.Errorf("ListReleaseServices: %s", got)
+	}
+}

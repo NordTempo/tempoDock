@@ -284,7 +284,7 @@ func (c *Core) ListOrgSites(ctx context.Context, a Actor, rng string) ([]apitype
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(orgSitesQueries)
 	for i, s := range sites {
-		g.Go(func() error {
+		goGroup(g, c.log, "reading a site's numbers", func() error {
 			d, err := cl.Dashboard(gctx, analytics.DashboardQuery{Query: analytics.Query{Site: s.ID, From: from, To: to}, Bucket: bucket})
 			if err != nil {
 				return nil // a store that can't answer leaves the numbers out

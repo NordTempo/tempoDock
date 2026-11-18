@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"strings"
 	"sync"
@@ -262,8 +263,15 @@ func (c *Core) connected(serverID int64) node.Runtime {
 // own timeout, and waits for all. Loops over servers use it so one server
 // that doesn't answer costs at most timeout and holds up no other; a
 // single call runs inline.
+//
+// A panic in one call ends that call only (recovered, logged to the
+// default logger: fanOut has no Core). The other servers' calls finish,
+// and the caller reads that server's slot as it was before the call: fn
+// writes a slot only with a whole result, or the caller marks it failed
+// first.
 func fanOut(ctx context.Context, n int, timeout time.Duration, fn func(ctx context.Context, i int)) {
 	run := func(i int) {
+		defer recovered(slog.Default(), "a call to one server of several")
 		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		fn(ctx, i)
@@ -274,7 +282,7 @@ func fanOut(ctx context.Context, n int, timeout time.Duration, fn func(ctx conte
 	}
 	var wg sync.WaitGroup
 	for i := range n {
-		wg.Go(func() { run(i) })
+		wg.Go(func() { run(i) }) // run recovers: no second closure per server
 	}
 	wg.Wait()
 }

@@ -119,17 +119,22 @@ func (c *Core) accessChanged(ch accessChange) {
 		return
 	}
 	// Off the writer's path: each check reads the store.
-	c.wg.Go(func() {
+	c.goCounted("checking who still has access", func() {
+		defer w.asked.Add(1)
 		for _, h := range ask {
-			now, err := c.actorNow(c.ctx, h.a)
-			if err == nil {
-				err = h.still(c.ctx, now)
-			}
+			// A check that can't finish ends what it guards, as a
+			// refusal does.
+			err := caughtErr(c.log, "checking who still has access", func() error {
+				now, err := c.actorNow(c.ctx, h.a)
+				if err != nil {
+					return err
+				}
+				return h.still(c.ctx, now)
+			})
 			if err != nil {
 				h.end()
 			}
 		}
-		w.asked.Add(1)
 	})
 }
 

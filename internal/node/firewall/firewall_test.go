@@ -79,6 +79,22 @@ func TestRulesIPv6(t *testing.T) {
 		"-m conntrack --ctorigdst fd12::/64 -j RETURN",
 		"-m conntrack --ctorigdst fc00::/7 -j DROP",
 		"-m conntrack --ctorigdst fe80::/10 -j DROP",
+		// The IPv4 ranges again, inside NAT64 and 6to4.
+		"-m conntrack --ctorigdst 64:ff9b::a00:0/104 -j DROP",
+		"-m conntrack --ctorigdst 64:ff9b::ac10:0/108 -j DROP",
+		"-m conntrack --ctorigdst 64:ff9b::c0a8:0/112 -j DROP",
+		"-m conntrack --ctorigdst 64:ff9b::6440:0/106 -j DROP",
+		"-m conntrack --ctorigdst 64:ff9b::a9fe:0/112 -j DROP",
+		"-m conntrack --ctorigdst 2002:a00::/24 -j DROP",
+		"-m conntrack --ctorigdst 2002:ac10::/28 -j DROP",
+		"-m conntrack --ctorigdst 2002:c0a8::/32 -j DROP",
+		"-m conntrack --ctorigdst 2002:6440::/26 -j DROP",
+		"-m conntrack --ctorigdst 2002:a9fe::/32 -j DROP",
+		// Dropped whole.
+		"-m conntrack --ctorigdst 64:ff9b:1::/48 -j DROP",
+		"-m conntrack --ctorigdst 2001::/32 -j DROP",
+		"-m conntrack --ctorigdst ::/96 -j DROP",
+		"-m conntrack --ctorigdst ::ffff:0.0.0.0/96 -j DROP",
 	}; !slices.Equal(egress, want) {
 		t.Errorf("DOCK-EGRESS =\n%s\nwant\n%s", strings.Join(egress, "\n"), strings.Join(want, "\n"))
 	}
@@ -88,6 +104,32 @@ func TestRulesIPv6(t *testing.T) {
 	}
 	if strings.Contains(r, "192.168.") || strings.Contains(r, "10.213.") {
 		t.Errorf("IPv4 addresses in IPv6 rules:\n%s", r)
+	}
+}
+
+// An IPv6 destination that carries a blocked IPv4 address is blocked, one
+// that carries a public IPv4 address through NAT64 or 6to4 is not: a
+// server on an IPv6-only network reaches the IPv4 internet that way.
+func TestBlockedCarriedIPv4(t *testing.T) {
+	for ip, want := range map[string]bool{
+		"64:ff9b::a9fe:a9fe":   true,  // 169.254.169.254
+		"64:ff9b::c0a8:a01":    true,  // 192.168.10.1
+		"64:ff9b::6464:6464":   true,  // 100.100.100.100
+		"64:ff9b::808:808":     false, // 8.8.8.8
+		"2002:a9fe:a9fe::1":    true,  // 169.254.169.254
+		"2002:ac1f:1::1":       true,  // 172.31.0.1
+		"2002:ac20:1::1":       false, // 172.32.0.1
+		"2002:808:808::1":      false, // 8.8.8.8
+		"64:ff9b:1::808:808":   true,  // local-use NAT64, whatever it carries
+		"64:ff9b:2::808:808":   false, // outside both NAT64 prefixes
+		"2001:0:4136:e378::1":  true,  // Teredo
+		"2001:db8::1":          false, // not Teredo
+		"::a00:1":              true,  // IPv4-compatible
+		"2606:4700:4700::1111": false,
+	} {
+		if got := Blocked(netip.MustParseAddr(ip)); got != want {
+			t.Errorf("Blocked(%s) = %v, want %v", ip, got, want)
+		}
 	}
 }
 

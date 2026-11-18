@@ -532,7 +532,7 @@ func (c *Core) startMove(id int64) {
 	}
 	c.moves.driving[id] = true
 	c.moves.mu.Unlock()
-	c.wg.Go(func() {
+	c.goCounted("moving an environment", func() {
 		defer func() {
 			c.moves.mu.Lock()
 			delete(c.moves.driving, id)
@@ -1128,10 +1128,9 @@ func (c *Core) moveStop(ctx context.Context, es envScope, m store.EnvironmentMov
 			if s.stateful() != stateful || !s.runs() {
 				continue
 			}
-			wg.Go(func() {
+			goErr(&wg, c.log, "stopping a moving service", &errs[i], func() error {
 				if err := c.removeReleaseContainers(ctx, s.ss, s.rel.ID, keepData); err != nil {
-					errs[i] = fmt.Errorf("stop %s: %w", s.ss.svc.Name, c.nodeErr(m.FromServerID, err))
-					return
+					return fmt.Errorf("stop %s: %w", s.ss.svc.Name, c.nodeErr(m.FromServerID, err))
 				}
 				// Without a fresh port its requests wait on its own
 				// port from here on (forwards.go).
@@ -1140,6 +1139,7 @@ func (c *Core) moveStop(ctx context.Context, es envScope, m store.EnvironmentMov
 				}
 				c.setStatus(s.ss, apitypes.ServiceStatus{State: apitypes.ServiceStopped})
 				c.setMoveService(ctx, es, m, s, "stopped", "", s.row.CopiedBytes, "")
+				return nil
 			})
 		}
 		wg.Wait()
@@ -1166,19 +1166,19 @@ func (c *Core) moveCopy(ctx context.Context, es envScope, m store.EnvironmentMov
 		if !s.stateful() {
 			continue
 		}
-		wg.Go(func() {
+		goErr(&wg, c.log, "copying a moving service's volumes", &errs[i], func() error {
 			for _, v := range s.vols {
 				for _, mode := range []syncMode{syncFinal, syncCheck} {
 					rep, err := c.syncVolume(ctx, s.ss, m, src, dst, v.DockerName, syncVolRoot, mode)
 					s.row.CopiedBytes += rep.bytes
 					if err != nil {
 						c.setMoveService(ctx, es, m, s, "failed", "", s.row.CopiedBytes, err.Error())
-						errs[i] = fmt.Errorf("copy %s's volume %s: %w", s.ss.svc.Name, v.Name, err)
-						return
+						return fmt.Errorf("copy %s's volume %s: %w", s.ss.svc.Name, v.Name, err)
 					}
 				}
 			}
 			c.setMoveService(ctx, es, m, s, "copied", "", s.row.CopiedBytes, "")
+			return nil
 		})
 	}
 	wg.Wait()
@@ -1225,7 +1225,7 @@ func (c *Core) moveStart(ctx context.Context, es envScope, m store.EnvironmentMo
 			if s.stateful() != stateful || !s.runs() {
 				continue
 			}
-			wg.Go(func() { errs[i] = c.startOnTarget(ctx, es, m, dst, s) })
+			goErr(&wg, c.log, "starting a moved service", &errs[i], func() error { return c.startOnTarget(ctx, es, m, dst, s) })
 		}
 		wg.Wait()
 		if err := errors.Join(errs...); err != nil {

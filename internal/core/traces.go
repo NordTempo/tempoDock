@@ -152,10 +152,11 @@ func (c *Core) ensureTraceStore(serverID int64) {
 	}
 	c.traces.starting, c.traces.startedAt = true, now()
 	c.traces.mu.Unlock()
-	c.wg.Go(func() {
+	c.goCounted("starting the trace store", func() {
 		ctx, cancel := context.WithTimeout(c.ctx, traceStoreTimeout)
 		defer cancel()
-		err := c.startTraceStore(ctx, serverID, cl.Token)
+		// Through caught: a start that panics still clears starting.
+		err := caughtErr(c.log, "starting the trace store", func() error { return c.startTraceStore(ctx, serverID, cl.Token) })
 		c.traces.mu.Lock()
 		c.traces.starting, c.traces.storeErr = false, ""
 		if err != nil {
@@ -208,7 +209,7 @@ func (c *Core) removeTraceStore(serverID int64) {
 	if serverID != c.localID && c.nodes.State(serverID).Hello.Protocol < remote.TraceStoreProtocol {
 		return
 	}
-	c.wg.Go(func() {
+	c.goCounted("removing a trace store", func() {
 		ctx, cancel := context.WithTimeout(c.ctx, traceStoreTimeout)
 		defer cancel()
 		if err := c.runtime(serverID).RemoveAnalyticsStore(ctx, node.StoreTraces); err != nil && c.ctx.Err() == nil {
@@ -251,7 +252,7 @@ func (c *Core) pruneTraces() {
 		return
 	}
 	before := now().AddDate(0, 0, -c.cfg.Traces.RetentionDays)
-	c.wg.Go(func() {
+	c.goCounted("dropping old spans", func() {
 		ctx, cancel := context.WithTimeout(c.ctx, 10*time.Minute)
 		defer cancel()
 		hours := now().AddDate(0, 0, -metricHoursDays)

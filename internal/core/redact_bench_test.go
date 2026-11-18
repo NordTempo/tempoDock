@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 )
 
@@ -20,6 +21,18 @@ func benchEnv() map[string]string {
 	for i := range 11 {
 		env[fmt.Sprintf("FEATURE_%d", i)] = fmt.Sprintf("value-%d-%x", i, i*7919)
 	}
+	return env
+}
+
+// benchManyEnv is benchEnv and a variable of n more values, a line each:
+// what a large key file or a pasted .env makes of a service's values.
+func benchManyEnv(n int) map[string]string {
+	env := benchEnv()
+	var lines strings.Builder
+	for i := range n {
+		fmt.Fprintf(&lines, "tok_%x_%d\n", i*2654435761, i)
+	}
+	env["MANY"] = lines.String()
 	return env
 }
 
@@ -67,5 +80,39 @@ func BenchmarkRedactBuildLog(b *testing.B) {
 		if _, err := io.CopyBuffer(io.Discard, struct{ io.Reader }{r}, buf); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+// BenchmarkRedactLineValues is BenchmarkRedactLine by how many values the
+// service has: a line costs about the same with 20 as with 20,000, since
+// the values are found in one pass (matcher). More values only mean more
+// places in a line where one could begin.
+func BenchmarkRedactLineValues(b *testing.B) {
+	for _, n := range []int{0, 1_000, 20_000} {
+		b.Run(fmt.Sprintf("values=%d", 20+n), func(b *testing.B) {
+			red := newRedactor(benchManyEnv(n))
+			lines := benchLogLines()
+			b.ReportAllocs()
+			i := 0
+			for b.Loop() {
+				_, _ = red.line(lines[i%len(lines)])
+				i++
+			}
+		})
+	}
+}
+
+// BenchmarkNewRedactor is what a log read pays once to mask with a
+// service's values: sorting them and building the matchers. It grows
+// with the values' bytes, as opening the release's config does.
+func BenchmarkNewRedactor(b *testing.B) {
+	for _, n := range []int{0, 20_000} {
+		b.Run(fmt.Sprintf("values=%d", 20+n), func(b *testing.B) {
+			env := benchManyEnv(n)
+			b.ReportAllocs()
+			for b.Loop() {
+				_ = newRedactor(env)
+			}
+		})
 	}
 }

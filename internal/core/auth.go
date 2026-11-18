@@ -428,13 +428,13 @@ func (c *Core) ChangePassword(ctx context.Context, a Actor, req apitypes.ChangeP
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), c.passwordCost)
+	hash, err := c.hashPassword(ctx, req.NewPassword)
 	if err != nil {
 		return "", time.Time{}, err
 	}
 	var revoked int64
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
-		if err := q.SetUserPassword(ctx, store.SetUserPasswordParams{PasswordHash: string(hash), ID: u.ID}); err != nil {
+		if err := q.SetUserPassword(ctx, store.SetUserPasswordParams{PasswordHash: hash, ID: u.ID}); err != nil {
 			return err
 		}
 		if err := q.DeleteUnusedPasswordResets(ctx, u.ID); err != nil {
@@ -870,13 +870,13 @@ func (c *Core) ResetPassword(ctx context.Context, a Actor, id int64, req apitype
 	if len(pw) < 12 {
 		return out, invalid("password must be at least 12 characters")
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(pw), c.passwordCost)
+	hash, err := c.hashPassword(ctx, pw)
 	if err != nil {
 		return out, err
 	}
 	var revoked int64
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
-		if err := q.SetUserPassword(ctx, store.SetUserPasswordParams{PasswordHash: string(hash), ID: u.ID}); err != nil {
+		if err := q.SetUserPassword(ctx, store.SetUserPasswordParams{PasswordHash: hash, ID: u.ID}); err != nil {
 			return err
 		}
 		if err := q.DeleteUnusedPasswordResets(ctx, u.ID); err != nil {
@@ -1072,14 +1072,14 @@ func (c *Core) createUser(ctx context.Context, req apitypes.CreateUserRequest, o
 	if !validScope(req.Role) {
 		return store.User{}, invalid("role must be read, deploy or admin")
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), c.passwordCost)
+	hash, err := c.hashPassword(ctx, req.Password)
 	if err != nil {
 		return store.User{}, err
 	}
 	var u store.User
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		var err error
-		if u, err = q.CreateUser(ctx, store.CreateUserParams{Email: req.Email, Name: req.Name, PasswordHash: string(hash), PlatformRole: operatorRole(req.Operator), EmailProven: true}); err != nil {
+		if u, err = q.CreateUser(ctx, store.CreateUserParams{Email: req.Email, Name: req.Name, PasswordHash: hash, PlatformRole: operatorRole(req.Operator), EmailProven: true}); err != nil {
 			return err
 		}
 		return joinOrgMember(ctx, q, orgID, u.ID, req.Role)

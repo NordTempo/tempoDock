@@ -29,16 +29,31 @@ func (q *Queries) GetMetricDashboard(ctx context.Context, serviceID int64) (Metr
 }
 
 const listReleaseServices = `-- name: ListReleaseServices :many
-SELECT id, service_id FROM releases WHERE id IN (/*SLICE:ids*/?)
+SELECT r.id, r.service_id, r.status, r.finished_at, n.finished_at AS replaced_at
+FROM releases r
+LEFT JOIN releases n ON r.status = 'superseded' AND n.id = (
+    SELECT x.id FROM releases x
+    WHERE x.service_id = r.service_id AND x.status IN ('active', 'superseded') AND x.finished_at > r.finished_at
+    ORDER BY x.finished_at LIMIT 1)
+WHERE r.id IN (/*SLICE:ids*/?)
 `
 
 type ListReleaseServicesRow struct {
-	ID        int64
-	ServiceID int64
+	ID         int64
+	ServiceID  int64
+	Status     string
+	FinishedAt *time.Time
+	ReplacedAt *time.Time
 }
 
-// ListReleaseServices is the service of each release named: the trace
-// forwarder keeps only spans whose release is their service's.
+// ListReleaseServices is the service of each release named, and when it
+// stopped being its service's release: the trace forwarder keeps only
+// spans whose release is their service's, and not long over. A failed
+// release ended when it finished. A superseded one ended when the release
+// that replaced it went live, replaced_at: the first of the service's
+// active or superseded releases to finish after it did (releases_finished
+// holds exactly those, by finish time, so it is one seek a release), NULL
+// when none did (its service was archived).
 func (q *Queries) ListReleaseServices(ctx context.Context, ids []int64) ([]ListReleaseServicesRow, error) {
 	query := listReleaseServices
 	var queryParams []interface{}
@@ -58,7 +73,13 @@ func (q *Queries) ListReleaseServices(ctx context.Context, ids []int64) ([]ListR
 	var items []ListReleaseServicesRow
 	for rows.Next() {
 		var i ListReleaseServicesRow
-		if err := rows.Scan(&i.ID, &i.ServiceID); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.ServiceID,
+			&i.Status,
+			&i.FinishedAt,
+			&i.ReplacedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
-	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/oauth2"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -776,7 +775,7 @@ func (c *Core) ssoNewUser(ctx context.Context, p store.SsoProvider, who ssoPerso
 			return store.User{}, errInviteOnly
 		}
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(generatePassword()), c.passwordCost)
+	hash, err := c.hashPassword(ctx, generatePassword())
 	if err != nil {
 		return store.User{}, err
 	}
@@ -785,7 +784,7 @@ func (c *Core) ssoNewUser(ctx context.Context, p store.SsoProvider, who ssoPerso
 	var joined []store.ListOpenInvitesByEmailRow
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		var err error
-		if u, err = q.CreateUser(ctx, store.CreateUserParams{Email: who.email, Name: name, PasswordHash: string(hash), EmailProven: true}); err != nil {
+		if u, err = q.CreateUser(ctx, store.CreateUserParams{Email: who.email, Name: name, PasswordHash: hash, EmailProven: true}); err != nil {
 			return err
 		}
 		if err := q.CreateSSOIdentity(ctx, store.CreateSSOIdentityParams{ProviderID: p.ID, Subject: who.subject, UserID: u.ID, Email: who.email, CreatedAt: now()}); err != nil {

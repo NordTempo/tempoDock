@@ -74,10 +74,12 @@ func (c *Core) ensureAnalyticsStore(serverID int64) {
 	c.analytics.starting = true
 	c.analytics.startedAt = now()
 	c.analytics.mu.Unlock()
-	c.wg.Go(func() {
+	c.goCounted("starting the analytics store", func() {
 		ctx, cancel := context.WithTimeout(c.ctx, storeStartTimeout)
 		defer cancel()
-		err := c.startStore(ctx, serverID, cl.Token)
+		// Through caught: a start that panics still clears starting, or
+		// no later one would run.
+		err := caughtErr(c.log, "starting the analytics store", func() error { return c.startStore(ctx, serverID, cl.Token) })
 		c.analytics.mu.Lock()
 		c.analytics.starting = false
 		c.analytics.mu.Unlock()
@@ -192,7 +194,7 @@ func (c *Core) removeStrayStore(serverID int64, wait bool) {
 	if serverID != c.localID && c.nodes.State(serverID).Hello.Protocol < remote.AnalyticsBinaryProtocol {
 		return // too old to have run one from a binary, or to remove it
 	}
-	c.wg.Go(func() {
+	c.goCounted("removing an analytics store left behind", func() {
 		ctx, cancel := context.WithTimeout(c.ctx, storeStartTimeout)
 		defer cancel()
 		if wait {
@@ -405,7 +407,7 @@ func (c *Core) startStoreMove(ctx context.Context, a Actor, from, to store.Serve
 		how = "starting empty: " + from.Name + " is offline"
 	}
 	c.audit(ctx, a, "analytics.move", nil, nil, to.Name, fmt.Sprintf("started moving the analytics store from %s to %s, %s", from.Name, to.Name, how))
-	c.wg.Go(func() { c.runStoreMove(a, m, copyData) })
+	c.goCounted("moving the analytics store", func() { c.runStoreMove(a, m, copyData) })
 	return nil
 }
 
@@ -413,7 +415,9 @@ func (c *Core) startStoreMove(ctx context.Context, a Actor, from, to store.Serve
 func (c *Core) runStoreMove(a Actor, m *analyticsMove, copyData bool) {
 	ctx, cancel := context.WithTimeout(c.ctx, storeMoveTimeout)
 	defer cancel()
-	moved, err := c.moveStore(ctx, a, m, copyData)
+	// Through caught: a move that panics is a failed move, not one that
+	// holds the forwarders off for good.
+	moved, err := caught(c.log, "moving the analytics store", func() (string, error) { return c.moveStore(ctx, a, m, copyData) })
 	c.analytics.mu.Lock()
 	c.analytics.moving = nil
 	c.analytics.mu.Unlock()

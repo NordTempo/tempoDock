@@ -100,14 +100,22 @@ func checkNewPassword(p string) error {
 	return nil
 }
 
-// hashPassword hashes a new password, sharing the bcrypt slots login
-// attempts use so sign-ups can't starve them.
+// hashPassword hashes a user's new password, sharing the bcrypt slots
+// login attempts use so nothing that sets a password can starve them.
+// Every hash core makes goes through it or hashAt
+// (TestEveryPasswordHashTakesASlot).
 func (c *Core) hashPassword(ctx context.Context, password string) (string, error) {
+	return c.hashAt(ctx, password, c.passwordCost)
+}
+
+// hashAt hashes password at cost in one of the bcrypt slots (bcryptSlot):
+// rate_limited when too many already wait for one.
+func (c *Core) hashAt(ctx context.Context, password string, cost int) (string, error) {
 	if err := c.bcryptSlot(ctx); err != nil {
 		return "", err
 	}
 	defer func() { <-c.bcryptSem }()
-	h, err := bcrypt.GenerateFromPassword([]byte(password), c.passwordCost)
+	h, err := bcrypt.GenerateFromPassword([]byte(password), cost)
 	if errors.Is(err, bcrypt.ErrPasswordTooLong) {
 		return "", invalid("password must be at most 72 bytes; use a shorter one")
 	}

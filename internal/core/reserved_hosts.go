@@ -33,10 +33,17 @@ var reservedBaseLabels = map[string]bool{
 	"ns": true, "ns1": true, "ns2": true, "_acme-challenge": true, "_dmarc": true, "_domainkey": true, "_mta-sts": true,
 }
 
+// reservedBases are the base domains a hostname chosen for a service on a
+// server with ingress ing is checked under (reservedHostErr): the
+// server's and the platform's.
+func (c *Core) reservedBases(ing serverIngress) []string {
+	return []string{ing.baseDomain, strings.TrimPrefix(c.cfg.BaseDomain, "*.")}
+}
+
 // reservedHostErr refuses host for actor a when it is a reserved name
 // directly under one of bases (base domains, "" ignored): the single
 // check for every path that binds a name someone chose (AddDomain, a
-// status page's hostname). Operators pass.
+// project file's plan, a status page's hostname). Operators pass.
 func reservedHostErr(a Actor, host string, bases ...string) error {
 	if a.Operator || a.userPlatform == apitypes.PlatformOperator {
 		return nil
