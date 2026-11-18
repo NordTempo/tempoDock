@@ -8,8 +8,6 @@ import (
 	"strings"
 	"unicode"
 
-	"golang.org/x/crypto/bcrypt"
-
 	"github.com/NordTempo/tempoDock/internal/access"
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -90,7 +88,7 @@ func (c *Core) SetServiceAccess(ctx context.Context, a Actor, ref ServiceRef, re
 		if row.Username, err = accessUsername(req.Username); err != nil {
 			return apitypes.Access{}, err
 		}
-		if row.PasswordHash, err = accessPasswordHash(req.Password, cur); err != nil {
+		if row.PasswordHash, err = c.accessPasswordHash(ctx, req.Password, cur); err != nil {
 			return apitypes.Access{}, err
 		}
 		summary = "protected its domains with a password for " + row.Username
@@ -139,16 +137,16 @@ func accessUsername(u string) (string, error) {
 }
 
 // accessPasswordHash hashes a new password, or keeps the current one when
-// none is given and the service already has one.
-func accessPasswordHash(password string, cur store.ServiceAccess) (string, error) {
+// none is given and the service already has one. The hash takes a bcrypt
+// slot like any other (hashAt).
+func (c *Core) accessPasswordHash(ctx context.Context, password string, cur store.ServiceAccess) (string, error) {
 	if password == "" && cur.Mode == string(apitypes.AccessPassword) {
 		return cur.PasswordHash, nil
 	}
 	if len(password) < minAccessPassword || len(password) > 72 {
 		return "", invalid("the password must be %d to 72 characters long", minAccessPassword)
 	}
-	h, err := bcrypt.GenerateFromPassword([]byte(password), accessBcryptCost)
-	return string(h), err
+	return c.hashAt(ctx, password, accessBcryptCost)
 }
 
 // loginSupported checks that a server can check Dock logins: the control
