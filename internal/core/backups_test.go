@@ -308,32 +308,102 @@ func TestBackupUnreachableRepository(t *testing.T) {
 	}
 }
 
-func TestVolumeBackupWarnsAndCantRestore(t *testing.T) {
+func TestVolumeBackupRestoresInPlace(t *testing.T) {
 	h := newHarness(t)
 	app := h.service("app", apitypes.CreateServiceRequest{})
 	if _, err := h.c.AddVolume(h.ctx, testSystem, app, apitypes.AddVolumeRequest{Name: "files", MountPath: "/srv"}); err != nil {
 		t.Fatal(err)
 	}
 	h.deploy(app, "app:1")
-	h.rt.OnJob(func(spec node.JobSpec) (node.JobResult, error) {
-		return node.JobResult{Output: resticOutput("cccc3333", 10, "cccc3333")}, nil
+	const snap = "cccc3333cccc"
+	filling, release := make(chan struct{}), make(chan struct{})
+	h.snapshotJobs(func(spec node.JobSpec) *node.JobResult {
+		switch {
+		case strings.Contains(spec.Name, "_backup"):
+			return &node.JobResult{Output: resticOutput(snap, 10, snap)}
+		case spec.Script == backup.VolumeRestoreScript:
+			close(filling)
+			<-release
+		}
+		return nil
 	})
 	run := h.runBackup(app)
 	jobs := h.rt.Jobs()
 	job := jobs[len(jobs)-1]
-	if run.Kind != apitypes.BackupVolume || job.Image != h.opts.Config.Backup.ResticImage ||
+	if run.Kind != apitypes.BackupVolume || job.Image != h.opts.Config.Backup.ResticImage || job.Env["DOCK_SNAPSHOT_TAG"] != job.Env["DOCK_MANUAL_TAG"] ||
 		!slices.ContainsFunc(job.Mounts, func(m node.Mount) bool { return m.Path == "/volumes/files" && m.ReadOnly }) {
 		t.Fatalf("run %+v, job %+v", run, job)
 	}
 	b, _ := h.c.ServiceBackups(h.ctx, testSystem, app)
-	if b.Warning == "" || b.Restorable {
+	if b.Warning == "" || b.Restorable || !b.RestoresInPlace {
 		t.Errorf("volume backups = %+v", b)
 	}
-	if _, err := h.c.RestoreBackup(h.ctx, testSystem, app, apitypes.RestoreBackupRequest{Snapshot: "cccc3333"}); CodeOf(err) != apitypes.CodeValidation {
-		t.Errorf("volume restore: %v", err)
+	// In place is the only way, and has to be asked for.
+	for _, req := range []apitypes.RestoreBackupRequest{{Snapshot: snap}, {Snapshot: snap, InPlace: true, As: "copy"}, {ToTime: ptr(now()), InPlace: true}} {
+		if _, err := h.c.RestoreBackup(h.ctx, testSystem, app, req); CodeOf(err) != apitypes.CodeValidation {
+			t.Errorf("restore %+v: %v", req, err)
+		}
+	}
+	var res apitypes.RestoreResult
+	h.untilFree(func() (err error) {
+		res, err = h.c.RestoreBackup(h.ctx, testSystem, app, apitypes.RestoreBackupRequest{Snapshot: snap[:8], InPlace: true})
+		return err
+	})
+	<-filling
+	if _, err := h.c.Restart(h.ctx, testSystem, app); CodeOf(err) != apitypes.CodeConflict {
+		t.Errorf("deploy during the restore: %v", err)
+	}
+	close(release)
+	done := h.waitRun(app, res.Restore.ID)
+	if done.Status != apitypes.BackupSucceeded || done.Operation != "restore" || done.RestoredTo != "app" || done.Snapshot != snap {
+		t.Fatalf("restore = %+v", done)
+	}
+	// Stopped, the safety snapshot, the fill into the writable volume,
+	// then started again.
+	jobs = h.rt.Jobs()
+	fill := slices.IndexFunc(jobs, func(j node.JobSpec) bool { return j.Script == backup.VolumeRestoreScript })
+	safety := slices.IndexFunc(jobs, func(j node.JobSpec) bool { return j.Script == snapshotScript })
+	if safety < 0 || fill < safety || jobs[fill].Env["DOCK_SNAPSHOT"] != snap ||
+		!slices.ContainsFunc(jobs[fill].Mounts, func(m node.Mount) bool { return m.Path == "/volumes/files" && !m.ReadOnly }) {
+		t.Errorf("jobs = %+v", jobs)
+	}
+	ops, ctr := h.rt.Ops(), h.ctr(app, 1)
+	if stop := indexOf(ops, "stop "+ctr); stop < 0 || !slices.Contains(ops[stop:], "start "+ctr) || !slices.Contains(h.rt.Running(), ctr) {
+		t.Errorf("ops = %v, running = %v", ops, h.rt.Running())
 	}
 	if _, err := h.c.ServiceBackups(h.ctx, testSystem, h.service("web", apitypes.CreateServiceRequest{})); CodeOf(err) != apitypes.CodeValidation {
 		t.Errorf("service without volume: %v", err)
+	}
+}
+
+func TestVolumeBackupRestorePutsTheDataBackOnFailure(t *testing.T) {
+	h := newHarness(t)
+	const snap = "dddd4444dddd"
+	h.snapshotJobs(func(spec node.JobSpec) *node.JobResult {
+		switch {
+		case strings.Contains(spec.Name, "_backup"):
+			return &node.JobResult{Output: resticOutput(snap, 10, snap)}
+		case spec.Script == backup.VolumeRestoreScript:
+			return &node.JobResult{ExitCode: 1, Output: "dock: the backup holds the volume cache, which the service no longer has"}
+		}
+		return nil
+	})
+	app := h.volumeService("app")
+	h.runBackup(app)
+	var res apitypes.RestoreResult
+	h.untilFree(func() (err error) {
+		res, err = h.c.RestoreBackup(h.ctx, testSystem, app, apitypes.RestoreBackupRequest{Snapshot: snap, InPlace: true})
+		return err
+	})
+	done := h.waitRun(app, res.Restore.ID)
+	if done.Status != apitypes.BackupFailed || !strings.Contains(done.Error, "no longer has") || !strings.Contains(done.Error, "put back") {
+		t.Fatalf("restore = %+v", done)
+	}
+	if !slices.ContainsFunc(h.rt.Jobs(), func(j node.JobSpec) bool { return j.Script == snapshotRestoreScript }) {
+		t.Error("the safety snapshot wasn't copied back")
+	}
+	if !slices.Contains(h.rt.Running(), h.ctr(app, 1)) {
+		t.Error("the service wasn't started again")
 	}
 }
 

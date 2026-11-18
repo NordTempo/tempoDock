@@ -25,10 +25,11 @@ import (
 // restic, template databases with their own tool. A backup is a job
 // container on the service's server (node.Containers.RunJob); its row in
 // the backups table is the record. backups_schedule.go decides when,
-// backups_restore.go restores into new services.
+// backups_restore.go restores into new services, backups_restore_volume.go
+// volume backups in place.
 
 // volumeBackupWarning goes with file-level backups of generic volumes.
-const volumeBackupWarning = "File-level backup of a running service's volumes: files a database is writing can be inconsistent. Database templates back up with the database's own tool."
+const volumeBackupWarning = "File-level backup of a running service's volumes: files a database is writing can be inconsistent. Database templates back up with the database's own tool. A backup restores in place: the service stops, a snapshot keeps what its volumes hold, and they are replaced."
 
 // jobMemoryMB caps backup and restore jobs, so a large dump can't starve
 // the apps next to it.
@@ -446,7 +447,7 @@ func (c *Core) serviceBackups(ctx context.Context, ss svcScope) (apitypes.Servic
 	}
 	out := apitypes.ServiceBackups{
 		Service: ss.svc.Name, Kind: kind, OffBox: set.Repository != "",
-		Restorable: kind != apitypes.BackupVolume, Runs: []apitypes.BackupRun{},
+		Restorable: kind != apitypes.BackupVolume, RestoresInPlace: kind == apitypes.BackupVolume, Runs: []apitypes.BackupRun{},
 	}
 	if kind == apitypes.BackupVolume {
 		out.Warning = volumeBackupWarning
@@ -477,7 +478,7 @@ func (c *Core) serviceBackups(ctx context.Context, ss svcScope) (apitypes.Servic
 	}
 	for _, r := range rows {
 		run := toBackupRun(r, ss.svc.Name, names)
-		if out.Restorable && r.Operation == "backup" && r.Status == string(apitypes.BackupSucceeded) && !r.Pruned && r.SnapshotID != "" {
+		if r.Operation == "backup" && r.Status == string(apitypes.BackupSucceeded) && !r.Pruned && r.SnapshotID != "" {
 			run.NotRestorable = notRestorableHere(r.Repository, set.Repository)
 		}
 		out.Runs = append(out.Runs, run)
@@ -782,7 +783,7 @@ func (c *Core) backupJob(ctx context.Context, ss svcScope, row store.Backup, for
 		Name:   fmt.Sprintf("dock_p%d_e%d_s%d_backup%d", ss.project.ID, ss.env.ID, ss.svc.ID, row.ID),
 		Image:  image,
 		Labels: c.labels(ss, 0),
-		Env:    backup.BackupEnv(src, repo, backup.Retention{Daily: int(set.KeepDaily), Weekly: int(set.KeepWeekly), Monthly: int(set.KeepMonthly)}),
+		Env:    backup.BackupEnv(src, repo, backup.Retention{Daily: int(set.KeepDaily), Weekly: int(set.KeepWeekly), Monthly: int(set.KeepMonthly)}, row.Trigger == "manual"),
 		Script: script, Network: networkName(ss.envScope), Mounts: mounts,
 	}
 	spec.Env["DOCK_FORGET"] = strings.Join(forget, " ")

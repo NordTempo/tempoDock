@@ -28,7 +28,8 @@ func TestBackupScript(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, w := range append(want,
-			"set -eu", `R="/dock-restic/restic ${DOCK_RESTIC_OPTS:-}"`, "$R init", `--tag "$DOCK_TAG"`, "--host dock", "--retry-lock 10m",
+			"set -eu", `R="/dock-restic/restic ${DOCK_RESTIC_OPTS:-}"`, "$R init", `--tag "${DOCK_SNAPSHOT_TAG:-$DOCK_TAG}"`, "--host dock", "--retry-lock 10m",
+			`--tag "$DOCK_MANUAL_TAG" --group-by tags --keep-last 5 --prune`, `${DOCK_MANUAL_TAG:+--tag "$DOCK_MANUAL_TAG"}`,
 			`forget --quiet --retry-lock 10m --tag "$DOCK_TAG" --group-by tags --keep-daily "$DOCK_KEEP_DAILY"`, "--prune",
 			"echo "+SnapshotsMarker, `snapshots --json --retry-lock 10m --tag "$DOCK_TAG"`) {
 			if !strings.Contains(s, w) {
@@ -43,9 +44,9 @@ func TestBackupScript(t *testing.T) {
 
 func TestBackupEnv(t *testing.T) {
 	src := Source{Kind: apitypes.BackupPostgres, ServiceID: 7, Host: "db", Port: 5432, User: "postgres", Password: "pw", Database: "app"}
-	env := BackupEnv(src, Repo{Password: "repo-pw"}, Retention{Daily: 7, Weekly: 4, Monthly: 6})
+	env := BackupEnv(src, Repo{Password: "repo-pw"}, Retention{Daily: 7, Weekly: 4, Monthly: 6}, false)
 	for k, v := range map[string]string{
-		"RESTIC_REPOSITORY": LocalPath, "RESTIC_PASSWORD": "repo-pw", "DOCK_TAG": "dock-s7",
+		"RESTIC_REPOSITORY": LocalPath, "RESTIC_PASSWORD": "repo-pw", "DOCK_TAG": "dock-s7", "DOCK_MANUAL_TAG": "dock-s7-manual",
 		"DOCK_KEEP_DAILY": "7", "DOCK_KEEP_WEEKLY": "4", "DOCK_KEEP_MONTHLY": "6",
 		"PGHOST": "db", "PGPORT": "5432", "PGUSER": "postgres", "PGPASSWORD": "pw", "PGDATABASE": "app",
 	} {
@@ -56,9 +57,15 @@ func TestBackupEnv(t *testing.T) {
 	if _, ok := env["AWS_ACCESS_KEY_ID"]; ok {
 		t.Error("local repository got S3 credentials")
 	}
+	if _, ok := env["DOCK_SNAPSHOT_TAG"]; ok {
+		t.Error("a scheduled backup is tagged as a manual one")
+	}
+	if manual := BackupEnv(src, Repo{}, Retention{}, true); manual["DOCK_SNAPSHOT_TAG"] != "dock-s7-manual" || manual["DOCK_TAG"] != "dock-s7" {
+		t.Errorf("manual backup env = %v", manual)
+	}
 
 	s3 := Repo{URL: "s3:https://s3.example.com/b/dock", AccessKeyID: "id", SecretAccessKey: "secret", Region: "eu", Password: "p"}
-	env = BackupEnv(Source{Kind: apitypes.BackupRedis, ServiceID: 3, Host: "cache", Port: 6379, Password: "rp"}, s3, Retention{Daily: 1})
+	env = BackupEnv(Source{Kind: apitypes.BackupRedis, ServiceID: 3, Host: "cache", Port: 6379, Password: "rp"}, s3, Retention{Daily: 1}, false)
 	for k, v := range map[string]string{
 		"RESTIC_REPOSITORY": s3.URL, "AWS_ACCESS_KEY_ID": "id", "AWS_SECRET_ACCESS_KEY": "secret", "AWS_DEFAULT_REGION": "eu",
 		"DOCK_DB_HOST": "cache", "DOCK_DB_PORT": "6379", "REDISCLI_AUTH": "rp",

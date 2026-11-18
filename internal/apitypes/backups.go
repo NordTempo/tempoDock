@@ -70,8 +70,8 @@ type BackupRun struct {
 	OffBox     bool   `json:"off_box"`
 	// Pruned snapshots were removed by retention and can't be restored.
 	Pruned bool `json:"pruned,omitempty"`
-	// NotRestorable says why a succeeded backup of a template database
-	// can't be restored now, and what to do; empty when it can.
+	// NotRestorable says why a succeeded backup can't be restored now, and
+	// what to do; empty when it can.
 	NotRestorable string `json:"not_restorable,omitempty"`
 	// RestoredTo is the service a restore created (or restored in place).
 	RestoredTo string `json:"restored_to,omitempty"`
@@ -116,9 +116,13 @@ type ServiceBackups struct {
 	Warning string `json:"warning,omitempty"`
 	// Restorable says backups can be restored into a new service (template
 	// databases).
-	Restorable bool           `json:"restorable"`
-	OffBox     bool           `json:"off_box"`
-	Schedule   BackupSchedule `json:"schedule"`
+	Restorable bool `json:"restorable"`
+	// RestoresInPlace says backups restore into the service's own volumes
+	// (in_place), after a safety snapshot: services that aren't template
+	// databases (ADR 0095).
+	RestoresInPlace bool           `json:"restores_in_place"`
+	OffBox          bool           `json:"off_box"`
+	Schedule        BackupSchedule `json:"schedule"`
 	// PITR is point-in-time restore, for Postgres template databases.
 	PITR *PITR `json:"pitr,omitempty"`
 	// Check is the latest check of the repository this service's backups
@@ -177,7 +181,8 @@ type UpdateBackupScheduleRequest struct {
 }
 
 // RestoreBackupRequest restores a snapshot, or the database as it was
-// at a time, into a new service, or a time in place.
+// at a time, into a new service, or in place: a time, or the volume
+// backup of a service that isn't a template database (ADR 0095).
 type RestoreBackupRequest struct {
 	// Snapshot is a snapshot ID or its first 8 or more characters.
 	Snapshot string `json:"snapshot,omitempty"`
@@ -186,9 +191,10 @@ type RestoreBackupRequest struct {
 	ToTime *time.Time `json:"to_time,omitempty"`
 	// As names the new service; empty is <service>-restored.
 	As string `json:"as,omitempty"`
-	// InPlace restores ToTime into the database itself: it stops, a
-	// safety snapshot keeps what it holds, and it starts on the restored
-	// data. Not with As.
+	// InPlace restores ToTime into the database itself, or a volume
+	// backup into the service's own volumes: it stops, a safety snapshot
+	// keeps what it holds, and it starts on the restored data. Not with
+	// As.
 	InPlace bool `json:"in_place,omitempty"`
 }
 

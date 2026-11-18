@@ -15239,6 +15239,9 @@
           "restorable": {
             "type": "boolean"
           },
+          "restores_in_place": {
+            "type": "boolean"
+          },
           "runs": {
             "items": {
               "$ref": "#/components/schemas/BackupRun"
@@ -15262,6 +15265,7 @@
           "service",
           "kind",
           "restorable",
+          "restores_in_place",
           "off_box",
           "schedule",
           "runs"
@@ -51128,7 +51132,7 @@
     },
     "/api/v1/projects/{project}/environments/{environment}/services/{service}/backups/restore": {
       "post": {
-        "description": "Creates a new service from the template with the snapshot's data; the live service is never touched. With `to_time` instead of `snapshot`, restores a Postgres database with point-in-time restore as it was at that moment (ADR 0093): a time outside the restorable window, or one the WAL archive doesn't reach (a missing segment), is refused with the latest time it can reach. `in_place` restores the time into the database itself: it stops, a safety snapshot keeps what it holds, and it starts on the restored data. Answers with the service at once; the restore finishes in the background. Scope: deploy.",
+        "description": "A template database: creates a new service from the template with the snapshot's data; the live service is never touched. Any other service with volumes restores its volume backup with `in_place` only (ADR 0095): it stops, a safety snapshot keeps what its volumes hold, the volumes the backup holds are replaced, and it starts again. With `to_time` instead of `snapshot`, restores a Postgres database with point-in-time restore as it was at that moment (ADR 0093): a time outside the restorable window, or one the WAL archive doesn't reach (a missing segment), is refused with the latest time it can reach. `in_place` restores the time into the database itself: it stops, a safety snapshot keeps what it holds, and it starts on the restored data. Answers with the service at once; the restore finishes in the background. Scope: deploy.",
         "operationId": "restore-backup",
         "parameters": [
           {
@@ -51291,7 +51295,7 @@
             "session": []
           }
         ],
-        "summary": "Restore a backup, or a time, into a new service",
+        "summary": "Restore a backup or a time",
         "tags": [
           "backups"
         ]

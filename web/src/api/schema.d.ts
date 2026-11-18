@@ -3777,8 +3777,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Restore a backup, or a time, into a new service
-         * @description Creates a new service from the template with the snapshot's data; the live service is never touched. With `to_time` instead of `snapshot`, restores a Postgres database with point-in-time restore as it was at that moment (ADR 0093): a time outside the restorable window, or one the WAL archive doesn't reach (a missing segment), is refused with the latest time it can reach. `in_place` restores the time into the database itself: it stops, a safety snapshot keeps what it holds, and it starts on the restored data. Answers with the service at once; the restore finishes in the background. Scope: deploy.
+         * Restore a backup or a time
+         * @description A template database: creates a new service from the template with the snapshot's data; the live service is never touched. Any other service with volumes restores its volume backup with `in_place` only (ADR 0095): it stops, a safety snapshot keeps what its volumes hold, the volumes the backup holds are replaced, and it starts again. With `to_time` instead of `snapshot`, restores a Postgres database with point-in-time restore as it was at that moment (ADR 0093): a time outside the restorable window, or one the WAL archive doesn't reach (a missing segment), is refused with the latest time it can reach. `in_place` restores the time into the database itself: it stops, a safety snapshot keeps what it holds, and it starts on the restored data. Answers with the service at once; the restore finishes in the background. Scope: deploy.
          */
         post: operations["restore-backup"];
         delete?: never;
@@ -11345,6 +11345,7 @@ export interface components {
             off_box: boolean;
             pitr?: components["schemas"]["PITR"];
             restorable: boolean;
+            restores_in_place: boolean;
             runs: components["schemas"]["BackupRun"][] | null;
             schedule: components["schemas"]["BackupSchedule"];
             service: string;
