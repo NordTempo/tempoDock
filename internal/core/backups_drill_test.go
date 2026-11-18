@@ -62,7 +62,9 @@ func (drillEngine) Close()                   {}
 
 // drillDB is a harness with a Postgres template database db whose one
 // backup, of size bytes, succeeded. restoreErr, while set, fails every
-// restore job.
+// restore job. The weekly checks are off, so the daemon's own scheduler
+// (a backup's end kicks a pass) never runs a drill beside the test's;
+// drillNow runs its passes as if they were on.
 func drillDB(t *testing.T, size int64) (h *harness, db ServiceRef, restoreErr *error) {
 	h = newHarness(t)
 	h.opts.DataEngines = []data.Engine{drillEngine{}}
@@ -77,6 +79,9 @@ func drillDB(t *testing.T, size int64) (h *harness, db ServiceRef, restoreErr *e
 		return node.JobResult{Output: resticOutput(snap, size, snap)}, nil
 	})
 	h.runBackup(db)
+	if err := h.c.store.SetBackupVerify(h.ctx, store.SetBackupVerifyParams{UpdatedAt: now(), UpdatedBy: System.Name}); err != nil {
+		t.Fatal(err)
+	}
 	return h, db, restoreErr
 }
 
@@ -87,6 +92,7 @@ func (h *harness) drillNow(db ServiceRef, force bool) apitypes.BackupCheck {
 	if err != nil {
 		h.t.Fatal(err)
 	}
+	set.Verify = true
 	if _, err := h.c.drillPass(h.ctx, set, force); err != nil {
 		h.t.Fatal(err)
 	}
@@ -190,6 +196,7 @@ func TestDrillSkipsLargeSnapshotOnSchedule(t *testing.T) {
 	}
 	// Skipped counts as done: the next is due in a week, not now.
 	set, _ := h.c.backupSettings(h.ctx)
+	set.Verify = true
 	if next, err := h.c.drillPass(h.ctx, set, false); err != nil || !next.After(now().Add(5*24*time.Hour)) {
 		t.Fatalf("next drill due %v, %v", next, err)
 	}

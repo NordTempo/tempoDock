@@ -69,8 +69,13 @@ Both are on by default; one install-level switch turns them off
   gets no domain, and it is never backed up (it is gone before the next
   pass). A drill service left behind by a crash is deleted by the next
   drill of the same database.
-- The drill waits on the restore's claim being released (the wake the
-  snapshot wait already uses), so nothing polls.
+- The drill waits for the restore's done signal: the restore sends its
+  outcome once, when it finishes, after its row is written. Nothing
+  polls and no timer runs. (Until 2026-11-19 it waited on the restore's
+  claim being released, then on its audit event with a 2 minute timer,
+  since the claim goes before the row is written.) The drill still takes
+  the claim next, so no backup of the database runs while it queries and
+  removes the copy.
 
 ### What is recorded and shown
 
