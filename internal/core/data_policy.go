@@ -70,10 +70,14 @@ type permissionInput struct {
 	// token is the actor's token row (tokens below admin only).
 	token *store.Token
 	// creator is the current role of the user who created the token; nil
-	// when the creator isn't a user (another token, the system) or is gone.
+	// when the creator isn't a user (another token, the system).
 	creator *apitypes.Scope
-	rules   policyRules
-	kind    apitypes.EnvironmentKind
+	// creatorGone: the user who created the token is no longer a member
+	// of the org, so the token gets no data access (nobody's role stands
+	// behind it) until an admin makes a new one.
+	creatorGone bool
+	rules       policyRules
+	kind        apitypes.EnvironmentKind
 	// platform is the platform's default and ceiling (nil: none).
 	platform *platformPolicy
 	// project and env name the environment, for the explanation.
@@ -112,11 +116,16 @@ func decidePermission(in permissionInput) apitypes.DataPermission {
 		if agent {
 			tok.Caps = append(tok.Caps, datapanel.Cap{Subject: subjectOf(scope), Why: fmt.Sprintf("capped by the token's scope %s: ", scope)})
 		}
-		if in.creator != nil && rank(*in.creator) < rank(apitypes.ScopeAdmin) {
-			who := "its creator " + in.token.CreatedBy
-			if !agent {
-				who = "its user " + in.token.CreatedBy
-			}
+		who := "its creator "
+		if !agent {
+			who = "its user "
+		}
+		if in.token != nil {
+			who += in.token.CreatedBy
+		}
+		if in.creatorGone {
+			tok.Caps = append(tok.Caps, datapanel.Cap{None: true, Why: fmt.Sprintf("%s is no longer a member of the organization, so the token gets no data access; an admin makes a new token", who)})
+		} else if in.creator != nil && rank(*in.creator) < rank(apitypes.ScopeAdmin) {
 			tok.Caps = append(tok.Caps, datapanel.Cap{Subject: subjectOf(*in.creator), Why: fmt.Sprintf("capped by %s's current role %s: ", who, *in.creator)})
 		}
 		pin.Token = tok
@@ -140,11 +149,21 @@ func (c *Core) dataPermission(ctx context.Context, a Actor, es envScope) (apityp
 				return apitypes.DataPermission{}, fmt.Errorf("load token %d: %w", a.TokenID, err)
 			}
 			in.token = &t
-			if r, err := c.store.GetMemberRoleByEmail(ctx, store.GetMemberRoleByEmailParams{OrgID: es.project.OrgID, Email: t.CreatedBy}); err == nil {
-				role := apitypes.Scope(r)
-				in.creator = &role
-			} else if !store.IsNotFound(err) {
-				return apitypes.DataPermission{}, err
+			// The creator is the user the token records by ID, never
+			// whoever holds the name it was created under now. A token
+			// without one was made by another token or the system:
+			// deleting a user revokes the tokens they made.
+			if t.UserID != nil {
+				r, err := c.store.GetMemberRole(ctx, store.GetMemberRoleParams{OrgID: es.project.OrgID, UserID: *t.UserID})
+				switch {
+				case err == nil:
+					role := apitypes.Scope(r)
+					in.creator = &role
+				case store.IsNotFound(err):
+					in.creatorGone = true
+				default:
+					return apitypes.DataPermission{}, err
+				}
 			}
 		}
 		rules, err := c.store.ListEffectiveDataPolicyRules(ctx, store.ListEffectiveDataPolicyRulesParams{OrgID: es.project.OrgID, ProjectID: es.project.ID, EnvironmentID: es.env.ID})

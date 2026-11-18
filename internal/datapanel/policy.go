@@ -75,6 +75,10 @@ type TokenInput struct {
 type Cap struct {
 	Subject apitypes.DataSubject
 	Why     string
+	// None caps the token at nothing, whatever the rules say: whoever
+	// bounds it is gone, so nobody's access stands behind it. Why is the
+	// whole explanation then.
+	None bool
 }
 
 // productionWhy explains why a token only proposes on production.
@@ -132,6 +136,13 @@ func Decide(in PolicyInput) apitypes.DataPermission {
 
 	// A token never gets more than a person in its place would.
 	for _, c := range in.Token.Caps {
+		if c.None {
+			if perm.Level != apitypes.LevelNone || perm.Sensitive != apitypes.SensitiveMasked {
+				perm.Level, perm.Sensitive = apitypes.LevelNone, apitypes.SensitiveMasked
+				step(apitypes.DataPermissionStep{Source: apitypes.PermissionCap, Detail: c.Why})
+			}
+			continue
+		}
 		r := in.resolve(c.Subject)
 		level, sens := perm.Level.Min(r.Level), lessSensitive(perm.Sensitive, r.Sensitive)
 		if level == perm.Level && sens == perm.Sensitive {
