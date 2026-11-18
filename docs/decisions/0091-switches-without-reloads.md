@@ -114,3 +114,37 @@ runs while idle.
   check counts the service's requests, as before.
 - A missing file makes Caddy log an error and answer 502, so dock writes
   files before the config that reads them.
+
+## Amended 2026-11-19: sleeping environments and moves
+
+A move's hold never meets a sleeping environment, so it never has a wake
+check to drop. `beginMove` wakes an asleep environment before the move's
+rows exist (a move copies what runs, ADR 0070), and `putToSleep` refuses
+while a move is open. The wake is an ordinary one: it takes the wake
+check off the route and reloads Caddy before the first step, as any wake
+does. From the hold to the switch only the upstream file changes
+(`TestSleepFollowsMove` covers the order).
+
+The question was whether the wake check should stay on a held route and
+answer "moving, retry shortly" (503 with `Retry-After`) instead of
+waking mid-move. It isn't needed: there is no request a held route could
+receive for an asleep environment, and a request during the hold already
+waits for the switch.
+
+`asleep && !held` in `applyRoutesLocked` stays, for forwarded routes
+(they count as held). An environment that falls asleep on its new server
+must not put a wake check on the old server's forward: the old server
+can't answer it (the control plane's check only knows its own server's
+environments, a node's ignores an environment that isn't on it), and
+adding it would reload the old server.
+
+Known gaps, not built:
+
+- A request that still reaches the old server (a cached DNS answer, a
+  domain Dock doesn't manage) while the environment sleeps on its new
+  server gets a 502 from the forward instead of waking it. Waking through
+  a forward means the wake check accepting a forwarding server.
+- An environment without `sleep_after` that is put to sleep by hand on
+  its new server turns on `QuietProbes` for the old server's forward at
+  that server's next route apply: one reload there. Taking `QuietProbes`
+  off forwards would move that reload to every switch, which is worse.
