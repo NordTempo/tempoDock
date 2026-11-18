@@ -50,7 +50,7 @@ func TestDiagnoseRules(t *testing.T) {
 		{"killed 137 without an oom event", health("health check failed: " + node.ExitedError(137, false, 512<<20).Error()),
 			"oom_killed", "Killed (exit code 137), most likely for using more than its 512 MB memory limit"},
 		{"exit 127", health("health check failed: "+node.ExitedError(127, false, 0).Error(), "/bin/sh: 1: bun: not found"),
-			"missing_binary", "The start command isn't in the image"},
+			"missing_binary", "The start command's program (bun) isn't in the image"},
 		{"missing variable removed since", withLast(health("health check failed: "+node.ExitedError(1, false, 0).Error(),
 			"Error: DATABASE_URL is not set"), map[string]string{"DATABASE_URL": "postgres://x"}),
 			"missing_variable", "DATABASE_URL isn't set (removed since the last good release)"},
@@ -312,5 +312,23 @@ func TestDiagnoseExitedAndServerErrors(t *testing.T) {
 	v := ruleHealthPath(health("health check timed out after 1m0s: GET http://127.0.0.1:20001/health returned 500 Internal Server Error"))
 	if !v.matched || v.fix != nil {
 		t.Errorf("health path answering 500: %+v", v)
+	}
+}
+
+// A shell start command's missing program is the one the shell names,
+// not the shell.
+func TestMissingProgramIn(t *testing.T) {
+	for line, want := range map[string]string{
+		"sh: httpd: not found":                              "httpd",
+		"sh: 1: httpd: not found":                           "httpd",
+		"/bin/sh: httpd: command not found":                 "httpd",
+		"bash: line 1: httpd: command not found":            "httpd",
+		`exec: "httpd": executable file not found in $PATH`: "httpd",
+		"exec /app/run: no such file or directory":          "",
+		"listening on :8080":                                "",
+	} {
+		if got := missingProgramIn(line); got != want {
+			t.Errorf("missingProgramIn(%q) = %q, want %q", line, got, want)
+		}
 	}
 }

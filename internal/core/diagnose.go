@@ -349,6 +349,25 @@ func ruleOOMKilled(in *diagInput) diagVerdict {
 // command isn't there.
 var notFoundLine = regexp.MustCompile(`executable file not found|: not found$|: command not found|no such file or directory`)
 
+// missingProgram reads the program's name out of a "not found" line:
+// `sh: httpd: not found`, `/bin/sh: 1: httpd: not found`,
+// `bash: line 1: httpd: command not found`, or the runtime's
+// `exec: "httpd": executable file not found in $PATH`.
+var missingProgram = regexp.MustCompile(`([^\s:"]+): (?:command )?not found$|exec: "([^"]+)": executable file not found`)
+
+// missingProgramIn is the program a "not found" line names, or "".
+func missingProgramIn(line string) string {
+	m := missingProgram.FindStringSubmatch(strings.TrimSpace(line))
+	if m == nil {
+		return ""
+	}
+	return m[1] + m[2]
+}
+
+// ruleMissingBinary matches a container that exited 127 or never started
+// because its program isn't in the image. It names the program the output
+// says is missing, which with a shell start command (`sh -c "httpd"`) is
+// not the command's first word.
 func ruleMissingBinary(in *diagInput) diagVerdict {
 	if !in.started() {
 		return diagVerdict{skip: true}
@@ -364,12 +383,20 @@ func ruleMissingBinary(in *diagInput) diagVerdict {
 	idx := matchLines(in.container, func(l string) bool {
 		return (strings.Contains(l, "not found") || strings.Contains(l, "no such")) && notFoundLine.MatchString(l)
 	})
+	program := missingProgramIn(lineAt(in.container, idx))
+	if program == "" {
+		program = missingProgramIn(in.err)
+	}
+	if program == "" {
+		program = firstWord(in.cfg.Cmd)
+	}
 	what := "The start command"
 	switch {
+	case program == "":
 	case in.kind == diagRun:
-		what = fmt.Sprintf("The command's program (%s)", firstWord(in.cfg.Cmd))
-	case in.cfg.Cmd != "":
-		what = fmt.Sprintf("The start command's program (%s)", firstWord(in.cfg.Cmd))
+		what = fmt.Sprintf("The command's program (%s)", program)
+	default:
+		what = fmt.Sprintf("The start command's program (%s)", program)
 	}
 	return diagVerdict{matched: true, why: "exit 127, command not found", lines: idx,
 		summary: what + " isn't in the image",
