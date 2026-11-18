@@ -360,6 +360,9 @@ type liveEnv struct {
 	archived map[string]bool
 	// baseDomain is whether the server can generate hostnames.
 	baseDomain bool
+	// bases are the base domains whose reserved names a member can't
+	// take (reservedBases).
+	bases []string
 	// hostFree refuses a hostname the plan adds that can't be had
 	// (hostname_taken), as adding the domain would; nil for an
 	// environment that doesn't exist yet.
@@ -493,7 +496,8 @@ func loadLiveEnv(ctx context.Context, q *store.Queries, c *Core, e store.Environ
 		}
 	}
 	if srv, err := q.GetServer(ctx, e.ServerID); err == nil {
-		le.baseDomain = c.ingressOf(srv).baseDomain != ""
+		ing := c.ingressOf(srv)
+		le.baseDomain, le.bases = ing.baseDomain != "", c.reservedBases(ing)
 	} else if !store.IsNotFound(err) {
 		return nil, err
 	}
@@ -622,7 +626,7 @@ func (c *Core) planEnv(a Actor, fe apitypes.EnvironmentExport, le *liveEnv, valu
 			line(&ep.kept, ch)
 		}
 	}
-	return ep, ep.planTakenHosts(le)
+	return ep, ep.planTakenHosts(a, le)
 }
 
 // planService compares one file service with the live one, if any.
@@ -877,10 +881,12 @@ func (c *Core) hostFree(ctx context.Context, q *store.Queries, e store.Environme
 }
 
 // planTakenHosts moves the hostnames the plan adds that can't be had
-// (liveEnv.hostFree) from its changes to what needs a person: staged,
-// one would only fail when it's applied, after its services exist. A
-// hostname another service in the plan gives up (--prune) is free.
-func (ep *envPlan) planTakenHosts(le *liveEnv) error {
+// (a name reserved for the platform that a isn't allowed, then
+// liveEnv.hostFree) from its changes to what needs a person, with the
+// refusal adding the domain would give: staged, one would only fail when
+// it's applied, after its services exist. A hostname another service in
+// the plan gives up (--prune) is free.
+func (ep *envPlan) planTakenHosts(a Actor, le *liveEnv) error {
 	if le.hostFree == nil {
 		return nil
 	}
@@ -896,7 +902,10 @@ func (ep *envPlan) planTakenHosts(le *liveEnv) error {
 			kept = append(kept, d)
 			continue
 		}
-		err := le.hostFree(d.host)
+		err := reservedHostErr(a, d.host, le.bases...)
+		if err == nil {
+			err = le.hostFree(d.host)
+		}
 		if CodeOf(err) != apitypes.CodeHostnameTaken {
 			if err != nil {
 				return err

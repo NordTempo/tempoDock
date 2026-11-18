@@ -284,7 +284,7 @@ func (c *Core) addDomain(ctx context.Context, a Actor, ss svcScope, host, redire
 		return apitypes.DomainChange{}, err
 	}
 	if !generated {
-		if err := reservedHostErr(a, host, ing.baseDomain, strings.TrimPrefix(c.cfg.BaseDomain, "*.")); err != nil {
+		if err := reservedHostErr(a, host, c.reservedBases(ing)...); err != nil {
 			return apitypes.DomainChange{}, err
 		}
 	}
