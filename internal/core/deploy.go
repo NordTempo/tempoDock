@@ -43,6 +43,7 @@ type deployment struct {
 	old        *store.Release // active release when the deploy started
 	stateful   bool
 	oldRemoved bool // stateful recreate stopped (or tried to stop) the old container
+	oldStopped bool // it did stop: nothing of the old release runs any more
 	// cancel is this deploy's registration with CancelRelease (ADR 0086).
 	cancel *deployRun
 	// orphans are containers already labelled for this release when it
@@ -93,7 +94,7 @@ func (c *Core) deploy(ctx context.Context, run *deployRun, ss svcScope, rel stor
 		d.fail(ctx, err)
 	} else {
 		c.afterActive(ctx, d.ss)
-		c.pitrAfterActive(ctx, d.ss)
+		c.pitrAfterActive(ctx, d.ss, d.spec.pitrOff)
 		c.kickBackups() // it may be newly stateful
 	}
 	if spec.done != nil {
@@ -192,6 +193,7 @@ func (d *deployment) run(ctx context.Context) error {
 		if err := c.removeReleaseContainers(ctx, d.ss, d.old.ID, keepData); err != nil {
 			return step(apitypes.CodeDeployFailed, "stop release %d: %w", d.old.Number, err)
 		}
+		d.oldStopped = true
 	}
 	var ctr node.Container
 	err = d.within(ctx, stalledPhase{what: "starting the container", limit: startWait, code: apitypes.CodeDeployFailed,
@@ -687,6 +689,11 @@ func (d *deployment) fail(ctx context.Context, err error) {
 	removeErr := c.removeReleaseContainers(ctx, d.ss, d.rel.ID, node.RemoveOptions{}, d.orphans...)
 	if removeErr != nil {
 		d.event(ctx, fmt.Sprintf("Could not remove the container of release %d: %v", d.rel.Number, c.nodeErr(serverID, removeErr)))
+	}
+	if d.spec.pitrOff {
+		// Before the old release comes back: it decides whether that
+		// container archives (ADR 0093).
+		c.pitrRestartFailed(ctx, d.ss, d.rel, d.oldStopped)
 	}
 	// A stopped service's old release had no container to bring back: it
 	// stays stopped (ADR 0050).

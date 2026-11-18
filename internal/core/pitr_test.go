@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -164,15 +165,19 @@ func TestPITROnOff(t *testing.T) {
 
 // TestPITRWindowAcrossOffAndOn: turned off, the window still ends where
 // the archive does (read from the bucket, there is no archiver to ask);
-// turned on again, a time in between is refused as a gap that waiting
-// won't fill, and a time before it still restores.
+// turned on again, the window is two ranges with the gap between them,
+// a time in the gap is refused naming them, and a time before it still
+// restores. The ended range is read from the bucket once; "latest" is
+// where the newest archive ends.
 func TestPITRWindowAcrossOffAndOn(t *testing.T) {
 	h := newHarness(t)
 	db := h.templateDB("db", apitypes.TemplatePostgres)
 	h.baseJobs()
 	var keys atomic.Pointer[[]string] // the bucket's objects
 	keys.Store(&[]string{})
+	var lists atomic.Int64 // the bucket's listings
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lists.Add(1)
 		_, _ = io.WriteString(w, `<ListBucketResult><IsTruncated>false</IsTruncated>`)
 		for _, k := range *keys.Load() {
 			if strings.HasPrefix(k, r.URL.Query().Get("prefix")) {
@@ -226,11 +231,123 @@ func TestPITRWindowAcrossOffAndOn(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	turn(true, 4, 2)
-	if _, err := h.c.planToTime(h.ctx, ss, gap); err == nil || !strings.Contains(err.Error(), "wasn't archived from "+end.UTC().Format(time.RFC3339)) {
+	if bases, err = h.c.store.ListPITRBases(h.ctx, ss.svc.ID); err != nil || len(bases) != 2 {
+		t.Fatalf("base backups: %d, %v", len(bases), err)
+	}
+	// The new generation's archiver says where it ends.
+	end2 := bases[1].ConsistentAt.Add(time.Millisecond).Truncate(time.Millisecond)
+	status := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(walarchive.Status{Healthy: true, Through: &end2})
+	}))
+	t.Cleanup(status.Close)
+	h.rt.DialTo(strings.TrimPrefix(status.URL, "http://"))
+	w := window()
+	if len(w.Ranges) != 2 || !w.Ranges[0].From.Equal(*bases[0].ConsistentAt) || !w.Ranges[0].Through.Equal(end) ||
+		!w.Ranges[1].From.Equal(*bases[1].ConsistentAt) || !w.Ranges[1].Through.Equal(end2) {
+		t.Fatalf("ranges = %+v, want %v to %v and %v to %v", w.Ranges, bases[0].ConsistentAt, end, bases[1].ConsistentAt, end2)
+	}
+	if !w.From.Equal(w.Ranges[0].From) || !w.Through.Equal(end2) {
+		t.Fatalf("outer bounds = %v to %v", w.From, w.Through)
+	}
+	// The ended generation was listed once; the page costs no listing now.
+	before := lists.Load()
+	window()
+	if n := lists.Load() - before; n != 0 {
+		t.Fatalf("%d bucket listings for a window that was read before", n)
+	}
+	_, err = h.c.planToTime(h.ctx, ss, gap)
+	if err == nil || !strings.Contains(err.Error(), "wasn't archived from "+end.UTC().Format(time.RFC3339)) ||
+		!strings.Contains(err.Error(), "it restores from "+bases[0].ConsistentAt.UTC().Format(time.RFC3339)+" to "+end.UTC().Format(time.RFC3339)+" and from ") {
 		t.Fatalf("a time in the gap: %v", err)
 	}
 	if plan, err := h.c.planToTime(h.ctx, ss, end); err != nil || plan.base.ID != bases[0].ID {
 		t.Fatalf("a time before the gap: base %d, %v", plan.base.ID, err)
+	}
+
+	// Latest: nothing archived past the newest base backup yet refuses;
+	// then it is where that archive ends.
+	if _, err := h.c.latestRestorable(h.ctx, ss); err == nil || !strings.Contains(err.Error(), "try again in a minute") {
+		t.Fatalf("latest with nothing archived: %v", err)
+	}
+	cfg2, err := h.c.walConfig(h.ctx, ss.svc.ID, bases[1].WalGeneration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys.Store(&[]string{walarchive.Key(cfg.Prefix, bases[0].WalStart, end), walarchive.Key(cfg2.Prefix, bases[1].WalStart, end2)})
+	if at, err := h.c.latestRestorable(h.ctx, ss); err != nil || !at.Equal(end2) {
+		t.Fatalf("latest = %v, %v; want %v", at, err, end2)
+	}
+	if _, err := h.c.RestoreLatest(h.ctx, testSystem, db, apitypes.RestoreBackupRequest{ToLatest: true, ToTime: &end}); CodeOf(err) != apitypes.CodeValidation {
+		t.Fatalf("latest and a time: %v", err)
+	}
+}
+
+// TestPITROffRestartFails: a turn-off whose restart release fails never
+// leaves a database archiving without its archiver. With the old
+// container still running it stays on, archiver and all, and the audit
+// log says so; with the old container stopped (its last segment handed
+// over) the turn-off stands, and the old release comes back without
+// archiving.
+func TestPITROffRestartFails(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		stopped bool
+	}{{"the old container still runs", false}, {"the old container stopped", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			db := h.templateDB("db", apitypes.TemplatePostgres)
+			h.baseJobs()
+			h.offBoxBackups()
+			if _, err := h.c.SetPITR(h.ctx, testSystem, db, setPITR(true, 7)); err != nil {
+				t.Fatal(err)
+			}
+			if rel := h.wait(db, 2); rel.Status != apitypes.ReleaseActive {
+				t.Fatalf("release 2: %s (%s)", rel.Status, rel.Error)
+			}
+			ss, err := h.c.loadService(h.ctx, 1, db)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.stopped {
+				h.rt.FailHealthCheck(func(node.ContainerSpec) error { return errors.New("not ready") })
+			} else {
+				h.rt.FailStop(errors.New("docker is busy"))
+			}
+			if _, err := h.c.SetPITR(h.ctx, testSystem, db, setPITR(false, 7)); err != nil {
+				t.Fatal(err)
+			}
+			if rel := h.wait(db, 3); rel.Status != apitypes.ReleaseFailed {
+				t.Fatalf("release 3: %s", rel.Status)
+			}
+			h.rt.FailHealthCheck(nil)
+			h.rt.FailStop(nil)
+			row, err := h.c.store.GetPITR(h.ctx, ss.svc.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, archiver := h.rt.Sidecars()[archiverName(ss)]
+			spec, _ := h.rt.Spec(h.ctr(db, 2))
+			archives := strings.Contains(spec.Cmd, "archive_mode=on")
+			b, err := h.c.ServiceBackups(h.ctx, testSystem, db)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Whatever the outcome, the four agree: the row, what new
+			// containers get, the archiver, and the running container.
+			want := !tc.stopped
+			if row.Enabled != want || h.c.pitrOn(ss.svc.ID) != want || archiver != want || archives != want || b.PITR.Enabled != want || h.c.isLeaving(ss.svc.ID) {
+				t.Fatalf("row on %v, containers archive %v, archiver %v, release 2 archives %v, page on %v, leaving %v; want all %v and not leaving",
+					row.Enabled, h.c.pitrOn(ss.svc.ID), archiver, archives, b.PITR.Enabled, h.c.isLeaving(ss.svc.ID), want)
+			}
+			evs, err := h.c.ListAudit(h.ctx, testSystem, AuditFilter{Action: "backup.pitr"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			said := slices.ContainsFunc(evs, func(e apitypes.AuditEvent) bool { return strings.Contains(e.Summary, "stays on: release 3") })
+			if said != want {
+				t.Fatalf("audit says it stays on: %v, want %v", said, want)
+			}
+		})
 	}
 }
 

@@ -17,13 +17,16 @@ import { PitrStrip } from "./PitrStrip";
 import {
   baseFor,
   fromInputs,
+  gapAt,
   moment,
   type PITR,
+  restores,
   rfc3339,
   shortcuts,
   stretch,
   type stripMarks,
   toInputs,
+  type Window,
   zoneLabel,
 } from "./pitr";
 import { restoredName } from "./points";
@@ -31,11 +34,14 @@ import { restoredName } from "./points";
 /**
  * Restores a Postgres database as it was at a moment (ADR 0093, mock A3):
  * the window as a small strip, the moment as a local date and time (sent
- * as UTC), shortcuts to just before a deploy, and the choice of a new
+ * as UTC), shortcuts to just before a deploy and to the latest moment
+ * (which the server resolves: it knows where the archive ends, for a
+ * stopped database too), and the choice of a new
  * service (the default) or in place, which stops the database, keeps a
  * safety snapshot and asks for its name. Says which base backup it starts
- * from and how long a stretch of changes replays; the server checks the
- * archive reaches the moment and refuses with the latest one it can.
+ * from and how long a stretch of changes replays. A moment between two
+ * ranges of the window (archiving was off) is refused here; the server
+ * checks the archive reaches the moment and refuses with what it can.
  * Loaded when it opens.
  */
 export default function TimeRestoreDialog({
@@ -52,7 +58,7 @@ export default function TimeRestoreDialog({
   pitr: PITR;
   runs: BackupRun[];
   marks: ReturnType<typeof stripMarks>;
-  window: { from: number; through: number };
+  window: Window;
   /** The moment picked on the tab's strip, if one was. */
   initial?: number;
   onClose: () => void;
@@ -66,6 +72,8 @@ export default function TimeRestoreDialog({
     // Just before the newest deploy, the usual accident; else the latest.
     toInputs(initial ?? options.find((o) => o.deploy)?.at ?? w.through),
   );
+  // The latest shortcut, until another moment is picked or typed.
+  const [latest, setLatest] = useState(false);
   const [inPlace, setInPlace] = useState(false);
   const [name, setName] = useState(() => restoredName(db, taken));
   const [typed, setTyped] = useState("");
@@ -74,7 +82,8 @@ export default function TimeRestoreDialog({
 
   const t = fromInputs(when.date, when.time);
   const valid = Number.isFinite(t);
-  const outside = valid && (t < w.from || t > w.through);
+  const outside = valid && !latest && !restores(w, t);
+  const gap = valid && !latest ? gapAt(w, t) : undefined;
   const base = valid ? baseFor(runs, t) : undefined;
   const as = name.trim();
   const nameError = inPlace
@@ -83,13 +92,19 @@ export default function TimeRestoreDialog({
       v.required(!as, "Enter a name for the new service."));
   const timeError = !valid
     ? v.required(true, "Enter a date and time.")
-    : outside
-      ? `Pick a moment from ${moment(w.from, now)} to ${moment(w.through, now)}.`
-      : undefined;
+    : gap
+      ? `Not archived from ${moment(gap.from, now)} to ${moment(gap.through, now)}: point in time was off or started over. Pick a moment before or after.`
+      : outside
+        ? `Pick a moment from ${moment(w.from, now)} to ${moment(w.through, now)}.`
+        : undefined;
   const confirmed = !inPlace || typed.trim() === db;
   const users = pitr.used_by ?? [];
-  const pick = (ms: number) => setWhen(toInputs(ms));
-  const toTime = valid ? rfc3339(t) : "<time>";
+  const pick = (ms: number, isLatest = false) => {
+    setLatest(isLatest);
+    setWhen(toInputs(ms));
+  };
+  const toTime = latest ? "latest" : valid ? rfc3339(t) : "<time>";
+  const target = latest ? { to_latest: true } : { to_time: rfc3339(t) };
   const cli = `dock backup restore ${db} --to-time ${toTime} ${inPlace ? "--in-place" : `--as ${as || "<name>"}`} -e ${ref.environment}`;
 
   const submit = () => {
@@ -97,9 +112,7 @@ export default function TimeRestoreDialog({
       return;
     if (!confirmed) return;
     restore.mutate(
-      inPlace
-        ? { ref, to_time: rfc3339(t), in_place: true }
-        : { ref, to_time: rfc3339(t), as },
+      inPlace ? { ref, ...target, in_place: true } : { ref, ...target, as },
       { onSuccess: onStarted },
     );
   };
@@ -137,7 +150,7 @@ export default function TimeRestoreDialog({
             marks={marks}
             window={w}
             value={valid ? t : undefined}
-            onPick={pick}
+            onPick={(ms) => pick(ms)}
             label={`Moment to restore ${db} to`}
           />
         </div>
@@ -148,7 +161,10 @@ export default function TimeRestoreDialog({
             aria-label="Date"
             aria-invalid={!!timeError}
             value={when.date}
-            onChange={(e) => setWhen({ ...when, date: e.target.value })}
+            onChange={(e) => {
+              setLatest(false);
+              setWhen({ ...when, date: e.target.value });
+            }}
             className={`${input} ${invalid(timeError)}`}
           />
           <input
@@ -157,7 +173,10 @@ export default function TimeRestoreDialog({
             aria-label="Time"
             aria-invalid={!!timeError}
             value={when.time}
-            onChange={(e) => setWhen({ ...when, time: e.target.value })}
+            onChange={(e) => {
+              setLatest(false);
+              setWhen({ ...when, time: e.target.value });
+            }}
             className={`${input} ${invalid(timeError)}`}
           />
           <span className="text-xs text-mut">{zoneLabel(valid ? t : now)}</span>
@@ -172,8 +191,12 @@ export default function TimeRestoreDialog({
             <button
               key={o.label}
               type="button"
-              aria-pressed={valid && Math.abs(t - o.at) < 1000}
-              onClick={() => pick(o.at)}
+              aria-pressed={
+                o.latest
+                  ? latest
+                  : !latest && valid && Math.abs(t - o.at) < 1000
+              }
+              onClick={() => pick(o.at, o.latest)}
             >
               {o.label}
             </button>
