@@ -176,9 +176,15 @@ func (c *Core) copyVolumeService(ctx context.Context, ss svcScope, name string) 
 			if v.ServiceID == nil || *v.ServiceID != src.ID || v.Value == nil {
 				continue // another's, or never live: only staged
 			}
-			value, _, err := c.clonedValue(v, variableAAD(ss.env.ID, &to.svc.ID, v.Key), nil, true, false)
+			// Every value is copied, a reference to an org variable too:
+			// the copy is in the same environment and runs the image the
+			// source runs, so it reads nothing the source doesn't.
+			value, how, err := c.clonedValue(v, variableAAD(ss.env.ID, &to.svc.ID, v.Key), nil, true, cloneRules{})
 			if err != nil {
 				return err
+			}
+			if how == cloneSkip {
+				continue
 			}
 			if err := q.InsertLiveVariable(ctx, store.InsertLiveVariableParams{
 				EnvironmentID: ss.env.ID, ServiceID: &to.svc.ID, Key: v.Key, Value: value, UpdatedAt: now(),
