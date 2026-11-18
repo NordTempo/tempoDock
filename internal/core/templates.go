@@ -197,6 +197,14 @@ func (c *Core) createFromTemplate(ctx context.Context, a Actor, es envScope, nam
 			EnvironmentID: es.env.ID, Name: name, Image: cmp.Or(opts.image, t.image), StartCommand: t.cmd, MemoryMb: int64(t.memoryMB),
 		})
 		if store.IsUnique(err) {
+			// An archived service keeps its name: say so, as it isn't in
+			// the list the caller sees.
+			if held, gerr := q.GetServiceByName(ctx, store.GetServiceByNameParams{EnvironmentID: es.env.ID, Name: name}); gerr == nil && held.ArchivedAt != nil {
+				if opts.marksFrom != 0 {
+					return conflict("service %q in %s is archived and still holds that name; restore under another name with `--as <name>`", name, es)
+				}
+				return conflict("service %q in %s is archived and still holds that name; pick another name", name, es)
+			}
 			return conflict("service %q already exists in %s", name, es)
 		}
 		if err != nil {
