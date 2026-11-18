@@ -150,7 +150,9 @@ func (c *Core) RunBackupDrill(ctx context.Context, a Actor, ref ServiceRef) (api
 	}
 	c.audit(ctx, a, "backup.drill_start", &ss.project, &ss.env, ss.String(),
 		fmt.Sprintf("started a restore drill of snapshot %s", shortSnapshot(snap.SnapshotID)))
-	c.wg.Go(func() {
+	c.wg.Add(1)
+	c.goCaught("running a restore drill", func() {
+		defer c.wg.Done()
 		defer c.kickBackups() // a due backup of it may have waited for the drill
 		c.runDrill(c.ctx, ss, row, snap.SizeBytes, set)
 	})
