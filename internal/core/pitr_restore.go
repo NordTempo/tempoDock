@@ -42,7 +42,7 @@ func (c *Core) planToTime(ctx context.Context, ss svcScope, target time.Time) (p
 		return pitrPlan{}, err
 	}
 	var base *store.Backup
-	var earliest *time.Time
+	var earliest, next *time.Time
 	for i, b := range bases {
 		if b.ConsistentAt == nil || b.WalStart == "" || b.Repository != set.Repository {
 			continue
@@ -50,8 +50,11 @@ func (c *Core) planToTime(ctx context.Context, ss svcScope, target time.Time) (p
 		if earliest == nil {
 			earliest = b.ConsistentAt
 		}
-		if !b.ConsistentAt.After(target) {
+		switch {
+		case !b.ConsistentAt.After(target):
 			base = &bases[i]
+		case next == nil:
+			next = b.ConsistentAt // the first base backup after the time
 		}
 	}
 	switch {
@@ -69,6 +72,13 @@ func (c *Core) planToTime(ctx context.Context, ss svcScope, target time.Time) (p
 		return pitrPlan{}, fmt.Errorf("list the WAL archive: %w", err)
 	}
 	if err := ix.Reaches(base.WalStart, base.WalSegmentBytes, target); err != nil {
+		// A later base backup means the archive started over after this
+		// one's ended (turned off and on, an in-place restore): the time
+		// is in the gap, and waiting won't fill it.
+		if cov, cerr := ix.Cover(base.WalStart, base.WalSegmentBytes); cerr == nil && cov.Last != "" && next != nil {
+			return pitrPlan{}, invalid("%s can't be restored to %s: it wasn't archived from %s to %s (point-in-time restore was off or started over); pick a time before or after that",
+				ss, target.UTC().Format(time.RFC3339), cov.Through.UTC().Format(time.RFC3339), next.UTC().Format(time.RFC3339))
+		}
 		return pitrPlan{}, invalid("%s can't be restored to %s: %v", ss, target.UTC().Format(time.RFC3339), err)
 	}
 	return pitrPlan{base: *base, cfg: cfg, target: target}, nil
