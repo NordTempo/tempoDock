@@ -3,7 +3,6 @@ package core
 import (
 	"cmp"
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"sync"
@@ -29,12 +28,10 @@ type recoveryRun struct {
 }
 
 // recoverVolumes fills a service's applied volumes from a volume backup's
-// snapshot before the service first starts, and returns the job's log.
-// It is ADR 0095's fillFromBackup, which isn't on main yet: until it is,
-// a service with a volume backup fails here and says so.
-var recoverVolumes = func(*Core, context.Context, svcScope, string, int64) (string, error) {
-	return "", errors.New("restoring a volume backup needs ADR 0095's restore, which this dock doesn't have yet; update dock, or restore it by hand with restic (docs/guide/databases.md)")
-}
+// snapshot before the service first starts, and returns the job's log:
+// ADR 0095's fillFromBackup. A variable so a test can stand in for the
+// restic job.
+var recoverVolumes = (*Core).fillFromBackup
 
 // StartRecovery runs the recovery plan in the background. RecoveryReport
 // shows how it goes. One run at a time.

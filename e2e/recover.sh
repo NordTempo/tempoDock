@@ -25,10 +25,8 @@
 # The new server runs DOCK_BINARY, or the binary the lost one ran (copied
 # off it first), installed with this checkout's deploy/.
 #
-# RECOVER_VOLUME_APP=1 adds an app with a plain volume holding a marker
-# file. Off by default: the recovery restores template databases only until
-# ADR 0095's volume restore is on main; turn it on (and make it the
-# default) then.
+# An app with a plain volume holding a marker file is part of the drill
+# (ADR 0095's volume restore); RECOVER_VOLUME_APP=0 leaves it out.
 set -uo pipefail
 source "$(dirname "$0")/lib.sh"
 RUN=${E2E_RUN:-$(date +%d%H%M%S)}
@@ -39,7 +37,7 @@ S3_KEY=recoverdrill S3_SECRET=recoverdrill-secret-$RUN BUCKET=recover-$RUN
 S3_URL=http://$MINIO_IP:9000
 STORAGE=recover-$RUN P=recover-$RUN
 MARKER=marker-$RUN
-VOLUME_APP=${RECOVER_VOLUME_APP:-0}
+VOLUME_APP=${RECOVER_VOLUME_APP:-1}
 TMP=$(mktemp -d)
 trap 'docker rm -fv "$MINIO" >/dev/null 2>&1; rm -rf "$TMP"' EXIT
 
@@ -172,10 +170,9 @@ fi
 check "the install names the next command" grep -q 'dock admin recover' "$TMP/install.log"
 check "the fetched archive is named for deleting" grep -q 'holds every secret' "$TMP/install.log"
 check "dock runs" wait_for 60 curl -fsS -o /dev/null "$DOCK_URL/api/v1/health"
-# allow_private is the machine's own in a restore (install.sh's
-# MACHINE_KEYS), so the new server starts without the old one's.
-log "note: allow_private after the install: $(on grep '^allow_private' /etc/dock/config.toml || echo unset)"
-allow_minio
+# A restore from the bucket keeps the old allow list: the restore jobs
+# below reach MinIO only through it.
+check "the install kept the old allow_private" on grep -q "^allow_private = \\[\"$SUBNET_PREFIX.0/24\"\\]" /etc/dock/config.toml
 
 # ---- recovery mode and the plan ---------------------------------------------
 

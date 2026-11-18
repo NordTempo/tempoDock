@@ -2,13 +2,12 @@
 
 Status: accepted (top 5 of the 2026-11-18 product review, approved by
 Saile; decided by the agent). Builds part 2 of
-[0095](0095-restore-volumes-and-recover-a-server.md), which designed the
+[0095](0095-restore-volume-backups.md), which designed the
 flow; this records how it is built and what was decided on the way.
 Built: fetching the control plane's backup from the bucket, `install.sh
 --restore-from-bucket`, recovery mode, and `dock admin recover` with its
-plan, run and report. Not built yet: the fill of a plain volume backup
-(one call to 0095's `fillFromBackup` once that is on main; until then
-such a service fails in the report and says so).
+plan, run and report. A plain volume backup is filled by 0095's
+`fillFromBackup`.
 
 ## Context
 
@@ -54,9 +53,10 @@ Someone replacing a dead server from an archive in hand can add
 - No migration and no node protocol change. A recovery's restore rows
   carry the trigger `manual` (the column takes `schedule` and `manual`);
   migration 0128 and protocol 35 were reserved and are not used.
-- A database's data access roles (the Data panel's) are in the restored
-  variables but not in the fresh server until 0095's roles in dumps
-  land; Dock sets the panel up again when it finds none.
+- A database's data access roles (the Data panel's) come back with a
+  Postgres backup taken since 0095 put roles in dumps. An older backup
+  has them in the restored variables only; Dock sets the panel up again
+  when it finds none.
 - A recovered install takes no backups until someone ends recovery mode.
   An alert (kind `backup_failed`, warning) is open for as long as the
   mode lasts and names the command, so the Inbox and the alert channels
