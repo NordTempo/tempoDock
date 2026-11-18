@@ -87,6 +87,9 @@ func TestRecoveryPlanAndMode(t *testing.T) {
 	}
 
 	token := h.recover(false)
+	if !h.alertOpen(recoveryAlertKey) {
+		t.Error("no alert says the control plane is in recovery mode")
+	}
 	if _, ok := h.c.RecoveryActor("not-" + token); ok {
 		t.Fatal("a wrong token was taken")
 	}
@@ -128,6 +131,9 @@ func TestRecoveryPlanAndMode(t *testing.T) {
 	}
 	if _, ok := h.c.RecoveryActor(token); ok {
 		t.Fatal("the token outlived recovery mode")
+	}
+	if h.alertOpen(recoveryAlertKey) {
+		t.Error("the recovery mode alert outlived the mode")
 	}
 	h.opts.Recovery = nil
 }

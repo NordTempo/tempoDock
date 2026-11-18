@@ -596,6 +596,7 @@ func (c *Core) Start(ctx context.Context) error {
 	}
 	// Alerts a window held while Dock was down, if it has ended.
 	c.releaseHeld(ctx, time.Now())
+	c.signalRecovery(ctx)
 	if err := c.startLogDrains(ctx); err != nil {
 		return err
 	}

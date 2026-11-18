@@ -22,6 +22,25 @@ import (
 // plan and ends the mode through the loopback listener, proving itself
 // with the token in the data dir's recovery file.
 
+// recoveryAlertKey is the alert that says the control plane is in
+// recovery mode: it holds backups back, which nobody should forget.
+const recoveryAlertKey = "recovery-mode"
+
+// signalRecovery raises the recovery mode alert at start-up, or resolves
+// one left open by a mode that ended while the daemon was stopped.
+func (c *Core) signalRecovery(ctx context.Context) {
+	if !c.Recovering() {
+		c.signalAlert(ctx, alertSignal{Key: recoveryAlertKey, Resolve: true})
+		return
+	}
+	c.signalAlert(ctx, alertSignal{
+		Key: recoveryAlertKey, Kind: apitypes.AlertBackupFailed, Severity: apitypes.SeverityWarning,
+		Title:   "Recovery mode: scheduled backups and jobs wait",
+		Message: "This control plane was restored onto a server that replaced a lost one. Until recovery mode ends no scheduled backup or job runs, so an empty volume is never backed up over a good one. On the server, bring the apps back, then end it with --done.",
+		Command: "sudo dock admin recover",
+	})
+}
+
 // Recovering reports whether the control plane is in recovery mode.
 func (c *Core) Recovering() bool { return c.recovery.Load() != nil }
 
@@ -137,6 +156,7 @@ func (c *Core) EndRecovery(ctx context.Context, a Actor) error {
 		return err
 	}
 	c.recovery.Store(nil)
+	c.signalAlert(ctx, alertSignal{Key: recoveryAlertKey, Resolve: true})
 	c.audit(ctx, a.platform(), "control_plane.recovery_ended", nil, nil, "control plane", "ended recovery mode; scheduled backups run again")
 	c.kickBackups()
 	c.kickJobs()

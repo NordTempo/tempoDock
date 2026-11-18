@@ -57,7 +57,8 @@ Someone replacing a dead server from an archive in hand can add
   variables but not in the fresh server until 0095's roles in dumps
   land; Dock sets the panel up again when it finds none.
 - A recovered install takes no backups until someone ends recovery mode.
-  The console doesn't say so yet; an alert while the mode is on is the
-  next thing to add with the run.
+  An alert (kind `backup_failed`, warning) is open for as long as the
+  mode lasts and names the command, so the Inbox and the alert channels
+  say so; ending the mode resolves it.
 - Other servers of a multi-server install are not this flow's subject:
   they reconnect and their volumes never left (0095).
