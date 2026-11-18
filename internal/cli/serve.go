@@ -21,6 +21,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/config"
 	"github.com/NordTempo/tempoDock/internal/core"
 	"github.com/NordTempo/tempoDock/internal/cpbackup"
+	"github.com/NordTempo/tempoDock/internal/httpkit"
 	"github.com/NordTempo/tempoDock/internal/node/caddy"
 	"github.com/NordTempo/tempoDock/internal/node/remote"
 	"github.com/NordTempo/tempoDock/internal/registry"
@@ -163,15 +164,16 @@ func serve(ctx context.Context, cfg config.Config, configPath string) error {
 	handler := api.New(c, api.Options{MaxUploadBytes: int64(cfg.MaxUploadMB) << 20, Logger: log})
 	hooks := api.Hooks(c, log)
 	servers := []*http.Server{
-		{Addr: cfg.Listen, Handler: handler, ReadHeaderTimeout: 10 * time.Second},
+		{Addr: cfg.Listen, Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: httpkit.IdleTimeout},
 		// Dock's public address, through Caddy (ADR 0029), with GitHub's
 		// webhooks (ADR 0031). Served whether or not one is set, so
 		// setting one needs no restart.
-		{Addr: cfg.PublicListen, Handler: api.Public(handler, hooks), ReadHeaderTimeout: 10 * time.Second},
+		{Addr: cfg.PublicListen, Handler: api.Public(handler, hooks), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: httpkit.IdleTimeout},
 		{
 			Addr:              cfg.InternalListen,
 			Handler:           api.Internal(c, log, registryToken, caddy.AccessHandler(), caddy.WakeHandler(c.RequestWaker()), cfg.Pprof),
 			ReadHeaderTimeout: 5 * time.Second,
+			IdleTimeout:       httpkit.IdleTimeout,
 		},
 	}
 	servers = append(servers, ingestServers(cfg, in)...)
@@ -179,14 +181,14 @@ func serve(ctx context.Context, cfg config.Config, configPath string) error {
 		// The registry's storage gateway (ADR 0084): only the registry,
 		// signing with keys derived for it, gets an answer. No timeouts
 		// past the header: layers stream for as long as they take.
-		servers = append(servers, &http.Server{Addr: cfg.Registry.GatewayListen, Handler: reg.Gateway, ReadHeaderTimeout: 10 * time.Second})
+		servers = append(servers, &http.Server{Addr: cfg.Registry.GatewayListen, Handler: reg.Gateway, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: httpkit.IdleTimeout})
 	}
 	if cfg.Analytics.StatsListen != "" {
 		// Sites' public dashboards, through Caddy (ADR 0037): nothing but
 		// them on this listener.
 		servers = append(servers, &http.Server{
 			Addr: cfg.Analytics.StatsListen, Handler: api.PublicStats(c, log.With("component", "public-stats")),
-			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 40 * time.Second,
+			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 40 * time.Second, IdleTimeout: httpkit.IdleTimeout,
 		})
 	}
 	if cfg.Status.Listen != "" {
@@ -194,14 +196,14 @@ func serve(ctx context.Context, cfg config.Config, configPath string) error {
 		// them on this listener.
 		servers = append(servers, &http.Server{
 			Addr: cfg.Status.Listen, Handler: api.StatusPages(c, log.With("component", "status-pages")),
-			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 40 * time.Second,
+			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 40 * time.Second, IdleTimeout: httpkit.IdleTimeout,
 		})
 	}
 	if cfg.Hooks.PublicHost != "" {
 		// GitHub webhooks, the only thing Caddy exposes publicly (ADR 0018).
 		servers = append(servers, &http.Server{
 			Addr: cfg.Hooks.Listen, Handler: hooks,
-			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
+			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: httpkit.IdleTimeout,
 		})
 	}
 	errc := make(chan error, len(servers)+1)

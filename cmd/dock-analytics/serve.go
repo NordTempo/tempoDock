@@ -83,6 +83,8 @@ func (a *api) serve(ctx context.Context, addr string, handler http.Handler) erro
 		Addr:              addr,
 		Handler:           idle.wrap(handler),
 		ReadHeaderTimeout: 10 * time.Second,
+		// Idle keep-alive connections close, after Caddy's own two minutes.
+		IdleTimeout: 3 * time.Minute,
 	}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
