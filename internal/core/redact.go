@@ -126,8 +126,6 @@ func (c *Core) releaseRedactor(rel store.Release) (*redactor, error) {
 // from the left is masked, the longest of those that start there, then
 // the first after it, and so on.
 type redactor struct {
-	// values is how many values there are.
-	values int
 	// longest is the length of the longest value.
 	longest int
 	// starts is the matcher of the values reversed: reading a text
@@ -161,7 +159,7 @@ func newRedactor(env map[string]string) *redactor {
 	}
 	slices.Sort(secrets)
 	secrets = slices.Compact(secrets)
-	r := &redactor{values: len(secrets)}
+	r := &redactor{}
 	// The values reversed, as pieces of one string.
 	var all []byte
 	for _, s := range secrets {
