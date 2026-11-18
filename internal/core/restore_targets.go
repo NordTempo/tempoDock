@@ -203,6 +203,17 @@ func (c *Core) finishCutRestores(ctx context.Context) {
 	}
 }
 
+// keptText ends a failed restore's audit text with where its target went:
+// archived as kept, the name restoreTargetFailed gave it. It adds nothing
+// for a target that still has its name was: a restore drill's throwaway
+// service, which the drill removes, or one that couldn't be archived.
+func keptText(was, kept string) string {
+	if kept == "" || kept == was {
+		return ""
+	}
+	return fmt.Sprintf("; it is archived as %s for a look, and its name is free to restore again", kept)
+}
+
 // restoreAlertKey is the key of a service's failed-restore alert.
 func restoreAlertKey(from svcScope) string {
 	return "restore:" + alertServiceKey(from.svc.ID, from.project.Name, from.env.Name, from.svc.Name)

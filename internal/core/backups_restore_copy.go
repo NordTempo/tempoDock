@@ -221,7 +221,7 @@ func (c *Core) finishVolumeCopy(ctx context.Context, ss, to svcScope, row store.
 		fin.Status, fin.Error = string(apitypes.BackupFailed), err.Error()
 		kept := c.restoreTargetFailed(ctx, ss, to.svc.ID, restoreInto{id: row.ID}, err)
 		c.audit(ctx, System, "backup.restore_failed", &ss.project, &ss.env, ss.String(),
-			fmt.Sprintf("restore of backup %s into %s failed: %v; it is archived as %s for a look, and its name is free to restore again", short, to.svc.Name, err, kept))
+			fmt.Sprintf("restore of backup %s into %s failed: %v%s", short, to.svc.Name, err, keptText(to.svc.Name, kept)))
 	} else {
 		c.restoreSucceeded(ctx, ss)
 		c.audit(ctx, System, "backup.restored", &ss.project, &ss.env, ss.String(),

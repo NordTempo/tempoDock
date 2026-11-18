@@ -269,7 +269,7 @@ func (r *restore) finish(ctx context.Context, err error) {
 		fin.Status, fin.Error = string(apitypes.BackupFailed), err.Error()
 		kept := c.restoreTargetFailed(ctx, r.from, r.to.svc.ID, restoreInto{id: r.row.ID}, err)
 		c.audit(ctx, System, "backup.restore_failed", &r.from.project, &r.from.env, r.from.String(),
-			fmt.Sprintf("restore into %s failed: %v; it is archived as %s for a look, and its name is free to restore again", r.to.svc.Name, err, kept))
+			fmt.Sprintf("restore into %s failed: %v%s", r.to.svc.Name, err, keptText(r.to.svc.Name, kept)))
 	} else {
 		c.restoreSucceeded(ctx, r.from)
 		c.audit(ctx, System, "backup.restored", &r.from.project, &r.from.env, r.from.String(),
