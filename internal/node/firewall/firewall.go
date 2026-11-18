@@ -1,6 +1,8 @@
 // Package firewall keeps app containers and builds off the server's private
 // networks: the LAN, the tailnet, link-local addresses and the server
-// itself. The public internet stays reachable.
+// itself, also when the destination is an IPv6 address that carries one
+// of those IPv4 addresses (NAT64, 6to4). The public internet stays
+// reachable.
 //
 // The rules live in iptables' mangle table, in chains named DOCK-*, hooked
 // from mangle FORWARD (traffic leaving through the server) and mangle INPUT
@@ -85,16 +87,62 @@ var (
 	}
 	ipv6 = family{
 		name: "IPv6", cmd: "ip6tables", restore: "ip6tables-restore", is6: true,
-		blocked: prefixes(
+		blocked: append(prefixes(
 			"fc00::/7",  // unique local, includes the tailnet's fd7a:115c:a1e0::/48
 			"fe80::/10", // link-local
-		),
+		), carried(ipv4.blocked)...),
 	}
 	families = []family{ipv4, ipv6}
 )
 
+// IPv6 ranges whose addresses carry an IPv4 address: a translator or a
+// tunnel on the way (the server's own, or its network's) delivers the
+// packet to that IPv4 address, past the IPv4 rules.
+var (
+	// nat64 is the well-known NAT64 prefix (RFC 6052): the IPv4 address
+	// is the last 32 bits. A server on an IPv6-only network reaches the
+	// IPv4 internet through it, so only the blocked ranges inside it are
+	// dropped.
+	nat64 = netip.MustParsePrefix("64:ff9b::/96")
+	// sixToFour is 6to4 (RFC 3056): the IPv4 address follows the first 16
+	// bits. Again only the blocked ranges inside it are dropped.
+	sixToFour = netip.MustParsePrefix("2002::/16")
+	// carriedWhole are dropped whole, since no prefix match can pick the
+	// private addresses out of them and nothing public is served there:
+	// the local-use NAT64 prefix (RFC 8215), where each network chooses
+	// where in the address the IPv4 one sits; Teredo (RFC 4380), which
+	// ends in the IPv4 address with its bits flipped; and the
+	// IPv4-compatible and IPv4-mapped forms (RFC 4291), which are never
+	// valid destinations on the wire. A network that does run its own
+	// NAT64 on the local-use prefix lists it in [network] allow_private.
+	carriedWhole = prefixes("64:ff9b:1::/48", "2001::/32", "::/96", "::ffff:0:0/96")
+)
+
+// carried returns the IPv6 forms of the IPv4 ranges v4: each range
+// inside the NAT64 and 6to4 prefixes, then the ranges dropped whole.
+func carried(v4 []netip.Prefix) []netip.Prefix {
+	var out []netip.Prefix
+	for _, outer := range []netip.Prefix{nat64, sixToFour} {
+		for _, p := range v4 {
+			out = append(out, embed(outer, p))
+		}
+	}
+	return append(out, carriedWhole...)
+}
+
+// embed returns the IPv6 prefix of the addresses in outer that carry an
+// IPv4 address in v4 right after outer's bits: 10.0.0.0/8 in 2002::/16 is
+// 2002:a00::/24.
+func embed(outer, v4 netip.Prefix) netip.Prefix {
+	b := outer.Addr().As16()
+	a := v4.Masked().Addr().As4()
+	copy(b[outer.Bits()/8:], a[:])
+	return netip.PrefixFrom(netip.AddrFrom16(b), outer.Bits()+v4.Bits())
+}
+
 // Blocked reports whether ip is one of the private destinations app
-// traffic may not reach (the LAN, the tailnet, link-local). Log drains
+// traffic may not reach (the LAN, the tailnet, link-local, and the IPv6
+// addresses that carry one of those). Log drains
 // refuse the same addresses (core's egressGuard), since the control plane
 // sends to them from the host, where these rules don't apply.
 func Blocked(ip netip.Addr) bool {
@@ -109,6 +157,7 @@ func Blocked(ip netip.Addr) bool {
 	return false
 }
 
+// prefixes parses ss; they are constants, so a bad one panics at start.
 func prefixes(ss ...string) []netip.Prefix {
 	out := make([]netip.Prefix, len(ss))
 	for i, s := range ss {
