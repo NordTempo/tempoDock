@@ -338,3 +338,41 @@ func TestInstallShCaddyMatchesCI(t *testing.T) {
 		t.Errorf("install.sh has no checksum for Caddy %s on arm64", ci[1])
 	}
 }
+
+// A re-run of install.sh (an update) moves an existing config's [buildkit]
+// image to the release's pinned one, and leaves an operator's own choice:
+// an image from another repository, or a newer BuildKit.
+func TestInstallShRefreshesTheBuildKitImage(t *testing.T) {
+	script, err := os.ReadFile("../../deploy/install.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pinned := regexp.MustCompile(`(?m)^BUILDKIT_IMAGE="(moby/buildkit:v[0-9.]+@sha256:[0-9a-f]{64})"$`).FindSubmatch(script)
+	if pinned == nil {
+		t.Fatal("install.sh no longer pins moby/buildkit by digest")
+	}
+	want := string(pinned[1])
+	o := newOffline(t)
+	for image, after := range map[string]string{
+		"moby/buildkit:v0.20.0":                                   want,
+		"moby/buildkit:v0.20.0@sha256:" + strings.Repeat("a", 64): want,
+		want: want,
+		"moby/buildkit:v9.0.0@sha256:" + strings.Repeat("b", 64): "moby/buildkit:v9.0.0@sha256:" + strings.Repeat("b", 64),
+		"moby/buildkit:master":             "moby/buildkit:master",
+		"registry.example/buildkit:v0.1.0": "registry.example/buildkit:v0.1.0",
+	} {
+		conf := "listen = \"127.0.0.1:7070\"\n\n[buildkit]\nenabled = true\nimage = \"" + image + "\"\nmemory_mb = 4096\n\n[network]\npool = \"10.213.0.0/16\"\n"
+		o.write(t, "config.toml", conf, 0o644)
+		path := filepath.Join(o.dir, "config.toml")
+		if out, err := o.installSh(t, nil, "refresh_buildkit_image", path); err != nil {
+			t.Fatalf("%s: %v: %s", image, err, out)
+		}
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if wantConf := strings.Replace(conf, image, after, 1); string(got) != wantConf {
+			t.Errorf("%s: the config is now\n%s\nwant\n%s", image, got, wantConf)
+		}
+	}
+}
