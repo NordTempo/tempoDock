@@ -88,6 +88,11 @@ type Options struct {
 	// CloudflareAPI overrides Cloudflare's API base URL (ADR 0036); tests
 	// point it at a fake.
 	CloudflareAPI string
+	// FirewallApplied reports whether the app firewall's rules are in on
+	// the control plane's own server (firewall.Applied); Start asks once
+	// and raises an alert when they aren't. Nil where no firewall is
+	// expected (the fake runtime, a daemon outside systemd): no alert.
+	FirewallApplied func() (bool, error)
 	// ConfigPath is the daemon config file, archived by the control
 	// plane's own backup (ADR 0021); empty leaves it out.
 	ConfigPath string
@@ -121,13 +126,15 @@ type Core struct {
 	cfg     config.Config
 	// configPath is Options.ConfigPath.
 	configPath string
-	store      *store.Store
-	box        *secrets.Box
-	rt         node.Runtime
-	nodes      Nodes // nil: no remote servers
-	reg        Registry
-	log        *slog.Logger
-	bus        *bus
+	// firewallApplied is Options.FirewallApplied.
+	firewallApplied func() (bool, error)
+	store           *store.Store
+	box             *secrets.Box
+	rt              node.Runtime
+	nodes           Nodes // nil: no remote servers
+	reg             Registry
+	log             *slog.Logger
+	bus             *bus
 	// renameMu keeps committed renames and their live events in order.
 	renameMu sync.Mutex
 	// setupMu makes ensureDataAccess one at a time.
@@ -345,54 +352,55 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		}
 	}
 	c := &Core{
-		cfg:        o.Config,
-		configPath: o.ConfigPath,
-		store:      o.Store,
-		box:        o.Secrets,
-		rt:         o.Runtime,
-		reg:        o.Registry,
-		stats:      newStatsState(),
-		alerts:     newAlertEngine(o.Config.Network.AllowPrivate),
-		logDrains:  newDrainManager(o.Config.Network.AllowPrivate),
-		retention:  newRetention(),
-		log:        o.Logger,
-		bus:        newBus(),
-		servers:    map[int64]*serverState{},
-		domainKick: make(chan struct{}, 1),
-		checks:     map[int64]domainCheck{},
-		checking:   map[int64]chan struct{}{},
-		lookupTXT:  o.LookupTXT,
-		lookupIP:   o.LookupIP,
-		status:     map[int64]storedStatus{},
-		removing:   map[string]chan struct{}{},
-		health:     newHealthWatch(),
-		uploads:    map[int64]int64{},
-		loginLimit: httpkit.NewLoginLimiter(),
-		bcryptSem:  make(chan struct{}, 2),
-		cliLogins:  newCLILogins(),
-		ceremonies: newCeremonies(),
-		sso:        newSSOState(),
-		backups:    newBackupState(),
-		volumes:    newVolumeWriters(),
-		uptime:     newUptimeState(),
-		runs:       runState{running: map[int64]int{}, ended: map[int64]chan struct{}{}},
-		jobs:       newJobState(),
-		scans:      newScanState(),
-		email:      newEmailState(),
-		moves:      newMoveState(),
-		fwd:        newForwardState(),
-		drains:     newServerDrainState(),
-		drain:      DefaultCutoverDrain,
-		data:       o.DataEngines,
-		git:        newGitState(o.GitHubAPI),
-		previews:   newPreviewState(),
-		tracking:   newSiteChecks(o.Config.Network.AllowPrivate),
-		updates:    newUpdates(o),
-		cf:         newCFState(o.CloudflareAPI),
-		wild:       newWildState(),
-		obtain:     o.ObtainCertificate,
-		waitTXT:    o.WaitTXT,
-		acmeHTTP:   o.ACMEClient,
+		cfg:             o.Config,
+		configPath:      o.ConfigPath,
+		firewallApplied: o.FirewallApplied,
+		store:           o.Store,
+		box:             o.Secrets,
+		rt:              o.Runtime,
+		reg:             o.Registry,
+		stats:           newStatsState(),
+		alerts:          newAlertEngine(o.Config.Network.AllowPrivate),
+		logDrains:       newDrainManager(o.Config.Network.AllowPrivate),
+		retention:       newRetention(),
+		log:             o.Logger,
+		bus:             newBus(),
+		servers:         map[int64]*serverState{},
+		domainKick:      make(chan struct{}, 1),
+		checks:          map[int64]domainCheck{},
+		checking:        map[int64]chan struct{}{},
+		lookupTXT:       o.LookupTXT,
+		lookupIP:        o.LookupIP,
+		status:          map[int64]storedStatus{},
+		removing:        map[string]chan struct{}{},
+		health:          newHealthWatch(),
+		uploads:         map[int64]int64{},
+		loginLimit:      httpkit.NewLoginLimiter(),
+		bcryptSem:       make(chan struct{}, 2),
+		cliLogins:       newCLILogins(),
+		ceremonies:      newCeremonies(),
+		sso:             newSSOState(),
+		backups:         newBackupState(),
+		volumes:         newVolumeWriters(),
+		uptime:          newUptimeState(),
+		runs:            runState{running: map[int64]int{}, ended: map[int64]chan struct{}{}},
+		jobs:            newJobState(),
+		scans:           newScanState(),
+		email:           newEmailState(),
+		moves:           newMoveState(),
+		fwd:             newForwardState(),
+		drains:          newServerDrainState(),
+		drain:           DefaultCutoverDrain,
+		data:            o.DataEngines,
+		git:             newGitState(o.GitHubAPI),
+		previews:        newPreviewState(),
+		tracking:        newSiteChecks(o.Config.Network.AllowPrivate),
+		updates:         newUpdates(o),
+		cf:              newCFState(o.CloudflareAPI),
+		wild:            newWildState(),
+		obtain:          o.ObtainCertificate,
+		waitTXT:         o.WaitTXT,
+		acmeHTTP:        o.ACMEClient,
 	}
 	if c.obtain == nil {
 		c.obtain = acmedns.Obtain
@@ -600,6 +608,7 @@ func (c *Core) Start(ctx context.Context) error {
 	// A new builder, or one updated to other Railpack images, fetches
 	// them now rather than in its first build.
 	c.warmBuilder(ctx, c.localID)
+	c.checkLocalFirewall(ctx)
 	// Mail queued before a stop goes now; with none the sender exits.
 	c.email.mu.Lock()
 	c.email.started = true

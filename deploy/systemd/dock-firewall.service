@@ -6,6 +6,10 @@ After=docker.service
 PartOf=docker.service
 
 [Service]
+# `apply` leaves /run/dock-firewall/applied, which the daemon reads at
+# start to alert when the rules are missing. No RuntimeDirectory=: stopping
+# this unit leaves the rules in, so it must leave the marker too; only
+# `dock admin firewall remove`, a failed apply and a reboot take it away.
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/local/bin/dock admin firewall apply --config /etc/dock/config.toml

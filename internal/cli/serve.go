@@ -113,7 +113,7 @@ func serve(ctx context.Context, cfg config.Config, configPath string) error {
 	if err != nil {
 		return err
 	}
-	opts := core.Options{Config: cfg, Store: st, Secrets: box, Runtime: rt, Logger: log, ConfigPath: configPath}
+	opts := core.Options{Config: cfg, Store: st, Secrets: box, Runtime: rt, Logger: log, ConfigPath: configPath, FirewallApplied: firewallCheck()}
 	var signer *registry.Signer
 	var reg *registry.Platform
 	// The gateway reports to core, which starts after it.

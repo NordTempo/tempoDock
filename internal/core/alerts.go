@@ -408,7 +408,7 @@ func (c *Core) onAlertEvent(ctx context.Context, ev LiveEvent, now time.Time) {
 		}
 		id := strconv.FormatInt(s.ID, 10)
 		if ev.Message == "removed" {
-			for _, k := range []string{"disk:", "memory:", "cpu:", "update:"} {
+			for _, k := range []string{"disk:", "memory:", "cpu:", "update:", "firewall:"} {
 				c.resolveAlert(ctx, k+id, now)
 			}
 			c.alerts.mu.Lock()

@@ -11,7 +11,8 @@
 // address, so a container can't dodge them by spoofing.
 //
 // Root installs them (`dock admin firewall apply`, run by
-// dock-firewall.service); the daemon itself has no firewall access.
+// dock-firewall.service); the daemon itself has no firewall access. It
+// learns whether they are in from a marker file (AppliedPath).
 package firewall
 
 import (
@@ -21,12 +22,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/netip"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Spec is everything the rules depend on.
@@ -317,4 +321,51 @@ func nameservers(r io.Reader) ([]netip.Addr, error) {
 		out = append(out, a.Unmap())
 	}
 	return out, sc.Err()
+}
+
+// AppliedPath is the marker `dock admin firewall apply` leaves once the
+// rules are in. /run is a tmpfs, so like the rules it is gone after a
+// reboot: the file says "applied since this boot". The daemon, which has
+// no iptables access, reads it to tell whether its server is protected.
+const AppliedPath = "/run/dock-firewall/applied"
+
+// appliedPath is AppliedPath; tests point it at a temporary directory.
+var appliedPath = AppliedPath
+
+// MarkApplied writes the marker (the time, RFC 3339) after Apply worked.
+// Root calls it; everyone may read the file.
+func MarkApplied() error {
+	if err := os.MkdirAll(filepath.Dir(appliedPath), 0o755); err != nil {
+		return fmt.Errorf("mark the firewall applied: %w", err)
+	}
+	// Written whole: a reader sees the old marker or the new one.
+	tmp := appliedPath + ".tmp"
+	if err := os.WriteFile(tmp, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644); err != nil {
+		return fmt.Errorf("mark the firewall applied: %w", err)
+	}
+	if err := os.Rename(tmp, appliedPath); err != nil {
+		return fmt.Errorf("mark the firewall applied: %w", err)
+	}
+	return nil
+}
+
+// ClearApplied removes the marker: after Remove, and after an Apply that
+// failed. A marker that isn't there is not an error.
+func ClearApplied() error {
+	if err := os.Remove(appliedPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("clear the firewall's applied marker: %w", err)
+	}
+	return nil
+}
+
+// Applied reports whether the rules were applied since this boot (the
+// marker exists). An error means it couldn't tell.
+func Applied() (bool, error) {
+	if _, err := os.Stat(appliedPath); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("read the firewall's applied marker: %w", err)
+	}
+	return true, nil
 }

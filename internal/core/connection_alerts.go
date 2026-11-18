@@ -18,6 +18,8 @@ import (
 // Keys: cloudflare:<connection ID>, github:app, storage:<repository URL>,
 // registry:prune, registry:push and registry:bucket (RegistryBucketChanged),
 // and alert_channel:<channel ID> for a broken alert channel (channelFailed).
+// firewall:<server ID> is the same kind of alert, for a server without its
+// app firewall (firewall_alert.go).
 
 // connectionFailed opens (or updates) the platform alert for a connection
 // that just failed: conn names it for clients (AlertTarget.Connection),

@@ -54,6 +54,10 @@ type Facts struct {
 	// The control plane takes it when the server joins without one; after
 	// that `dock server update --base-domain` decides.
 	BaseDomain string `json:"base_domain,omitempty"`
+	// FirewallApplied says whether the app firewall's rules were applied
+	// on the node since it booted (firewall.Applied). Nil from nodes that
+	// don't report it, and where none is expected (not under systemd).
+	FirewallApplied *bool `json:"firewall_applied,omitempty"`
 }
 
 // Hello is what the control plane learns about a node each time it

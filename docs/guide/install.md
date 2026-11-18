@@ -478,6 +478,19 @@ Docker's `nftables` firewall backend isn't
 supported; the service fails with an error instead. To switch the firewall
 off: `sudo systemctl disable --now dock-firewall && sudo dock admin firewall remove`.
 
+Dock tells you when a server runs without the firewall. Applying the rules
+leaves a marker (`/run/dock-firewall/applied`, gone after a reboot like the
+rules themselves), and each server's daemon looks for it when it starts.
+Without it the platform gets an alert, "The app firewall is not installed
+on server NAME": the service failed, was disabled, or never ran. Run
+`sudo systemctl restart dock-firewall` on that server, check
+`systemctl status dock-firewall`, then restart its daemon
+(`sudo systemctl restart dock`, or `dock-node` on a server that isn't the
+control plane) to close the alert. A server whose firewall you switched off
+keeps the alert open. The marker says the rules were applied, not
+that they are still there: rules someone deletes by hand with `iptables`
+go unnoticed until the service runs again.
+
 ### Cloudflare Tunnel
 
 For servers without a public IP or open ports, like a homelab

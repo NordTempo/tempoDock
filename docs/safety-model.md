@@ -166,7 +166,10 @@ tailnet. Apps and builds reach the public internet, nothing private:
   so is traffic to the server itself (API, SSH), except Caddy's ports and
   DNS. LAN hosts an app needs go on an explicit allowlist
   (`[network] allow_private`). Root installs the rules
-  (`dock-firewall.service`); the daemon can't change them.
+  (`dock-firewall.service`); the daemon can't change them, or read them.
+  Applying them leaves a marker under `/run`, and a daemon that starts
+  without it raises a platform alert: apps on that server reach its
+  private networks until the firewall is applied.
 - **Jobs get the network they need.** A job that only copies files (volume
   snapshots, copies between servers, measuring a volume) has no network
   at all. One that reaches storage or a database runs on a firewalled
