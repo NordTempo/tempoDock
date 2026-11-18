@@ -7,6 +7,7 @@ import (
 	"net/http/pprof"
 	"strings"
 
+	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/core"
 	"github.com/NordTempo/tempoDock/internal/update"
 )
@@ -39,9 +40,10 @@ const RecoverPath = "/internal/recover/"
 //	                                  registryToken is not nil.
 //	POST /internal/update             The updater wrote its result (ADR 0028):
 //	                                  read and audit it.
-//	GET /internal/recover/plan        What `dock admin recover` would restore
-//	POST /internal/recover/done       and the end of recovery mode (ADR 0098).
-//	                                  Only in recovery mode, and only with
+//	GET /internal/recover/plan        `dock admin recover` (ADR 0098): what a
+//	POST /internal/recover/run        recovery would restore, running it, how
+//	GET /internal/recover/report      it goes, and the end of recovery mode.
+//	POST /internal/recover/done       Only in recovery mode, and only with
 //	                                  the recovery file's token as bearer.
 //	GET /debug/pprof/...              Go runtime profiles (net/http/pprof), e.g.
 //	                                  curl 127.0.0.1:7071/debug/pprof/heap,
@@ -94,6 +96,34 @@ func Internal(c *core.Core, log *slog.Logger, registryToken, accessCheck, wakeCh
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(plan)
+	})
+	mux.HandleFunc("POST "+RecoverPath+"run", func(w http.ResponseWriter, r *http.Request) {
+		a, ok := recovering(w, r)
+		if !ok {
+			return
+		}
+		if err := c.StartRecovery(r.Context(), a); err != nil {
+			status := http.StatusInternalServerError
+			if core.CodeOf(err) == apitypes.CodeConflict {
+				status = http.StatusConflict
+			}
+			http.Error(w, err.Error(), status)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+	})
+	mux.HandleFunc("GET "+RecoverPath+"report", func(w http.ResponseWriter, r *http.Request) {
+		a, ok := recovering(w, r)
+		if !ok {
+			return
+		}
+		rep, err := c.RecoveryReport(r.Context(), a)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(rep)
 	})
 	mux.HandleFunc("POST "+RecoverPath+"done", func(w http.ResponseWriter, r *http.Request) {
 		a, ok := recovering(w, r)

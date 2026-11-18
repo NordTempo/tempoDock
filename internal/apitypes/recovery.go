@@ -44,3 +44,46 @@ type RecoveryPlan struct {
 	Repository string            `json:"repository"`
 	Services   []RecoveryService `json:"services"`
 }
+
+// RecoveryOutcome is what a recovery did with one service.
+type RecoveryOutcome string
+
+const (
+	// RecoveryRestored: its data came back from a backup and it runs.
+	RecoveryRestored RecoveryOutcome = "restored"
+	// RecoveryEmpty: a stateful service without a backup to restore; it
+	// runs on empty volumes.
+	RecoveryEmpty RecoveryOutcome = "empty"
+	// RecoveryStarted: a service without volumes; it runs.
+	RecoveryStarted RecoveryOutcome = "started"
+	// RecoveryRunning: it ran already and was left alone.
+	RecoveryRunning RecoveryOutcome = "running"
+	// RecoverySkipped: nothing to start (stopped on purpose, asleep).
+	RecoverySkipped RecoveryOutcome = "skipped"
+	// RecoveryFailed: the restore or the start failed; Detail says which.
+	RecoveryFailed RecoveryOutcome = "failed"
+)
+
+// RecoveryResult is one service in a recovery's report.
+type RecoveryResult struct {
+	Org         string          `json:"org"`
+	Project     string          `json:"project"`
+	Environment string          `json:"environment"`
+	Service     string          `json:"service"`
+	Outcome     RecoveryOutcome `json:"outcome"`
+	// Detail says why for skipped and failed, and what to do next.
+	Detail string `json:"detail,omitempty"`
+	// Snapshot and BackedUpAt are the backup that was restored.
+	Snapshot   string     `json:"snapshot,omitempty"`
+	BackedUpAt *time.Time `json:"backed_up_at,omitempty"`
+}
+
+// RecoveryReport is how a recovery's run goes or went: one result per
+// service handled so far, in the order they were handled.
+type RecoveryReport struct {
+	// Running is true until the run has handled every service.
+	Running    bool             `json:"running"`
+	StartedAt  *time.Time       `json:"started_at,omitempty"`
+	FinishedAt *time.Time       `json:"finished_at,omitempty"`
+	Results    []RecoveryResult `json:"results"`
+}

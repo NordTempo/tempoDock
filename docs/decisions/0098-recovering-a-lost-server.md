@@ -4,10 +4,13 @@ Status: accepted (top 5 of the 2026-11-18 product review, approved by
 Saile; decided by the agent). Builds part 2 of
 [0095](0095-restore-volumes-and-recover-a-server.md), which designed the
 flow; this records how it is built and what was decided on the way.
-Built so far: fetching the control plane's backup from the bucket,
-`install.sh --restore-from-bucket`, recovery mode and the plan of `dock
-admin recover`. Not built yet: running the plan (it calls 0095's volume
-restore), the report, the nightly drill.
+Built: fetching the control plane's backup from the bucket, `install.sh
+--restore-from-bucket`, recovery mode, and `dock admin recover` with its
+plan, run and report. Not built yet: the fill of a plain volume backup
+(one call to 0095's `fillFromBackup` once that is on main; until then
+such a service fails in the report and says so), reading the repository
+for snapshots newer than the archive, rebuilding a release whose image
+went with the server's registry.
 
 ## Context
 
@@ -33,7 +36,10 @@ second needs one.
 | Why the daemon does it | The restores are jobs on the runtime and the deploys need routes, the registry and the event bus. A CLI that opened the state itself would be a second daemon |
 | The plan | Read-only. Every live service on this server with an applied volume (previews left out, as backups leave them out), its kind (a template database's dump, or its volumes), and its newest succeeded backup that retention hasn't removed, in the current repository, with its age. A service with none says why: never backed up, or backed up only into a local repository, which went with the server. One query, whatever the number of services |
 | What the plan trusts | The restored database's backup rows. A scheduled pass backs up the services first and the control plane last, so the archive knows that night's snapshots. A backup taken after the archive (a manual one, or a pass the server died in) is in the repository but not in the plan; running the plan lists the repository per service and takes a newer snapshot when there is one (not built yet) |
-| Running it | As 0095 part 2: per environment, volumes are created and filled before anything starts, databases first, then every service deploys from its last release. Resumable: the plan is recomputed, a service whose restore succeeded is skipped |
+| Running it | After the plan is shown and agreed to (`--yes` skips the question; without a terminal and without `--yes` nothing runs). The daemon brings back every service of its own server that has an active release, one at a time (a small server never runs two restores at once), environment by environment: template databases, then services with volumes, then the rest. A plain service's volumes and Redis's are filled before the service starts. Postgres and MySQL start alone on an empty volume, with the credentials the restored variables hold, and load their dump before the next service starts; it is the same service, so no reference switches. Each service starts as a new release copying its active one, through the usual health-checked path, and the run waits for it |
+| What a run leaves alone | A service with a container already (so a second run only handles what is left), one stopped on purpose, one in an asleep environment. A stateful service with nothing to restore starts on empty volumes and the report says so |
+| The report | Per service: restored (with the backup and its age), started, started on empty volumes, already running, skipped, failed with the reason. The CLI prints it as it goes and `--report` shows the latest again. It is kept in memory: each restore is also a row in the service's backup list with its log, and the audit log has the run's start and its counts |
+| A failed start | The release shows why. An image that was only in the lost server's registry needs a new deploy; images in a bucket ([0084](0084-registry-storage-gateway.md)) come back with the restored database |
 | Ending | `dock admin recover --done` removes the file: the scheduler starts again and drift is reported again. With `--yes` a run that restored everything ends the mode itself |
 | The drill | `e2e/recover.sh`, in `e2e/nightly.sh`: a slot with a MinIO bucket, an app with a volume and a Postgres, backups, the control plane's state and the volumes removed, the two commands, then the data is checked |
 
@@ -46,8 +52,12 @@ Someone replacing a dead server from an archive in hand can add
 
 - No idle cost: no ticker, no query outside a recovery. The scheduler
   checks one in-memory flag per pass.
-- No migration and no node protocol change so far. Migration 0128 and
-  protocol 35 stay reserved for running the plan.
+- No migration and no node protocol change. A recovery's restore rows
+  carry the trigger `manual` (the column takes `schedule` and `manual`);
+  migration 0128 and protocol 35 were reserved and are not used.
+- A database's data access roles (the Data panel's) are in the restored
+  variables but not in the fresh server until 0095's roles in dumps
+  land; Dock sets the panel up again when it finds none.
 - A recovered install takes no backups until someone ends recovery mode.
   The console doesn't say so yet; an alert while the mode is on is the
   next thing to add with the run.

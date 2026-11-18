@@ -49,8 +49,10 @@ func TestAdminRecover(t *testing.T) {
 	if code != 0 || !strings.Contains(stdout, "a backup of old") || !strings.Contains(stdout, "nothing to restore") {
 		t.Fatalf("plan: exit %d: %q %s", code, stdout, stderr)
 	}
-	if code, stdout, stderr := exec(t, "admin", "recover", "--config", cfg, "--done"); code != 0 || !strings.Contains(stdout, "ended") {
-		t.Fatalf("done: exit %d: %q %s", code, stdout, stderr)
+	// --yes runs the plan and, with nothing failed, ends the mode.
+	code, stdout, stderr = exec(t, "admin", "recover", "--config", cfg, "--yes")
+	if code != 0 || !strings.Contains(stdout, "0 failed") || !strings.Contains(stdout, "Recovery mode ended") {
+		t.Fatalf("run: exit %d: %q %s", code, stdout, stderr)
 	}
 	if ts.core.Recovering() {
 		t.Fatal("still in recovery mode")

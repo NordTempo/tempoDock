@@ -1,8 +1,12 @@
 package core
 
 import (
+	"context"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/cpbackup"
@@ -11,7 +15,8 @@ import (
 
 // recover restarts the harness's daemon in recovery mode, as after
 // `dock admin restore --recovery`, and returns the recovery file's token.
-func (h *harness) recover() string {
+// With lose, every container is gone when it starts, as on a new server.
+func (h *harness) recover(lose bool) string {
 	h.t.Helper()
 	dir := h.opts.Config.DataDir
 	if err := cpbackup.MarkRecovering(dir, "a backup of old taken earlier"); err != nil {
@@ -22,7 +27,20 @@ func (h *harness) recover() string {
 		h.t.Fatalf("recovery file: %+v, %v", rec, err)
 	}
 	h.opts.Recovery = rec
-	h.restart()
+	h.c.Close()
+	if lose {
+		ctrs, err := h.rt.List(h.ctx)
+		if err != nil {
+			h.t.Fatal(err)
+		}
+		for _, ct := range ctrs {
+			_ = h.rt.Stop(h.ctx, ct.ID, 0)
+			if err := h.rt.Remove(h.ctx, ct.ID, node.RemoveOptions{}); err != nil {
+				h.t.Fatal(err)
+			}
+		}
+	}
+	h.c = h.start()
 	return rec.Token
 }
 
@@ -48,7 +66,7 @@ func TestRecoveryPlanAndMode(t *testing.T) {
 		t.Fatalf("plan outside recovery mode: %v", err)
 	}
 
-	token := h.recover()
+	token := h.recover(false)
 	if _, ok := h.c.RecoveryActor("not-" + token); ok {
 		t.Fatal("a wrong token was taken")
 	}
@@ -104,7 +122,7 @@ func TestRecoveryPlanLocalRepositoryIsLost(t *testing.T) {
 	if run := h.runBackup(db); run.Status != apitypes.BackupSucceeded {
 		t.Fatalf("backup = %+v", run)
 	}
-	h.recover()
+	h.recover(false)
 	plan, err := h.c.RecoveryPlan(h.ctx, testSystem)
 	if err != nil {
 		t.Fatal(err)
@@ -112,4 +130,93 @@ func TestRecoveryPlanLocalRepositoryIsLost(t *testing.T) {
 	if len(plan.Services) != 1 || plan.Services[0].State != apitypes.RecoveryLost || plan.Repository != "local" {
 		t.Fatalf("plan = %+v", plan)
 	}
+}
+
+// A recovery fills volumes before their service starts, loads a
+// database's dump once it runs alone, and brings services back
+// databases first; the report says what came back, and a second run
+// leaves what runs alone.
+func TestRecoveryRun(t *testing.T) {
+	h := newHarness(t)
+	h.offBoxBackups()
+	db := h.templateDB("db", apitypes.TemplatePostgres)
+	web := h.service("web", apitypes.CreateServiceRequest{Port: 8080})
+	h.deploy(web, "app:1")
+	files := h.volumeService("files")
+	var steps []string
+	var mu sync.Mutex
+	step := func(s string) {
+		mu.Lock()
+		defer mu.Unlock()
+		steps = append(steps, s)
+	}
+	h.rt.OnJob(func(spec node.JobSpec) (node.JobResult, error) {
+		switch {
+		case strings.Contains(spec.Name, "_backup"):
+			return node.JobResult{Output: resticOutput("aaaa1111aaaa", 4096, "aaaa1111aaaa")}, nil
+		case strings.Contains(spec.Name, "_restore"):
+			step("load " + spec.Env["PGHOST"])
+		}
+		return node.JobResult{}, nil
+	})
+	for _, ref := range []ServiceRef{db, files} {
+		if run := h.runBackup(ref); run.Status != apitypes.BackupSucceeded {
+			t.Fatalf("backup = %+v", run)
+		}
+	}
+	h.recover(true)
+	old := recoverVolumes
+	t.Cleanup(func() { recoverVolumes = old })
+	recoverVolumes = func(c *Core, _ context.Context, ss svcScope, snapshot string, _ int64) (string, error) {
+		if left, _ := c.rt.List(h.ctx); len(left) != 1 {
+			t.Errorf("volumes of %s filled with %d containers running, want only the database", ss, len(left))
+		}
+		step("fill " + ss.svc.Name + " " + snapshot)
+		return "filled", nil
+	}
+
+	run := func() apitypes.RecoveryReport {
+		t.Helper()
+		if err := h.c.StartRecovery(h.ctx, testSystem); err != nil {
+			t.Fatal(err)
+		}
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			rep, err := h.c.RecoveryReport(h.ctx, testSystem)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !rep.Running {
+				return rep
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("recovery still running: %+v", rep)
+			}
+			time.Sleep(2 * time.Millisecond)
+		}
+	}
+	rep := run()
+	var got []string
+	for _, r := range rep.Results {
+		got = append(got, r.Service+" "+string(r.Outcome))
+		if r.Outcome == apitypes.RecoveryFailed {
+			t.Errorf("%s: %s", r.Service, r.Detail)
+		}
+	}
+	if want := []string{"db restored", "files restored", "web started"}; !slices.Equal(got, want) {
+		t.Fatalf("report = %v, want %v", got, want)
+	}
+	if want := []string{"load db", "fill files aaaa1111aaaa"}; !slices.Equal(steps, want) {
+		t.Fatalf("steps = %v, want %v", steps, want)
+	}
+	if running := h.rt.Running(); len(running) != 3 {
+		t.Fatalf("running = %v, want the three services", running)
+	}
+
+	for _, r := range run().Results {
+		if r.Outcome != apitypes.RecoveryRunning {
+			t.Errorf("second run: %s %s (%s)", r.Service, r.Outcome, r.Detail)
+		}
+	}
+	h.opts.Recovery = nil
 }

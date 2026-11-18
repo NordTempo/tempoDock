@@ -43,15 +43,24 @@ func (c *Core) RecoveryPlan(ctx context.Context, a Actor) (apitypes.RecoveryPlan
 	if r == nil {
 		return apitypes.RecoveryPlan{}, conflict("this control plane is not in recovery mode; restore one backup with `dock backup restore`")
 	}
+	plan, _, _, err := c.recoveryPlan(ctx, r)
+	return plan, err
+}
+
+// recoveryPlan builds the plan of recovery r, and returns with it each
+// planned service by its ID and the repository the backups are in, for
+// the run.
+func (c *Core) recoveryPlan(ctx context.Context, r *cpbackup.Recovery) (apitypes.RecoveryPlan, map[int64]apitypes.RecoveryService, string, error) {
 	set, err := c.backupSettings(ctx)
 	if err != nil {
-		return apitypes.RecoveryPlan{}, err
+		return apitypes.RecoveryPlan{}, nil, "", err
 	}
 	rows, err := c.store.ListRecoveryServices(ctx, store.ListRecoveryServicesParams{ServerID: c.localID, Repository: set.Repository})
 	if err != nil {
-		return apitypes.RecoveryPlan{}, err
+		return apitypes.RecoveryPlan{}, nil, "", err
 	}
 	plan := apitypes.RecoveryPlan{Since: r.At, From: r.From, Repository: repoLabel(set.Repository), Services: make([]apitypes.RecoveryService, 0, len(rows))}
+	byID := make(map[int64]apitypes.RecoveryService, len(rows))
 	// A local repository was a volume on the server that is gone.
 	local := set.Repository == ""
 	for _, row := range rows {
@@ -70,8 +79,9 @@ func (c *Core) RecoveryPlan(ctx context.Context, a Actor) (apitypes.RecoveryPlan
 			s.State = apitypes.RecoveryLost
 		}
 		plan.Services = append(plan.Services, s)
+		byID[row.ID] = s
 	}
-	return plan, nil
+	return plan, byID, set.Repository, nil
 }
 
 // EndRecovery takes the control plane out of recovery mode: the backup

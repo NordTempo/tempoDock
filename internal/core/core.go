@@ -253,7 +253,9 @@ type Core struct {
 	// recovery is set while the control plane is in recovery mode
 	// (recovery_mode.go).
 	recovery atomic.Pointer[cpbackup.Recovery]
-	pitr     pitrState
+	// recoveryRun is the recovery's run and its report (recovery_run.go).
+	recoveryRun recoveryRun
+	pitr        pitrState
 	// volumes keeps restores apart from the other writers of a service's
 	// volumes (volume_writers.go).
 	volumes volumeWriters

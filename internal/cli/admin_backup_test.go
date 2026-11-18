@@ -84,6 +84,17 @@ func TestAdminBackupAndRestore(t *testing.T) {
 			t.Errorf("%s not restored: %v", f, err)
 		}
 	}
+	if rec, err := cpbackup.ReadRecovery(newDir); err != nil || rec != nil {
+		t.Errorf("a plain restore entered recovery mode: %+v, %v", rec, err)
+	}
+	// --recovery: the server replaces a lost one.
+	lostDir := filepath.Join(t.TempDir(), "data")
+	if code, _, stderr := exec(t, "admin", "restore", "--recovery", "--config", writeConfig(t, lostDir, ""), out); code != 0 {
+		t.Fatalf("restore --recovery: exit %d: %s", code, stderr)
+	}
+	if rec, err := cpbackup.ReadRecovery(lostDir); err != nil || rec == nil || rec.Token == "" {
+		t.Errorf("restore --recovery left no recovery file: %+v, %v", rec, err)
+	}
 	st, err := store.Open(context.Background(), filepath.Join(newDir, "dock.db"))
 	if err != nil {
 		t.Fatal(err)

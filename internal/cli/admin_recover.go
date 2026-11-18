@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,11 +11,13 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"os"
 	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/NordTempo/tempoDock/internal/api"
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -30,24 +33,35 @@ import (
 // needs no sign-in: shell access to the server is the proof.
 func newAdminRecoverCmd() *cobra.Command {
 	configPath := config.DefaultPath
-	var done, asJSON bool
+	var done, asJSON, yes, report bool
 	cmd := &cobra.Command{
 		Use:   "recover",
-		Short: "Show what a recovery restores on a server that replaced a lost one (root)",
+		Short: "Bring the apps back on a server that replaced a lost one (root)",
 		Long: `After install.sh --restore-from-bucket the control plane is back, in
 recovery mode: the apps and their volumes are not, and scheduled backups
 wait, so an empty volume is never backed up over a good one.
 
-This prints the plan and changes nothing: every stateful service on this
-server with its newest backup and how old it is, and what has none. A
-service whose backups were only in a server's local repository lost them
-with the server.
+It prints the plan first: every stateful service on this server with its
+newest backup and how old it is, and what has none. A service whose
+backups were only in a server's local repository lost them with the
+server. Without a terminal and without --yes it stops there, and nothing
+changed.
 
---done ends recovery mode: scheduled backups run again.
+Once you agree (or with --yes) it brings every service of this server
+back, one at a time, databases first: volumes are filled from the backup
+before their service starts, a database loads its dump before anything
+that uses it starts, and each service starts from its last release. It
+ends with a report: what came back and how old it is, what started on
+empty volumes, what failed. Running it again leaves what runs alone.
+
+--report shows the latest run again. --done ends recovery mode: scheduled
+backups run again. With --yes a run without failures ends it itself.
 
 Run it on the server, as root or the dock user, while dock runs.`,
 		Example: `  sudo dock admin recover
-  sudo dock admin recover --json
+  sudo dock admin recover --json     # the plan alone
+  sudo dock admin recover --yes
+  sudo dock admin recover --report
   sudo dock admin recover --done`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -74,6 +88,21 @@ Run it on the server, as root or the dock user, while dock runs.`,
 				_, err = fmt.Fprintln(cmd.OutOrStdout(), "Recovery mode ended: scheduled backups run again.")
 				return err
 			}
+			if report {
+				var rep apitypes.RecoveryReport
+				if err := recoverCall(cmd.Context(), http.MethodGet, base+"report", rec.Token, &rep); err != nil {
+					return err
+				}
+				for _, r := range rep.Results {
+					printRecoveryResult(cmd.OutOrStdout(), r)
+				}
+				if rep.Running {
+					_, err = fmt.Fprintln(cmd.OutOrStdout(), "Still running.")
+					return err
+				}
+				printRecoverySummary(cmd.OutOrStdout(), rep)
+				return nil
+			}
 			var plan apitypes.RecoveryPlan
 			if err := recoverCall(cmd.Context(), http.MethodGet, base+"plan", rec.Token, &plan); err != nil {
 				return err
@@ -83,13 +112,52 @@ Run it on the server, as root or the dock user, while dock runs.`,
 				enc.SetIndent("", "  ")
 				return enc.Encode(plan)
 			}
-			return printRecoveryPlan(cmd.OutOrStdout(), plan)
+			out := cmd.OutOrStdout()
+			if err := printRecoveryPlan(out, plan); err != nil {
+				return err
+			}
+			if !yes {
+				f, ok := cmd.InOrStdin().(*os.File)
+				if !ok || !term.IsTerminal(int(f.Fd())) {
+					_, err := fmt.Fprintln(out, "\nNothing changed. To run it: sudo dock admin recover --yes")
+					return err
+				}
+				_, _ = fmt.Fprint(out, "\nRestore these and start every service of this server? [y/N] ")
+				line, _ := bufio.NewReader(f).ReadString('\n')
+				if a := strings.ToLower(strings.TrimSpace(line)); a != "y" && a != "yes" {
+					_, err := fmt.Fprintln(out, "Nothing changed.")
+					return err
+				}
+			}
+			if err := recoverCall(cmd.Context(), http.MethodPost, base+"run", rec.Token, nil); err != nil {
+				return err
+			}
+			rep, err := watchRecovery(cmd.Context(), out, base+"report", rec.Token)
+			if err != nil {
+				return err
+			}
+			failed := printRecoverySummary(out, rep)
+			switch {
+			case failed > 0:
+				return &output.Error{Exit: output.ExitError, Err: fmt.Errorf("%d services did not come back", failed),
+					Hint: "Fix what the report names and run `sudo dock admin recover` again: what runs is left alone. Recovery mode stays on."}
+			case yes:
+				if err := recoverCall(cmd.Context(), http.MethodPost, base+"done", rec.Token, nil); err != nil {
+					return err
+				}
+				_, err = fmt.Fprintln(out, "Recovery mode ended: scheduled backups run again.")
+				return err
+			}
+			_, err = fmt.Fprintln(out, "Check the apps, then end recovery mode so backups run again: sudo dock admin recover --done")
+			return err
 		},
 	}
 	cmd.Flags().StringVar(&configPath, "config", configPath, "path to the daemon config file")
 	cmd.Flags().BoolVar(&done, "done", false, "end recovery mode: scheduled backups run again")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print the plan as JSON")
-	cmd.MarkFlagsMutuallyExclusive("done", "json")
+	cmd.Flags().BoolVar(&yes, "yes", false, "run the plan without asking, and end recovery mode if nothing failed")
+	cmd.Flags().BoolVar(&report, "report", false, "show the latest run's report")
+	cmd.MarkFlagsMutuallyExclusive("done", "json", "yes", "report")
 	return cmd
 }
 
@@ -126,7 +194,7 @@ func recoverCall(ctx context.Context, method, url, token string, out any) error 
 func printRecoveryPlan(w io.Writer, plan apitypes.RecoveryPlan) error {
 	_, _ = fmt.Fprintf(w, "Restored from %s.\nBackups are read from: %s\n\n", plan.From, plan.Repository)
 	if len(plan.Services) == 0 {
-		_, err := fmt.Fprintln(w, "No service on this server has a volume: nothing to restore. Deploy the services, then: sudo dock admin recover --done")
+		_, err := fmt.Fprintln(w, "No service on this server has a volume: nothing to restore. Services start from their last release.")
 		return err
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
@@ -158,4 +226,57 @@ func printRecoveryPlan(w io.Writer, plan apitypes.RecoveryPlan) error {
 	}
 	_, err := fmt.Fprintln(w, ". Lost and never backed up services start with empty volumes.")
 	return err
+}
+
+// recoveryPoll is how often a running recovery's report is read. Tests
+// shorten it.
+var recoveryPoll = 2 * time.Second
+
+// watchRecovery prints a running recovery's results as they come and
+// returns its report once it finished.
+func watchRecovery(ctx context.Context, w io.Writer, url, token string) (apitypes.RecoveryReport, error) {
+	shown := 0
+	for {
+		var rep apitypes.RecoveryReport
+		if err := recoverCall(ctx, http.MethodGet, url, token, &rep); err != nil {
+			return rep, err
+		}
+		for _, r := range rep.Results[shown:] {
+			printRecoveryResult(w, r)
+		}
+		shown = len(rep.Results)
+		if !rep.Running {
+			return rep, nil
+		}
+		select {
+		case <-ctx.Done():
+			return rep, ctx.Err()
+		case <-time.After(recoveryPoll):
+		}
+	}
+}
+
+// printRecoveryResult prints one service of a recovery's report.
+func printRecoveryResult(w io.Writer, r apitypes.RecoveryResult) {
+	name := strings.Join([]string{r.Org, r.Project, r.Environment, r.Service}, "/")
+	line := fmt.Sprintf("%-9s %s", r.Outcome, name)
+	if r.Outcome == apitypes.RecoveryRestored {
+		line += fmt.Sprintf(": backup %s, taken %s", r.Snapshot[:min(8, len(r.Snapshot))], agoPtr(r.BackedUpAt))
+	}
+	if r.Detail != "" {
+		line += ": " + r.Detail
+	}
+	_, _ = fmt.Fprintln(w, line)
+}
+
+// printRecoverySummary prints a finished recovery's counts and returns
+// how many services failed.
+func printRecoverySummary(w io.Writer, rep apitypes.RecoveryReport) int {
+	n := map[apitypes.RecoveryOutcome]int{}
+	for _, r := range rep.Results {
+		n[r.Outcome]++
+	}
+	_, _ = fmt.Fprintf(w, "\n%d restored from a backup, %d started (no volumes), %d started on empty volumes, %d already running, %d skipped, %d failed.\n",
+		n[apitypes.RecoveryRestored], n[apitypes.RecoveryStarted], n[apitypes.RecoveryEmpty], n[apitypes.RecoveryRunning], n[apitypes.RecoverySkipped], n[apitypes.RecoveryFailed])
+	return n[apitypes.RecoveryFailed]
 }
