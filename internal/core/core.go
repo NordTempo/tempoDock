@@ -215,6 +215,9 @@ type Core struct {
 	// retention passes and disk prunes (retention.go).
 	alerts    *alertEngine
 	retention *retention
+	// heartbeat is the outside heartbeat's setting and how its pings
+	// went (heartbeat.go).
+	heartbeat heartbeat
 	// logDrains are the log drains and the log followers
 	// (drains_deliver.go).
 	logDrains *drainManager
@@ -594,6 +597,9 @@ func (c *Core) Start(ctx context.Context) error {
 	if err := c.startAlerts(ctx); err != nil {
 		return err
 	}
+	if err := c.loadHeartbeat(ctx); err != nil {
+		c.log.Error("heartbeat: no pings are sent until it is set again (`dock alerts heartbeat set`)", "err", err)
+	}
 	// Alerts a window held while Dock was down, if it has ended.
 	c.releaseHeld(ctx, time.Now())
 	c.signalRecovery(ctx)
@@ -649,7 +655,7 @@ func (c *Core) Start(ctx context.Context) error {
 	}
 	// Preview copies a restart cut short end empty (ADR 0092); in the
 	// background, as they run jobs.
-	c.wg.Go(func() {
+	c.goCounted("ending preview copies cut short", func() {
 		if err := c.resumePreviewData(c.ctx); err != nil {
 			c.log.Error("end preview copies cut short", "err", err)
 		}

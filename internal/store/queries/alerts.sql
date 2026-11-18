@@ -8,7 +8,14 @@ RETURNING *;
 UPDATE alerts SET muted_by = NULL WHERE id = +?;
 
 -- name: UpdateAlert :exec
-UPDATE alerts SET severity = ?, title = ?, message = ?, project = ?, command = ?, target = ?, updated_at = ? WHERE id = +?;
+-- The condition holds (again): what the alert says now and how many
+-- times it occurred; it is no longer cleared (ADR 0097).
+UPDATE alerts SET severity = ?, title = ?, message = ?, project = ?, command = ?, target = ?, count = ?, cleared_at = NULL, updated_at = ? WHERE id = +?;
+
+-- name: ClearAlert :exec
+-- The condition of an alert that settles before it resolves cleared at
+-- `at` (ADR 0097); the statistics tick resolves it once it stayed clear.
+UPDATE alerts SET cleared_at = sqlc.arg(at) WHERE id = +sqlc.arg(id) AND resolved_at IS NULL;
 
 -- name: ResolveAlert :exec
 UPDATE alerts SET resolved_at = sqlc.arg(at), updated_at = sqlc.arg(at) WHERE id = +sqlc.arg(id) AND resolved_at IS NULL;
@@ -129,3 +136,16 @@ SELECT * FROM alert_channels WHERE kind = 'email' ORDER BY id;
 
 -- name: SetAlertChannelConfig :exec
 UPDATE alert_channels SET config = ?, target = ? WHERE id = +?;
+
+-- name: GetHeartbeat :one
+-- The outside heartbeat (ADR 0097); no row while none is set. Read on
+-- start and after a change, then kept in memory.
+SELECT * FROM heartbeat WHERE id = 1;
+
+-- name: SetHeartbeat :exec
+INSERT INTO heartbeat (id, url, target, minutes, updated_by, updated_at) VALUES (1, ?, ?, ?, ?, ?)
+ON CONFLICT (id) DO UPDATE SET url = excluded.url, target = excluded.target, minutes = excluded.minutes,
+    updated_by = excluded.updated_by, updated_at = excluded.updated_at;
+
+-- name: DeleteHeartbeat :exec
+DELETE FROM heartbeat WHERE id = 1;

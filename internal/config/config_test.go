@@ -43,6 +43,22 @@ allow_private = ["192.168.10.20/32", "10.0.5.7/24"]
 	}
 }
 
+// [alerts] settle_minutes defaults to 3, takes 0 (off), and is checked.
+func TestAlertsSettleMinutes(t *testing.T) {
+	cfg, err := load(t, `data_dir = "/tmp"`)
+	if err != nil || cfg.Alerts.SettleMinutes != 3 {
+		t.Fatalf("default settle_minutes = %d, %v, want 3", cfg.Alerts.SettleMinutes, err)
+	}
+	if cfg, err = load(t, `alerts.settle_minutes = 0`); err != nil || cfg.Alerts.SettleMinutes != 0 {
+		t.Fatalf("settle_minutes = 0 gave %d, %v", cfg.Alerts.SettleMinutes, err)
+	}
+	for _, toml := range []string{`alerts.settle_minutes = -1`, `alerts.settle_minutes = 61`} {
+		if _, err := load(t, toml); err == nil {
+			t.Errorf("%s: accepted", toml)
+		}
+	}
+}
+
 func TestNetworkInvalid(t *testing.T) {
 	for _, toml := range []string{
 		`network.pool = "10.213.0.0/25"`,       // smaller than one network

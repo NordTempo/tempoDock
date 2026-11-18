@@ -82,6 +82,8 @@ type Alert struct {
 	Target      string
 	OrgID       *int64
 	MutedBy     *int64
+	Count       int64
+	ClearedAt   *time.Time
 }
 
 type AlertChannel struct {
@@ -614,6 +616,15 @@ type GroupAgent struct {
 type GroupMember struct {
 	GroupID int64
 	UserID  int64
+}
+
+type Heartbeat struct {
+	ID        int64
+	Url       []byte
+	Target    string
+	Minutes   int64
+	UpdatedBy string
+	UpdatedAt time.Time
 }
 
 type ImageFinding struct {

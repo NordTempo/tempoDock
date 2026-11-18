@@ -122,6 +122,9 @@ func dockerHarnessWithTools(t *testing.T, probe, self string) *Core {
 	shortGrace.Do(func() { healthGrace = time.Second })
 	cfg := config.Default()
 	cfg.DataDir = dir
+	// Alerts resolve the moment their condition clears, as in the unit
+	// harness (newHarness, ADR 0097).
+	cfg.Alerts.SettleMinutes = 0
 	base := freePortRange(t, slot)
 	cfg.HostPorts = config.PortRange{Min: base, Max: base + 99}
 	c, err := New(ctx, Options{Config: cfg, Store: st, Secrets: box, Runtime: node.Local{Containers: rt, Builder: noBuilder{}, Proxy: noProxy{}, Stats: noStats{}, Traffic: noStats{}, Tunnel: noProxy{}, Analytics: fake.New(), Prober: fake.New(), Scanner: fake.New()}, Logger: slog.New(slog.DiscardHandler)})

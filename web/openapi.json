@@ -748,11 +748,23 @@
       "Alert": {
         "additionalProperties": false,
         "properties": {
+          "cleared_at": {
+            "description": "When the alert's condition last cleared; it resolves once it stays clear for settle_minutes",
+            "format": "date-time",
+            "type": "string"
+          },
           "command": {
             "examples": [
               "dock release show 8 -p shop -e production -s web"
             ],
             "type": "string"
+          },
+          "count": {
+            "examples": [
+              1
+            ],
+            "format": "int64",
+            "type": "integer"
           },
           "environment": {
             "type": "string"
@@ -815,7 +827,8 @@
           "severity",
           "title",
           "opened_at",
-          "updated_at"
+          "updated_at",
+          "count"
         ],
         "type": "object"
       },
@@ -9743,6 +9756,63 @@
         ],
         "type": "object"
       },
+      "Heartbeat": {
+        "additionalProperties": false,
+        "properties": {
+          "failures": {
+            "description": "Pings that failed in a row; an alert opens at three",
+            "format": "int64",
+            "type": "integer"
+          },
+          "last_error": {
+            "description": "Why the last ping failed; empty when it went through",
+            "type": "string"
+          },
+          "last_error_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "last_sent_at": {
+            "description": "When a ping last went through, since the control plane started",
+            "format": "date-time",
+            "type": "string"
+          },
+          "minutes": {
+            "description": "How often a ping is sent, in minutes",
+            "format": "int64",
+            "type": "integer"
+          },
+          "target": {
+            "description": "The URL's scheme and host; the rest of it is a secret and never returned",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "minutes",
+          "failures"
+        ],
+        "type": "object"
+      },
+      "HeartbeatTest": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "heartbeat": {
+            "$ref": "#/components/schemas/Heartbeat"
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "heartbeat",
+          "ok"
+        ],
+        "type": "object"
+      },
       "IgnoreVulnRequest": {
         "additionalProperties": false,
         "properties": {
@@ -16140,6 +16210,27 @@
         },
         "type": "object"
       },
+      "SetHeartbeatRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "minutes": {
+            "description": "How often, in minutes (1 to 60). Default 5",
+            "format": "int64",
+            "maximum": 60,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "url": {
+            "description": "An http:// or https:// URL to send a GET to. Stored encrypted, never returned",
+            "maxLength": 2048,
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      },
       "SetJobEnabledRequest": {
         "additionalProperties": false,
         "properties": {
@@ -22432,6 +22523,445 @@
           }
         ],
         "summary": "Send a test alert",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/api/v1/alerts/heartbeat": {
+      "delete": {
+        "description": "Pings stop: remove the check at its receiver too, or it raises the alarm. Operators.",
+        "operationId": "remove-heartbeat",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Remove the outside heartbeat",
+        "tags": [
+          "alerts"
+        ]
+      },
+      "get": {
+        "description": "The URL's scheme and host, the interval, and how the last pings went. 404 while none is set. The URL itself is never returned. Operators.",
+        "operationId": "get-heartbeat",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Heartbeat"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Show the outside heartbeat",
+        "tags": [
+          "alerts"
+        ]
+      },
+      "put": {
+        "description": "While the control plane runs it sends a GET to the URL every interval, so a monitor outside Dock raises the alarm when the pings stop. Three failed pings in a row open a platform alert. Replaces the heartbeat there was. Operators.",
+        "operationId": "set-heartbeat",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetHeartbeatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Heartbeat"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Set the outside heartbeat",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/api/v1/alerts/heartbeat/test": {
+      "post": {
+        "description": "Sends one ping and says whether it went through; the outcome is recorded like any ping's. Operators.",
+        "operationId": "test-heartbeat",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeartbeatTest"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Send a heartbeat ping now",
         "tags": [
           "alerts"
         ]

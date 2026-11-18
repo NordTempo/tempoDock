@@ -199,7 +199,7 @@ func (c *Core) loadUptime(ctx context.Context, old uptimeHeap, now time.Time) (u
 	}
 	c.alerts.mu.Unlock()
 	for _, key := range stale {
-		c.signalAlert(ctx, alertSignal{Key: key, Resolve: true})
+		c.signalAlert(ctx, alertSignal{Key: key, Resolve: true, Gone: true})
 	}
 	return h, servers, nil
 }

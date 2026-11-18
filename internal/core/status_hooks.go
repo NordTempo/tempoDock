@@ -232,7 +232,7 @@ func (c *Core) statusUpdatePosted(ctx context.Context, p store.StatusPage, inc s
 // queueHook queues a post for a hook and starts its sender if it isn't
 // running, through the alert engine's delivery queue.
 func (c *Core) queueHook(id int64, post apitypes.StatusHookPost) {
-	start, full := c.alerts.hooks.add(id, hookDelivery{post: post})
+	start, full := c.alerts.hooks.add(id, hookDelivery{post: post}, false)
 	if full {
 		c.hookFailed(c.ctx, id, errors.New("too many updates waiting to be posted; this one was dropped"))
 		return

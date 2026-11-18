@@ -9,6 +9,7 @@ export const Route = createFileRoute("/_app/console/alerts")({
       queryClient.ensureQueryData(alertQueries.open("platform")),
       queryClient.ensureQueryData(alertQueries.all("platform")),
       queryClient.ensureQueryData(alertQueries.channels("platform")),
+      queryClient.ensureQueryData(alertQueries.heartbeat()),
     ]),
   component: () => <AlertsPage scope="platform" />,
 });

@@ -131,3 +131,4 @@ What we do.
 ## Consequences
 What gets easier, what gets harder.
 ```
+| [0097](0097-outside-heartbeat-and-calmer-alerts.md) | An outside heartbeat (Dock requests a URL while it runs, so a dead server is noticed) and calmer alerts: settling, counts, repeats, grouping per channel | accepted; email channels not grouped |

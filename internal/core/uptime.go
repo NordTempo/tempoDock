@@ -441,7 +441,7 @@ func (c *Core) RemoveUptimeCheck(ctx context.Context, a Actor, ref ServiceRef, i
 	if err := c.store.DeleteUptimeCheck(ctx, id); err != nil {
 		return err
 	}
-	c.signalAlert(ctx, alertSignal{Key: uptimeKey(id), Resolve: true})
+	c.signalAlert(ctx, alertSignal{Key: uptimeKey(id), Resolve: true, Gone: true})
 	c.audit(ctx, a, "uptime.remove", &ss.project, &ss.env, ss.String(), "removed uptime check "+strconv.FormatInt(id, 10)+" of "+row.Url)
 	c.kickUptime()
 	return nil
@@ -798,7 +798,7 @@ func (c *Core) dropUptimeChecks(ctx context.Context, ss svcScope, host string) {
 			c.log.Warn("uptime: drop checks of a removed domain", "check", r.ID, "err", err)
 			continue
 		}
-		c.signalAlert(ctx, alertSignal{Key: uptimeKey(r.ID), Resolve: true})
+		c.signalAlert(ctx, alertSignal{Key: uptimeKey(r.ID), Resolve: true, Gone: true})
 		dropped = true
 	}
 	if dropped {

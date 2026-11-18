@@ -4,7 +4,7 @@ import {
   useQuery,
   useSuspenseQuery,
 } from "@tanstack/react-query";
-import { api, body, done, list } from "../../api/client";
+import { ApiError, api, body, done, list } from "../../api/client";
 import type { components } from "../../api/schema";
 import { useAction } from "../../data/action";
 import { useSeesPlatform } from "../../data/queries";
@@ -20,6 +20,8 @@ export type Alert = Schemas["Alert"];
 export type AlertChannel = Schemas["AlertChannel"];
 export type NewAlertChannel = Schemas["CreateAlertChannelRequest"];
 export type Severity = Alert["severity"];
+/** The platform's outside heartbeat and how its last pings went (ADR 0097). */
+export type Heartbeat = Schemas["Heartbeat"];
 /** Which new vulnerabilities in live images alert (ADR 0074). */
 export type VulnAlerts = Schemas["VulnAlertSettings"]["alert"];
 /** Whose alerts: the current org's, or the platform's. */
@@ -39,9 +41,23 @@ export const alertKeys = {
   all: (scope: AlertScope) => ["alerts", scope, "all"] as const,
   channels: (scope: AlertScope) => ["alerts", scope, "channels"] as const,
   vulns: ["alerts", "org", "vulnerabilities"] as const,
+  heartbeat: ["alerts", "platform", "heartbeat"] as const,
 };
 
 export const alertQueries = {
+  /** The outside heartbeat; null when none is set (the API's 404). */
+  heartbeat: () =>
+    queryOptions({
+      queryKey: alertKeys.heartbeat,
+      queryFn: async (): Promise<Heartbeat | null> => {
+        try {
+          return await body(api.GET("/api/v1/alerts/heartbeat"));
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 404) return null;
+          throw err;
+        }
+      },
+    }),
   vulns: () =>
     queryOptions({
       queryKey: alertKeys.vulns,
@@ -104,6 +120,10 @@ export function usePlatformOpenAlerts(): Alert[] {
   );
 }
 
+/** The platform alert three failed heartbeat pings in a row open. */
+export const isHeartbeatAlert = (a: Alert) =>
+  a.kind === "connection_failed" && a.target?.connection === "heartbeat";
+
 const rank = (s: Severity) => (s === "critical" ? 0 : 1);
 
 /** Critical first, then newest first, as the API orders open alerts. */
@@ -121,6 +141,10 @@ export function applyAlertEvent(queryClient: QueryClient, alert: Alert) {
     const rest = list.filter((a) => a.id !== alert.id);
     return alert.resolved_at ? rest : [...rest, alert].sort(byUrgency);
   });
+  // The heartbeat's own alert opens and resolves with its pings: the
+  // console's status line (if open) reads how they went again.
+  if (isHeartbeatAlert(alert))
+    queryClient.invalidateQueries({ queryKey: alertKeys.heartbeat });
   queryClient.setQueryData<Alert[]>(alertKeys.all(scope), (list) =>
     list
       ? [alert, ...list.filter((a) => a.id !== alert.id)]
@@ -174,3 +198,29 @@ export const useTestAlertChannel = (scope: AlertScope) =>
       }),
     ),
   );
+
+export const useHeartbeat = () =>
+  useSuspenseQuery(alertQueries.heartbeat()).data;
+
+const useHeartbeatAction = <Vars, Data>(
+  mutationFn: (vars: Vars) => Promise<Data>,
+) => useAction(mutationFn, () => [alertKeys.heartbeat, ["audit"]]);
+
+/**
+ * Sets or replaces the heartbeat, pinging every `minutes`. The URL is a
+ * secret: `url` is read when the call is made, so it is never among the
+ * call's variables, which the mutation cache keeps.
+ */
+export const useSetHeartbeat = (url: () => string) =>
+  useHeartbeatAction((minutes: number) =>
+    body(
+      api.PUT("/api/v1/alerts/heartbeat", { body: { url: url(), minutes } }),
+    ),
+  );
+
+export const useRemoveHeartbeat = () =>
+  useHeartbeatAction(() => done(api.DELETE("/api/v1/alerts/heartbeat")));
+
+/** Sends a ping now and says how it went. */
+export const useTestHeartbeat = () =>
+  useHeartbeatAction(() => body(api.POST("/api/v1/alerts/heartbeat/test")));

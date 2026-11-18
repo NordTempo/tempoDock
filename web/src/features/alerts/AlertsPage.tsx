@@ -3,7 +3,7 @@ import { createContext, useContext, useState } from "react";
 import { api, list } from "../../api/client";
 import { useIsAdmin } from "../../data/queries";
 import { ErrorBlock } from "../../ui/ErrorBlock";
-import { since } from "../../ui/format";
+import { ago, since } from "../../ui/format";
 import {
   Act,
   Button,
@@ -36,6 +36,7 @@ import {
   useVulnAlerts,
   type VulnAlerts,
 } from "./data";
+import { Heartbeat } from "./Heartbeat";
 import { AlertLink, alertText } from "./source";
 
 // Alerts (ADR 0062): open alerts (worst first), recent history, and the
@@ -154,7 +155,7 @@ export function AlertLists({
 /**
  * Where alerts go and what alerts: an org's vulnerability setting
  * (ADR 0074) and, for its admins, its channels; the platform's channels
- * on the console.
+ * and its outside heartbeat (ADR 0097) on the console.
  */
 export function AlertSettings({ scope }: { scope: AlertScope }) {
   // An org's channels are for its admins; operators manage the platform's.
@@ -163,6 +164,7 @@ export function AlertSettings({ scope }: { scope: AlertScope }) {
     <Scope.Provider value={scope}>
       {scope === "org" && <VulnerabilityAlerts admin={admin} />}
       {(scope === "platform" || admin) && <Channels />}
+      {scope === "platform" && <Heartbeat />}
     </Scope.Provider>
   );
 }
@@ -295,7 +297,15 @@ function AlertRow({
       </td>
       <td className="w-full min-w-[240px] py-2 whitespace-normal">
         {a.title}
+        {a.count > 1 && <span className="text-mut"> {a.count} times</span>}
         {text && <span className="block text-mut">{text}</span>}
+        {/* Settling (ADR 0097): the condition cleared, and the alert
+            resolves once it has stayed clear. */}
+        {a.cleared_at && !a.resolved_at && (
+          <span className="block text-ok">
+            Clear since {ago(a.cleared_at)}, resolves once it stays clear
+          </span>
+        )}
       </td>
       <td className="py-2 pr-7 font-mono">{where(a)}</td>
       <td className="py-2 whitespace-nowrap text-mut">

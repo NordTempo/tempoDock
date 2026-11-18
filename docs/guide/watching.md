@@ -69,10 +69,18 @@ for about 20 minutes, waiting longer when Slack asks (`Retry-After`); an
 answer that can't change, like Slack's 404 for a removed webhook, isn't
 retried and marks the channel broken: its error says what Slack said,
 and an alert stays open until a test or a delivery works again, or the
-channel is removed. Not done yet: alerts aren't batched, throttled or
-damped when they flap, a resolution dropped while a channel is backed
-up leaves Slack showing the alert open, and a service that fails to
-deploy again while its alert is open sends nothing new.
+channel is removed. Alerts are kept calm ([ADR
+0097](../decisions/0097-outside-heartbeat-and-calmer-alerts.md)): an
+unhealthy, uptime down, crash loop or server offline alert resolves only
+once its condition has stayed clear for `[alerts] settle_minutes`
+(3 by default), so a service that flaps sends one message when it opens
+and one when it has been quiet, saying how many times it happened. A
+deploy or backup that fails again while its alert is open sends
+`repeated` with the count. A webhook or Slack channel waits 10 seconds
+and sends what arrived together: Slack gets one message listing each
+alert, a webhook one POST per notification. A backed-up channel drops
+new alerts past 32 waiting, never a resolution. Email channels aren't
+grouped yet: one mail per notification.
 
 ```sh
 dock alerts                                                      # open ones
@@ -81,6 +89,38 @@ dock alerts channel add pager --webhook https://hooks.example.com/dock --min-sev
 dock alerts channel test team
 dock alerts resolve 31                                           # by hand
 ```
+
+### Outside heartbeat
+
+Every alert is sent by the control plane, so the one failure that takes
+the control plane down sends nothing. The heartbeat covers it: while the
+control plane runs, it sends a GET to one URL every few minutes. Point it
+at a dead man's switch, a monitor outside this server that raises the
+alarm when the pings stop. Any service or endpoint that expects a
+regular GET works.
+
+```sh
+dock alerts heartbeat set https://monitor.example.com/ping/3f2a   # every 5 minutes
+dock alerts heartbeat set - --every 2 < heartbeat-url             # the URL from stdin
+dock alerts heartbeat                                             # how the last pings went
+dock alerts heartbeat test                                        # send one now
+dock alerts heartbeat remove
+```
+
+Operators set it. The URL names the check, so it is stored encrypted and
+only its scheme and host are shown. Set the monitor's grace period to a
+few intervals: a ping that fails isn't retried, the next interval is the
+retry, and a control plane restart skips at most one. The address may be
+private (a monitor on your own network); redirects aren't followed.
+Three failed pings in a row open a platform alert, which resolves with
+the next ping that works. A control plane whose database is stuck stops
+pinging too.
+
+A server other than the control plane can't send alerts itself. When it
+has lost the control plane for five minutes it says so once in its log
+(`journalctl -u dock`), at error level, and once more when the link is
+back, with how long it was gone. Its apps keep running meanwhile. A
+server that dies is what the server offline alert is for.
 
 ## Analytics
 
