@@ -99,14 +99,22 @@ func TestHeartbeatAlertAfterThreeFailures(t *testing.T) {
 	}
 	set()
 	at := time.Now()
+	// fail ticks until n pings in a row have failed. The harness's own
+	// tick may have sent one of them before the test's first tick (once
+	// the test's run ahead of the clock, none is due for it), so it
+	// counts the outcomes rather than its ticks.
 	fail := func(n int) {
 		t.Helper()
-		for i := 1; i <= n; i++ {
+		for {
+			failures, _ := h.heartbeatState()
+			if failures >= n && !h.heartbeatSending() {
+				return
+			}
 			at = at.Add(time.Minute)
 			h.c.heartbeatTick(h.ctx, at)
 			eventually(t, "the failed ping's outcome", func() bool {
-				failures, _ := h.heartbeatState()
-				return failures >= i && !h.heartbeatSending()
+				now, _ := h.heartbeatState()
+				return now > failures && !h.heartbeatSending()
 			})
 		}
 	}
