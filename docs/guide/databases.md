@@ -193,7 +193,12 @@ dock backup pitr off db             # restarts db without archiving
   backup move (`dock backup move`) starts the window over in the new
   storage.
 - **Turning it off** keeps the window until it ages out with the daily
-  backups.
+  backups; it ends with the database's last commit before the restart.
+  Turned on again, the window starts over with a new base backup: times
+  before it was off and after it came back restore, a time in between is
+  refused with the gap's ends.
+- **A stopped database** keeps its window, up to its last commit, and
+  restores into a new service like a running one.
 
 ### When archiving stalls
 
