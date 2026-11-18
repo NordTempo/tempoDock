@@ -256,7 +256,7 @@ function AddDrain({ env, onClose }: { env: EnvRef; onClose: () => void }) {
               type="password"
               value={token}
               onChange={(e) => setToken(e.target.value)}
-              autoComplete="off"
+              autoComplete="new-password"
               className={`${field} font-mono`}
             />
           </label>
