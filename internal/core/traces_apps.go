@@ -123,12 +123,15 @@ func (c *Core) otlpPort(serverID int64) (int, bool) {
 // traced from the edge (node.Route.Trace): every service with a live
 // release (the active one, or the one override switches to) while tracing
 // is on, but those whose release sends its traces elsewhere, whose own
-// backend would get spans with a parent it never sees, and the held ones:
-// those a server forwards for another (traced there) and those a move
-// holds, which it forwards next. A held route that stops being traced at
-// the switch would change Caddy's config, and the reload fails every
-// request it holds.
-func (c *Core) edgeTraced(ctx context.Context, rows []store.ListRoutableDomainsRow, skip map[int64]bool, override map[int64]routeOverride) (map[int64]string, error) {
+// backend would get spans with a parent it never sees. A route a move
+// holds, and one a server forwards after it, is traced like any other,
+// with the token of the service's active release: a route that stopped
+// being traced when its hold starts would change Caddy's config, and the
+// reload ends the requests on idle keep-alive connections (a POST among
+// them is never retried). Only whether a route is traced is in Caddy's
+// config, not its token, so the release changing at the switch reloads
+// nothing either.
+func (c *Core) edgeTraced(ctx context.Context, rows []store.ListRoutableDomainsRow, override map[int64]routeOverride) (map[int64]string, error) {
 	out := map[int64]string{}
 	if cl, _ := c.tracesClient(); cl == nil {
 		return out, nil
@@ -141,7 +144,7 @@ func (c *Core) edgeTraced(ctx context.Context, rows []store.ListRoutableDomainsR
 	}
 	var ids []int64
 	for _, d := range rows {
-		if live(d) != 0 && !skip[d.ServiceID] {
+		if live(d) != 0 {
 			ids = append(ids, live(d))
 		}
 	}
@@ -151,7 +154,7 @@ func (c *Core) edgeTraced(ctx context.Context, rows []store.ListRoutableDomainsR
 	}
 	for _, d := range rows {
 		rel, ok := rels[live(d)]
-		if !ok || skip[d.ServiceID] || out[d.ServiceID] != "" {
+		if !ok || out[d.ServiceID] != "" {
 			continue
 		}
 		cfg, err := c.openConfig(rel)

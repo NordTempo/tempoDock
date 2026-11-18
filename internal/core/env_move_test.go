@@ -533,7 +533,11 @@ func TestMoveWithoutDowntime(t *testing.T) {
 // switch are the ones it held requests with, so Caddy has nothing to
 // reload: a reload ends every held request with a 502. The moved service
 // keeps its place before another service on the source, and its route
-// isn't traced on either side of the switch.
+// is traced before the hold, in it and after the switch alike: a hold
+// that changed the config would reload Caddy too, and that ends requests
+// on idle keep-alive connections. Only the token differs once the
+// service's release is the one on its new server, and tokens aren't in
+// Caddy's config.
 func TestMoveSwitchKeepsTheSourcesRoutes(t *testing.T) {
 	p, lab, _, _, _ := movePool(t)
 	p.mustEnv("shop", "qa", "", "homelab")
@@ -545,6 +549,20 @@ func TestMoveSwitchKeepsTheSourcesRoutes(t *testing.T) {
 	if _, err := p.c.EnableTraces(p.ctx, testSystem); err != nil {
 		t.Fatal(err)
 	}
+	// Whether a route is traced is in Caddy's config, its token isn't.
+	shape := func(routes []node.Route) string {
+		routes = slices.Clone(routes)
+		for i := range routes {
+			if routes[i].Trace != "" {
+				routes[i].Trace = "traced"
+			}
+			// The hold itself is an upstream file, read per request
+			// (ADR 0091), and the hold port is the route's from then on.
+			routes[i].Hold, routes[i].Upstream = false, ""
+		}
+		return fmt.Sprint(routes)
+	}
+	before := lab.Routes()
 	var inHold []node.Route
 	p.c.moves.hook = func(_ int64, s apitypes.MoveStep) {
 		if s == apitypes.MoveCopy {
@@ -559,8 +577,21 @@ func TestMoveSwitchKeepsTheSourcesRoutes(t *testing.T) {
 		t.Fatalf("move = %+v", m)
 	}
 	after := lab.Routes()
-	if i := slices.IndexFunc(after, func(r node.Route) bool { return slices.Contains(r.Hostnames, "shop.example.com") }); i < 0 || !after[i].Hold || after[i].Trace != "" {
+	if i := slices.IndexFunc(after, func(r node.Route) bool { return slices.Contains(r.Hostnames, "shop.example.com") }); i < 0 || !after[i].Hold || after[i].Trace == "" {
 		t.Fatalf("homelab's forwarded route: %+v", after)
+	}
+	if shape(before) != shape(inHold) {
+		t.Errorf("homelab's routes changed when the hold began:\nbefore      %+v\nin the hold %+v", before, inHold)
+	}
+	for i := range inHold {
+		if inHold[i].Trace != "" {
+			inHold[i].Trace = "traced"
+		}
+	}
+	for i := range after {
+		if after[i].Trace != "" {
+			after[i].Trace = "traced"
+		}
 	}
 	if fmt.Sprint(inHold) != fmt.Sprint(after) {
 		t.Errorf("homelab's routes changed at the switch:\nin the hold %+v\nafter       %+v", inHold, after)
