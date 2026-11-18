@@ -6,6 +6,12 @@
 # shouldn't need, adds a domain, installs again over the running app, and
 # uninstalls (keeping data, then purging). Each step is timed; the install's messages are checked too.
 #
+# Then the line the README really gives, site/public/install.sh (what
+# dock.nordtempo.com/install.sh serves): it takes the latest published
+# release from GitHub, whatever this checkout built, so on every server it
+# only has to vouch for that release and reach its install.sh (--help), and
+# refuse it with another key; on the first server it installs it, too.
+#
 #   make web && make build && e2e/fresh-install.sh               # every distribution
 #   e2e/fresh-install.sh ubuntu:24.04                             # one
 #   E2E_RELEASE_DIR=dist DOCK_TRUSTED_KEYS=... e2e/fresh-install.sh   # a built release
@@ -15,7 +21,8 @@
 # bin/dock and deploy/, signed with a throwaway key the install is told to
 # trust (DOCK_TRUSTED_KEYS), so the signature check runs as for a real one.
 # The CLI's own installer (install-cli.sh) installs the latest published
-# release from GitHub.
+# release from GitHub, and so does the site's script (five requests to
+# GitHub's API a run, of the 60 an address has per hour).
 #
 # Servers are privileged systemd containers (e2e/vm/bare.Dockerfile) in
 # slot E2E_FRESH_SLOT (default e2e-fresh, subnet 10.250.255.0/24; set
@@ -187,6 +194,51 @@ purge() {
 	install --uninstall --purge && ! on test -e /var/lib/dock && ! on id dock >/dev/null 2>&1
 }
 
+# download_fails: with github.com out of reach, Caddy's download fails
+# before anything of Dock's is on the server, and the message says what to do.
+download_fails() {
+	local rc=0
+	on sh -c 'echo "127.0.0.1 github.com" >>/etc/hosts'
+	install --yes 2>/dev/null || rc=$?
+	on sh -c 'grep -v " github.com$" /etc/hosts >/root/hosts; cat /root/hosts >/etc/hosts'
+	((rc != 0)) && has "could not download Caddy .* nothing of Dock's was changed. Check that this server reaches github.com" &&
+		! on test -e /usr/local/bin/dock && ! on id dock >/dev/null 2>&1
+}
+
+# site_install SCRIPT [ARGS...] pipes SCRIPT, the site's install.sh or a
+# copy of it, into bash on the server; output in $STATE/$NAME-site.log. It
+# runs the latest published release's install.sh, so no DOCK_RELEASE_DIR.
+site_install() {
+	local script=$1
+	shift
+	docker exec -i -e PUBLIC_IP="$IP" -e DISABLE_TLS=true -e BASE_DOMAIN="$NAME.test" -e DOCK_ADMIN_EMAIL=you@example.com \
+		"$C" bash -s -- "$@" <"$script" >"$STATE/$NAME-site.log" 2>&1
+}
+
+# site_script: the site's script runs the release's install.sh only once it
+# has checked it. With another release key in a copy, the published release
+# is refused and nothing runs; as it is, --help gets through to install.sh.
+site_script() {
+	sed "s|^release_keys=.*|release_keys='bc6c45a08a65c136 $(head -c 32 /dev/zero | base64)'|" site/public/install.sh >"$STATE/other-key.sh"
+	! site_install "$STATE/other-key.sh" --help && grep -q "isn't signed by a Dock release key" "$STATE/$NAME-site.log" &&
+		! grep -q 'Installs Tempo Dock' "$STATE/$NAME-site.log" || { tail -5 "$STATE/$NAME-site.log" >&2; return 1; }
+	site_install site/public/install.sh --help && grep -q '^Installs Tempo Dock on a Linux server' "$STATE/$NAME-site.log" ||
+		{ tail -5 "$STATE/$NAME-site.log" >&2; return 1; }
+}
+
+# site_latest installs with the site's script alone, as a stranger does:
+# the latest published release, its console answering, then all of it
+# removed the same way.
+site_latest() {
+	local v latest
+	latest=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/NordTempo/tempoDock/releases/latest) || return 1
+	site_install site/public/install.sh --yes || { tail -20 "$STATE/$NAME-site.log" >&2; return 1; }
+	v=$(sed -n 's/^==> download dock \(v[^ ]*\)$/\1/p' "$STATE/$NAME-site.log")
+	[[ -n $v && $v == "${latest##*/}" ]] || { echo "installed \"$v\", the latest release is ${latest##*/}" >&2; return 1; }
+	grep -q "^Tempo Dock $v is installed" "$STATE/$NAME-site.log" && console || { tail -20 "$STATE/$NAME-site.log" >&2; return 1; }
+	site_install site/public/install.sh --uninstall --purge && ! on test -e /var/lib/dock && ! on test -e /usr/local/bin/dock
+}
+
 # bare_image IMAGE TAG makes e2e-bare:TAG, the distribution with systemd.
 # One built in the last week is used as it is: every build asks Docker Hub
 # for the base, anonymously, and a night of scenarios has spent its pull
@@ -225,7 +277,10 @@ for image in "${IMAGES[@]}"; do
 		step "$image: install again changes nothing, the app keeps serving" rerun &&
 		step "$image: uninstall keeps the data" uninstall_keep &&
 		step "$image: install again brings the projects back" reinstall &&
-		step "$image: uninstall --purge leaves nothing" purge
+		step "$image: uninstall --purge leaves nothing" purge &&
+		step "$image: a download that fails changes nothing and says what to do" download_fails &&
+		step "$image: the site's install.sh checks the release before it runs its script" site_script &&
+		{ ((i > 1)) || step "$image: the site's install.sh installs the latest release, and removes it" site_latest; }
 	[[ ${E2E_KEEP:-} == 1 ]] || docker rm -f -v "$C" >/dev/null
 done
 [[ ${E2E_KEEP:-} == 1 ]] || docker network rm "$NET" >/dev/null 2>&1
