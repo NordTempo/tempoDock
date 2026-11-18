@@ -461,14 +461,28 @@ checkpoint. Operators only.`,
 			if err != nil {
 				return err
 			}
+			// Off when it is off already changes nothing and restarts
+			// nothing, so it is read first and said so. A platform token
+			// can't read an org's backups: then what it was isn't known.
+			wasOff, known := false, false
+			if !*req.Enabled {
+				if cur, err := get[apitypes.ServiceBackups](cmd.Context(), s, t.servicePath()+"/backups"); err == nil {
+					wasOff, known = cur.PITR == nil || !cur.PITR.Enabled, true
+				}
+			}
 			b, err := send[apitypes.ServiceBackups](cmd.Context(), s, http.MethodPut, t.servicePath()+"/backups/pitr", req)
 			if err != nil {
 				return deployInProgress(err, t)
 			}
 			return g.io.Print(b, func() error {
-				if *req.Enabled {
+				switch {
+				case *req.Enabled:
 					g.io.Successf("Point-in-time restore of %s is on, %d days; it restarts once and takes a base backup", t.Service, b.PITR.Days)
-				} else {
+				case wasOff:
+					g.io.Successf("Point-in-time restore of %s was off already; nothing changed and it was not restarted", t.Service)
+				case !known:
+					g.io.Successf("Point-in-time restore of %s is off; if it was on, it restarts without archiving, and its window ages out", t.Service)
+				default:
 					g.io.Successf("Point-in-time restore of %s is off; it restarts without archiving, and its window ages out", t.Service)
 				}
 				return nil

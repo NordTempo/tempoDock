@@ -338,7 +338,9 @@ func (c *Core) removeArchiver(ctx context.Context, ss svcScope) {
 // changes its window (ADR 0093). Operators, like schedules: it costs
 // storage. Turning it on or off restarts the database once (a restart
 // release with or without the archive settings); on, it starts the
-// archiver first and takes a base backup once the database runs.
+// archiver first and takes a base backup once the database runs. Off
+// when it is off already restarts nothing, and changes nothing for a
+// database that never had it.
 func (c *Core) SetPITR(ctx context.Context, a Actor, ref ServiceRef, req apitypes.SetPITRRequest) (apitypes.ServiceBackups, error) {
 	if err := a.requirePlatform(BackupsManage, "changing point-in-time restore"); err != nil {
 		return apitypes.ServiceBackups{}, err
@@ -376,6 +378,11 @@ func (c *Core) SetPITR(ctx context.Context, a Actor, ref ServiceRef, req apitype
 		next.Days = int64(*req.Days)
 	}
 	turnOn, turnOff := next.Enabled && !cur.Enabled, cur.Enabled && !next.Enabled
+	if !exists && !next.Enabled {
+		// Off for a database that never had it: nothing to record, restart
+		// or audit.
+		return c.serviceBackups(ctx, ss)
+	}
 	if turnOn {
 		if why := pitrUnavailable(ss, set); why != "" {
 			return apitypes.ServiceBackups{}, invalid("%s: %s", ss, why)
