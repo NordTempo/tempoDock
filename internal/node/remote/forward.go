@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -54,7 +56,7 @@ func (c *Client) Forward(ctx context.Context, port int) (net.Listener, error) {
 		cancel()
 		return nil, err
 	}
-	return &linkListener{s: s, port: port, body: body, lines: bufio.NewReader(body), cancel: cancel,
+	return &linkListener{s: s, log: c.hub.log, port: port, body: body, lines: bufio.NewReader(body), cancel: cancel,
 		addr: linkAddr(fmt.Sprintf("%s/127.0.0.1:%d", s.name(), port))}, nil
 }
 
@@ -68,35 +70,58 @@ type linkListener struct {
 	addr   linkAddr
 	once   sync.Once
 	mu     sync.Mutex // one Accept at a time reads lines
+	log    *slog.Logger
+	// warned is when a refused connection was last logged (Unix seconds).
+	warned atomic.Int64
 }
 
-// Accept waits for the node's next connection and claims it.
+// warnRefused logs that the listener closed a connection at the server's
+// cap, at most once a minute: under load every new connection is one.
+func (l *linkListener) warnRefused() {
+	now := time.Now().Unix()
+	if last := l.warned.Load(); now-last >= 60 && l.warned.CompareAndSwap(last, now) {
+		l.log.Warn("forwarded connection closed", "server", l.s.name(), "port", l.port, "err", errTooManyDials)
+	}
+}
+
+// Accept waits for the node's next connection and claims it. Only the
+// end of the listen call is an error: a connection that can't be claimed
+// (the server is at its cap of open connections, or the node no longer
+// holds it) is dropped and the next one waited for, so one refused
+// connection never ends the listener for the ones after it.
 func (l *linkListener) Accept() (net.Conn, error) {
-	l.mu.Lock()
-	line, err := l.lines.ReadString('\n')
-	l.mu.Unlock()
-	if err != nil {
-		if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
-			return nil, net.ErrClosed
+	for {
+		l.mu.Lock()
+		line, err := l.lines.ReadString('\n')
+		l.mu.Unlock()
+		if err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+				return nil, net.ErrClosed
+			}
+			return nil, offline(context.Background(), l.s.name(), err)
 		}
-		return nil, offline(context.Background(), l.s.name(), err)
+		id, err := strconv.ParseUint(line[:len(line)-1], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("server %s: bad connection id %q", l.s.name(), line)
+		}
+		// Over the cap the connection is still claimed, to close it at
+		// once: left alone, its client would wait out the node's claim
+		// timeout for nothing.
+		over := l.s.dials.Add(1) > maxDials
+		ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
+		conn, err := openConn(ctx, l.s, opForwardAccept, forwardAcceptRequest{Port: l.port, ID: id}, string(l.addr), func() { l.s.dials.Add(-1) })
+		cancel()
+		if err != nil {
+			l.s.dials.Add(-1)
+			continue
+		}
+		if over {
+			_ = conn.Close()
+			l.warnRefused()
+			continue
+		}
+		return conn, nil
 	}
-	id, err := strconv.ParseUint(line[:len(line)-1], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("server %s: bad connection id %q", l.s.name(), line)
-	}
-	if l.s.dials.Add(1) > maxDials {
-		l.s.dials.Add(-1)
-		return nil, fmt.Errorf("server %s: %w", l.s.name(), errTooManyDials)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
-	defer cancel()
-	conn, err := openConn(ctx, l.s, opForwardAccept, forwardAcceptRequest{Port: l.port, ID: id}, string(l.addr), func() { l.s.dials.Add(-1) })
-	if err != nil {
-		l.s.dials.Add(-1)
-		return nil, err
-	}
-	return conn, nil
 }
 
 // Close ends the listen call: the node stops listening.

@@ -131,6 +131,9 @@ func (c *Core) serveForward(k forwardKey, ln net.Listener, svcID int64) {
 	stop := context.AfterFunc(c.ctx, func() { _ = ln.Close() })
 	defer stop()
 	defer func() {
+		// Whatever ended it, the server stops listening: a port nobody
+		// accepts from would take connections and leave them waiting.
+		_ = ln.Close()
 		c.fwd.mu.Lock()
 		if c.fwd.open[k] == ln {
 			delete(c.fwd.open, k)
