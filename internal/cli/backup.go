@@ -28,10 +28,12 @@ func newBackupCmd(g *globals) *cobra.Command {
 with their own tool (pg_dump, Redis snapshots), other volumes file by file.
 Until they are moved to a bucket (dock backup move) backups stay on each
 server, not off-box. Restores create a new service; the live one is never
-touched.`,
+touched. Once a week the repositories are checked and every template database
+is restored once as a drill (dock backup check, dock backup drill).`,
 	})
 	cmd.AddCommand(newBackupListCmd(g), newBackupLogCmd(g), newBackupRunCmd(g), newBackupRestoreCmd(g),
-		newBackupScheduleCmd(g), newBackupPITRCmd(g), newBackupStatusCmd(g), newBackupConfigureCmd(g), newBackupMoveCmd(g))
+		newBackupScheduleCmd(g), newBackupPITRCmd(g), newBackupStatusCmd(g), newBackupConfigureCmd(g), newBackupMoveCmd(g),
+		newBackupCheckCmd(g), newBackupDrillCmd(g))
 	return cmd
 }
 
@@ -111,7 +113,12 @@ func printBackups(g *globals, b apitypes.ServiceBackups) error {
 	if b.OffBox {
 		where = "off-box"
 	}
-	if err := g.io.Fields("service", b.Service, "method", backupMethod[b.Kind], "to", where, "schedule", scheduleText(b.Schedule)); err != nil {
+	drillNext := b.NextCheckAt
+	if !b.Restorable {
+		drillNext = nil // volume backups have no drill
+	}
+	if err := g.io.Fields("service", b.Service, "method", backupMethod[b.Kind], "to", where, "schedule", scheduleText(b.Schedule),
+		"repository check", checkText(b.Check, b.NextCheckAt, "check"), "restore drill", checkText(b.Drill, drillNext, "drill")); err != nil {
 		return err
 	}
 	if b.Warning != "" {
@@ -131,6 +138,47 @@ func printBackups(g *globals, b apitypes.ServiceBackups) error {
 			sizeText(r), r.Repository, runNote(r))
 	}
 	return tb.Flush()
+}
+
+// checkText is a repository check's or restore drill's line in `dock
+// backup list` (ADR 0096): how the latest one went and when, or, when
+// none ran yet, when the first one (what: "check" or "drill") is due.
+// Empty when there is neither, which leaves the line out.
+func checkText(c *apitypes.BackupCheck, next *time.Time, what string) string {
+	if c == nil {
+		if next == nil {
+			return ""
+		}
+		return "first " + what + " " + next.Format("Mon 15:04 MST") // the control plane's zone, as its hour
+	}
+	when, note := c.StartedAt, c.Detail
+	if c.FinishedAt != nil {
+		when = *c.FinishedAt
+	}
+	var out string
+	switch c.Status {
+	case apitypes.BackupRunning:
+		return "running since " + ago(c.StartedAt)
+	case apitypes.BackupSucceeded:
+		out = "passed " + ago(when)
+	case apitypes.BackupFailed:
+		out, note = "failed "+ago(when), c.Error
+	default:
+		out = string(c.Status) + " " + ago(when)
+	}
+	if note != "" {
+		out += ": " + note
+	}
+	return out
+}
+
+// checkTarget names what a repository check read: the repository, and
+// the server holding a local one.
+func checkTarget(c apitypes.BackupCheck) string {
+	if c.Server == "" {
+		return c.Repository
+	}
+	return c.Repository + " on " + c.Server
 }
 
 func scheduleText(s apitypes.BackupSchedule) string {
@@ -582,7 +630,7 @@ func printBackupSettings(g *globals, set apitypes.BackupSettings) error {
 		"schedule", fmt.Sprintf("daily at %02d:00 %s", set.Hour, set.TimeZone),
 		"restic", set.ResticImage,
 	}
-	kv = append(kv, "control plane", controlPlaneText(set.ControlPlane))
+	kv = append(kv, "control plane", controlPlaneText(set.ControlPlane), "weekly checks", weeklyChecksText(set))
 	if set.Password != "" {
 		kv = append(kv, "password", set.Password)
 	}
@@ -620,10 +668,181 @@ func printBackupSettings(g *globals, set apitypes.BackupSettings) error {
 			return err
 		}
 	}
+	if len(set.Checks) > 0 {
+		t := g.io.Table("checked", "server", "trigger", "result")
+		for _, c := range set.Checks {
+			t.Row(c.Repository, dash(c.Server), c.Trigger, checkText(&c, nil, "check"))
+		}
+		if err := t.Flush(); err != nil {
+			return err
+		}
+	}
 	if !set.OffBox {
 		g.io.Warnf("Backups are not off-box: losing a server loses its backups. Add a bucket with `dock storage add`, then `dock backup move --storage <name>`.")
 	}
 	return nil
+}
+
+// weeklyChecksText is the weekly checks' line in `dock backup status`:
+// on with the next one, or off.
+func weeklyChecksText(set apitypes.BackupSettings) string {
+	switch {
+	case !set.Verify:
+		return "off (turn them on with `dock backup check --on`)"
+	case set.NextCheckAt != nil:
+		return "on, next " + set.NextCheckAt.Format("Mon 15:04 MST") // the control plane's zone, as its hour
+	}
+	return "on"
+}
+
+// newBackupCheckCmd is `dock backup check`: check every repository now,
+// or turn the weekly checks and drills on or off.
+func newBackupCheckCmd(g *globals) *cobra.Command {
+	var on, off, detach bool
+	cmd := &cobra.Command{
+		Use:   "check [--on|--off]",
+		Short: "Check that the backups can be read back, now (admin)",
+		Long: `Once a week, in the backup hour, Dock checks every repository holding backups
+(restic check, with 1 GB of its data read back) and restores every template
+database's newest snapshot once as a drill. A failure raises an alert.
+
+This runs the repository checks now and waits for them (--detach returns at
+once); ` + "`dock backup status`" + ` shows each repository's latest check. --off turns
+the weekly checks and drills off, --on back on. Operators only.`,
+		Example: `  dock backup check
+  dock backup check --off`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if on && off {
+				return usageError("pass --on or --off, not both", "")
+			}
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			ctx := cmd.Context()
+			if on || off {
+				set, err := send[apitypes.BackupSettings](ctx, s, http.MethodPut, apiPrefix+"/backup/checks", apitypes.UpdateBackupChecksRequest{Enabled: &on})
+				if err != nil {
+					return err
+				}
+				return g.io.Print(set, func() error {
+					g.io.Successf("Weekly backup checks and restore drills: %s", weeklyChecksText(set))
+					return nil
+				})
+			}
+			set, err := send[apitypes.BackupSettings](ctx, s, http.MethodPost, apiPrefix+"/backup/checks/run", nil)
+			if err != nil {
+				return err
+			}
+			if !detach {
+				g.io.Progressf("Checking the backup repositories...")
+				if set, err = waitChecks(ctx, s, set); err != nil {
+					return err
+				}
+			}
+			failed := 0
+			err = g.io.Print(set, func() error {
+				if len(set.Checks) == 0 {
+					g.io.Detail("No repository holds backups yet, so there is nothing to check. Run a backup with `dock backup run`.")
+				}
+				for _, c := range set.Checks {
+					switch c.Status {
+					case apitypes.BackupRunning:
+						g.io.Successf("Checking %s; see the result with `dock backup status`", checkTarget(c))
+					case apitypes.BackupFailed:
+						g.io.Failf("%s: check %s", checkTarget(c), checkText(&c, nil, "check"))
+					default:
+						g.io.Successf("%s: check %s", checkTarget(c), checkText(&c, nil, "check"))
+					}
+				}
+				return nil
+			})
+			for _, c := range set.Checks {
+				if c.Status == apitypes.BackupFailed {
+					failed++
+				}
+			}
+			if err == nil && failed > 0 {
+				return &output.Error{Exit: output.ExitError, Message: plural(failed, "repository check") + " failed",
+					Hint: "Backups in that repository may not restore. Fix what the error names, then run `dock backup check` again."}
+			}
+			return err
+		},
+	}
+	cmd.Flags().BoolVar(&on, "on", false, "turn the weekly checks and restore drills on")
+	cmd.Flags().BoolVar(&off, "off", false, "turn the weekly checks and restore drills off")
+	cmd.Flags().BoolVar(&detach, "detach", false, "return once the checks started")
+	return cmd
+}
+
+// waitChecks polls the backup settings until no repository check is
+// running, and answers with them.
+func waitChecks(ctx context.Context, s *session, set apitypes.BackupSettings) (apitypes.BackupSettings, error) {
+	running := func() bool {
+		for _, c := range set.Checks {
+			if c.Status == apitypes.BackupRunning {
+				return true
+			}
+		}
+		return false
+	}
+	tick := time.NewTicker(backupPoll)
+	defer tick.Stop()
+	for running() {
+		select {
+		case <-ctx.Done():
+			return set, ctx.Err()
+		case <-tick.C:
+		}
+		var err error
+		if set, err = get[apitypes.BackupSettings](ctx, s, apiPrefix+"/backup"); err != nil {
+			return set, err
+		}
+	}
+	return set, nil
+}
+
+// newBackupDrillCmd is `dock backup drill`: start one database's restore
+// drill now.
+func newBackupDrillCmd(g *globals) *cobra.Command {
+	var f targetFlags
+	cmd := &cobra.Command{
+		Use:   "drill [service]",
+		Short: "Run a database's restore drill now (admin)",
+		Long: `Restore a template database's newest snapshot into a throwaway service
+(<service>-drill), query it, and remove it again: proof that the backup
+restores. The service itself is never touched. Dock does this weekly for
+snapshots up to 2 GB; run by hand, a larger one is restored too, and needs
+that much free disk for a moment.
+
+It runs in the background; ` + "`dock backup list`" + ` shows the result. Operators only.`,
+		Example:           `  dock backup drill postgres`,
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeServiceArg,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			serviceArg(&f, args)
+			s, t, err := g.open(f, needService)
+			if err != nil {
+				return err
+			}
+			d, err := send[apitypes.BackupCheck](cmd.Context(), s, http.MethodPost, t.servicePath()+"/backups/drill", nil)
+			if err != nil {
+				return deployInProgress(err, t)
+			}
+			return g.io.Print(d, func() error {
+				if d.Status != apitypes.BackupRunning {
+					g.io.Successf("Restore drill of %s: %s", t.Service, checkText(&d, nil, "drill"))
+					return nil
+				}
+				g.io.Successf("Started restore drill %d of %s from snapshot %s", d.ID, t.Service, snapshotID(d.Snapshot))
+				g.io.Detail(fmt.Sprintf("It finishes in the background; `dock backup list %s` shows the result.", t.flags()))
+				return nil
+			})
+		},
+	}
+	f.add(cmd, needService)
+	return cmd
 }
 
 // newBackupMoveCmd is `dock backup move`.

@@ -59,6 +59,12 @@ type backupState struct {
 	// controlPlane is set while the control plane's own backup runs
 	// (backups_controlplane.go).
 	controlPlane bool
+	// started is when the daemon started: a repository or database never
+	// checked is due at the first backup hour after it (verifyDue).
+	started time.Time
+	// checkQueue holds the repository checks RunBackupChecks recorded as
+	// running, for the scheduler's next pass to run.
+	checkQueue []store.BackupCheck
 	// move is the latest move of the backups (backups_move.go); while it
 	// runs, no backup or restore starts. moveTo is its storage connection.
 	move   *apitypes.BackupMove
@@ -76,7 +82,7 @@ func (c *Core) backupsMoving() bool {
 }
 
 func newBackupState() backupState {
-	return backupState{kick: make(chan struct{}, 1), running: map[int64]bool{}, freed: make(chan struct{}), restic: map[int64]bool{}}
+	return backupState{kick: make(chan struct{}, 1), running: map[int64]bool{}, freed: make(chan struct{}), restic: map[int64]bool{}, started: now()}
 }
 
 // kickBackups wakes the backup scheduler; it never blocks.
@@ -137,7 +143,7 @@ func (c *Core) releaseService(serviceID int64) {
 func (c *Core) backupSettings(ctx context.Context) (store.BackupSetting, error) {
 	s, err := c.store.GetBackupSettings(ctx)
 	if store.IsNotFound(err) {
-		return store.BackupSetting{ID: 1, KeepDaily: 7, KeepWeekly: 4, KeepMonthly: 6, Hour: 3}, nil
+		return store.BackupSetting{ID: 1, KeepDaily: 7, KeepWeekly: 4, KeepMonthly: 6, Hour: 3, Verify: true}, nil
 	}
 	if err != nil || s.StorageID == nil {
 		return s, err
@@ -252,6 +258,9 @@ func (c *Core) GetBackupSettings(ctx context.Context, a Actor, reveal bool) (api
 	if err := c.withBackupStorage(ctx, a, &out, s, move); err != nil {
 		return out, err
 	}
+	if err := c.withBackupChecks(ctx, a, &out, s); err != nil {
+		return out, err
+	}
 	if reveal {
 		repo, err := c.repoOf(ctx, s)
 		if err != nil {
@@ -281,8 +290,8 @@ func localZone() string {
 func (c *Core) toBackupSettings(s store.BackupSetting) apitypes.BackupSettings {
 	out := apitypes.BackupSettings{
 		Repository: s.Repository, OffBox: s.Repository != "", HasCredentials: s.Credentials != nil || s.StorageID != nil,
-		Repositories: []apitypes.BackupRepository{},
-		KeepDaily:    int(s.KeepDaily), KeepWeekly: int(s.KeepWeekly), KeepMonthly: int(s.KeepMonthly),
+		Repositories: []apitypes.BackupRepository{}, Verify: s.Verify, Checks: []apitypes.BackupCheck{},
+		KeepDaily: int(s.KeepDaily), KeepWeekly: int(s.KeepWeekly), KeepMonthly: int(s.KeepMonthly),
 		Hour: int(s.Hour), TimeZone: localZone(), ResticImage: c.cfg.Backup.ResticImage, UpdatedBy: s.UpdatedBy,
 	}
 	if !s.UpdatedAt.IsZero() {
@@ -446,6 +455,9 @@ func (c *Core) serviceBackups(ctx context.Context, ss svcScope) (apitypes.Servic
 		return out, err
 	}
 	if out.PITR, err = c.pitrInfo(ctx, ss, set); err != nil {
+		return out, err
+	}
+	if err := c.withServiceChecks(ctx, ss, set, &out); err != nil {
 		return out, err
 	}
 	rows, err := c.store.ListServiceBackups(ctx, store.ListServiceBackupsParams{ServiceID: ss.svc.ID, Limit: serviceBackupRuns})
@@ -974,6 +986,12 @@ func (c *Core) failInterruptedBackups(ctx context.Context) error {
 	}
 	cp, err := c.store.FailRunningControlPlaneBackup(ctx, store.FailRunningControlPlaneBackupParams{Error: msg, FinishedAt: ptr(now())})
 	n += cp
+	if err == nil {
+		// Checks and drills too (ADR 0096): the next day's pass runs them again.
+		var checks int64
+		checks, err = c.store.FailRunningBackupChecks(ctx, store.FailRunningBackupChecksParams{Error: msg, FinishedAt: ptr(now())})
+		n += checks
+	}
 	if n > 0 {
 		c.log.Warn("backups interrupted by a restart marked failed", "count", n)
 	}

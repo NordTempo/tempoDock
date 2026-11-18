@@ -66,6 +66,50 @@ func (q *Queries) CreateBackup(ctx context.Context, arg CreateBackupParams) (Bac
 	return i, err
 }
 
+const createBackupCheck = `-- name: CreateBackupCheck :one
+INSERT INTO backup_checks (kind, server_id, service_id, repository, snapshot_id, trigger, status, started_at)
+VALUES (?, ?, ?, ?, ?, ?, 'running', ?)
+RETURNING id, kind, server_id, service_id, repository, snapshot_id, "trigger", status, error, detail, started_at, finished_at
+`
+
+type CreateBackupCheckParams struct {
+	Kind       string
+	ServerID   int64
+	ServiceID  *int64
+	Repository string
+	SnapshotID string
+	Trigger    string
+	StartedAt  time.Time
+}
+
+func (q *Queries) CreateBackupCheck(ctx context.Context, arg CreateBackupCheckParams) (BackupCheck, error) {
+	row := q.db.QueryRowContext(ctx, createBackupCheck,
+		arg.Kind,
+		arg.ServerID,
+		arg.ServiceID,
+		arg.Repository,
+		arg.SnapshotID,
+		arg.Trigger,
+		arg.StartedAt,
+	)
+	var i BackupCheck
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.ServerID,
+		&i.ServiceID,
+		&i.Repository,
+		&i.SnapshotID,
+		&i.Trigger,
+		&i.Status,
+		&i.Error,
+		&i.Detail,
+		&i.StartedAt,
+		&i.FinishedAt,
+	)
+	return i, err
+}
+
 const createBackupPassword = `-- name: CreateBackupPassword :exec
 INSERT INTO backup_settings (id, password, updated_at) VALUES (1, ?, ?)
 ON CONFLICT (id) DO NOTHING
@@ -153,6 +197,24 @@ func (q *Queries) DetachBaseBackupsWAL(ctx context.Context) error {
 	return err
 }
 
+const failRunningBackupChecks = `-- name: FailRunningBackupChecks :execrows
+UPDATE backup_checks SET status = 'failed', error = ?, finished_at = ? WHERE status = 'running'
+`
+
+type FailRunningBackupChecksParams struct {
+	Error      string
+	FinishedAt *time.Time
+}
+
+// At start-up: a check the last daemon left running never finished.
+func (q *Queries) FailRunningBackupChecks(ctx context.Context, arg FailRunningBackupChecksParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, failRunningBackupChecks, arg.Error, arg.FinishedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const failRunningBackups = `-- name: FailRunningBackups :execrows
 UPDATE backups SET status = 'failed', error = ?, finished_at = ? WHERE status = 'running'
 `
@@ -190,6 +252,29 @@ func (q *Queries) FinishBackup(ctx context.Context, arg FinishBackupParams) erro
 		arg.SnapshotID,
 		arg.SizeBytes,
 		arg.Error,
+		arg.FinishedAt,
+		arg.ID,
+	)
+	return err
+}
+
+const finishBackupCheck = `-- name: FinishBackupCheck :exec
+UPDATE backup_checks SET status = ?, error = ?, detail = ?, finished_at = ? WHERE id = +?
+`
+
+type FinishBackupCheckParams struct {
+	Status     string
+	Error      string
+	Detail     string
+	FinishedAt *time.Time
+	ID         int64
+}
+
+func (q *Queries) FinishBackupCheck(ctx context.Context, arg FinishBackupCheckParams) error {
+	_, err := q.db.ExecContext(ctx, finishBackupCheck,
+		arg.Status,
+		arg.Error,
+		arg.Detail,
 		arg.FinishedAt,
 		arg.ID,
 	)
@@ -299,7 +384,7 @@ func (q *Queries) GetBackupSchedule(ctx context.Context, serviceID int64) (Backu
 }
 
 const getBackupSettings = `-- name: GetBackupSettings :one
-SELECT id, repository, credentials, password, keep_daily, keep_weekly, keep_monthly, hour, updated_at, updated_by, storage_id, storage_path FROM backup_settings WHERE id = 1
+SELECT id, repository, credentials, password, keep_daily, keep_weekly, keep_monthly, hour, updated_at, updated_by, storage_id, storage_path, verify FROM backup_settings WHERE id = 1
 `
 
 func (q *Queries) GetBackupSettings(ctx context.Context) (BackupSetting, error) {
@@ -318,6 +403,109 @@ func (q *Queries) GetBackupSettings(ctx context.Context) (BackupSetting, error) 
 		&i.UpdatedBy,
 		&i.StorageID,
 		&i.StoragePath,
+		&i.Verify,
+	)
+	return i, err
+}
+
+const getDrillRestore = `-- name: GetDrillRestore :one
+SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups
+WHERE service_id = +?1 AND operation = 'restore' AND restored_to = +?2
+ORDER BY id DESC LIMIT 1
+`
+
+type GetDrillRestoreParams struct {
+	ServiceID  int64
+	RestoredTo *int64
+}
+
+// The restore a drill ran from a service into another: how a service
+// named like a drill's is known to be one (created_by is the system's).
+func (q *Queries) GetDrillRestore(ctx context.Context, arg GetDrillRestoreParams) (Backup, error) {
+	row := q.db.QueryRowContext(ctx, getDrillRestore, arg.ServiceID, arg.RestoredTo)
+	var i Backup
+	err := row.Scan(
+		&i.ID,
+		&i.ServiceID,
+		&i.Operation,
+		&i.Kind,
+		&i.Trigger,
+		&i.Status,
+		&i.Repository,
+		&i.SnapshotID,
+		&i.SizeBytes,
+		&i.Pruned,
+		&i.RestoredTo,
+		&i.Error,
+		&i.CreatedBy,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.WalGeneration,
+		&i.WalStart,
+		&i.WalSegmentBytes,
+		&i.ConsistentAt,
+		&i.RestoreToTime,
+	)
+	return i, err
+}
+
+const getDrillSnapshot = `-- name: GetDrillSnapshot :one
+SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups
+WHERE service_id = +? AND operation = 'backup' AND status = 'succeeded'
+  AND pruned = 0 AND kind <> 'pitr' AND snapshot_id <> ''
+ORDER BY id DESC LIMIT 1
+`
+
+// A service's newest snapshot a restore can use: what its drill restores.
+func (q *Queries) GetDrillSnapshot(ctx context.Context, serviceID int64) (Backup, error) {
+	row := q.db.QueryRowContext(ctx, getDrillSnapshot, serviceID)
+	var i Backup
+	err := row.Scan(
+		&i.ID,
+		&i.ServiceID,
+		&i.Operation,
+		&i.Kind,
+		&i.Trigger,
+		&i.Status,
+		&i.Repository,
+		&i.SnapshotID,
+		&i.SizeBytes,
+		&i.Pruned,
+		&i.RestoredTo,
+		&i.Error,
+		&i.CreatedBy,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.WalGeneration,
+		&i.WalStart,
+		&i.WalSegmentBytes,
+		&i.ConsistentAt,
+		&i.RestoreToTime,
+	)
+	return i, err
+}
+
+const getLatestDrill = `-- name: GetLatestDrill :one
+SELECT id, kind, server_id, service_id, repository, snapshot_id, "trigger", status, error, detail, started_at, finished_at FROM backup_checks WHERE kind = 'drill' AND service_id = +? ORDER BY id DESC LIMIT 1
+`
+
+// A service's latest restore drill.
+func (q *Queries) GetLatestDrill(ctx context.Context, serviceID *int64) (BackupCheck, error) {
+	row := q.db.QueryRowContext(ctx, getLatestDrill, serviceID)
+	var i BackupCheck
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.ServerID,
+		&i.ServiceID,
+		&i.Repository,
+		&i.SnapshotID,
+		&i.Trigger,
+		&i.Status,
+		&i.Error,
+		&i.Detail,
+		&i.StartedAt,
+		&i.FinishedAt,
 	)
 	return i, err
 }
@@ -415,6 +603,152 @@ func (q *Queries) ListBackupRepositories(ctx context.Context) ([]ListBackupRepos
 			&i.Server,
 			&i.Snapshots,
 			&i.SizeBytes,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDrillCandidates = `-- name: ListDrillCandidates :many
+SELECT services.id, environments.server_id, backups.snapshot_id, backups.repository, backups.size_bytes
+FROM services
+JOIN environments ON environments.id = services.environment_id
+JOIN projects ON projects.id = environments.project_id
+JOIN backups ON backups.id = (
+    SELECT b.id FROM backups b
+    WHERE b.service_id = services.id AND b.operation = 'backup' AND b.status = 'succeeded'
+      AND b.pruned = 0 AND b.kind <> 'pitr' AND b.snapshot_id <> ''
+    ORDER BY b.id DESC LIMIT 1
+)
+WHERE services.archived_at IS NULL AND services.stopped_at IS NULL AND projects.archived_at IS NULL
+  AND services.template <> ''
+  AND NOT EXISTS (SELECT 1 FROM previews WHERE previews.environment_id = services.environment_id)
+ORDER BY services.id
+`
+
+type ListDrillCandidatesRow struct {
+	ID         int64
+	ServerID   int64
+	SnapshotID string
+	Repository string
+	SizeBytes  int64
+}
+
+// Every live template database (not archived or stopped, in a live
+// project, outside previews) with its newest snapshot a restore can use,
+// for the restore drills (ADR 0096). The snapshot is found by walking
+// backups_service down from the service's newest run.
+func (q *Queries) ListDrillCandidates(ctx context.Context) ([]ListDrillCandidatesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listDrillCandidates)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDrillCandidatesRow
+	for rows.Next() {
+		var i ListDrillCandidatesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ServerID,
+			&i.SnapshotID,
+			&i.Repository,
+			&i.SizeBytes,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLatestDrills = `-- name: ListLatestDrills :many
+SELECT id, kind, server_id, service_id, repository, snapshot_id, "trigger", status, error, detail, started_at, finished_at FROM backup_checks WHERE id IN (
+    SELECT max(id) FROM backup_checks WHERE kind = 'drill' GROUP BY service_id
+)
+`
+
+// Each service's latest restore drill, for the scheduler.
+func (q *Queries) ListLatestDrills(ctx context.Context) ([]BackupCheck, error) {
+	rows, err := q.db.QueryContext(ctx, listLatestDrills)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BackupCheck
+	for rows.Next() {
+		var i BackupCheck
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.ServerID,
+			&i.ServiceID,
+			&i.Repository,
+			&i.SnapshotID,
+			&i.Trigger,
+			&i.Status,
+			&i.Error,
+			&i.Detail,
+			&i.StartedAt,
+			&i.FinishedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLatestRepositoryChecks = `-- name: ListLatestRepositoryChecks :many
+SELECT id, kind, server_id, service_id, repository, snapshot_id, "trigger", status, error, detail, started_at, finished_at FROM backup_checks WHERE id IN (
+    SELECT max(id) FROM backup_checks WHERE kind = 'repository' GROUP BY repository, server_id
+)
+ORDER BY repository, server_id
+`
+
+// Each repository's latest check attempt per server (ADR 0096), for the
+// scheduler and backup settings.
+func (q *Queries) ListLatestRepositoryChecks(ctx context.Context) ([]BackupCheck, error) {
+	rows, err := q.db.QueryContext(ctx, listLatestRepositoryChecks)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BackupCheck
+	for rows.Next() {
+		var i BackupCheck
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.ServerID,
+			&i.ServiceID,
+			&i.Repository,
+			&i.SnapshotID,
+			&i.Trigger,
+			&i.Status,
+			&i.Error,
+			&i.Detail,
+			&i.StartedAt,
+			&i.FinishedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -863,6 +1197,23 @@ func (q *Queries) SetBackupBase(ctx context.Context, arg SetBackupBaseParams) er
 	return err
 }
 
+const setBackupVerify = `-- name: SetBackupVerify :exec
+UPDATE backup_settings SET verify = ?, updated_at = ?, updated_by = ? WHERE id = 1
+`
+
+type SetBackupVerifyParams struct {
+	Verify    bool
+	UpdatedAt time.Time
+	UpdatedBy string
+}
+
+// Turns the weekly checks and drills on or off. The settings row exists:
+// the caller opens the repository first (repoOf creates it).
+func (q *Queries) SetBackupVerify(ctx context.Context, arg SetBackupVerifyParams) error {
+	_, err := q.db.ExecContext(ctx, setBackupVerify, arg.Verify, arg.UpdatedAt, arg.UpdatedBy)
+	return err
+}
+
 const setServiceFromTemplate = `-- name: SetServiceFromTemplate :exec
 UPDATE services SET from_template = ?, from_template_revision = ? WHERE id = +?
 `
@@ -913,6 +1264,43 @@ func (q *Queries) TrimBackupLogs(ctx context.Context, arg TrimBackupLogsParams) 
 	return err
 }
 
+const trimDrillChecks = `-- name: TrimDrillChecks :exec
+DELETE FROM backup_checks
+WHERE backup_checks.kind = 'drill' AND backup_checks.service_id = +?1
+  AND backup_checks.id NOT IN (
+    SELECT c.id FROM backup_checks c
+    WHERE c.kind = 'drill' AND c.service_id = +?1
+    ORDER BY c.id DESC LIMIT 10
+  )
+`
+
+// Keeps the newest ten drills of a service.
+func (q *Queries) TrimDrillChecks(ctx context.Context, serviceID *int64) error {
+	_, err := q.db.ExecContext(ctx, trimDrillChecks, serviceID)
+	return err
+}
+
+const trimRepositoryChecks = `-- name: TrimRepositoryChecks :exec
+DELETE FROM backup_checks
+WHERE backup_checks.kind = 'repository' AND backup_checks.repository = +?1 AND backup_checks.server_id = +?2
+  AND backup_checks.id NOT IN (
+    SELECT c.id FROM backup_checks c
+    WHERE c.kind = 'repository' AND c.repository = +?1 AND c.server_id = +?2
+    ORDER BY c.id DESC LIMIT 10
+  )
+`
+
+type TrimRepositoryChecksParams struct {
+	Repository string
+	ServerID   int64
+}
+
+// Keeps the newest ten checks of a repository on a server.
+func (q *Queries) TrimRepositoryChecks(ctx context.Context, arg TrimRepositoryChecksParams) error {
+	_, err := q.db.ExecContext(ctx, trimRepositoryChecks, arg.Repository, arg.ServerID)
+	return err
+}
+
 const upsertBackupSchedule = `-- name: UpsertBackupSchedule :exec
 INSERT INTO backup_schedules (service_id, enabled, hour) VALUES (?, ?, ?)
 ON CONFLICT (service_id) DO UPDATE SET enabled = excluded.enabled, hour = excluded.hour
@@ -937,7 +1325,7 @@ ON CONFLICT (id) DO UPDATE SET
     keep_daily = excluded.keep_daily, keep_weekly = excluded.keep_weekly, keep_monthly = excluded.keep_monthly,
     hour = excluded.hour, updated_at = excluded.updated_at, updated_by = excluded.updated_by,
     storage_id = excluded.storage_id, storage_path = excluded.storage_path
-RETURNING id, repository, credentials, password, keep_daily, keep_weekly, keep_monthly, hour, updated_at, updated_by, storage_id, storage_path
+RETURNING id, repository, credentials, password, keep_daily, keep_weekly, keep_monthly, hour, updated_at, updated_by, storage_id, storage_path, verify
 `
 
 type UpsertBackupSettingsParams struct {
@@ -982,6 +1370,7 @@ func (q *Queries) UpsertBackupSettings(ctx context.Context, arg UpsertBackupSett
 		&i.UpdatedBy,
 		&i.StorageID,
 		&i.StoragePath,
+		&i.Verify,
 	)
 	return i, err
 }

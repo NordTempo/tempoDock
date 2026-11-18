@@ -512,6 +512,18 @@ export RESTIC_REPOSITORY="$RESTIC_FROM_REPOSITORY" RESTIC_PASSWORD="$RESTIC_FROM
 const CheckScript = prelude + `$R check --retry-lock ` + RetryLock + ` >&2
 ` + listSnapshots
 
+// VerifySubset is how much of a repository's pack data the weekly check
+// reads back and re-hashes (ADR 0096): a random sample of a fixed size,
+// so the cost stays the same as a repository grows, and a repository
+// smaller than it is read in full.
+const VerifySubset = "1G"
+
+// VerifyScript is the weekly repository check (ADR 0096): the whole
+// structure and VerifySubset of the data. restic's check takes a shared
+// lock, so a backup meanwhile still runs. It runs in the restic image.
+const VerifyScript = prelude + `$R check --retry-lock ` + RetryLock + ` --read-data-subset=` + VerifySubset + `
+`
+
 // ClearLocalScript empties the local repository mounted at LocalPath,
 // once its snapshots were copied elsewhere. The volume stays.
 const ClearLocalScript = `set -eu

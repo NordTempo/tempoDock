@@ -3,6 +3,7 @@ import { day, since, size, until } from "../../ui/format";
 import {
   Act,
   Button,
+  Check,
   Confirm,
   CopyButton,
   ErrorText,
@@ -16,6 +17,8 @@ import {
 import { Saved } from "../create/form";
 import { BackupStorage } from "./BackupStorage";
 import { hourLabel } from "./backups";
+import { checkedWords } from "./CheckedLine";
+import { useRunBackupChecks, useSetBackupChecks } from "./data";
 import {
   type BackupSettings,
   type ConfigureBackup,
@@ -91,12 +94,52 @@ export function BackupSettingsPage() {
           settings={settings}
           moving={moving}
           onMoved={() => setMoving(false)}
-        />
+        >
+          <WeeklyChecks settings={settings} />
+        </BackupStorage>
         <ControlPlane settings={settings} />
         <Settings settings={settings} />
         <Password />
       </Page>
     </>
+  );
+}
+
+/**
+ * The weekly repository checks and restore drills (ADR 0096), under the
+ * repositories they check: on or off, when the next ones run, and Check
+ * now. The checks show as running in the table, then finished, from
+ * their audit events.
+ */
+function WeeklyChecks({ settings }: { settings: BackupSettings }) {
+  const set = useSetBackupChecks();
+  const run = useRunBackupChecks();
+  const running = (settings.checks ?? []).some((c) => c.status === "running");
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+      <span title={`dock backup check --${settings.verify ? "off" : "on"}`}>
+        <Check
+          label="Weekly checks and restore drills"
+          checked={settings.verify}
+          disabled={set.isPending}
+          onChange={(enabled) => set.mutate(enabled)}
+        />
+      </span>
+      {settings.next_check_at && (
+        <span className="text-mut">
+          next {checkedWords.at(settings.next_check_at)}
+        </span>
+      )}
+      <Act
+        small
+        cli="dock backup check"
+        disabled={run.isPending || running}
+        onClick={() => run.mutate()}
+      >
+        Check now
+      </Act>
+      <ErrorText error={set.error ?? run.error} />
+    </div>
   );
 }
 

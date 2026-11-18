@@ -768,6 +768,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/backup/checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Turn the weekly backup checks on or off
+         * @description Once a week, in the backup hour, every repository is checked (restic check with 1 GB of its data read back) and every template database's newest snapshot is restored into a throwaway service, queried and removed (ADR 0096). `enabled` turns both on or off; they are on by default. Operators only.
+         */
+        put: operations["update-backup-checks"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/backup/checks/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check every backup repository now
+         * @description Starts every repository's check in the background, one at a time, and answers with the settings: `checks` shows them running, then finished (get-backup-settings). A failed check raises a backup_failed alert. Operators only.
+         */
+        post: operations["run-backup-checks"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/backup/control-plane": {
         parameters: {
             query?: never;
@@ -3681,6 +3721,26 @@ export interface paths {
          * @description Starts a backup in the background and answers with it, running. Scope: deploy.
          */
         post: operations["run-backup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/backups/drill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run a database's restore drill now
+         * @description Restores a template database's newest snapshot into a throwaway service `<name>-drill`, queries it and removes it (ADR 0096), in the background: the answer is the drill, running, and list-backups shows it as `drill` when it ends. Run by hand, a snapshot over the weekly drill's 2 GB cap is restored too. Backups are the platform's: operators only.
+         */
+        post: operations["run-backup-drill"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7360,6 +7420,26 @@ export interface components {
             summary: string;
             target: string;
         };
+        BackupCheck: {
+            detail?: string;
+            error?: string;
+            /** Format: date-time */
+            finished_at?: string;
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            kind: "repository" | "drill";
+            repository: string;
+            server?: string;
+            service?: string;
+            snapshot?: string;
+            /** Format: date-time */
+            started_at: string;
+            /** @enum {string} */
+            status: "running" | "succeeded" | "failed" | "skipped";
+            /** @enum {string} */
+            trigger: "schedule" | "manual";
+        };
         BackupLog: {
             /** Format: int64 */
             id: number;
@@ -7436,6 +7516,7 @@ export interface components {
             next_at?: string;
         };
         BackupSettings: {
+            checks: components["schemas"]["BackupCheck"][] | null;
             control_plane: components["schemas"]["ControlPlaneBackup"];
             has_credentials: boolean;
             /** Format: int64 */
@@ -7447,6 +7528,8 @@ export interface components {
             /** Format: int64 */
             keep_weekly: number;
             move?: components["schemas"]["BackupMove"];
+            /** Format: date-time */
+            next_check_at?: string;
             off_box: boolean;
             password?: string;
             path?: string;
@@ -7458,6 +7541,7 @@ export interface components {
             /** Format: date-time */
             updated_at?: string;
             updated_by?: string;
+            verify: boolean;
         };
         BuildLogLine: {
             /** Format: int64 */
@@ -11252,8 +11336,12 @@ export interface components {
             usage?: components["schemas"]["ServiceUsage"];
         };
         ServiceBackups: {
+            check?: components["schemas"]["BackupCheck"];
+            drill?: components["schemas"]["BackupCheck"];
             /** @enum {string} */
             kind: "postgres" | "redis" | "mysql" | "volume";
+            /** Format: date-time */
+            next_check_at?: string;
             off_box: boolean;
             pitr?: components["schemas"]["PITR"];
             restorable: boolean;
@@ -12442,6 +12530,9 @@ export interface components {
              * @description Open the locked environment for this many minutes, then lock it again by itself. 0 unlocks it.
              */
             minutes?: number;
+        };
+        UpdateBackupChecksRequest: {
+            enabled?: boolean;
         };
         UpdateBackupScheduleRequest: {
             default_hour?: boolean;
@@ -16774,6 +16865,191 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "update-backup-checks": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateBackupChecksRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupSettings"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "run-backup-checks": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupSettings"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -34465,6 +34741,111 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BackupRun"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "run-backup-drill": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupCheck"];
                 };
             };
             /** @description Bad Request */
