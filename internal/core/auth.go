@@ -414,6 +414,7 @@ func (c *Core) ChangePassword(ctx context.Context, a Actor, req apitypes.ChangeP
 	if err != nil {
 		return "", time.Time{}, err
 	}
+	c.accessChanged(accessChange{userID: u.ID, keepToken: a.TokenID})
 	if a.Kind == "user" {
 		if secret, expires, _, err = c.newSession(ctx, u, signInVia{factor: a.Factor, ssoProviderID: a.SSOProviderID, ssoProvider: a.SSOProvider, ssoLabel: a.SSOLabel}); err != nil {
 			return "", time.Time{}, err
@@ -470,6 +471,7 @@ func (c *Core) SetUserDisabled(ctx context.Context, a Actor, id int64, disabled 
 	if err != nil {
 		return apitypes.User{}, err
 	}
+	c.accessChanged(accessChange{userID: u.ID})
 	u.DisabledAt = at
 	c.endOrphanedRequests(ctx)
 	c.audit(ctx, a.platform(), "user."+verb, nil, nil, u.Email, fmt.Sprintf(summary, u.Email)+revokedNote(revoked))
@@ -495,6 +497,7 @@ func (c *Core) DeleteUser(ctx context.Context, a Actor, id int64) error {
 	if err != nil {
 		return err
 	}
+	c.accessChanged(accessChange{userID: u.ID})
 	c.endOrphanedRequests(ctx)
 	c.audit(ctx, a.platform(), "user.delete", nil, nil, u.Email, "deleted user "+u.Email+revokedNote(revoked))
 	return nil
@@ -736,6 +739,7 @@ func (c *Core) RevokeToken(ctx context.Context, a Actor, id int64) error {
 		return err
 	}
 	c.endOrphanedRequests(ctx)
+	c.accessChanged(accessChange{tokenID: t.ID})
 	c.audit(ctx, a, "token.revoke", nil, nil, "token "+t.Name, fmt.Sprintf("revoked token %q (id %d)", t.Name, t.ID))
 	return nil
 }
@@ -852,6 +856,7 @@ func (c *Core) ResetPassword(ctx context.Context, a Actor, id int64, req apitype
 	if err != nil {
 		return out, err
 	}
+	c.accessChanged(accessChange{userID: u.ID})
 	c.endOrphanedRequests(ctx)
 	c.audit(ctx, a.platform(), "user.reset_password", nil, nil, u.Email, "reset the password of "+u.Email+" and ended their sessions"+revokedNote(revoked))
 	c.noticeFor(ctx, a, u, "Your Tempo Dock password was reset")
@@ -994,6 +999,7 @@ func (c *Core) SetPlatformRole(ctx context.Context, a Actor, id int64, role stri
 		if role == "" {
 			what = fmt.Sprintf("%s no longer has a platform role (was %s)", u.Email, was)
 		}
+		c.accessChanged(accessChange{userID: u.ID, changed: true})
 		c.audit(ctx, a.platform(), "user.operator", nil, nil, u.Email, what)
 	}
 	all, err := c.ListAccounts(ctx, a)

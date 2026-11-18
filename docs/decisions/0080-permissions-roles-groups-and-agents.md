@@ -74,7 +74,15 @@ Everything after is in memory: checks, list filters, live event filters
 and effective access. Custom roles and agent rules are cached per org and
 replaced when core writes them (one process, one writer). Grants aren't
 cached, so removing someone from a group, or an owner losing access,
-takes effect on the next call; long streams re-check on `access.changed`.
+takes effect on the next call. What stays open past its call (live
+streams, an attached `dock run`, a `dock connect` tunnel) is registered
+with its actor, and every write that ends or changes access says whose
+(`accessChanged` in access_watch.go: a user, a token or an org). Access
+that ended (a disabled or deleted account, a changed password, a revoked
+token, a member removed) closes all of it. Access that changed (groups,
+grants, roles, agent rules) ends the streams, which clients open again
+and are checked as they are now, and asks for a run or a tunnel whether
+its actor may still hold it. Nothing polls for this.
 
 ### The migration
 

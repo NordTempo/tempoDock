@@ -250,6 +250,7 @@ func (c *Core) UpdateRole(ctx context.Context, a Actor, name string, req apitype
 	if err := c.store.UpdateRole(ctx, store.UpdateRoleParams{Name: newName, Description: strings.TrimSpace(req.Description), Parts: parts, ID: r.ID, OrgID: a.OrgID}); err != nil {
 		return apitypes.Role{}, err
 	}
+	c.accessChanged(accessChange{orgID: a.OrgID})
 	c.audit(ctx, a, "role.update", nil, nil, "role "+newName, fmt.Sprintf("changed role %s: %s", newName, parts))
 	r.Name, r.Description, r.Parts = newName, strings.TrimSpace(req.Description), parts
 	return c.oneRole(ctx, a, r)
@@ -274,6 +275,7 @@ func (c *Core) DeleteRole(ctx context.Context, a Actor, name string) error {
 	if err := c.store.DeleteRole(ctx, store.DeleteRoleParams{ID: r.ID, OrgID: a.OrgID}); err != nil {
 		return err
 	}
+	c.accessChanged(accessChange{orgID: a.OrgID})
 	c.audit(ctx, a, "role.delete", nil, nil, "role "+r.Name, "removed role "+r.Name)
 	return nil
 }

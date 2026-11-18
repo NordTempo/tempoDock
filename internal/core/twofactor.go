@@ -737,6 +737,7 @@ func (c *Core) ResetTwoFactor(ctx context.Context, a Actor, email string) error 
 	if err != nil {
 		return err
 	}
+	c.accessChanged(accessChange{userID: u.ID})
 	c.audit(ctx, a.platform(), "user.2fa_reset", nil, nil, u.Email,
 		fmt.Sprintf("reset the two-factor sign-in of %s (%d factors removed, recovery codes spent) and ended their sessions%s", u.Email, n, revokedNote(revoked)))
 	c.noticeFor(ctx, a, u, "Your Tempo Dock two-factor sign-in was reset")

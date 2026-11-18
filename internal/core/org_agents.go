@@ -195,6 +195,7 @@ func (c *Core) GrantAgent(ctx context.Context, a Actor, ref string, req apitypes
 	if err != nil {
 		return apitypes.AgentAccess{}, err
 	}
+	c.accessChanged(accessChange{tokenID: t.ID, changed: true})
 	c.audit(ctx, a, "agent.grant", nil, nil, "token "+t.Name, fmt.Sprintf("gave token %s %s on %s", t.Name, req.Role, place))
 	return c.AgentAccess(ctx, a, strconv.FormatInt(t.ID, 10))
 }
@@ -236,6 +237,7 @@ func (c *Core) SetGroupAgent(ctx context.Context, a Actor, groupRef, tokenRef st
 	if !in {
 		verb, word = "group.remove_agent", "took token %s out of group %s"
 	}
+	c.accessChanged(accessChange{tokenID: t.ID, changed: true})
 	c.audit(ctx, a, verb, nil, nil, "group "+g.Name, fmt.Sprintf(word, t.Name, g.Name))
 	return c.group(ctx, a, g.ID)
 }

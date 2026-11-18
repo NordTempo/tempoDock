@@ -667,6 +667,7 @@ func (c *Core) takeOver(ctx context.Context, p store.SsoProvider, who ssoPerson,
 	if err != nil {
 		return store.User{}, err
 	}
+	c.accessChanged(accessChange{userID: u.ID})
 	if !took {
 		return c.ssoUser(ctx, p, who)
 	}

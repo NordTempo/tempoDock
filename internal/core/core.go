@@ -208,6 +208,9 @@ type Core struct {
 	cliLogins *cliLogins
 	// streams counts the event streams open (streams.go).
 	streams streamCounts
+	// access is what actors hold open, ended when their access changes
+	// (access_watch.go).
+	access accessWatch
 	// ceremonies are the passkey challenges and authenticator app setups
 	// in flight; operators2FA is the platform's requirement of a second
 	// factor of operators (twofactor.go, passkeys.go). Second factors
