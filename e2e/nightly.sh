@@ -310,7 +310,19 @@ scenarios() {
 		timeout -k 30 "$SCENARIO_TIMEOUT" "e2e/$suite.sh" "$name" >"$RUN_DIR/${s//\//-}.log" 2>&1 </dev/null
 		rc=$?
 		result "$s" "$rc" "$((SECONDS - t0))" "${s//\//-}.log"
-		((rc == 0)) || say "$s failed ($rc)"
+		((rc == 0)) || { say "$s failed ($rc)"; journals "${s//\//-}" "$((SECONDS - t0))"; }
+	done
+}
+
+# journals NAME SECONDS keeps what dock logged on every server of the slot
+# in the last SECONDS, as NAME.<server>.journal next to the scenario's
+# log: the servers are removed after the run, and a failure that only the
+# daemon's log explains (a forward that stopped, a refused dial) was
+# otherwise gone by morning. They stay on this machine, never in a report.
+journals() {
+	local c
+	for c in $(docker ps --format '{{.Names}}' | grep -E "^$E2E_SLOT-(cp|node[0-9]+)$"); do
+		docker exec "$c" journalctl -u dock --since "-$(($2 + 30))s" --no-pager >"$RUN_DIR/$1.$c.journal" 2>&1
 	done
 }
 

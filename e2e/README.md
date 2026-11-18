@@ -82,7 +82,9 @@ RAM is free, and caps the whole cycle at 4 hours.
 **Results.** Everything goes to `~/.cache/dock-nightly/<date>/`:
 `nightly.log`, one log per step (`perf-bench`, `build`, `up`, `update`, ...) and per
 scenario (`run-apps.log`, `features-lock.log`, ...), `results.tsv`, and
-`soak-<server>.out` from the update's hammers. Each night adds one line to
+`soak-<server>.out` from the update's hammers. A failed scenario also
+leaves `<scenario>.<server>.journal`, what dock logged on each server
+while it ran (the servers are gone by morning). Each night adds one line to
 `~/.cache/dock-nightly/history.log`. A failure opens one issue labelled
 `nightly` (or comments on the open one) with the failed scenarios and
 their last log lines, redacted (when the repository has issues turned on), and POSTs a summary to the webhook in

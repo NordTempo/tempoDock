@@ -519,8 +519,18 @@ scenario_health() {
 	ctr=$(service_containers $p web)
 	# The app breaks without crashing: its health path starts failing.
 	docker exec "$srv" docker exec "$ctr" rm /tmp/w/health
-	check "the service reads unhealthy" wait_for 60 status_is $p web health unhealthy
-	check "an unhealthy alert opens" wait_for 30 alert_open unhealthy $p
+	# Dock restarts an unhealthy container at once, so the service reads
+	# unhealthy for about half a second and its alert is open for a few:
+	# one loop watches for both, faster than wait_for's second.
+	local saw_unhealthy= saw_alert=
+	for _ in $(seq 1 300); do
+		[[ -n $saw_unhealthy ]] || ! status_is $p web health unhealthy || saw_unhealthy=1
+		[[ -n $saw_alert ]] || ! alert_open unhealthy $p || saw_alert=1
+		[[ -z $saw_unhealthy || -z $saw_alert ]] || break
+		sleep 0.1
+	done
+	check "the service reads unhealthy" test -n "$saw_unhealthy"
+	check "an unhealthy alert opens" test -n "$saw_alert"
 	check "the health check restarts the container in place" wait_for 60 bash -c "[[ \$(curl -s -H 'Authorization: Bearer $DOCK_TOKEN' '$API$(svc_path $p web)' | jq -r '.status.health_restarts // 0') -ge 1 ]]"
 	check "same container after the restart" test "$ctr" == "$(service_containers $p web)"
 	check "healthy again after the restart" wait_for 60 status_is $p web health healthy

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 
 	"github.com/spf13/cobra"
 
@@ -24,12 +25,14 @@ func newPromoteCmd(g *globals) *cobra.Command {
 named with -s) a new release in <to> with the exact image of <from>'s
 active release, by digest, and <to>'s own variables and settings. Nothing
 is rebuilt. Services deploy one at a time and stop at the first failure;
-the ones already promoted stay. Services that don't exist in <to> are
-skipped and listed.
+the ones already promoted stay. Services that don't exist in <to>, and
+the ones that already run that image there, are skipped and listed: an
+unchanged service (a database, say) is never restarted.
 
 Follows progress like deploy unless --detach. Exit 6 when a release fails,
-exit 4 when nothing was promoted (every service skipped; the result, with
---json too, still lists them). Needs deploy on <to>.`,
+exit 4 when nothing could be promoted (every service skipped for another
+reason than running the image already; the result, with --json too, still
+lists them). Needs deploy on <to>.`,
 		Example: `  dock promote staging production
   dock promote staging production -s web -s worker`,
 		Args:              cobra.ExactArgs(2),
@@ -79,7 +82,9 @@ exit 4 when nothing was promoted (every service skipped; the result, with
 // finishPromote prints what a promotion did: each release, then the
 // skipped services. The first failed release makes it a deploy_failed
 // error; the releases after it failed without starting. Nothing promoted
-// at all (every service skipped) is a not_found error, after the result.
+// at all is a not_found error, after the result, unless every service was
+// skipped because it runs the image already: that is a promotion with
+// nothing to do.
 func (g *globals) finishPromote(ctx context.Context, s *session, res apitypes.PromoteResult) error {
 	err := g.io.Print(res, func() error {
 		for _, p := range res.Promoted {
@@ -94,12 +99,19 @@ func (g *globals) finishPromote(ctx context.Context, s *session, res apitypes.Pr
 			}
 		}
 		for _, sk := range res.Skipped {
+			if sk.Reason == apitypes.SkipSameImage {
+				g.io.Successf("%s: %s", sk.Service, sk.Message)
+				continue
+			}
 			g.io.Warnf("%s skipped: %s", sk.Service, sk.Message)
 		}
 		return nil
 	})
 	if err != nil {
 		return err
+	}
+	if len(res.Promoted) == 0 && len(res.Skipped) > 0 && !slices.ContainsFunc(res.Skipped, func(sk apitypes.SkippedService) bool { return sk.Reason != apitypes.SkipSameImage }) {
+		return nil // nothing to do: every service runs the image already
 	}
 	if len(res.Promoted) == 0 {
 		return &output.Error{

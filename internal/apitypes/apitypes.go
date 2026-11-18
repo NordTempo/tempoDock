@@ -1380,6 +1380,8 @@ const (
 	SkipNoDigest SkipReason = "no_digest"
 	// SkipDeployInProgress: the target service is deploying already.
 	SkipDeployInProgress SkipReason = "deploy_in_progress"
+	// SkipSameImage: the target service already runs the source's image.
+	SkipSameImage SkipReason = "same_image"
 	// SkipFailed: the service's release couldn't be created after earlier
 	// ones started, which stops the promotion there; the services after
 	// it are skipped with this reason too.
@@ -1389,7 +1391,7 @@ const (
 // SkippedService is a service a promotion left alone, and why.
 type SkippedService struct {
 	Service string     `json:"service"`
-	Reason  SkipReason `json:"reason" enum:"missing_in_target,no_active_release,no_digest,deploy_in_progress,failed"`
+	Reason  SkipReason `json:"reason" enum:"missing_in_target,no_active_release,no_digest,deploy_in_progress,same_image,failed"`
 	Message string     `json:"message"`
 }
 

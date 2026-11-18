@@ -572,6 +572,9 @@ push to the same tag changes nothing.
   they are queued).
 - The first failure stops it: the services after it fail without starting,
   the ones already promoted stay live, and the CLI exits 6.
+- A service that already runs staging's image in production is left
+  alone, and listed: promoting a project never restarts its unchanged
+  database. `dock restart` is the command for that.
 - Services are matched by name. One missing in production, with nothing
   running in staging, or still deploying in production is skipped and
   listed. Promote never creates services.

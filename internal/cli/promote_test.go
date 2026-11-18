@@ -42,8 +42,22 @@ func TestPromote(t *testing.T) {
 		t.Fatalf("skipped = %+v", res.Skipped)
 	}
 
-	srv.rt.FailHealthCheck(func(node.ContainerSpec) error { return errors.New("connection refused") })
+	// Again: production runs that image already, so nothing is restarted
+	// and that is not an error.
 	code, stdout, stderr := exec(t, "promote", "staging", "production", "-p", "shop", "-s", "web")
+	if code != 0 || !strings.Contains(stderr+stdout, "left alone") {
+		t.Fatalf("same image again: exit %d\n%s%s", code, stdout, stderr)
+	}
+
+	stage := func(image string) {
+		t.Helper()
+		if code, _, stderr := exec(t, "deploy", "-p", "shop", "-e", "staging", "-s", "web", "--image", image); code != 0 {
+			t.Fatalf("deploy %s: %s", image, stderr)
+		}
+	}
+	stage("web:2")
+	srv.rt.FailHealthCheck(func(node.ContainerSpec) error { return errors.New("connection refused") })
+	code, stdout, stderr = exec(t, "promote", "staging", "production", "-p", "shop", "-s", "web")
 	if code != int(output.ExitDeployFailed) || !strings.Contains(stderr, "health check") {
 		t.Fatalf("failed promote: exit %d\n%s%s", code, stdout, stderr)
 	}

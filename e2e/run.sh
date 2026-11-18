@@ -240,6 +240,8 @@ daemon_ssh() {
 }
 wait_api() { for _ in $(seq 1 30); do curl -sf --max-time 2 "$API/health" >/dev/null && return; sleep 1; done; fail "API did not come back"; }
 
+release_is() { [[ $(release "$1" "$2" "$3" | jq -r .status) == "$4" ]]; }
+
 scenario_daemon() {
 	[[ -n ${DOCK_SSH:-}${E2E_SERVER_IPS:-} ]] || { fail "the daemon scenario needs DOCK_SSH=<ssh host with passwordless sudo> or e2e/vm's servers"; return; }
 	local p=$E2E-node s=web h n tmp
@@ -255,10 +257,17 @@ scenario_daemon() {
 	hammer_stop "serving while the daemon was down"
 
 	log "SIGKILL during build"
+	# The build has a step that outlasts the kill: with everything else
+	# cached it finishes in a few seconds, and the release would go active.
 	tmp=$(mktemp -d); cp -r "$APPS/node-express/." "$tmp/"; echo "v-killed" >"$tmp/VERSION"
+	jq '.scripts.build = "sleep 120"' "$APPS/node-express/package.json" >"$tmp/package.json"
 	hammer_start "http://$h/"
-	n=$(deploy_source $p $s "$tmp" 2>/dev/null)
-	until [[ $(release $p $s "$n" | jq -r .status) == building ]]; do sleep 0.5; done; sleep 3
+	# On a node the project's server is linked again a moment after the API
+	# answers: until then a deploy is refused.
+	n=; for _ in $(seq 1 30); do n=$(deploy_source $p $s "$tmp" 2>/dev/null) && break; sleep 1; done
+	[[ -n $n ]] || { fail "the deploy to kill was never accepted"; hammer_stop "serving"; return; }
+	wait_for 120 release_is $p $s "$n" building || fail "release $n never started building"
+	sleep 3
 	daemon_ssh 'sudo systemctl kill -s KILL dock'; sleep 3; wait_api
 	expect_release $p $s "$n" failed
 	local leftovers; leftovers=$(daemon_ssh 'sudo find /var/lib/dock/uploads /var/lib/dock/builds/work -mindepth 1 -maxdepth 1 | wc -l')
@@ -268,7 +277,7 @@ scenario_daemon() {
 	log "SIGKILL during health check"
 	hammer_start "http://$h/"
 	n=$(api PATCH "$(svc_path $p $s)" '{"health_check_path":"/nope","apply":true}' | jq -r '.applied.releases[0].number')
-	until [[ $(release $p $s "$n" | jq -r .status) == health_checking ]]; do sleep 0.2; done
+	for _ in $(seq 1 600); do [[ $(release $p $s "$n" | jq -r .status) == health_checking ]] && break; sleep 0.2; done
 	daemon_ssh 'sudo systemctl kill -s KILL dock'; sleep 3; wait_api
 	expect_release $p $s "$n" failed
 	[[ $(daemon_ssh "docker ps -aq --filter label=dock.release=$(release $p $s "$n" | jq .id) | wc -l") == 0 ]] &&

@@ -187,14 +187,26 @@ purge() {
 	install --uninstall --purge && ! on test -e /var/lib/dock && ! on id dock >/dev/null 2>&1
 }
 
+# bare_image IMAGE TAG makes e2e-bare:TAG, the distribution with systemd.
+# One built in the last week is used as it is: every build asks Docker Hub
+# for the base, anonymously, and a night of scenarios has spent its pull
+# limit by then (429). Past a week it is built again, and when that fails
+# the old one still serves.
+bare_image() {
+	local created
+	created=$(docker image inspect -f '{{.Created}}' "e2e-bare:$2" 2>/dev/null) &&
+		(($(date +%s) - $(date -d "$created" +%s) < 7 * 86400)) && return 0
+	docker build -q -f e2e/vm/bare.Dockerfile --build-arg BASE="$1" -t "e2e-bare:$2" e2e/vm >/dev/null && return 0
+	[[ -n $created ]] && log "$1: using the bare image of $created"
+}
+
 i=0
 for image in "${IMAGES[@]}"; do
 	i=$((i + 1))
 	tag=${image//[:\/]/-}
 	NAME=$tag C=$SLOT-$tag IP=$PREFIX.$((10 + i))
 	log "$image ($C, $IP)"
-	docker build -q -f e2e/vm/bare.Dockerfile --build-arg BASE="$image" -t "e2e-bare:$tag" e2e/vm >/dev/null ||
-		{ fail "$image: build the bare image"; continue; }
+	bare_image "$image" "$tag" || { fail "$image: build the bare image"; continue; }
 	docker rm -f -v "$C" >/dev/null 2>&1
 	docker run -d --name "$C" --hostname "$C" --privileged --cgroupns=private \
 		${E2E_VM_MEMORY:+--memory "$E2E_VM_MEMORY"} --tmpfs /run --tmpfs /run/lock -v /var/lib/docker -v /var/lib/containerd \
