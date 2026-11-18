@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -195,5 +196,51 @@ func TestRestartArchivesACutRestoresTarget(t *testing.T) {
 	eventually(t, "the restore alert to open", func() bool { return len(restoreAlerts(h)) == 1 })
 	if open := restoreAlerts(h); !strings.Contains(open[0].Message, kept.Service) || !strings.Contains(open[0].Message, "restarted") || open[0].Service != "db" {
 		t.Errorf("restore alert = %+v, want one on db naming %s and the restart", open[0], kept.Service)
+	}
+}
+
+// A failed restore drill's throwaway service is the drill's: it is
+// removed for good, never archived as a failed restore's target, and the
+// drill's own alert is the only one. A person's failed restore into the
+// same name is archived like any other.
+func TestFailedDrillTargetIsLeftToItsDrill(t *testing.T) {
+	h, db, restoreErr := drillDB(t, 100)
+	*restoreErr = errors.New("pg_restore: error: could not read from input file")
+	if d := h.drillNow(db, true); d.Status != apitypes.BackupFailed {
+		t.Fatalf("drill = %+v, want failed", d)
+	}
+	if !h.c.alertsHandled(h.ctx) {
+		t.Fatal("alerts not handled")
+	}
+	if open := restoreAlerts(h); len(open) != 0 {
+		t.Errorf("a failed drill opened restore alerts: %+v", open)
+	}
+	ss, err := h.c.loadService(h.ctx, 1, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svcs, err := h.c.store.ListServices(h.ctx, ss.env.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range svcs {
+		if s.Name != "db" {
+			t.Errorf("service %s is left of a failed drill", s.Name)
+		}
+	}
+
+	// Not the system's: someone restored into that name themselves.
+	dev := h.user("dev@x", apitypes.ScopeAdmin)
+	var res apitypes.RestoreResult
+	h.untilFree(func() (err error) {
+		res, err = h.c.RestoreBackup(h.ctx, dev, db, apitypes.RestoreBackupRequest{Snapshot: "dddd4444dddd4444", As: "db" + drillSuffix})
+		return err
+	})
+	if done := h.waitRun(db, res.Restore.ID); done.Status != apitypes.BackupFailed {
+		t.Fatalf("restore = %+v, want failed", done)
+	}
+	kept := ServiceRef{db.Project, db.Environment, "db-drill-failed-" + itoa(res.Restore.ID)}
+	if to, err := h.c.loadService(h.ctx, 1, kept); err != nil || to.svc.ArchivedAt == nil {
+		t.Errorf("a person's failed restore into db-drill: %v; want it archived as %s", err, kept.Service)
 	}
 }
