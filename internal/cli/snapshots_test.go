@@ -78,3 +78,18 @@ func TestVolumeSnapshotCommands(t *testing.T) {
 		t.Fatalf("after delete: %+v", list.Snapshots)
 	}
 }
+
+// An in-place restore names the volumes added after the snapshot was
+// taken, which it leaves as they are.
+func TestVolumesLeft(t *testing.T) {
+	ss := apitypes.ServiceSnapshots{Snapshots: []apitypes.Snapshot{
+		{ID: 9, Volumes: []string{"data", "uploads"}},
+		{ID: 4, Volumes: []string{"data"}},
+	}}
+	if got := volumesLeft(ss, apitypes.SnapshotRestore{Snapshot: 4, Safety: 9, InPlace: true}); len(got) != 1 || got[0] != "uploads" {
+		t.Errorf("snapshot from before uploads: left = %v", got)
+	}
+	if got := volumesLeft(ss, apitypes.SnapshotRestore{Snapshot: 9, Safety: 9, InPlace: true}); len(got) != 0 {
+		t.Errorf("snapshot with every volume: left = %v", got)
+	}
+}
