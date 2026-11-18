@@ -10,6 +10,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/analytics"
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 // errorsFor ticks the error sink into the store until the list for f
@@ -361,5 +362,65 @@ func TestErrorFloodIsBounded(t *testing.T) {
 	}
 	if open != errorAlertsPerService {
 		t.Fatalf("%d error alerts open, want %d", open, errorAlertsPerService)
+	}
+}
+
+// A release that fails its health check opens no issue and no "New
+// error" alert for what its container logged: while it deploys its
+// errors wait in the sink, and once it failed they are dropped. The same
+// error in the release that is live is an issue.
+func TestFailedReleaseErrorsOpenNoIssue(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	h.deploy(web, "app:1")
+	svc := h.serviceID(web)
+	rel, err := h.c.store.CreateRelease(h.ctx, store.CreateReleaseParams{ServiceID: svc, Number: 2, Source: "image", Config: []byte("{}")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now()
+	probe404 := pendingError{source: apitypes.ErrorFromLogs, title: `error: GET /health 404`, count: 3, first: at, last: at, release: 2}
+	// Batches come from a sink of the test's own, so the daemon's
+	// statistics tick can't write one first; only held errors go back
+	// into the daemon's.
+	write := func(sink *errorSink) []issueEvent {
+		t.Helper()
+		batch, _ := sink.take()
+		events, err := h.c.writeErrors(h.ctx, batch, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return events
+	}
+	issues := func() int {
+		t.Helper()
+		list, err := h.c.ListErrors(h.ctx, testSystem, ErrorFilter{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(list.Issues)
+	}
+
+	var sink errorSink
+	sink.add(svc, "fp-probe", probe404)
+	if events := write(&sink); len(events) != 0 || issues() != 0 {
+		t.Fatalf("while release 2 deploys: %d alerts, %d issues; want none", len(events), issues())
+	}
+	if err := h.c.store.FailRelease(h.ctx, store.FailReleaseParams{Error: "health check failed", ErrorCode: string(apitypes.CodeHealthCheckFailed), FinishedAt: ptr(at), ID: rel.ID}); err != nil {
+		t.Fatal(err)
+	}
+	// The held errors went back into the daemon's sink, and go with the
+	// failure.
+	if events := write(&h.c.issues); len(events) != 0 || issues() != 0 {
+		t.Fatalf("after release 2 failed: %d alerts, %d issues; want none", len(events), issues())
+	}
+	if batch, _ := h.c.issues.take(); len(batch) != 0 {
+		t.Fatalf("a failed release's errors stay in the sink: %d", len(batch))
+	}
+
+	probe404.release = 1
+	sink.add(svc, "fp-probe", probe404)
+	if events := write(&sink); len(events) != 1 || issues() != 1 {
+		t.Fatalf("in the live release: %d alerts, %d issues; want 1 and 1", len(events), issues())
 	}
 }

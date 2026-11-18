@@ -28,6 +28,12 @@ import (
 //     trafficErrorMin requests with 5xx, and at least 1 in
 //     trafficErrorShare of its requests (trafficErrors).
 //
+// A release that never goes live is no source: what its container wrote
+// (the app's own lines about Dock's health probe among them) explains a
+// failed deploy, which its diagnosis shows (ADR 0071). Log errors of a
+// release still deploying wait in the sink for its outcome, and those of
+// a failed or canceled one are dropped (logErrorFate).
+//
 // Each source adds to the error sink in memory without blocking. On the
 // statistics tick (once a minute, nothing of its own) the sink's issues
 // are written in one transaction: a new fingerprint opens an issue, a
@@ -170,13 +176,16 @@ type issueEvent struct {
 
 // writeErrors writes a tick's issues in one transaction and returns the
 // issues that are new (not frontend ones: Dock Analytics alerts on those
-// itself) or regressed.
+// itself) or regressed. Log errors of a release that hasn't gone live are
+// put back into the sink or dropped instead (logErrorFate).
 func (c *Core) writeErrors(ctx context.Context, batch map[errorKey]*pendingError, now time.Time) ([]issueEvent, error) {
 	var events []issueEvent
+	var held []errorKey
 	dropped := 0
 	err := c.store.Tx(ctx, func(q *store.Queries) error {
-		events, dropped = events[:0], 0
+		events, held, dropped = events[:0], held[:0], 0
 		targets := map[int64]*store.GetErrorTargetRow{}
+		fates := map[releaseKey]errorFate{}
 		opened := map[int64]int{}
 		for k, p := range batch {
 			t, ok := targets[k.service]
@@ -196,6 +205,23 @@ func (c *Core) writeErrors(ctx context.Context, batch map[errorKey]*pendingError
 			release, err := errorRelease(ctx, q, k.service, p, t)
 			if err != nil {
 				return err
+			}
+			if p.source == apitypes.ErrorFromLogs && release != 0 && release != t.ActiveRelease {
+				rk := releaseKey{k.service, release}
+				fate, ok := fates[rk]
+				if !ok {
+					if fate, err = logErrorFate(ctx, q, rk); err != nil {
+						return err
+					}
+					fates[rk] = fate
+				}
+				switch fate {
+				case errorHeld:
+					held = append(held, k)
+					continue
+				case errorDropped:
+					continue
+				}
 			}
 			cur, err := q.GetErrorIssueByFingerprint(ctx, store.GetErrorIssueByFingerprintParams{ServiceID: k.service, Fingerprint: k.fingerprint})
 			switch {
@@ -265,7 +291,50 @@ func (c *Core) writeErrors(ctx context.Context, batch map[errorKey]*pendingError
 	if dropped > 0 {
 		c.log.Warn("errors: services had more new issues than a minute opens; their errors were dropped", "issues", dropped)
 	}
+	if err == nil {
+		for _, k := range held {
+			c.issues.add(k.service, k.fingerprint, *batch[k])
+		}
+	}
 	return events, err
+}
+
+// releaseKey names a service's release by its number.
+type releaseKey struct{ service, number int64 }
+
+// errorFate is what a tick does with a release's log errors.
+type errorFate uint8
+
+// Fates.
+const (
+	// errorWritten: the release is or was live, its errors are issues.
+	errorWritten errorFate = iota
+	// errorHeld: the release is still deploying; its errors go back into
+	// the sink until a tick finds it live or failed.
+	errorHeld
+	// errorDropped: the release failed or was canceled before it went
+	// live. Its output is its diagnosis's, not an issue or an alert.
+	errorDropped
+)
+
+// logErrorFate decides what happens to the log errors of a release other
+// than the active one. A release that is gone counts as one that was
+// live, as it did before releases were looked at.
+func logErrorFate(ctx context.Context, q *store.Queries, k releaseKey) (errorFate, error) {
+	r, err := q.GetReleaseByNumber(ctx, store.GetReleaseByNumberParams{ServiceID: k.service, Number: k.number})
+	if store.IsNotFound(err) {
+		return errorWritten, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	switch status := apitypes.ReleaseStatus(r.Status); {
+	case status == apitypes.ReleaseFailed || status == apitypes.ReleaseCanceled:
+		return errorDropped, nil
+	case !status.Done():
+		return errorHeld, nil
+	}
+	return errorWritten, nil
 }
 
 // errorRelease is the release number errors were seen in: the one they

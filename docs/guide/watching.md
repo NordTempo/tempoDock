@@ -39,6 +39,9 @@ Errors that differ only in numbers, IDs or line numbers are one issue,
 so an issue survives a deploy. An issue is **new** in its first release
 or day, **regressed** when it comes back after being resolved, and
 **resolved** by a person or by itself after 7 days without an error.
+What a release logs counts once it is live. A deploy that fails opens
+no issue for its output: `dock diagnose` shows that, with the likely
+cause.
 
 ```sh
 dock errors                     # the organization's open issues
