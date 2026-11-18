@@ -54,6 +54,7 @@ LOCK_WAIT=${NIGHTLY_LOCK_WAIT:-5400}   # seconds to wait for /tmp/dock-heavy.loc
 SCENARIO_TIMEOUT=45m
 # SUITE is every scenario a night runs, in order: run.sh's, features.sh's,
 # release.sh's, then each app template (templates/*, listed at run time),
+# restore.sh (volume backups, in the slot's local repository),
 # pitr.sh (after the others: it moves the slot's backups into its S3 store),
 # and last drain.sh, which drains node2 with whatever the others left there.
 # Left out: traces.sh and metrics.sh (they start their own servers; release.sh's
@@ -66,6 +67,7 @@ SUITE=(
 	features/nodedown features/backup features/alerts
 	release/traces release/status release/vulns release/data release/diagnose release/sleep
 	templates/all
+	restore/all
 	pitr/all
 	drain/node2
 )
