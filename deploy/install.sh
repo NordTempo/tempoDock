@@ -112,7 +112,7 @@ SRC_DIR=""
 # Releases (.github/workflows/release.yml) are downloaded from here.
 RELEASE_REPO=NordTempo/tempoDock
 # The one-line installs: this script and install-cli.sh from the latest
-# release, through the site's redirects (site/Caddyfile).
+# release, through the site's script, which checks them first (site/public).
 INSTALL_URL=https://dock.nordtempo.com/install.sh
 # The release whose asset this is: scripts/release/build.sh sets it in the
 # release's install.sh, so a piped install of it installs that release.

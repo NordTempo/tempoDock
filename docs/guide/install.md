@@ -958,16 +958,17 @@ matching CLI on laptops and in CI with `dock self-update` ([The CLI](#the-cli));
   Caddy). Traffic blips briefly; `--resume` restores the routes. A
   rollback leaves an upgraded Caddy, cloudflared or BuildKit image as it
   is.
-- To upgrade BuildKit, change `[buildkit] image` in `config.toml`.
+- BuildKit follows Dock: an update sets `[buildkit] image` to the image
+  that release pins by digest, and the next build starts it. An image you
+  set yourself stays when it comes from another repository or is a newer
+  `moby/buildkit` than the release's.
 - To upgrade `cloudflared`, re-run with `CLOUDFLARED_VERSION` and
   `CLOUDFLARED_SHA256` (from the release notes); the tunnel restarts.
 - Upgrading an install from before the app firewall: the script moves Caddy
   to the `dock-caddy` user (one Caddy restart, `--resume` restores routes),
   takes `dock` out of the `docker` group, and enables `dock-firewall`.
   Existing app networks keep their Docker-assigned addresses; the firewall
-  covers them too. Your `config.toml` is not rewritten, so pin
-  `[buildkit] image` by digest yourself if it still says only
-  `moby/buildkit:v0.34.1`.
+  covers them too.
 - Air-gapped: copy a release's assets to `<dir>/<version>/` on the
   control plane and set `[updates] source = "<dir>"`.
 

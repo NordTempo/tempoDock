@@ -836,6 +836,10 @@ func TestServerLifecycle(t *testing.T) {
 	if added.Server.Status != apitypes.ServerJoining || !strings.Contains(added.Command, "NODE_JOIN_TOKEN="+added.Token) {
 		t.Fatalf("added: %+v", added)
 	}
+	// The token is never an argument of sudo, where the process list shows it.
+	if _, sudo, _ := strings.Cut(added.Command, "sudo "); strings.Contains(sudo, added.Token) {
+		t.Errorf("the join command puts the token on sudo's command line: %s", added.Command)
+	}
 	if _, err := p.c.AddServer(p.ctx, testSystem, apitypes.AddServerRequest{Name: "homelab"}); CodeOf(err) != apitypes.CodeConflict {
 		t.Fatalf("adding an existing name: %v", err)
 	}
