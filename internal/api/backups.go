@@ -123,8 +123,8 @@ func registerBackups(s *Server, a huma.API) {
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "restore-backup", Method: http.MethodPost, Path: servicePathT + "/backups/restore",
-		Summary: "Restore a backup, or a time, into a new service", Tags: tags, DefaultStatus: http.StatusAccepted,
-		Description: "Creates a new service from the template with the snapshot's data; the live service is never touched. With `to_time` instead of `snapshot`, restores a Postgres database with point-in-time restore as it was at that moment (ADR 0093): a time outside the restorable window, or one the WAL archive doesn't reach (a missing segment), is refused with the latest time it can reach. `in_place` restores the time into the database itself: it stops, a safety snapshot keeps what it holds, and it starts on the restored data. Answers with the service at once; the restore finishes in the background. Scope: deploy.",
+		Summary: "Restore a backup or a time", Tags: tags, DefaultStatus: http.StatusAccepted,
+		Description: "A template database: creates a new service from the template with the snapshot's data; the live service is never touched. Any other service with volumes restores its volume backup (ADR 0095) with `in_place`: it stops, a safety snapshot keeps what its volumes hold, the volumes the backup holds are replaced, and it starts again; or with `as`, into a new service that is a copy of it, which leaves it untouched. With `to_time` instead of `snapshot`, restores a Postgres database with point-in-time restore as it was at that moment (ADR 0093): a time outside the restorable window, or one the WAL archive doesn't reach (a missing segment), is refused with the latest time it can reach. `in_place` restores the time into the database itself: it stops, a safety snapshot keeps what it holds, and it starts on the restored data. Answers with the service at once; the restore finishes in the background. Scope: deploy.",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		ServicePath
 		Body apitypes.RestoreBackupRequest

@@ -9,7 +9,10 @@ import type { Snapshot, SnapshotRestore } from "./data";
 /** Where a restore point stands. */
 export type PointState = "running" | "ready" | "failed" | "removed";
 
-/** A backup run or a snapshot, as the restore list shows it. */
+/**
+ * A backup run or a snapshot, as the restore list shows it. A restore of a
+ * backup is a row of the list too: its run, with operation "restore".
+ */
 export type RestorePoint = {
   key: string;
   at: string;
@@ -22,6 +25,7 @@ export type RestorePoint = {
   /** The error, a snapshot's note or why it can't be restored here. */
   detail?: string;
   by: string;
+  /** "daily", "manual" or a snapshot's trigger; empty for a restore. */
   trigger: string;
 } & (
   | { kind: "backup"; run: BackupRun }
@@ -33,16 +37,20 @@ const backupState = (r: BackupRun): PointState =>
     ? "running"
     : r.status === "failed"
       ? "failed"
-      : r.pruned || !r.snapshot
+      : r.operation === "backup" && (r.pruned || !r.snapshot)
         ? "removed"
         : "ready";
 
 /** A point-in-time base backup (ADR 0093), not a dump. */
 export const isBaseRun = (r: BackupRun) => r.kind === "pitr";
 
+/** A restore of a backup, listed among the points it restored from. */
+export const isRestoreRun = (p: RestorePoint) =>
+  p.kind === "backup" && p.run.operation === "restore";
+
 /**
- * Backups and snapshots, newest first. Restores of runs are left out, and
- * so are base backups that went well: they restore through a time, and
+ * Backups, their restores and snapshots, newest first. Base backups that
+ * went well are left out: they restore through a time, and
  * the strip shows them; a running or failed one is listed, for its log.
  * server is the service's server (operators only), so a snapshot kept
  * there reads "this server" like a backup kept there.
@@ -55,26 +63,28 @@ export function restorePoints(
   const fromBackups = (backups.runs ?? [])
     .filter(
       (r) =>
-        r.operation === "backup" && (!isBaseRun(r) || r.status !== "succeeded"),
+        r.operation === "restore" || !isBaseRun(r) || r.status !== "succeeded",
     )
-    .map(
-      (run): RestorePoint => ({
+    .map((run): RestorePoint => {
+      const restore = run.operation === "restore";
+      return {
         kind: "backup",
         run,
         key: `b${run.id}`,
         at: run.started_at,
-        size: run.size_bytes,
+        size: restore ? 0 : run.size_bytes,
         state: backupState(run),
-        where: run.off_box ? "off-site" : "this server",
-        server: run.off_box ? undefined : server,
-        detail:
-          run.error ??
-          (run.pruned ? "removed by retention" : undefined) ??
-          run.not_restorable,
+        where: restore ? "" : run.off_box ? "off-site" : "this server",
+        server: restore || run.off_box ? undefined : server,
+        detail: restore
+          ? run.error
+          : (run.error ??
+            (run.pruned ? "removed by retention" : undefined) ??
+            run.not_restorable),
         by: run.created_by,
-        trigger: run.trigger === "schedule" ? "scheduled" : "manual",
-      }),
-    );
+        trigger: restore ? "" : run.trigger === "schedule" ? "daily" : "manual",
+      };
+    });
   const fromSnapshots = snapshots.map(
     (snapshot): RestorePoint => ({
       kind: "snapshot",
@@ -105,13 +115,32 @@ export function restorePoints(
  * empty volume measures 0 KiB on some filesystems). It restores nothing,
  * so it is never "latest" and its dialog warns.
  */
-export const isEmpty = (p: RestorePoint) => p.state === "ready" && p.size <= 0;
+export const isEmpty = (p: RestorePoint) =>
+  p.state === "ready" && p.size <= 0 && !isRestoreRun(p);
 
-/** "backup 9d03b7a1", "base backup 412", "snapshot 2": a point by kind and id. */
-export const pointName = (p: RestorePoint) =>
-  p.kind === "backup"
-    ? `${isBaseRun(p.run) ? "base backup" : "backup"} ${p.run.snapshot?.slice(0, 8) ?? p.run.id}`
-    : `snapshot ${p.snapshot.id}`;
+/** What a restore run restored: "backup 9d03b7a1", or the service at a time. */
+const restoredFromRun = (r: BackupRun) =>
+  r.to_time
+    ? `${r.service} as of ${day(r.to_time)} ${clockSec(r.to_time)}`
+    : `backup ${r.snapshot?.slice(0, 8) ?? ""}`.trim();
+
+/**
+ * "backup 9d03b7a1", "base backup 412", "snapshot 2": a point by kind and
+ * id. A restore reads "restore of backup 9d03b7a1 in place", or "into
+ * db-restored".
+ */
+export function pointName(p: RestorePoint) {
+  if (p.kind === "snapshot") return `snapshot ${p.snapshot.id}`;
+  const r = p.run;
+  if (r.operation === "restore") {
+    const into =
+      !r.restored_to || r.restored_to === r.service
+        ? "in place"
+        : `into ${r.restored_to}`;
+    return `restore of ${restoredFromRun(r)} ${into}`;
+  }
+  return `${isBaseRun(r) ? "base backup" : "backup"} ${r.snapshot?.slice(0, 8) ?? r.id}`;
+}
 
 /** A restore that ran, from a backup or a snapshot. */
 export type RestoreRecord = {
@@ -143,9 +172,7 @@ export function restoreRecords(
     .map(
       (r): RestoreRecord => ({
         key: `b${r.id}`,
-        from: r.to_time
-          ? `${r.service} as of ${day(r.to_time)} ${clockSec(r.to_time)}`
-          : `backup ${r.snapshot?.slice(0, 8) ?? ""}`.trim(),
+        from: restoredFromRun(r),
         // A restore to a time in place names the database itself.
         to: r.restored_to === r.service ? undefined : r.restored_to,
         status: r.status,

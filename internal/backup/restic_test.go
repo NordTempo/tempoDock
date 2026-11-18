@@ -17,9 +17,10 @@ import (
 
 func TestBackupScript(t *testing.T) {
 	for kind, want := range map[apitypes.BackupKind][]string{
-		apitypes.BackupPostgres: {"--stdin-from-command -- pg_dump -Fc", "--stdin-filename postgres.dump"},
-		apitypes.BackupRedis:    {`redis-cli -h "$DOCK_DB_HOST" -p "$DOCK_DB_PORT" --rdb /tmp/dock.rdb`, "--stdin-filename redis.rdb", "-- cat /tmp/dock.rdb"},
-		apitypes.BackupVolume:   {"cd /volumes", "backup --json"},
+		apitypes.BackupPostgres: {`pg_dumpall --roles-only --no-role-passwords -l "$PGDATABASE" > /tmp/dock-roles.sql`, "--stdin-filename postgres.dump",
+			`--stdin-from-command -- sh -c 'printf "DOCKPG1 %012d\n" "$(wc -c < /tmp/dock-roles.sql)" && cat /tmp/dock-roles.sql && exec pg_dump -Fc' sh`},
+		apitypes.BackupRedis:  {`redis-cli -h "$DOCK_DB_HOST" -p "$DOCK_DB_PORT" --rdb /tmp/dock.rdb`, "--stdin-filename redis.rdb", "-- cat /tmp/dock.rdb"},
+		apitypes.BackupVolume: {"cd /volumes", "backup --json"},
 		apitypes.BackupMySQL: {`CLIENT="$(command -v mariadb || command -v mysql)"`, "grep -Ev '^(information_schema|performance_schema|mysql|sys)$'",
 			"--stdin-filename mysql.sql", "--stdin-from-command -- $DUMP $AT --single-transaction --routines --triggers --events --databases \"$@\""},
 	} {
@@ -28,7 +29,8 @@ func TestBackupScript(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, w := range append(want,
-			"set -eu", `R="/dock-restic/restic ${DOCK_RESTIC_OPTS:-}"`, "$R init", `--tag "$DOCK_TAG"`, "--host dock", "--retry-lock 10m",
+			"set -eu", `R="/dock-restic/restic ${DOCK_RESTIC_OPTS:-}"`, "$R init", `--tag "${DOCK_SNAPSHOT_TAG:-$DOCK_TAG}"`, "--host dock", "--retry-lock 10m",
+			`--tag "$DOCK_MANUAL_TAG" --group-by tags --keep-last 5 --prune`, `${DOCK_MANUAL_TAG:+--tag "$DOCK_MANUAL_TAG"}`,
 			`forget --quiet --retry-lock 10m --tag "$DOCK_TAG" --group-by tags --keep-daily "$DOCK_KEEP_DAILY"`, "--prune",
 			"echo "+SnapshotsMarker, `snapshots --json --retry-lock 10m --tag "$DOCK_TAG"`) {
 			if !strings.Contains(s, w) {
@@ -43,9 +45,9 @@ func TestBackupScript(t *testing.T) {
 
 func TestBackupEnv(t *testing.T) {
 	src := Source{Kind: apitypes.BackupPostgres, ServiceID: 7, Host: "db", Port: 5432, User: "postgres", Password: "pw", Database: "app"}
-	env := BackupEnv(src, Repo{Password: "repo-pw"}, Retention{Daily: 7, Weekly: 4, Monthly: 6})
+	env := BackupEnv(src, Repo{Password: "repo-pw"}, Retention{Daily: 7, Weekly: 4, Monthly: 6}, false)
 	for k, v := range map[string]string{
-		"RESTIC_REPOSITORY": LocalPath, "RESTIC_PASSWORD": "repo-pw", "DOCK_TAG": "dock-s7",
+		"RESTIC_REPOSITORY": LocalPath, "RESTIC_PASSWORD": "repo-pw", "DOCK_TAG": "dock-s7", "DOCK_MANUAL_TAG": "dock-s7-manual",
 		"DOCK_KEEP_DAILY": "7", "DOCK_KEEP_WEEKLY": "4", "DOCK_KEEP_MONTHLY": "6",
 		"PGHOST": "db", "PGPORT": "5432", "PGUSER": "postgres", "PGPASSWORD": "pw", "PGDATABASE": "app",
 	} {
@@ -56,9 +58,15 @@ func TestBackupEnv(t *testing.T) {
 	if _, ok := env["AWS_ACCESS_KEY_ID"]; ok {
 		t.Error("local repository got S3 credentials")
 	}
+	if _, ok := env["DOCK_SNAPSHOT_TAG"]; ok {
+		t.Error("a scheduled backup is tagged as a manual one")
+	}
+	if manual := BackupEnv(src, Repo{}, Retention{}, true); manual["DOCK_SNAPSHOT_TAG"] != "dock-s7-manual" || manual["DOCK_TAG"] != "dock-s7" {
+		t.Errorf("manual backup env = %v", manual)
+	}
 
 	s3 := Repo{URL: "s3:https://s3.example.com/b/dock", AccessKeyID: "id", SecretAccessKey: "secret", Region: "eu", Password: "p"}
-	env = BackupEnv(Source{Kind: apitypes.BackupRedis, ServiceID: 3, Host: "cache", Port: 6379, Password: "rp"}, s3, Retention{Daily: 1})
+	env = BackupEnv(Source{Kind: apitypes.BackupRedis, ServiceID: 3, Host: "cache", Port: 6379, Password: "rp"}, s3, Retention{Daily: 1}, false)
 	for k, v := range map[string]string{
 		"RESTIC_REPOSITORY": s3.URL, "AWS_ACCESS_KEY_ID": "id", "AWS_SECRET_ACCESS_KEY": "secret", "AWS_DEFAULT_REGION": "eu",
 		"DOCK_DB_HOST": "cache", "DOCK_DB_PORT": "6379", "REDISCLI_AUTH": "rp",
@@ -77,7 +85,14 @@ func TestRestoreScript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, w := range []string{`dump --retry-lock 10m "$DOCK_SNAPSHOT" /postgres.dump | pg_restore --no-owner --no-acl --exit-on-error -d "$PGDATABASE"`, "set -o pipefail"} {
+	for _, w := range []string{
+		`dump --retry-lock 10m "$DOCK_SNAPSHOT" /postgres.dump | {`, "set -o pipefail",
+		"dd bs=1 count=" + strconv.Itoa(PostgresHeaderLen) + " of=/tmp/dock-pg-head",
+		`psql -X -q -d "$PGDATABASE" -f /tmp/dock-roles.sql`,
+		// With the header, and without it (an older snapshot).
+		`    pg_restore --no-owner --no-acl --exit-on-error -d "$PGDATABASE" ;;`,
+		`{ cat /tmp/dock-pg-head; cat; } | pg_restore --no-owner --no-acl --exit-on-error -d "$PGDATABASE" ;;`,
+	} {
 		if !strings.Contains(pg, w) {
 			t.Errorf("postgres restore lacks %q:\n%s", w, pg)
 		}

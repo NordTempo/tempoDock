@@ -377,18 +377,21 @@ func keptBackupNotes(rows []store.ListProjectKeptBackupsRow) []string {
 			end = len(rows)
 		}
 		var n int64
-		var tags []string
+		// Manual backups have their own tag (backup.ManualTag): the
+		// command lists both.
+		var tags, find []string
 		for _, r := range rows[:end] {
 			n += r.Snapshots
 			tags = append(tags, backup.Tag(r.ServiceID))
+			find = append(find, backup.Tag(r.ServiceID), backup.ManualTag(r.ServiceID))
 		}
 		rows = rows[end:]
 		stay := "stay"
 		if n == 1 {
 			stay = "stays"
 		}
-		notes = append(notes, fmt.Sprintf("%s %s in %s, tagged %s: restic with the repository password lists them (`restic snapshots --tag %s`) and removes them (`restic forget --prune ID...`)",
-			count(int(n), "backup"), stay, repoWords(repo), strings.Join(tags, ", "), strings.Join(tags, " --tag ")))
+		notes = append(notes, fmt.Sprintf("%s %s in %s, tagged %s (manual ones with -manual added): restic with the repository password lists them (`restic snapshots --tag %s`) and removes them (`restic forget --prune ID...`)",
+			count(int(n), "backup"), stay, repoWords(repo), strings.Join(tags, ", "), strings.Join(find, " --tag ")))
 	}
 	return notes
 }

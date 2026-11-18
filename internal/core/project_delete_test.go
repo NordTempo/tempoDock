@@ -176,11 +176,11 @@ func TestKeptBackupNotes(t *testing.T) {
 	if len(notes) != 2 {
 		t.Fatalf("notes = %q", notes)
 	}
-	if !strings.HasPrefix(notes[0], "3 backups stay in the local repository on the service's server, tagged dock-s4, dock-s7:") ||
-		!strings.Contains(notes[0], "`restic snapshots --tag dock-s4 --tag dock-s7`") {
+	if !strings.HasPrefix(notes[0], "3 backups stay in the local repository on the service's server, tagged dock-s4, dock-s7 (manual ones with -manual added):") ||
+		!strings.Contains(notes[0], "`restic snapshots --tag dock-s4 --tag dock-s4-manual --tag dock-s7 --tag dock-s7-manual`") {
 		t.Errorf("local note = %q", notes[0])
 	}
-	if !strings.HasPrefix(notes[1], "1 backup stays in s3:https://s3.example.com/backups, tagged dock-s4:") {
+	if !strings.HasPrefix(notes[1], "1 backup stays in s3:https://s3.example.com/backups, tagged dock-s4 (manual ones with -manual added):") {
 		t.Errorf("s3 note = %q", notes[1])
 	}
 }

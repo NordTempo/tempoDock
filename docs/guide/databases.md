@@ -52,16 +52,26 @@ The others follow the same pattern:
 
 | What | How |
 |---|---|
-| Postgres template | `pg_dump -Fc`, in a short-lived container of the same image (so the tool matches the server), streamed into restic |
+| Postgres template | The server's roles (`pg_dumpall --roles-only`) and `pg_dump -Fc`, in a short-lived container of the same image (so the tools match the server), streamed into restic |
 | Redis template | `redis-cli --rdb`: a consistent snapshot over the replication protocol |
 | Any other service with a volume | The volume's files, mounted read-only. A database writing while it is copied can leave an inconsistent copy: use a template for databases |
 
-A Postgres backup is the template's database (`POSTGRES_DB`) only: roles
-you created, their grants and ownership, and other databases in the same
-server are not in it, and a restored copy's objects belong to its own
-user. A dump that names such a role (a row-level-security policy
-`TO tenant`) fails to restore until the role exists. A volume snapshot
-(below) is the whole server, roles and every database included.
+A Postgres backup is the template's database (`POSTGRES_DB`) and the
+server's roles. A restore creates the roles the new service lacks, with
+their settings and memberships, before the data, so a dump that names one
+(a row-level-security policy `TO tenant`) restores. Three things are not
+in it:
+
+- **Role passwords.** A restored role has none and can't log in until you
+  set one: `ALTER ROLE tenant PASSWORD '...'` on the restored service
+  (the Data tab or `dock db`).
+- **Grants and ownership.** A restored copy's objects belong to its own
+  user; grant your roles their tables again.
+- **Other databases** in the same server.
+
+A volume snapshot (below) is the whole server: passwords, grants and
+every database included. Backups from before roles were saved restore as
+they did: create a role they name first, on the restored service.
 
 Backups run daily at 03:00 (the control plane's local time) and after a
 server that was offline at that time reconnects. One runs at a time.
@@ -107,11 +117,11 @@ The repository password is made on first use; **store it** in your password
 manager: without it nobody can read the backups, including you after losing
 the server. Operators show it with `dock backup status --reveal`.
 
-Retention per service: 7 daily, 4 weekly and 6 monthly snapshots. A day
-keeps its newest backup, manual ones included: `dock backup run` twice in
-a day leaves the second (take a volume snapshot before a risky change if
-you want both). An
-operator changes it, and the hour every service follows by default, with
+Retention per service: 7 daily, 4 weekly and 6 monthly snapshots of the
+scheduled backups, and apart from those the last 5 manual ones
+(`dock backup run`, Back up now): a manual backup never pushes out a
+daily one, nor the other way round. An operator changes the daily, weekly
+and monthly numbers, and the hour every service follows by default, with
 `dock backup configure --keep-daily 14 --keep-weekly 4 --keep-monthly 6 --hour 2`.
 
 A store on your LAN (MinIO on a NAS) is a private address: allow it with
@@ -170,14 +180,27 @@ either:
   reference in the environment's variables becomes `${{db-restored.KEY}}`
   and the services using it redeploy. Switching back is the same action
   the other way, and `db` stays until you archive it.
-- **Any other service** restores a snapshot **in place**, after a safety
-  snapshot (see [Snapshots](#snapshots)): nothing refers to it by name.
+- **Any other service** restores a backup or a snapshot **in place**,
+  after a safety snapshot (see [Snapshots](#snapshots)): nothing refers
+  to it by name. The service stops, the safety snapshot keeps what its
+  volumes hold, the volumes in the backup are emptied and filled, and it
+  starts again. If that fails the safety snapshot is put back; restoring
+  it later undoes the restore. A volume added after the backup is left as
+  it is; one removed since must be added back first. To look at old data
+  without stopping anything, restore a backup into a copy instead
+  (`--as NAME`): a new service with the same settings, variables and
+  volumes and no domains, filled from the backup before it starts on the
+  image the service runs. The copy runs with the same variables as the
+  original, so one that sends mail or calls other systems does that
+  too. Archive the copy when you are done.
 
 From the CLI:
 
 ```sh
 dock backup restore -s db --snapshot 4cf53263          # into db-restored
 dock volume snapshot restore 12 -s db                  # the same, from a snapshot
+dock backup restore -s uploads --snapshot 9d2c11f0 --in-place   # a service's volumes, in place
+dock backup restore -s uploads --snapshot 9d2c11f0 --as uploads-old   # or into a copy, nothing stops
 dock service switch-references db --to db-restored --dry-run   # who would redeploy
 dock service switch-references db --to db-restored     # use it
 dock service switch-references db-restored --to db     # switch back
@@ -189,14 +212,36 @@ is refused while the environment has other staged changes (apply or
 discard them first). Literal URLs naming the host (`postgres://db:5432`)
 are not rewritten; use references so a switch catches them.
 
+The new service is no place to switch to until its restore succeeded: the
+switch is refused while the restore runs, and after it failed. A failed
+restore raises an alert and archives its service as
+`db-restored-failed-<restore id>`, volume kept for a look, so the name is
+free: run the restore again.
+
 Restores read only the repository backups go to now. A backup whose
 snapshot is in another one (its storage connection's endpoint or bucket
 changed, say) says so on Settings, Backups, Restore is off for it, and it is
-restored by hand like the backups below.
+restored by hand.
 
-Backups of other volumes are restored by hand for now: with the repository
-password, `restic -r <repository> restore <snapshot> --target <dir>`
-(locally, the repository is the `dock_backups_*` volume on the server).
+By hand, with the repository password: `restic -r <repository> restore
+<snapshot> --target <dir>` (locally, the repository is the
+`dock_backups_*` volume on the server). A volume backup holds one folder
+per volume. A service's scheduled snapshots are tagged `dock-s<id>`, its
+manual ones `dock-s<id>-manual`.
+
+A Postgres backup read by hand is one file, `/postgres.dump`: a 21-byte
+line `DOCKPG1 <length>`, the roles as SQL of that length, then the
+`pg_dump -Fc` archive. Take the two apart before `pg_restore`:
+
+```sh
+restic -r <repository> dump <snapshot> /postgres.dump > backup.bin
+n=$(head -c 21 backup.bin | cut -c9- | sed 's/^0*//')        # the length of the roles
+tail -c +22 backup.bin | head -c "${n:-0}" > roles.sql        # psql -f roles.sql
+tail -c +$((22 + ${n:-0})) backup.bin | pg_restore --no-owner --no-acl -d app
+```
+
+A file that starts with `PGDMP` is a backup from before roles were saved:
+pipe it into `pg_restore` as it is.
 
 ## Point-in-time restore
 
