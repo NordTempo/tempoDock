@@ -85,6 +85,72 @@ func TestTraceSpansNeedLogsReadWhereTheyAre(t *testing.T) {
 	}
 }
 
+// A span outlives its release in the trace store. Once the release is
+// gone there are no values to mask it with, so a reader who gets spans
+// masked gets all of that span's text masked.
+func TestSpansOfGoneReleasesAreMaskedWhole(t *testing.T) {
+	h := newHarness(t)
+	web := tracedService(t, h, "web")
+	if _, err := h.c.CreateProject(h.ctx, testSystem, apitypes.CreateProjectRequest{Name: "old"}); err != nil {
+		t.Fatal(err)
+	}
+	oldRef := ServiceRef{"old", "production", "api"}
+	if _, err := h.c.CreateService(h.ctx, testSystem, EnvRef{"old", "production"}, apitypes.CreateServiceRequest{Name: "api"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.SetVariables(h.ctx, testSystem, EnvRef{"old", "production"}, apitypes.SetVariablesRequest{Service: "api", Set: map[string]string{"API_KEY": traceSecret}, Apply: true}); err != nil {
+		t.Fatal(err)
+	}
+	h.wait(oldRef, h.deploy(oldRef, "nginx:1").Number)
+	ss, err := h.c.serviceFor(h.ctx, testSystem, oldRef, apitypes.ScopeRead, "reading traces")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rel, err := h.store.GetReleaseByNumber(h.ctx, store.GetReleaseByNumberParams{ServiceID: ss.svc.ID, Number: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.EnableTraces(h.ctx, testSystem); err != nil {
+		t.Fatal(err)
+	}
+	start := now().Add(-time.Minute).UnixMicro()
+	trace := analytics.TraceID{15: 0x77}
+	entry := web
+	entry.Trace, entry.ID, entry.Start, entry.Duration, entry.Name, entry.Kind, entry.Entry = trace, 1, start, 1000, "GET /", analytics.SpanServer, true
+	call := analytics.Span{Org: 1, Project: ss.project.ID, Env: ss.env.ID, Service: ss.svc.ID, Release: rel.ID, Trace: trace, ID: 2, Parent: 1, Start: start + 10, Duration: 10, Name: "call"}
+	call.Attrs, _ = json.Marshal(map[string]string{"http.request.body": "key=" + traceSecret})
+	call.Events, _ = json.Marshal([]map[string]any{{"name": "exception", "at": 5, "attrs": map[string]any{"exception.message": "bad key " + traceSecret}}})
+	spool(t, h, entry, call)
+	eventually(t, "the spans in the trace store", func() bool { ts := h.rt.TraceStore(); return ts != nil && len(ts.Spans()) == 2 })
+
+	reader := Actor{Name: "reader", Kind: "token", Scope: apitypes.ScopeRead, OrgID: 1}
+	ref := ServiceRef{"shop", "production", "web"}
+	tr, err := h.c.GetTrace(h.ctx, reader, ref, trace.String(), time.Time{})
+	if err != nil || len(tr.Spans) != 2 || tr.Spans[1].Name != "call" || tr.Spans[1].Attrs["http.request.body"] != "key="+secretMask {
+		t.Fatalf("while the release is there, a reader's trace = %+v, %v", tr.Spans, err)
+	}
+	if _, err := h.c.ArchiveProject(h.ctx, testSystem, "old"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.DeleteProject(h.ctx, testSystem, "old", apitypes.DeleteProjectRequest{Confirm: "old"}); err != nil {
+		t.Fatal(err)
+	}
+	// The reader, and an admin of web's environment: the span was never
+	// theirs to read unmasked.
+	for _, a := range []Actor{reader, testSystem} {
+		tr, err = h.c.GetTrace(h.ctx, a, ref, trace.String(), time.Time{})
+		if err != nil || len(tr.Spans) != 2 {
+			t.Fatalf("once the release is gone, %s's trace = %+v, %v", a.Name, tr.Spans, err)
+		}
+		if got := tr.Spans[1]; got.Name != secretMask || got.Attrs["http.request.body"] != secretMask || len(got.Events) != 1 || got.Events[0].Attrs["exception.message"] != secretMask {
+			t.Errorf("once the release is gone, %s reads its span as %+v, want its text masked whole", a.Name, got)
+		}
+		if got := tr.Spans[0]; got.Name != "GET /" {
+			t.Errorf("web's own span = %+v", got)
+		}
+	}
+}
+
 // One trace read decodes a bounded amount of attributes and events: the
 // spans past it come without theirs and the trace says it isn't whole.
 func TestTraceReadDecodesABoundedAmount(t *testing.T) {

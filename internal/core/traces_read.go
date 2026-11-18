@@ -22,7 +22,8 @@ import (
 // environment whose logs the caller may not read, are hidden, and
 // for a reader who can't reveal secret values, each span's name,
 // attributes and events are masked with its release's values, as logs
-// are (the ingest already masked sensitive attribute names).
+// are (the ingest already masked sensitive attribute names). A span
+// whose release is gone, its values with it, has all its text masked.
 
 // TraceFilter picks a service's traces.
 type TraceFilter struct {
@@ -115,7 +116,7 @@ func (c *Core) ListTraces(ctx context.Context, a Actor, ref ServiceRef, f TraceF
 		}
 	}
 	for _, t := range res.Traces {
-		red := masks[t.Release]
+		red := masks.of(ss.svc.ID, t.Release)
 		out.Traces = append(out.Traces, apitypes.TraceSummary{
 			Trace: t.Trace.String(), Span: t.Span.String(), Release: rels[t.Release].Number,
 			Start: time.UnixMicro(t.Start), DurationMS: ms(t.Duration), Name: red.mask(t.Name), Kind: spanKind(t.Kind),
@@ -211,7 +212,7 @@ func (c *Core) GetTrace(ctx context.Context, a Actor, ref ServiceRef, id string,
 			out.Spans = append(out.Spans, ts)
 			continue
 		}
-		red := masks[sp.Release]
+		red := masks.of(sp.Service, sp.Release)
 		n := names[sp.Service]
 		ts.Project, ts.Environment, ts.Service, ts.Release = n.Project, n.Environment, n.Name, rels[sp.Release].Number
 		ts.Name, ts.Method, ts.Route, ts.HTTPStatus = red.mask(sp.Name), sp.Method, red.mask(sp.Route), sp.HTTPStatus
@@ -321,6 +322,30 @@ type traceMask struct {
 	// work is what is left of the read's maxTraceMaskWork, shared by
 	// the read's masks.
 	work *int64
+	// all masks every string whole: for a release whose values are gone.
+	all bool
+}
+
+// traceMaskSet is a read's masks by release (traceMasks).
+type traceMaskSet struct {
+	by map[int64]traceMask
+	// reveal and inEnv are traceMasks'.
+	reveal bool
+	inEnv  func(serviceID int64) bool
+}
+
+// of is the mask for a span of a service's release. A release that is
+// gone (deleted with its service or project, while the trace store
+// still keeps its spans) has no values left to mask with, so all its
+// span's text is masked for a reader who would get it masked.
+func (s traceMaskSet) of(serviceID, releaseID int64) traceMask {
+	if m, ok := s.by[releaseID]; ok {
+		return m
+	}
+	if s.reveal && s.inEnv(serviceID) {
+		return traceMask{}
+	}
+	return traceMask{all: true}
 }
 
 // newTraceMask is a mask of r's values with a read's work of its own.
@@ -329,14 +354,14 @@ func newTraceMask(r *redactor) traceMask {
 		return traceMask{}
 	}
 	work := maxTraceMaskWork
-	return traceMask{r, &work}
+	return traceMask{r: r, work: &work}
 }
 
 // traceMasks are the masks of the releases in rels for a, each opened
 // once a request: a release's values are decrypted once, not per span.
 // A reader who may reveal secret values in ss's environment gets none for
 // the services there (inEnv); another environment's stay masked.
-func (c *Core) traceMasks(a Actor, ss svcScope, rels map[int64]store.Release, inEnv func(serviceID int64) bool) (map[int64]traceMask, error) {
+func (c *Core) traceMasks(a Actor, ss svcScope, rels map[int64]store.Release, inEnv func(serviceID int64) bool) (traceMaskSet, error) {
 	reveal := a.revealsIn(ss.envScope)
 	out := make(map[int64]traceMask, len(rels))
 	work := maxTraceMaskWork
@@ -347,11 +372,11 @@ func (c *Core) traceMasks(a Actor, ss svcScope, rels map[int64]store.Release, in
 		}
 		r, err := c.releaseRedactor(rel)
 		if err != nil {
-			return nil, err
+			return traceMaskSet{}, err
 		}
-		out[id] = traceMask{r, &work}
+		out[id] = traceMask{r: r, work: &work}
 	}
-	return out, nil
+	return traceMaskSet{by: out, reveal: reveal, inEnv: inEnv}, nil
 }
 
 // spend takes a search of n bytes from the read's work, reporting
@@ -367,6 +392,9 @@ func (m traceMask) spend(n int) bool {
 // once that is gone, a string is masked whole, so a read's cost is
 // bounded whatever the values and the text are.
 func (m traceMask) mask(s string) string {
+	if m.all && s != "" {
+		return secretMask
+	}
 	if m.r == nil || s == "" {
 		return s
 	}
@@ -393,7 +421,7 @@ func (m traceMask) mask(s string) string {
 
 // value masks the strings in a decoded JSON value, in place.
 func (m traceMask) value(v any) any {
-	if m.r == nil {
+	if m.r == nil && !m.all {
 		return v
 	}
 	switch v := v.(type) {
