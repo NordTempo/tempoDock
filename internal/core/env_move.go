@@ -600,10 +600,19 @@ func moveBeforeSwitch(s apitypes.MoveStep) bool {
 // driveMove takes a move as far as it can: forward, or back once it
 // failed before its switch. errMoveWaits means a server it needs is
 // offline.
+//
+// A move that has ended is left alone. resumeMoves lists the open moves
+// and starts each one's driver, and a move another driver ended in
+// between (a server reconnecting just after a restart rolled it back)
+// was driven forward again from the step it failed on: its services
+// were stopped on the source and started on the target once more.
 func (c *Core) driveMove(ctx context.Context, id int64) error {
 	m, err := c.store.GetEnvironmentMove(ctx, id)
 	if err != nil {
 		return err
+	}
+	if m.Status != string(apitypes.MoveRunning) && m.Status != string(apitypes.MoveRollingBack) {
+		return nil
 	}
 	es, err := c.envByID(ctx, m.EnvironmentID)
 	if err != nil {

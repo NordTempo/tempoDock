@@ -308,6 +308,43 @@ func TestMoveEnvironmentRollsBack(t *testing.T) {
 	})
 }
 
+// A move that rolled back stays rolled back when its driver is started
+// once more: a resume lists the open moves and may get to one only after
+// it ended.
+func TestEndedMoveIsNotDrivenAgain(t *testing.T) {
+	p, lab, db, _, data := movePool(t)
+	staging := EnvRef{"shop", "staging"}
+	p.rt.FailHealthCheck(func(spec node.ContainerSpec) error {
+		if strings.HasPrefix(spec.Name, p.envPrefix(db)) {
+			return errNotRunning
+		}
+		return nil
+	})
+	if _, err := p.c.MoveEnvironment(p.ctx, testSystem, staging, apitypes.MoveEnvironmentRequest{To: p.ids2name("cp")}); err != nil {
+		t.Fatal(err)
+	}
+	if m := p.waitMove(staging); m.Status != apitypes.MoveFailed {
+		t.Fatalf("move = %+v", m)
+	}
+	p.rt.FailHealthCheck(nil) // a second try would get through
+	idle := func() bool {
+		p.c.moves.mu.Lock()
+		defer p.c.moves.mu.Unlock()
+		return len(p.c.moves.driving) == 0
+	}
+	eventually(t, "the move's driver to end", idle)
+	row, err := p.store.GetLatestEnvironmentMove(p.ctx, p.envID("staging"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.c.startMove(row.ID)
+	eventually(t, "the second driver to end", idle)
+	if m, err := p.c.EnvironmentMoveStatus(p.ctx, testSystem, staging); err != nil || m.Status != apitypes.MoveFailed {
+		t.Fatalf("move after a second driver = %+v, %v", m, err)
+	}
+	assertStayed(t, p, lab, db, data)
+}
+
 // A daemon that dies at any step of a move finishes it on start: before
 // the switch it rolls back, after it the clean-up goes on.
 func TestMoveEnvironmentSurvivesACrashAtEveryStep(t *testing.T) {
