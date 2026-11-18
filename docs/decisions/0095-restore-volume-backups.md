@@ -44,10 +44,11 @@ Backups tab.
   promotion of it: nothing is built, and a source without an active
   release is refused. Its own variables are copied, literal values too
   (same environment, same readers); references are kept as they are, one
-  to the source itself too. A failed fill leaves the copy unstarted, for
-  a look.
+  to the source itself too. A copy whose restore fails is never
+  started and is archived under another name, like every failed restore
+  into a new service (part 3).
 - The restore is a row in the service's backup list, `restore` with the
-  service itself as its target, with its log.
+  service itself or the copy as its target, with its log.
 
 Template databases keep restoring into a new service from their dump.
 
