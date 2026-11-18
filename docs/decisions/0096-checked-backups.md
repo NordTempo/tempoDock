@@ -86,8 +86,8 @@ Both are on by default; one install-level switch turns them off
   the control plane's backup alert; `backup-drill:<service>` for a
   drill, on the service. The next pass of the same check resolves it.
 - `dock backup check` runs the checks now and `dock backup drill` one
-  service's drill (operators: `BackupsManage`), and MCP's backup tool
-  reads the status.
+  service's drill (operators: `BackupsManage`). MCP has no backup status tool
+  today; one is not added for this.
 
 ## Consequences
 
