@@ -115,7 +115,7 @@ func (c *Core) refreshDisk(srv store.Server) {
 	s.refreshing[srv.ID] = true
 	s.mu.Unlock()
 	c.wg.Add(1)
-	go func() {
+	c.goCaught("reading a server's disk", func() {
 		defer c.wg.Done()
 		d, err := c.readDiskShared(c.ctx, srv)
 		s.mu.Lock()
@@ -132,7 +132,7 @@ func (c *Core) refreshDisk(srv store.Server) {
 			}
 		}
 		c.bus.publish(busEvent{serverStats: true, ev: apitypes.Event{Type: apitypes.EventDisk, Disk: &d}})
-	}()
+	})
 }
 
 // readDisk asks a server for its disk usage and filesystem and groups it,

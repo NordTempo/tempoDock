@@ -173,7 +173,7 @@ func (c *Core) PruneRegistry(ctx context.Context, a Actor) (apitypes.Registry, e
 	// however fast the prune is.
 	info, err := c.registryInfo(ctx)
 	c.wg.Add(1)
-	go func() {
+	c.goCaught("pruning the registry", func() {
 		defer c.wg.Done()
 		defer yield()
 		n, err := c.pruneRegistry(pctx)
@@ -186,7 +186,7 @@ func (c *Core) PruneRegistry(ctx context.Context, a Actor) (apitypes.Registry, e
 			return
 		}
 		c.audit(c.ctx, System, "registry.pruned", nil, nil, "registry", fmt.Sprintf("pruned %d images no release keeps", n))
-	}()
+	})
 	return info, err
 }
 
@@ -258,10 +258,10 @@ func (c *Core) MigrateRegistry(ctx context.Context, a Actor, req apitypes.Migrat
 	c.audit(ctx, a.platform(), "registry.migrate", nil, nil, "registry", fmt.Sprintf("started moving the registry's images from %s to %s", from.name, to.name))
 	info, err := c.registryInfo(ctx)
 	c.wg.Add(1)
-	go func() {
+	c.goCaught("moving the registry's images", func() {
 		defer c.wg.Done()
 		c.migrateRegistry(c.ctx, a, from, to)
-	}()
+	})
 	return info, err
 }
 

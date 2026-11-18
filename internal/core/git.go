@@ -589,7 +589,7 @@ func (c *Core) kickGit(serviceID int64, newer bool) {
 	w := &gitWorker{}
 	c.git.workers[serviceID] = w
 	c.wg.Add(1)
-	go c.gitWork(serviceID, w)
+	c.goCaught("handling a push", func() { c.gitWork(serviceID, w) })
 }
 
 // gitStep is what a worker does after one look at the queue.
@@ -609,7 +609,9 @@ func (c *Core) gitWork(serviceID int64, w *gitWorker) {
 		c.git.mu.Lock()
 		w.again = false
 		c.git.mu.Unlock()
-		step := c.gitStep(serviceID, w)
+		// A panic in a step ends the step: the push stays queued for the
+		// next kick (gitDone), and the worker is free for it.
+		step, _ := caught(c.log, "handling a push", func() (gitStep, error) { return c.gitStep(serviceID, w), nil })
 		c.git.mu.Lock()
 		if step == gitAgain || w.again {
 			c.git.mu.Unlock()
@@ -850,7 +852,7 @@ func (c *Core) postGitStatus(ss svcScope, conn store.GitConnection, rel store.Re
 	c.git.statusTail[id] = done
 	c.git.statusMu.Unlock()
 	c.wg.Add(1)
-	go func() {
+	c.goCaught("posting a commit status", func() {
 		defer c.wg.Done()
 		defer func() {
 			close(done)
@@ -876,5 +878,5 @@ func (c *Core) postGitStatus(ss svcScope, conn store.GitConnection, rel store.Re
 		if err != nil {
 			c.log.Warn("post commit status", "service", ss.String(), "commit", shortSHA(sha), "err", err)
 		}
-	}()
+	})
 }

@@ -132,7 +132,7 @@ func (c *Core) maybePrune(srv store.Server, now time.Time) {
 		return
 	}
 	c.wg.Add(1)
-	go func() {
+	c.goCaught("pruning a full disk", func() {
 		defer c.wg.Done()
 		started := time.Now()
 		images, cache, err := c.pruneServer(c.ctx, srv)
@@ -145,7 +145,7 @@ func (c *Core) maybePrune(srv store.Server, now time.Time) {
 		r.pruning[srv.ID] = false
 		r.pruned[srv.ID] = time.Now()
 		r.mu.Unlock()
-	}()
+	})
 }
 
 // pruneServer removes a server's dangling images that the platform made

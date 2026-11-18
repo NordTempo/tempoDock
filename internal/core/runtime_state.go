@@ -199,8 +199,16 @@ func (c *Core) scopeOf(ctx context.Context, serviceID int64) (svcScope, error) {
 func (c *Core) watchRuntime(events <-chan node.ContainerEvent) {
 	defer c.wg.Done()
 	for ev := range events {
-		c.onContainerEvent(c.ctx, c.localID, ev)
+		c.containerEvent(c.ctx, c.localID, ev)
 	}
+}
+
+// containerEvent is onContainerEvent for the loops that read events
+// (watchRuntime, watchServer): a panic on one event ends that event's
+// handling, and the loop goes on with the next.
+func (c *Core) containerEvent(ctx context.Context, serverID int64, ev node.ContainerEvent) {
+	defer recovered(c.log, "handling a container event")
+	c.onContainerEvent(ctx, serverID, ev)
 }
 
 // foreign reports whether a resource is labelled for another control plane

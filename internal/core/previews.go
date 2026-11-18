@@ -926,7 +926,7 @@ func (c *Core) removePreviewVolumes(es envScope, done []archivedService, vols []
 		svcs[as.svc.ID] = as.svcScope
 	}
 	c.wg.Add(1)
-	go func() {
+	c.goCaught("removing a preview's volumes", func() {
 		defer c.wg.Done()
 		stopped.Wait()
 		rt := c.connected(es.env.ServerID)
@@ -949,7 +949,7 @@ func (c *Core) removePreviewVolumes(es envScope, done []archivedService, vols []
 				c.log.Error("forget a closed preview's removed volume", "volume", v.DockerName, "err", err)
 			}
 		}
-	}()
+	})
 }
 
 // previewReleaseDone runs when a release of a service finishes: in a

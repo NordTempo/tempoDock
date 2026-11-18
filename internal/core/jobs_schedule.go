@@ -34,7 +34,7 @@ func (c *Core) kickJobs() {
 	case c.ctx.Err() == nil:
 		c.jobs.scheduling = true
 		c.wg.Add(1)
-		go c.scheduleJobs()
+		c.goCaught("scheduling jobs", func() { c.scheduleJobs() })
 	}
 }
 
@@ -50,7 +50,8 @@ func (c *Core) scheduleJobs() {
 	timer := time.NewTimer(time.Hour)
 	timer.Stop()
 	for {
-		next, err := c.jobPass(c.ctx)
+		// A panic in a pass is that pass's error: the next comes after jobRetry.
+		next, err := caught(c.log, "a pass of the job scheduler", func() (time.Time, error) { return c.jobPass(c.ctx) })
 		if c.ctx.Err() != nil {
 			return
 		}

@@ -343,11 +343,11 @@ func (c *Core) maybePruneRegistry() {
 		return
 	}
 	c.wg.Add(1) // like finishArchive's stops
-	go func() {
+	c.goCaught("pruning the registry", func() {
 		defer c.wg.Done()
 		defer yield()
 		_, _ = c.pruneRegistry(ctx)
-	}()
+	})
 }
 
 // pruneRegistry deletes the manifests no release keeps (ListKeptDigests),
