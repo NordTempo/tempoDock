@@ -10,11 +10,14 @@ import { ErrorText, Prop } from "../ui/kit";
 // server's access check sends them here with the hostname and the path
 // they asked for. Signed out, they log in first and come back; signed in,
 // the page gets a one-minute grant and goes on to the service by itself.
-// That is safe without a click: the grant only works on that hostname.
+// That is safe without a click: the grant only works on that hostname,
+// once, and in the browser the server sent here (it names that browser's
+// nonce by `n`, which the page passes on).
 export const Route = createFileRoute("/access")({
   validateSearch: (search: Record<string, unknown>) => ({
     host: typeof search.host === "string" ? search.host : "",
     to: typeof search.to === "string" ? search.to : "/",
+    n: typeof search.n === "string" ? search.n : undefined,
   }),
   beforeLoad: async ({ context, location }) => {
     const session = await context.queryClient.ensureQueryData(
@@ -28,13 +31,17 @@ export const Route = createFileRoute("/access")({
 });
 
 function Access() {
-  const { host, to } = Route.useSearch();
+  const { host, to, n } = Route.useSearch();
   const session = useSession();
   const logout = useLogout();
   const grant = useQuery({
-    queryKey: ["access-grant", host, to],
+    queryKey: ["access-grant", host, to, n],
     queryFn: () =>
-      body(api.POST("/api/v1/access/grants", { body: { hostname: host, to } })),
+      body(
+        api.POST("/api/v1/access/grants", {
+          body: { hostname: host, to, nonce: n },
+        }),
+      ),
     enabled: host !== "",
     retry: false,
     // A grant lasts a minute; never reuse one.

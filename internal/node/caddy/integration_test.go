@@ -777,14 +777,19 @@ func TestIntegrationAccess(t *testing.T) {
 
 	// Login: a page load goes to sign in, a script gets a 401.
 	nav := func(r *http.Request) { r.Header.Set("Sec-Fetch-Mode", "navigate") }
-	if code, h, _ := do("GET", tc.url("http", "login.test", "/orders"), "", nav); code != 302 || h.Get("Location") != "https://dock.test/access?host=login.test&to=%2Forders" {
-		t.Fatalf("page load: %d %q", code, h.Get("Location"))
+	code, h, _ := do("GET", tc.url("http", "login.test", "/orders"), "", nav)
+	nonce, _, _ := strings.Cut(strings.TrimPrefix(h.Get("Set-Cookie"), access.NonceCookie+"="), ";")
+	if code != 302 || !access.ValidNonce(nonce) || h.Get("Location") != "https://dock.test/access?host=login.test&n="+access.NonceHash(nonce)+"&to=%2Forders" {
+		t.Fatalf("page load: %d %v", code, h)
 	}
 	if code, _, _ := do("POST", tc.url("http", "login.test", "/api"), "x", nil); code != 401 {
 		t.Fatalf("script: %d", code)
 	}
-	grant := access.Sign(key, access.Grant, "login.test", "ada@example.com", time.Now().Add(access.GrantTTL))
-	code, h, _ := do("GET", tc.url("http", "login.test", access.CallbackPath+"?grant="+grant+"&to=%2Forders"), "", nav)
+	grant := access.SignBound(key, "login.test", access.NonceHash(nonce), "ada@example.com", time.Now().Add(access.GrantTTL))
+	code, h, _ = do("GET", tc.url("http", "login.test", access.CallbackPath+"?grant="+grant+"&to=%2Forders"), "", func(r *http.Request) {
+		nav(r)
+		r.Header.Set("Cookie", access.NonceCookie+"="+nonce)
+	})
 	cookie := h.Get("Set-Cookie")
 	if code != 302 || h.Get("Location") != "/orders" || !strings.HasPrefix(cookie, accessCookie+"=") {
 		t.Fatalf("callback: %d %v", code, h)

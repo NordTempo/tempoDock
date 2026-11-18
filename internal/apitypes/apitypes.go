@@ -1029,6 +1029,10 @@ type AccessGrantRequest struct {
 	Hostname string `json:"hostname" maxLength:"253"`
 	// To is the path to open on it, "/" by default.
 	To string `json:"to,omitempty" maxLength:"4096"`
+	// Nonce is the `n` the domain's server sent the browser to Dock
+	// with: the hash of a nonce it left in that browser. The grant then
+	// works in that browser only. Empty for a server that sends none.
+	Nonce string `json:"nonce,omitempty" maxLength:"43" doc:"The n parameter the service's server sent along; the grant then works only in the browser it came from"`
 }
 
 // AccessGrant is where to send the browser to sign in to a protected

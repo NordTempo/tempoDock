@@ -6,7 +6,9 @@
 // access key, so a server needs no state to check them.
 //
 // A token is base64url(payload) "." base64url(HMAC-SHA256(key, payload)),
-// payload being "<kind>\n<expiry unix>\n<host>\n<user>".
+// payload being "<kind>\n<expiry unix>\n<host>\n<user>". A bound grant
+// (Bound) has one more field before the user: the hash of a nonce the
+// server left in the visitor's browser, so the grant works there only.
 package access
 
 import (
@@ -32,6 +34,18 @@ const (
 	// CallbackPath is where, on the app's hostname, a grant is traded for
 	// a session cookie: CallbackPath?grant=<token>&to=<path>.
 	CallbackPath = "/.dock/access"
+	// NonceCookie holds the nonce a server gives a browser before sending
+	// it to Dock to sign in, on plain HTTP; SecureNonceCookie is its name
+	// on HTTPS, where the __Host- prefix keeps other hostnames of the
+	// same site from setting it.
+	NonceCookie       = "dock_access_n"
+	SecureNonceCookie = "__Host-" + NonceCookie
+	// NonceTTL is how long a browser keeps its nonce: time to log in to
+	// Dock on the way.
+	NonceTTL = 10 * time.Minute
+	// NonceParam carries the nonce's hash (NonceHash) to Dock's /access
+	// page beside host and to.
+	NonceParam = "n"
 	// CookieName is the cookie that holds a visitor's session on a
 	// login-protected hostname.
 	CookieName = "dock_access"
@@ -50,8 +64,13 @@ const (
 type Kind byte
 
 const (
-	// Grant is the one-minute token Dock hands the browser.
+	// Grant is the one-minute token Dock hands the browser of a server
+	// that sent no nonce (one older than bound grants). Newer servers
+	// refuse it at the callback.
 	Grant Kind = 'g'
+	// Bound is a grant that also names the browser it was made for
+	// (SignBound, VerifyBound).
+	Bound Kind = 'b'
 	// Session is the cookie the app's hostname keeps.
 	Session Kind = 's'
 )
@@ -68,35 +87,118 @@ func NewKey() []byte {
 // Sign returns a token of kind for user on host, valid until exp. Newlines
 // in user are dropped: they separate the payload's fields.
 func Sign(key []byte, kind Kind, host, user string, exp time.Time) string {
-	user = strings.ReplaceAll(user, "\n", "")
-	payload := string(kind) + "\n" + strconv.FormatInt(exp.Unix(), 10) + "\n" + host + "\n" + user
+	return seal(key, kind, host, strings.ReplaceAll(user, "\n", ""), exp)
+}
+
+// seal signs a payload of kind for host whose last field is rest.
+func seal(key []byte, kind Kind, host, rest string, exp time.Time) string {
+	payload := string(kind) + "\n" + strconv.FormatInt(exp.Unix(), 10) + "\n" + host + "\n" + rest
 	return b64.EncodeToString([]byte(payload)) + "." + b64.EncodeToString(mac(key, payload))
 }
 
 // Verify returns the user a token names if key signed it as kind for host
-// and it hasn't expired at now.
+// and it hasn't expired at now. A bound grant has its own check,
+// VerifyBound, and never passes this one.
 func Verify(key []byte, token string, kind Kind, host string, now time.Time) (string, bool) {
-	enc, sig, ok := strings.Cut(token, ".")
-	if !ok || len(key) == 0 {
+	if kind == Bound {
 		return "", false
+	}
+	user, _, ok := open(key, token, kind, host, now)
+	return user, ok
+}
+
+// open checks a token's signature, kind, host and expiry, and returns
+// what follows the host in its payload and when it expires (Unix).
+func open(key []byte, token string, kind Kind, host string, now time.Time) (rest string, exp int64, ok bool) {
+	enc, sig, cut := strings.Cut(token, ".")
+	if !cut || len(key) == 0 {
+		return "", 0, false
 	}
 	payload, err := b64.DecodeString(enc)
 	if err != nil {
-		return "", false
+		return "", 0, false
 	}
 	got, err := b64.DecodeString(sig)
 	if err != nil || !hmac.Equal(got, mac(key, string(payload))) {
-		return "", false
+		return "", 0, false
 	}
 	f := strings.SplitN(string(payload), "\n", 4)
 	if len(f) != 4 || f[0] != string(kind) || f[2] != host {
-		return "", false
+		return "", 0, false
 	}
-	exp, err := strconv.ParseInt(f[1], 10, 64)
+	exp, err = strconv.ParseInt(f[1], 10, 64)
 	if err != nil || now.Unix() >= exp {
-		return "", false
+		return "", 0, false
 	}
-	return f[3], true
+	return f[3], exp, true
+}
+
+// NewNonce returns the random value a server leaves in a visitor's
+// browser (NonceCookie) before sending them to Dock to sign in.
+func NewNonce() string {
+	n := make([]byte, 16)
+	_, _ = rand.Read(n) // never fails (crypto/rand)
+	return b64.EncodeToString(n)
+}
+
+// ValidNonce reports whether s has the shape of NewNonce's values, so a
+// server reuses only a cookie it could have set.
+func ValidNonce(s string) bool {
+	n, err := b64.DecodeString(s)
+	return err == nil && len(n) == 16
+}
+
+// NonceHash is what a server tells Dock about a browser's nonce, and
+// what a bound grant carries: base64url(SHA-256(nonce)). The nonce itself
+// never leaves the app's hostname.
+func NonceHash(nonce string) string {
+	sum := sha256.Sum256([]byte(nonce))
+	return b64.EncodeToString(sum[:])
+}
+
+// ValidNonceHash reports whether s has the shape of NonceHash's values.
+func ValidNonceHash(s string) bool {
+	h, err := b64.DecodeString(s)
+	return err == nil && len(h) == sha256.Size
+}
+
+// BoundGrant is what a bound grant says once VerifyBound has checked it.
+type BoundGrant struct {
+	// User is who it signs in.
+	User string
+	// NonceHash is the NonceHash of the nonce in the browser it was made
+	// for; the callback compares it with the browser's cookie (Holds).
+	NonceHash string
+	// Expires is its expiry, in Unix seconds.
+	Expires int64
+}
+
+// Holds reports whether nonce, a browser's nonce cookie, is the one the
+// grant was made for.
+func (g BoundGrant) Holds(nonce string) bool {
+	return nonce != "" && hmac.Equal([]byte(NonceHash(nonce)), []byte(g.NonceHash))
+}
+
+// SignBound returns a grant for user on host that only the browser
+// holding the nonce behind nonceHash (NonceHash) can trade, valid until
+// exp. The control plane signs one when the server sent a nonce's hash.
+func SignBound(key []byte, host, nonceHash, user string, exp time.Time) string {
+	return seal(key, Bound, host, strings.ReplaceAll(nonceHash, "\n", "")+"\n"+strings.ReplaceAll(user, "\n", ""), exp)
+}
+
+// VerifyBound returns what a bound grant says if key signed it for host
+// and it hasn't expired at now. The caller still has to check the
+// browser's nonce (BoundGrant.Holds) and that the grant is unused.
+func VerifyBound(key []byte, token, host string, now time.Time) (BoundGrant, bool) {
+	rest, exp, ok := open(key, token, Bound, host, now)
+	if !ok {
+		return BoundGrant{}, false
+	}
+	n, user, ok := strings.Cut(rest, "\n")
+	if !ok || !ValidNonceHash(n) {
+		return BoundGrant{}, false
+	}
+	return BoundGrant{User: user, NonceHash: n, Expires: exp}, true
 }
 
 func mac(key []byte, payload string) []byte {

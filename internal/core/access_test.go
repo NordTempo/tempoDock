@@ -145,6 +145,24 @@ func TestGrantAccess(t *testing.T) {
 			t.Fatalf("grant names %q (%v)", user, ok)
 		}
 	}
+	// With the hash of the browser's nonce the grant is bound to it; a
+	// value of another shape is refused.
+	n := access.NonceHash(access.NewNonce())
+	g, err := h.c.GrantAccess(h.ctx, ada, apitypes.AccessGrantRequest{Hostname: "shop.example.com", Nonce: n})
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, _ := url.Parse(g.URL)
+	key := h.routeOf("shop.example.com").Access.Key
+	if b, ok := access.VerifyBound(key, u.Query().Get("grant"), "shop.example.com", time.Now()); !ok || b.User != "ada@x" || b.NonceHash != n {
+		t.Fatalf("bound grant = %+v (%v)", b, ok)
+	}
+	if _, ok := access.Verify(key, u.Query().Get("grant"), access.Grant, "shop.example.com", time.Now()); ok {
+		t.Fatal("a bound grant passes as a plain one")
+	}
+	if _, err := h.c.GrantAccess(h.ctx, ada, apitypes.AccessGrantRequest{Hostname: "shop.example.com", Nonce: "not-a-hash"}); CodeOf(err) != apitypes.CodeValidation {
+		t.Fatalf("malformed nonce: %v", err)
+	}
 	if g, _ := h.c.GrantAccess(h.ctx, ada, apitypes.AccessGrantRequest{Hostname: "shop.example.com", To: "https://evil.example"}); !strings.Contains(g.URL, "to=%2F&") && !strings.HasSuffix(g.URL, "to=%2F") {
 		t.Errorf("off-site to: %s", g.URL)
 	}
