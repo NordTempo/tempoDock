@@ -174,7 +174,7 @@ func (c *Core) sleepTick(now time.Time, active map[int64]*serviceTraffic) {
 	}
 	s.mu.Unlock()
 	for _, id := range due {
-		c.wg.Go(func() { c.sleepIdle(c.ctx, id) })
+		c.goCounted("putting an idle environment to sleep", func() { c.sleepIdle(c.ctx, id) })
 	}
 }
 
@@ -386,10 +386,11 @@ func (c *Core) sleepNow(ctx context.Context, es envScope, by string) (asleep boo
 	errs := make([]error, len(rows))
 	var wg sync.WaitGroup
 	for i, r := range rows {
-		wg.Go(func() {
+		goErr(&wg, c.log, "stopping a container to sleep", &errs[i], func() error {
 			if err := rt.Stop(ctx, r.ContainerID, stopTimeout); err != nil && !errors.Is(err, node.ErrNotFound) {
-				errs[i] = err
+				return err
 			}
+			return nil
 		})
 	}
 	wg.Wait()
@@ -499,7 +500,7 @@ func (c *Core) wakeNow(ctx context.Context, es envScope, by string) error {
 	for _, lvl := range levels {
 		var wg sync.WaitGroup
 		for _, w := range lvl {
-			wg.Go(func() {
+			goIn(&wg, c.log, "waking a service", func() {
 				err := c.resumeService(ctx, rt, w.ss, w.rel, w.cfg)
 				if err != nil {
 					c.log.Warn("wake: service didn't come back", "service", w.ss.String(), "err", err)
@@ -693,7 +694,10 @@ func (w RequestWaker) Wake(ctx context.Context, key, request string) error {
 		}
 	}
 	done := make(chan error, 1)
-	w.c.wg.Go(func() { done <- w.c.wakeByID(id, request) })
+	// caughtErr: a panic is the error the waiting request gets.
+	w.c.goCounted("waking an environment", func() {
+		done <- caughtErr(w.c.log, "waking an environment", func() error { return w.c.wakeByID(id, request) })
+	})
 	select {
 	case err := <-done:
 		return err
@@ -730,7 +734,7 @@ func (c *Core) wakeFromNode(ctx context.Context, serverID int64, ev node.Contain
 	if len(request) > 200 {
 		request = strings.ToValidUTF8(request[:200], "") // a node's word: capped like its errors
 	}
-	c.wg.Go(func() { _ = c.wakeByID(id, request) })
+	c.goCounted("waking an environment for a node", func() { _ = c.wakeByID(id, request) })
 }
 
 // onLocal reports whether a sleepable environment is on the control

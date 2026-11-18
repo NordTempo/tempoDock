@@ -442,6 +442,11 @@ Apps and builds reach the public internet, but not your private networks:
 - the server itself on any address, so the API, SSH and anything else
   listening on it.
 
+The same IPv4 ranges are dropped when written inside an IPv6 address, through
+NAT64 (`64:ff9b::/96`) or 6to4 (`2002::/16`), and IPv6 ranges that carry an
+IPv4 address some other way (`64:ff9b:1::/48`, `2001::/32`, `::/96`,
+`::ffff:0:0/96`) are dropped whole.
+
 Exceptions: containers in one environment reach each other (different
 environments are isolated by Docker), they reach Caddy's ports 80/443 on the
 server so apps can call each other by domain, and port 53 on the server's DNS

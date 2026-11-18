@@ -655,7 +655,7 @@ func (c *Core) Start(ctx context.Context) error {
 	}
 	// Preview copies a restart cut short end empty (ADR 0092); in the
 	// background, as they run jobs.
-	c.wg.Go(func() {
+	c.goCounted("ending preview copies cut short", func() {
 		if err := c.resumePreviewData(c.ctx); err != nil {
 			c.log.Error("end preview copies cut short", "err", err)
 		}
