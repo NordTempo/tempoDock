@@ -92,6 +92,21 @@ func TestOpenStreamsEndWithAccess(t *testing.T) {
 	endsWithAccess(t, "a member after the org's access changed", mia)
 }
 
+// Suspending an org ends what everyone acting in it follows, a plain
+// token too, which a change to the org's groups or roles leaves alone:
+// its scope is its own.
+func TestSuspendingAnOrgEndsItsStreams(t *testing.T) {
+	h := newHarness(t)
+	h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	plain := h.followAs(Actor{Kind: "token", Name: "legacy", OrgID: 1, TokenID: 9001, Scope: apitypes.ScopeRead})
+	h.c.accessChanged(accessChange{orgID: 1})
+	staysOpen(t, "a plain token after the org's access changed", plain)
+	if _, err := h.c.SuspendOrg(h.ctx, h.operator("op@x"), "test", true); err != nil {
+		t.Fatal(err)
+	}
+	endsWithAccess(t, "a plain token in a suspended org", plain)
+}
+
 // An attached run and a tunnel end with their actor's access too.
 func TestRunsAndTunnelsEndWithAccess(t *testing.T) {
 	h, _, web, _ := connectFixture(t)

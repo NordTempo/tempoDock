@@ -79,10 +79,13 @@ streams, an attached `dock run`, a `dock connect` tunnel) is registered
 with its actor, and every write that ends or changes access says whose
 (`accessChanged` in access_watch.go: a user, a token or an org). Access
 that ended (a disabled or deleted account, a changed password, a revoked
-token, a member removed) closes all of it. Access that changed (groups,
+token, a member removed) closes all of it, and so do the tokens removed
+when an account's email is first proven. Access that changed (groups,
 grants, roles, agent rules) ends the streams, which clients open again
 and are checked as they are now, and asks for a run or a tunnel whether
-its actor may still hold it. Nothing polls for this.
+its actor may still hold it. Suspending or deleting an org does the same
+for everyone acting in it. Nothing polls for this; a token that expires
+while something is open is not seen until its next call.
 
 ### The migration
 

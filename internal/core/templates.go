@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -27,7 +28,10 @@ type dbTemplate struct {
 	image   string
 	// port is where the database listens. It isn't published: health
 	// checks probe it on the environment network, as backups reach it.
-	port      int
+	port int
+	// health is what the health checks ask the port beyond a TCP connect
+	// (node.HealthPostgres for Postgres, "" for the others).
+	health    node.HealthKind
 	mountPath string
 	memoryMB  int
 	// cmd keeps the image's entrypoint (it initialises the volume) and
@@ -72,6 +76,7 @@ func postgresTemplate(name apitypes.Template, title, description, image string) 
 	return dbTemplate{
 		name: name, title: title, license: "PostgreSQL", description: description, image: image,
 		port:      defaultPostgresPort,
+		health:    node.HealthPostgres,
 		mountPath: "/var/lib/postgresql/data",
 		memoryMB:  512,
 		// queryStatsFlags: pg_stat_statements for the Data panel's Health
@@ -347,10 +352,13 @@ func (c *Core) ensureDataAccess(ctx context.Context, ss svcScope) error {
 	return err
 }
 
-// Setting up a new template database is retried: Postgres accepts TCP
-// (which passes the health check) a moment before it accepts logins, and
-// on a busy server that moment is long enough to miss. The waits (1, 2,
-// 4 and 8 s) run only after a failed attempt, never while idle.
+// Setting up a new template database is retried. A Postgres template's
+// health check passes only once the server accepts connections
+// (node.HealthPostgres), but a server on an older dock still runs the
+// TCP check, which passes a moment before Postgres accepts logins, and
+// the other engines' checks are TCP too; the image's entrypoint also
+// restarts Postgres once after initialising a new volume. The waits (1,
+// 2, 4 and 8 s) run only after a failed attempt, never while idle.
 const setupAttempts = 5
 
 // setupRetryDelay is the wait before the second attempt; tests shorten it.

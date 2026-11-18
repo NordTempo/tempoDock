@@ -39,6 +39,9 @@ The others follow the same pattern:
   so on.
 - It publishes no port. Other services reach it by name on the
   environment's private network; the health check connects there too.
+  A Postgres database counts as healthy once it accepts connections, not
+  when its port opens: one that is still starting up, or recovering after
+  a crash or a restore, waits until it is ready.
   From your laptop use the Data tab, `dock db`, or your own client through
   [`dock connect`](data.md#connecting-from-your-machine).
 - Postgres templates get the [Data tab](data.md) set up automatically.

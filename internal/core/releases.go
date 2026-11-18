@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/repoconfig"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
@@ -62,10 +63,14 @@ type releaseConfig struct {
 	MemoryMB                int `json:"memory_mb"`
 	// HealthPort is the container port a template database is probed on
 	// over its environment network (it publishes none).
-	HealthPort int           `json:"health_port,omitempty"`
-	CPUs       float64       `json:"cpus"`
-	Mounts     []configMount `json:"mounts"`
-	Aliases    []string      `json:"aliases"`
+	HealthPort int `json:"health_port,omitempty"`
+	// HealthKind is what the HealthPort probe asks beyond a TCP connect:
+	// a Postgres template's must accept connections. Configs sealed
+	// before it have "", the TCP check.
+	HealthKind node.HealthKind `json:"health_kind,omitempty"`
+	CPUs       float64         `json:"cpus"`
+	Mounts     []configMount   `json:"mounts"`
+	Aliases    []string        `json:"aliases"`
 	// PreDeploy is the pre-deploy command (ADR 0045), run before the
 	// release starts; PreDeployTimeout bounds it in seconds.
 	PreDeploy        string `json:"pre_deploy,omitempty"`
@@ -317,7 +322,7 @@ func (c *Core) resolveConfig(ctx context.Context, q *store.Queries, ss svcScope,
 		cfg.HealthCheckStartPeriod = cfg.HealthCheckTimeout
 	}
 	if t, ok := templateOf(target); ok {
-		cfg.HealthPort = t.port
+		cfg.HealthPort, cfg.HealthKind = t.port, t.health
 	}
 	if cfg.MemoryMB == 0 {
 		cfg.MemoryMB = c.cfg.Defaults.MemoryMB

@@ -24,6 +24,9 @@ var ErrAccessChanged = errf(apitypes.CodeUnauthorized, "your access changed whil
 //   - orgID alone: everyone whose access in the org comes from its
 //     groups, grants, roles or agent rules.
 //
+// everyone, with orgID alone, is every actor acting in the org, its plain
+// tokens too: the org was suspended or deleted.
+//
 // changed says the access may be more or less now, not gone (a new role,
 // a group joined or left, a grant): live streams still end, to be opened
 // again as the actor is now, and a run or a tunnel asks whether its
@@ -31,7 +34,7 @@ var ErrAccessChanged = errf(apitypes.CodeUnauthorized, "your access changed whil
 type accessChange struct {
 	userID, tokenID, orgID int64
 	keepToken              int64
-	changed                bool
+	changed, everyone      bool
 }
 
 // ends reports whether the change ends what a holds open. An org's
@@ -43,7 +46,7 @@ func (ch accessChange) ends(a Actor) bool {
 	case ch.userID != 0:
 		return a.UserID == ch.userID && (ch.orgID == 0 || a.OrgID == ch.orgID) && (ch.keepToken == 0 || a.TokenID != ch.keepToken)
 	case ch.orgID != 0:
-		return a.OrgID == ch.orgID && (a.UserID != 0 || a.hasGrants || a.watchGrants || a.agent != nil)
+		return a.OrgID == ch.orgID && (ch.everyone || a.UserID != 0 || a.hasGrants || a.watchGrants || a.agent != nil)
 	}
 	return false
 }

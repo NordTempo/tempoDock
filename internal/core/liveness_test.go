@@ -111,6 +111,21 @@ func TestResolveConfigHealthCheckDefaults(t *testing.T) {
 	}
 }
 
+// TestHealthCheckOf: a deploy asks an unpublished Postgres template to
+// accept connections, and everything else what it asked before.
+func TestHealthCheckOf(t *testing.T) {
+	pg := healthCheckOf(releaseConfig{HealthPort: 5432, HealthKind: node.HealthPostgres, HealthCheckTimeout: 60})
+	if pg.Port != 5432 || pg.Kind != node.HealthPostgres {
+		t.Errorf("Postgres template: %+v", pg)
+	}
+	if hc := healthCheckOf(releaseConfig{HealthPort: 6379, HealthCheckTimeout: 60}); hc.Port != 6379 || hc.Kind != "" {
+		t.Errorf("another template: %+v", hc)
+	}
+	if hc := healthCheckOf(releaseConfig{Port: 8080, Published: true, HealthPort: 5432, HealthKind: node.HealthPostgres}); hc.Port != 0 || hc.Kind != "" {
+		t.Errorf("published service: %+v", hc)
+	}
+}
+
 func TestLiveness(t *testing.T) {
 	want := func(port int, path string) *node.LivenessCheck {
 		return &node.LivenessCheck{
@@ -127,6 +142,10 @@ func TestLiveness(t *testing.T) {
 		{"published HTTP", releaseConfig{Port: 3000, Published: true, HealthCheckPath: "/up", HealthCheckTimeout: 60}, want(3000, "/up")},
 		{"published TCP", releaseConfig{Port: 8080, Published: true, HealthCheckTimeout: 60}, want(8080, "")},
 		{"template database", releaseConfig{Port: 8080, HealthPort: 5432, HealthCheckTimeout: 60}, want(5432, "")},
+		// The ongoing check of a Postgres template stays TCP (liveness).
+		{"Postgres template", releaseConfig{Port: 8080, HealthPort: 5432, HealthKind: node.HealthPostgres, HealthCheckTimeout: 60}, want(5432, "")},
+		// A published service never gets the kind: it is the port probe's.
+		{"published with a kind", releaseConfig{Port: 8080, Published: true, HealthPort: 5432, HealthKind: node.HealthPostgres, HealthCheckTimeout: 60}, want(8080, "")},
 		{"worker", releaseConfig{Port: 8080, HealthCheckTimeout: 60}, nil},
 		{"off", releaseConfig{Port: 3000, Published: true, HealthCheckInterval: livenessOff}, nil},
 		{"set", releaseConfig{

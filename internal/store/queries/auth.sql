@@ -116,10 +116,12 @@ UPDATE users SET password_hash = ?, factor_failures = 0, factor_failed_at = NULL
 -- name: ProveUserEmail :execrows
 UPDATE users SET email_proven = 1 WHERE id = +? AND NOT email_proven;
 
--- RevokeUserTokens revokes every token a user holds or made by hand.
--- name: RevokeUserTokens :execrows
+-- RevokeUserTokens revokes every token a user holds or made by hand and
+-- returns their IDs.
+-- name: RevokeUserTokens :many
 UPDATE tokens SET revoked_at = +sqlc.arg(now)
-WHERE user_id = +sqlc.arg(user_id) AND revoked_at IS NULL;
+WHERE user_id = +sqlc.arg(user_id) AND revoked_at IS NULL
+RETURNING id;
 
 -- name: DeleteUser :exec
 DELETE FROM users WHERE id = +?;

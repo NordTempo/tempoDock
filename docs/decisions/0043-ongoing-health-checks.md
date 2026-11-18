@@ -25,7 +25,7 @@ container, and an app's image may have no shell, curl or wget
 |---|---|
 | Who probes | Docker's native healthcheck (`Config.Healthcheck`). Docker runs the probe and reports `health_status` events on the stream core follows already; the daemon runs nothing per probe |
 | The probe | `dock-probe` (`cmd/dock-probe`): a 2 MB static Go binary that imports only `net`, `os`, `strconv` and `time`. dock embeds it gzipped (`internal/node/probe`, built by `make build` and the release, 0.9 MB), unpacks it to `<data dir>/probe/dock-probe` on start when it changed, checks it runs there (`dock-probe version`: a `noexec` data dir is caught) and bind-mounts it read-only at `/.dock-probe` in each container with a check. It works in any image, of any architecture the host runs, with no shell |
-| What it probes | What the deploy's check does, from inside the container: `GET health_check_path` on the service's port (2xx or 3xx passes), or a TCP connect when there is no path. Template databases get TCP on their port. A service with nothing to probe (a worker without a port) gets no check. It connects to the container's loopback, then to its other addresses if nothing listens there |
+| What it probes | What the deploy's check does, from inside the container: `GET health_check_path` on the service's port (2xx or 3xx passes), or a TCP connect when there is no path. Template databases get TCP on their port (see the amendment of 2026-11-18 for Postgres). A service with nothing to probe (a worker without a port) gets no check. It connects to the container's loopback, then to its other addresses if nothing listens there |
 | Settings | Per service and in dock.toml's `[deploy]`: interval (default 30 s, `off` / -1 turns it off), probe timeout (5 s), retries (3) and start period (the deploy's health check timeout, 60 s by default). During the start period Docker probes every 2 s, so a restarted app reads healthy within seconds |
 | Unhealthy | Docker marks a container unhealthy after `retries` failed probes in a row. Core shows it in the service's status (`health`, also in SSE, `dock status`, the MCP endpoint and the UI), raises an `unhealthy` alert and restarts the container in place: same container, port and volumes, so a stateful service never has two containers on one volume |
 | Backoff | Restarts in a row wait 0, 1, 5, 15, then 30 minutes after the previous one, on top of the time the check takes to fail again (2.5 minutes by default). Half an hour of passing checks starts the count over. Restarts held back by the backoff are made on the statistics tick: no new timer |
@@ -75,3 +75,36 @@ container, and an app's image may have no shell, curl or wget
   health check path for that.
 - A plain `go build` has no embedded probe: such a dock logs a warning
   and runs without ongoing checks. `make build` and releases embed it.
+
+## Amendment (2026-11-18): Postgres must accept connections
+
+A Postgres server that is starting up, or replaying its WAL after a crash
+or a restore, has its port open and answers every connection with the
+error 57P03 ("the database system is starting up"). The TCP check passed
+there, so a restored or recovering database went live before it could
+take a login.
+
+`dock-probe pg PORT TIMEOUT_MS` sends a PostgreSQL startup message (user
+and database `postgres`, no password) and reads the first answer. It
+fails only on a 57P03 error, a timeout or a connection that closes
+without a whole answer. A request for authentication, or any other error
+(a wrong password, no such role or database), means the server takes
+connections: healthy. This is what `pg_isready` does, without needing it
+in the image.
+
+The deploy's check of the Postgres templates (`postgres`, `pgvector`)
+asks the same over the environment network (`internal/node/pgready` holds
+the one implementation, standard library only): that is the check that
+decides when a deployed, restored or recovering database goes live. Their
+ongoing check stays TCP for now. Inside the container the Postgres image
+trusts loopback, so a startup message as user `postgres` would log "role
+does not exist" every interval in a database whose user is another; the
+probe and the container spec carry the kind, and core can select it once
+the probe sends the database's own user. MySQL and Redis templates keep
+the TCP check.
+
+The node protocol is not bumped: the kind is an optional field of the
+health check and of the container spec's health. A server on an older
+dock ignores the field and runs the TCP check, as before; it gets the new
+check once it is updated and the database is deployed again. Releases
+sealed before this keep the TCP check when they are rolled back to.

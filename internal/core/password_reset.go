@@ -122,7 +122,8 @@ func (c *Core) ResetPasswordWithLink(ctx context.Context, code string, req apity
 		return err
 	}
 	u := row.User
-	var revoked, factors, tokens int64
+	var revoked, factors int64
+	var tokens []int64
 	took := false
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		if _, err := q.UsePasswordReset(ctx, store.UsePasswordResetParams{UsedAt: ptr(now()), ID: row.PasswordReset.ID}); store.IsNotFound(err) {
@@ -155,10 +156,11 @@ func (c *Core) ResetPasswordWithLink(ctx context.Context, code string, req apity
 		return err
 	}
 	c.accessChanged(accessChange{userID: u.ID})
+	c.tokensEnded(tokens)
 	c.endOrphanedRequests(ctx)
 	summary := "set a new password with an emailed link from " + clientIP + "; sessions ended" + revokedNote(revoked)
 	if took {
-		summary += fmt.Sprintf("; the link proved the account's email for the first time, so the %d second factors, the recovery codes and the %d tokens set up on it before were removed", factors, tokens)
+		summary += fmt.Sprintf("; the link proved the account's email for the first time, so the %d second factors, the recovery codes and the %d tokens set up on it before were removed", factors, len(tokens))
 	}
 	c.audit(ctx, userActor(u), "user.password_reset", nil, nil, u.Email, summary)
 	c.securityNotice(ctx, u, "Your Tempo Dock password was changed", "")

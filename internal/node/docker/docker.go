@@ -707,8 +707,11 @@ func healthcheck(hc node.LivenessCheck) *container.HealthConfig {
 		timeout = probeTimeout
 	}
 	test := []string{"CMD", probePath, "tcp", strconv.Itoa(hc.Port)}
-	if hc.Path != "" {
+	switch {
+	case hc.Path != "":
 		test = []string{"CMD", probePath, "http", strconv.Itoa(hc.Port), hc.Path}
+	case hc.Kind == node.HealthPostgres:
+		test[2] = "pg"
 	}
 	test = append(test, strconv.FormatInt(timeout.Milliseconds(), 10))
 	return &container.HealthConfig{

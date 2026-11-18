@@ -400,7 +400,7 @@ end) are not listed.
 | Registry bucket probe | `internal/registry/gateway/health.go` | once, 1 min doubling to 5 min | the bucket is degraded or failing and nothing else calls it (no upload runs, queues or waits a retry); a healthy bucket is never probed | one `ListObjectsV2` of one key |
 | Registry gateway deadlines | `internal/registry/gateway` | per bucket request: 20 s to the first byte, then 1 min without progress | a request to the bucket runs | one timer per request, reset on reads |
 | Fake health pass | `internal/node/fake/fake.go` (PassHealthAfter) | once, 1 s after a container starts or restarts | `make dev` only (DOCK_FAKE_RUNTIME=1), for a container with a health check | one timer per start; then one health_status event |
-| Health check | `internal/node/docker/health.go` | at once, then 50, 100, 200, 400 ms, then 1 s | a release is health checking | one inspect + HTTP/TCP probe |
+| Health check | `internal/node/docker/health.go` | at once, then 50, 100, 200, 400 ms, then 1 s | a release is health checking | one inspect + HTTP/TCP probe (a Postgres template: one startup message and its answer on that connection) |
 | Cutover drain | `internal/core/deploy.go` | once, 12 s after a cutover | a release was replaced | one timer |
 | Deploy step deadlines | `internal/core/deploy_phases.go` | once per step: the registry wait 10 min, a build slot 30 min, a pull 30 min, starting the container 5 min | a deploy is on that step | one context timer, stopped when the step ends; firing fails the release (`phase_timeout`) |
 | Template database setup retry | `internal/core/templates.go` | 1 s, doubling, 5 attempts (about 15 s) | setting up a new template database's data access failed | one setup attempt |

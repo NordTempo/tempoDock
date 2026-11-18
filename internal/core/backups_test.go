@@ -82,8 +82,8 @@ func TestTemplatePostgres(t *testing.T) {
 	}
 	ss, _ := h.c.serviceFor(h.ctx, testSystem, db, apitypes.ScopeRead, "testing")
 	rel, _ := h.store.GetActiveRelease(h.ctx, ss.svc.ID)
-	if cfg, err := h.c.openConfig(rel); err != nil || cfg.HealthPort != 5432 || cfg.Published {
-		t.Errorf("release config: health port %d, published %v (%v)", cfg.HealthPort, cfg.Published, err)
+	if cfg, err := h.c.openConfig(rel); err != nil || cfg.HealthPort != 5432 || cfg.HealthKind != node.HealthPostgres || cfg.Published {
+		t.Errorf("release config: health port %d, kind %q, published %v (%v)", cfg.HealthPort, cfg.HealthKind, cfg.Published, err)
 	}
 
 	// Other services reference it; a second database gets its own password.

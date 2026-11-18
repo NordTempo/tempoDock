@@ -129,6 +129,7 @@ func (c *Core) DeleteOrg(ctx context.Context, a Actor) error {
 	if err != nil {
 		return err
 	}
+	c.accessChanged(accessChange{orgID: a.OrgID, everyone: true})
 	c.audit(ctx, a.platform(), "org.delete", nil, nil, a.OrgSlug, "deleted organization "+a.OrgSlug)
 	return nil
 }

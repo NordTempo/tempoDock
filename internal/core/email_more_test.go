@@ -218,7 +218,14 @@ func TestResetLinkTakesAnUnprovenAccount(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	asToken, err := h.c.AuthenticateToken(h.ctx, tok.Secret, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	following := h.followAs(asToken)
+
 	resetWithLink(t, h, srv, "vic@example.com", "the owner's own password")
+	endsWithAccess(t, "what a token made before the reset follows", following)
 	if n, err := h.store.CountUserFactors(h.ctx, early.a.UserID); err != nil || n != 0 {
 		t.Fatalf("second factors left on the account: %d, %v", n, err)
 	}
