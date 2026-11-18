@@ -743,11 +743,23 @@
       "Alert": {
         "additionalProperties": false,
         "properties": {
+          "cleared_at": {
+            "description": "When the alert's condition last cleared; it resolves once it stays clear for settle_minutes",
+            "format": "date-time",
+            "type": "string"
+          },
           "command": {
             "examples": [
               "dock release show 8 -p shop -e production -s web"
             ],
             "type": "string"
+          },
+          "count": {
+            "examples": [
+              1
+            ],
+            "format": "int64",
+            "type": "integer"
           },
           "environment": {
             "type": "string"
@@ -810,7 +822,8 @@
           "severity",
           "title",
           "opened_at",
-          "updated_at"
+          "updated_at",
+          "count"
         ],
         "type": "object"
       },

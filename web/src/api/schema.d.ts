@@ -7136,8 +7136,18 @@ export interface components {
             settings: components["schemas"]["AgentSetting"][] | null;
         };
         Alert: {
+            /**
+             * Format: date-time
+             * @description When the alert's condition last cleared; it resolves once it stays clear for settle_minutes
+             */
+            cleared_at?: string;
             /** @example dock release show 8 -p shop -e production -s web */
             command?: string;
+            /**
+             * Format: int64
+             * @example 1
+             */
+            count: number;
             environment?: string;
             /** Format: int64 */
             id: number;
