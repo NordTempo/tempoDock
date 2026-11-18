@@ -42,8 +42,9 @@ func (p *promoteStep) stopper() *promoteStep {
 // the same image (by registry digest) and To's own variables and settings,
 // deployed through the normal health-checked path, one at a time in name
 // order. Nothing is rebuilt. Services missing in To, without an active
-// release in From, whose image can't reach To's server, or already
-// deploying in To are skipped and listed. A release that can't be created
+// release in From, whose image can't reach To's server, already
+// deploying in To, or already running From's image in To are skipped and
+// listed. A release that can't be created
 // stops the promotion: once earlier ones started, it and the services
 // after it are skipped as failed; before that, its error is returned.
 // Requires deploy on To and read on From; To's server must be online.
@@ -94,6 +95,17 @@ func (c *Core) promoteSteps(ctx context.Context, a Actor, src, dst envScope, nam
 	if err != nil {
 		return out, nil, err
 	}
+	// What each of dst's services runs now: one already on the source's
+	// image is left alone, so a promotion never restarts (and, with a
+	// volume, stops) a service for nothing.
+	dstActives, err := c.store.ListPromotableReleases(ctx, dst.env.ID)
+	if err != nil {
+		return out, nil, err
+	}
+	serving := make(map[int64]store.Release, len(dstActives))
+	for _, r := range dstActives {
+		serving[r.Release.ServiceID] = r.Release
+	}
 	live := func(svcs []store.Service, name string) (store.Service, bool) {
 		i := slices.IndexFunc(svcs, func(s store.Service) bool { return s.Name == name && s.ArchivedAt == nil })
 		if i < 0 {
@@ -142,6 +154,10 @@ func (c *Core) promoteSteps(ctx context.Context, a Actor, src, dst envScope, nam
 				from.Number, name, src.env.Name, dst.env.Name, src.env.Name)
 			continue
 		}
+		if cur, ok := serving[target.ID]; ok && !applyStaged && sameImage(from, cur) {
+			skip(name, apitypes.SkipSameImage, "already runs this image in %s (release %d), left alone", dst.env.Name, cur.Number)
+			continue
+		}
 		step := &promoteStep{service: name, from: from, imageRef: ref, imageID: id, prev: prev, done: make(chan struct{})}
 		ss := svcScope{dst, target}
 		rel, err := c.startRelease(ctx, a, ss, releaseSpec{source: apitypes.SourcePromote, promote: step, applyStaged: applyStaged})
@@ -172,6 +188,13 @@ func (c *Core) promoteSteps(ctx context.Context, a Actor, src, dst envScope, nam
 	}
 	c.audit(ctx, a, "release.promote", &dst.project, &dst.env, dst.String(), promoteSummary(out))
 	return out, prev, failed
+}
+
+// sameImage reports whether two releases run the same image: the same
+// registry digest, or the same image ID (an image that never went
+// through Dock's registry, like a template database's).
+func sameImage(a, b store.Release) bool {
+	return a.ImageDigest != "" && a.ImageDigest == b.ImageDigest || a.ImageID != "" && a.ImageID == b.ImageID
 }
 
 // promotedImage is the image a promoted release runs: the source

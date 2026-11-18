@@ -11930,7 +11930,7 @@ export interface components {
         SkippedService: {
             message: string;
             /** @enum {string} */
-            reason: "missing_in_target" | "no_active_release" | "no_digest" | "deploy_in_progress" | "failed";
+            reason: "missing_in_target" | "no_active_release" | "no_digest" | "deploy_in_progress" | "same_image" | "failed";
             service: string;
         };
         Snapshot: {

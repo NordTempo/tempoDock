@@ -17394,6 +17394,7 @@
               "no_active_release",
               "no_digest",
               "deploy_in_progress",
+              "same_image",
               "failed"
             ],
             "type": "string"

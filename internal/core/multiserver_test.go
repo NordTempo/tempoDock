@@ -702,6 +702,16 @@ func TestPromote(t *testing.T) {
 	if after != builds || hasOp(p.rt.Ops(), "build ") {
 		t.Fatalf("promote rebuilt: %d builds before, %d after", builds, after)
 	}
+
+	// Promoting again changes nothing: both services already run
+	// staging's images, by registry digest (web) and by image ID (worker).
+	again, err := p.c.Promote(p.ctx, testSystem, "shop", apitypes.PromoteRequest{From: "staging", To: "production", Services: []string{"web", "worker"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(again.Promoted) != 0 || len(again.Skipped) != 2 || again.Skipped[0].Reason != apitypes.SkipSameImage || again.Skipped[1].Reason != apitypes.SkipSameImage {
+		t.Fatalf("second promote: promoted %+v, skipped %+v", again.Promoted, again.Skipped)
+	}
 }
 
 // Promoted services deploy one at a time: when one fails, the ones after
