@@ -6903,6 +6903,8 @@ export interface components {
         };
         AccessGrantRequest: {
             hostname: string;
+            /** @description The n parameter the service's server sent along; the grant then works only in the browser it came from */
+            nonce?: string;
             to?: string;
         };
         AccessModel: {
