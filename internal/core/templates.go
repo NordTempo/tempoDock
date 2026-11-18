@@ -294,7 +294,7 @@ func (c *Core) afterActive(ctx context.Context, ss svcScope) {
 	sys := System.InOrg(ss.project.OrgID)
 	setup := func(ctx context.Context) error {
 		if needSetup {
-			if _, err := c.SetupData(ctx, sys, ref); err != nil {
+			if err := c.ensureDataAccess(ctx, ss); err != nil {
 				return err
 			}
 			needSetup = false
@@ -329,6 +329,22 @@ func (c *Core) afterActive(ctx context.Context, ss svcScope) {
 			delay *= 2
 		}
 	})
+}
+
+// ensureDataAccess sets up data access for a template database that has
+// none yet. afterActive's tries and a restore that just filled the
+// database (restore.finish) both call it: the restore so that it isn't
+// reported done while a try that came too early still waits for its
+// retry. A setup rotates the role passwords, so setupMu keeps two of them
+// from crossing.
+func (c *Core) ensureDataAccess(ctx context.Context, ss svcScope) error {
+	c.setupMu.Lock()
+	defer c.setupMu.Unlock()
+	if _, err := c.store.GetDataAccess(ctx, ss.svc.ID); !store.IsNotFound(err) {
+		return err
+	}
+	_, err := c.SetupData(ctx, System.InOrg(ss.project.OrgID), ServiceRef{ss.project.Name, ss.env.Name, ss.svc.Name})
+	return err
 }
 
 // Setting up a new template database is retried: Postgres accepts TCP
