@@ -8,6 +8,7 @@ import type { components } from "../../api/schema";
 import { useAction } from "../../data/mutations";
 import { keys, servicePath } from "../../data/queries";
 import type { ServiceBackups, ServiceRef } from "../../data/types";
+import { backupSettingsKey } from "./settings";
 
 // A stateful service's volume snapshots (ADR 0045), and its backup runs'
 // logs. The keys sit under the service, so snapshot.* audit events (which
@@ -168,5 +169,57 @@ export function useSetPITR() {
       return answer;
     },
     ({ ref }) => [keys.overview(ref.project), ["audit"]],
+  );
+}
+
+/**
+ * Runs a template database's restore drill now (ADR 0096; operators): its
+ * newest snapshot restored into a throwaway service, queried and removed.
+ * It ends in the background; its audit event refetches the backups.
+ */
+export const useRunDrill = () =>
+  useAction(
+    (ref: ServiceRef) =>
+      body(
+        api.POST(
+          "/api/v1/projects/{project}/environments/{environment}/services/{service}/backups/drill",
+          { params: { path: servicePath(ref) } },
+        ),
+      ),
+    (ref) => [keys.backups(ref), ["audit"]],
+  );
+
+/**
+ * Turns the weekly repository checks and restore drills on or off (ADR
+ * 0096); the answer replaces the cached settings.
+ */
+export function useSetBackupChecks() {
+  const queryClient = useQueryClient();
+  return useAction(
+    async (enabled: boolean) => {
+      const answer = await body(
+        api.PUT("/api/v1/backup/checks", { body: { enabled } }),
+      );
+      queryClient.setQueryData(backupSettingsKey, answer);
+      return answer;
+    },
+    () => [],
+  );
+}
+
+/**
+ * Starts every repository's check now. The answer (the checks, running)
+ * replaces the cached settings, and backup.* audit events refetch them as
+ * each check ends.
+ */
+export function useRunBackupChecks() {
+  const queryClient = useQueryClient();
+  return useAction(
+    async () => {
+      const answer = await body(api.POST("/api/v1/backup/checks/run"));
+      queryClient.setQueryData(backupSettingsKey, answer);
+      return answer;
+    },
+    () => [],
   );
 }
