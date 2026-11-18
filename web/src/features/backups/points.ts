@@ -178,6 +178,7 @@ export function restoreRecords(
         status: r.status,
         error: r.error,
         at: r.finished_at ?? r.started_at,
+        safety: r.safety_snapshot,
         pointAt: r.to_time ?? backupAt(r.snapshot),
       }),
     );

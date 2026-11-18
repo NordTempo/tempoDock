@@ -1,6 +1,7 @@
 package cpbackup
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -69,4 +70,53 @@ func CheckMoved(dataDir string) error {
 		when = "on " + m.At.Local().Format("2006-01-02 15:04")
 	}
 	return fmt.Errorf("%w %s (`dock admin backup --move`): starting it here would fight the new one for the nodes and apps. If the move was abandoned and nothing was restored elsewhere, delete %s and start dock again", ErrMoved, when, p)
+}
+
+// RecoveryFile, in the data dir, puts the control plane in recovery mode
+// (ADR 0098): it was restored onto a server whose apps and volumes are
+// not back yet.
+const RecoveryFile = "recovery.json"
+
+// Recovery is what RecoveryFile records.
+type Recovery struct {
+	At time.Time `json:"at"`
+	// From describes the archive the control plane was restored from.
+	From string `json:"from"`
+	// Token is what `dock admin recover` proves it can read the data dir
+	// with, to the daemon's loopback listener.
+	Token string `json:"token"`
+}
+
+// MarkRecovering puts the control plane in dataDir in recovery mode,
+// with a new token. `dock admin restore --recovery` calls it before the
+// daemon's first start.
+func MarkRecovering(dataDir, from string) error {
+	b, _ := json.Marshal(Recovery{At: time.Now().UTC(), From: from, Token: rand.Text()})
+	return os.WriteFile(filepath.Join(dataDir, RecoveryFile), append(b, '\n'), 0o600)
+}
+
+// ReadRecovery returns dataDir's recovery mode, or nil when it is not in
+// it.
+func ReadRecovery(dataDir string) (*Recovery, error) {
+	b, err := os.ReadFile(filepath.Join(dataDir, RecoveryFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var r Recovery
+	if err := json.Unmarshal(b, &r); err != nil || r.Token == "" {
+		return nil, fmt.Errorf("%s is not a recovery file dock wrote; delete it to leave recovery mode", filepath.Join(dataDir, RecoveryFile))
+	}
+	return &r, nil
+}
+
+// EndRecovery takes dataDir out of recovery mode.
+func EndRecovery(dataDir string) error {
+	err := os.Remove(filepath.Join(dataDir, RecoveryFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	return err
 }

@@ -10,9 +10,10 @@
 # database reaching the archive by archive_timeout alone, a restore to a
 # time between two writes, a restore across a replaced container, the
 # window and a restore while the database is stopped (its last commit
-# included), off and on again (a time before the gap restores, a time in
-# it is refused, a time after it restores from the new base backup), an
-# in-place restore, the archiver keeping up under pgbench, and what an
+# included, by its time and as "latest"), off and on again (the window
+# as two ranges, a time before the gap restores, a time in it is refused,
+# a time after it restores from the new base backup, "latest" of the
+# running database), an in-place restore, the archiver keeping up under pgbench, and what an
 # idle database costs (no uploads, next to no CPU). About 6 minutes.
 # PITR_LOAD_S sets the seconds of pgbench (default 30), PITR_LOAD_ROWS the
 # rows of the bulk insert after it (default 3 million, about 400 MB of WAL).
@@ -134,6 +135,11 @@ check "the window shows while it is stopped" wait_for 30 eval '[[ -n $(pitr | jq
 END=$(pitr | jq -r .through)
 check "a time after it stopped is refused with the archive's end" out_has "holds WAL only up to" dk_p backup restore db --to-time "$STOPPED" --as db-late
 restored db-t3 "$END" 1 2 3 4 5 6
+check "the window is one range while it is stopped" eval '[[ $(pitr | jq -r ".ranges | length") == 1 && $(pitr | jq -r ".ranges[0].through") == "$END" ]]'
+restored db-latest latest 1 2 3 4 5 6
+# To the second: the archive's end, as the window gave it.
+LATEST=$(api GET "$(svc_path "$P" db)/backups" | jq -r '[.runs[] | select(.operation == "restore" and .restored_to == "db-latest")][0].to_time // empty')
+check "the latest restore says which moment it was" test "${LATEST:0:19}" = "${END:0:19}"
 check "dock service start db" dk_p service start db
 wait_for 60 psql_in db "select 1" >/dev/null
 
@@ -157,8 +163,15 @@ note 9
 T4=$(a_moment)
 note 10
 check "archiving again" flush
-check "a time while it was off is refused, naming the gap" out_has "wasn't archived from .* to " dk_p backup restore db --to-time "$TGAP" --as db-gap
+check "a time while it was off is refused, naming the gap and what restores" out_has "wasn't archived from .* to .*it restores from .* and from " dk_p backup restore db --to-time "$TGAP" --as db-gap
+# Two ranges, the gap between them: the first ends after note 7 and
+# before the time it was off, the second starts after that time.
+check "the window is two ranges around the gap" eval '[[ $(pitr | jq -r ".ranges | length") == 2 &&
+	$(pitr | jq -r ".ranges[0].through") > $T3 && $(pitr | jq -r ".ranges[0].through") < $TGAP && $(pitr | jq -r ".ranges[1].from") > $TGAP ]]'
+check "from and through are the ranges' outer bounds" eval '[[ $(pitr | jq -r ".from") == $(pitr | jq -r ".ranges[0].from") && $(pitr | jq -r ".through") == $(pitr | jq -r ".ranges[1].through") ]]'
+check "dock backup list prints both ranges" out_has "from .* to .*, and from .* to " dk_p backup list db
 restored db-t5 "$T4" 1 2 3 4 5 6 7 8 9
+restored db-now latest 1 2 3 4 5 6 7 8 9 10
 
 log "in place"
 out=$(dk_p backup restore db --to-time "$T4" --in-place --yes 2>&1) || fail "in-place restore: $(tail -2 <<<"$out")"

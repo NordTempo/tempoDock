@@ -30,14 +30,57 @@ export function archiveState(p: PITR): ArchiveState {
   return a.last_error ? "failing" : "behind";
 }
 
+/** A stretch of time that restores, in ms, both ends included. */
+export type Range = { from: number; through: number };
+
+/**
+ * The restorable window: its ranges, oldest first, and their outer
+ * bounds. More than one range after archiving stopped and started again
+ * (turned off and on, an in-place restore); a moment between two doesn't
+ * restore.
+ */
+export type Window = Range & { ranges: Range[] };
+
 /** The restorable window in ms, when there is one. */
-export function windowOf(p: PITR, now: number) {
+export function windowOf(p: PITR, now: number): Window | undefined {
   if (!p.enabled || !p.from) return undefined;
-  const from = Date.parse(p.from);
-  // Without the archiver's word (db stopped) the server decides how far
-  // it reaches; the dialog lets a time up to now through.
-  const through = p.through ? Date.parse(p.through) : now;
-  return { from, through: Math.max(from, through) };
+  const ranges = (p.ranges ?? []).map((r) => ({
+    from: Date.parse(r.from),
+    through: Date.parse(r.through),
+  }));
+  const first = ranges[0];
+  const last = ranges.at(-1);
+  if (!first || !last) {
+    // A base backup and no word on where its archive ends (the archiver
+    // can't be asked): the server decides how far it reaches, and the
+    // dialog lets a time up to now through.
+    const from = Date.parse(p.from);
+    const all = { from, through: Math.max(from, now) };
+    return { ...all, ranges: [all] };
+  }
+  return { from: first.from, through: last.through, ranges };
+}
+
+/** The stretches between a window's ranges, where nothing was archived. */
+export const gapsOf = (w: Window): Range[] =>
+  w.ranges.slice(1).map((r, i) => ({
+    from: w.ranges[i]?.through ?? r.from,
+    through: r.from,
+  }));
+
+/** The gap `t` falls in, if it does: a moment that doesn't restore. */
+export const gapAt = (w: Window, t: number) =>
+  gapsOf(w).find((g) => t > g.from && t < g.through);
+
+/** Whether `t` restores: inside one of the window's ranges. */
+export const restores = (w: Window, t: number) =>
+  w.ranges.some((r) => t >= r.from && t <= r.through);
+
+/** The moment nearest `t` that restores: `t`, or the closest range end. */
+export function clampTo(w: Window, t: number) {
+  const gap = gapAt(w, t);
+  if (gap) return t - gap.from <= gap.through - t ? gap.from : gap.through;
+  return Math.min(w.through, Math.max(w.from, t));
 }
 
 /** A time to the second, dropping milliseconds: what the inputs hold. */
@@ -264,8 +307,17 @@ export function tailFrom(p: PITR, s: Span) {
   return at(s, t ? Date.parse(t) : s.start);
 }
 
-/** A moment the restore dialog offers in one click; `deploy` is one just before a deploy. */
-export type Shortcut = { label: string; at: number; deploy?: boolean };
+/**
+ * A moment the restore dialog offers in one click; `deploy` is one just
+ * before a deploy, `latest` the newest moment archived, which the server
+ * resolves (to_latest) instead of taking a time.
+ */
+export type Shortcut = {
+  label: string;
+  at: number;
+  deploy?: boolean;
+  latest?: boolean;
+};
 
 /**
  * The dialog's shortcuts inside the window: just before each of the
@@ -274,11 +326,11 @@ export type Shortcut = { label: string; at: number; deploy?: boolean };
  * release went live at that time.
  */
 export function shortcuts(
-  w: { from: number; through: number },
+  w: Window,
   deploys: PITR["deploys"],
   now: number,
 ): Shortcut[] {
-  const inside = (t: number) => t >= w.from && t <= w.through;
+  const inside = (t: number) => restores(w, t);
   const before = (deploys ?? [])
     .map((d) => ({ d, t: toSecond(Date.parse(d.at)) - second }))
     .filter(({ t }) => inside(t))
@@ -292,7 +344,11 @@ export function shortcuts(
     { label: "15 min ago", at: toSecond(now - 15 * minute) },
     { label: "1 h ago", at: toSecond(now - hour) },
   ].filter((s) => inside(s.at));
-  return [...before, ...ago, { label: "latest", at: toSecond(w.through) }];
+  return [
+    ...before,
+    ...ago,
+    { label: "latest", at: toSecond(w.through), latest: true },
+  ];
 }
 
 /** A local date and time as the date and time inputs hold them. */

@@ -1,5 +1,14 @@
 import { type KeyboardEvent, type MouseEvent, useState } from "react";
-import { moment, type stripMarks, timeAt, at as x } from "./pitr";
+import {
+  clampTo,
+  gapAt,
+  gapsOf,
+  moment,
+  type stripMarks,
+  timeAt,
+  type Window,
+  at as x,
+} from "./pitr";
 
 const minute = 60_000;
 
@@ -10,10 +19,12 @@ type StripMarks = ReturnType<typeof stripMarks>;
  * The timeline strip of a database's restore points (ADR 0093, mock A):
  * dumps and base backups as ticks (red when one failed), snapshots as
  * diamonds, deploys of the services using it as marks above, the
- * unarchived tail hatched. With a window and `onPick` it is a slider:
- * hover shows the moment, a click or Enter picks it (clamped into the
- * window), arrows move by a hundredth of the span (Shift: a minute), Home
- * and End go to the window's ends. `value` marks the picked moment and
+ * unarchived tail hatched, and a gap between two ranges of the window
+ * (archiving was off or started over) hatched grey. With a window and
+ * `onPick` it is a slider: hover shows the moment, a click or Enter picks
+ * it (clamped to the nearest moment that restores), arrows move by a
+ * hundredth of the span (Shift: a minute), Home and End go to the
+ * window's ends. `value` marks the picked moment and
  * makes arrows pick at once (the dialog); without it the cursor moves and
  * Enter picks (the tab). `compact` drops the labels for the dialog.
  */
@@ -26,7 +37,7 @@ export function PitrStrip({
   label,
 }: {
   marks: StripMarks;
-  window?: { from: number; through: number };
+  window?: Window;
   value?: number;
   onPick?: (ms: number) => void;
   compact?: boolean;
@@ -36,7 +47,7 @@ export function PitrStrip({
   const [hover, setHover] = useState<number>();
   const [cursor, setCursor] = useState<number>();
   const clamp = (t: number) =>
-    w ? Math.min(w.through, Math.max(w.from, Math.round(t / 1000) * 1000)) : t;
+    w ? clampTo(w, Math.round(t / 1000) * 1000) : t;
   const shown = hover ?? cursor;
   const now = m.span.end;
 
@@ -71,6 +82,9 @@ export function PitrStrip({
   const tip = (t: number) => {
     if (w && t > w.through + minute)
       return `not archived yet; latest ${moment(w.through, now)}`;
+    const gap = w && gapAt(w, t);
+    if (gap)
+      return `not archived from ${moment(gap.from, now)} to ${moment(gap.through, now)}`;
     const c = clamp(t);
     return value === undefined
       ? `${moment(c, now)}, click to restore`
@@ -93,6 +107,21 @@ export function PitrStrip({
         className={`absolute inset-x-0 rounded-tag border ${w ? "border-ok-edge bg-ok/10" : "border-dashed border-edge"}`}
         style={{ top: top.band, height: band }}
       />
+      {w &&
+        gapsOf(w).map((g) => (
+          <div
+            key={g.from}
+            title="Not archived: point in time was off or started over"
+            className="absolute bg-[repeating-linear-gradient(135deg,var(--color-edge)_0_3px,var(--color-page)_3px_6px)]"
+            style={{
+              top: top.band,
+              height: band,
+              left: `${x(m.span, g.from) * 100}%`,
+              // At least 6px: a short gap is invisible on seven days.
+              width: `max(${(x(m.span, g.through) - x(m.span, g.from)) * 100}%, 6px)`,
+            }}
+          />
+        ))}
       {m.tail && (
         <div
           className={`absolute right-0 rounded-r-tag opacity-75 ${m.tail.failing ? "bg-[repeating-linear-gradient(135deg,var(--color-fail)_0_3px,transparent_3px_6px)]" : "bg-[repeating-linear-gradient(135deg,var(--color-warn)_0_3px,transparent_3px_6px)]"}`}

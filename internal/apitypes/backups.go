@@ -79,11 +79,15 @@ type BackupRun struct {
 	// the earliest time it restores to.
 	ConsistentAt *time.Time `json:"consistent_at,omitempty"`
 	// ToTime is the time a restore to a time restored to.
-	ToTime     *time.Time `json:"to_time,omitempty"`
-	Error      string     `json:"error,omitempty"`
-	CreatedBy  string     `json:"created_by"`
-	StartedAt  time.Time  `json:"started_at"`
-	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	ToTime *time.Time `json:"to_time,omitempty"`
+	// SafetySnapshot is the volume snapshot an in-place restore that
+	// succeeded took of the data it replaced, while that snapshot exists:
+	// restoring it undoes the restore.
+	SafetySnapshot int64      `json:"safety_snapshot,omitempty"`
+	Error          string     `json:"error,omitempty"`
+	CreatedBy      string     `json:"created_by"`
+	StartedAt      time.Time  `json:"started_at"`
+	FinishedAt     *time.Time `json:"finished_at,omitempty"`
 }
 
 // BackupLog is what a backup or restore run's job printed: its last 16
@@ -120,9 +124,15 @@ type ServiceBackups struct {
 	// RestoresInPlace says backups restore into the service's own volumes
 	// (in_place), after a safety snapshot: services that aren't template
 	// databases (ADR 0095).
-	RestoresInPlace bool           `json:"restores_in_place"`
-	OffBox          bool           `json:"off_box"`
-	Schedule        BackupSchedule `json:"schedule"`
+	RestoresInPlace bool `json:"restores_in_place"`
+	// Volumes are the service's volumes now, by name, when backups
+	// restore in place: the ones such a restore replaces. A backup's own
+	// list isn't recorded; the restore fills the volumes the backup
+	// holds, leaves one added since, and refuses when one it holds is
+	// gone.
+	Volumes  []string       `json:"volumes,omitempty"`
+	OffBox   bool           `json:"off_box"`
+	Schedule BackupSchedule `json:"schedule"`
 	// PITR is point-in-time restore, for Postgres template databases.
 	PITR *PITR `json:"pitr,omitempty"`
 	// Check is the latest check of the repository this service's backups
@@ -189,11 +199,16 @@ type RestoreBackupRequest struct {
 	// ToTime restores the database as it was at that moment, from its
 	// point-in-time archive (ADR 0093), instead of a snapshot.
 	ToTime *time.Time `json:"to_time,omitempty"`
+	// ToLatest restores the database to the newest moment its archive
+	// holds, instead of ToTime: up to a minute behind a running database,
+	// the last commit of a stopped one. The restore's to_time says which
+	// moment that was.
+	ToLatest bool `json:"to_latest,omitempty"`
 	// As names the new service; empty is <service>-restored for a
 	// template database. A volume backup restores into a copy of the
 	// service only when As is given.
 	As string `json:"as,omitempty"`
-	// InPlace restores ToTime into the database itself, or a volume
+	// InPlace restores ToTime or ToLatest into the database itself, or a volume
 	// backup into the service's own volumes: it stops, a safety snapshot
 	// keeps what it holds, and it starts on the restored data. Not with
 	// As.
@@ -208,8 +223,14 @@ type PITR struct {
 	// Unavailable says why it can't be turned on, and what to do; empty
 	// when it can.
 	Unavailable string `json:"unavailable,omitempty"`
-	// From and Through are the restorable window: any time between them
-	// restores. Nil while nothing does yet.
+	// Ranges are the stretches of time that restore, oldest first: any
+	// time inside one does. More than one after archiving stopped and
+	// started again (turned off and on, an in-place restore): a time
+	// between two is refused.
+	Ranges []PITRRange `json:"ranges"`
+	// From and Through are the outer bounds of Ranges, for clients that
+	// read one window: the oldest base backup and the end of the newest
+	// range. Nil while nothing restores yet.
 	From    *time.Time `json:"from,omitempty"`
 	Through *time.Time `json:"through,omitempty"`
 	// BaseBackups counts the base backups the window rests on.
@@ -223,6 +244,13 @@ type PITR struct {
 	Deploys []PITRDeploy `json:"deploys"`
 	// Archiver is how archiving does, while it is on.
 	Archiver *PITRArchiver `json:"archiver,omitempty"`
+}
+
+// PITRRange is one stretch of time a database restores to, both ends
+// included.
+type PITRRange struct {
+	From    time.Time `json:"from"`
+	Through time.Time `json:"through"`
 }
 
 // PITRDeploy is a release of a service using the database that went live.

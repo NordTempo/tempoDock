@@ -63,6 +63,10 @@ type backupState struct {
 	// started is when the daemon started: a repository or database never
 	// checked is due at the first backup hour after it (verifyDue).
 	started time.Time
+	// cut holds the restores into a new service that the last daemon left
+	// running (failInterruptedBackups, failInterruptedSnapshots), until
+	// the scheduler archives their targets (finishCutRestores).
+	cut []cutRestore
 	// checkQueue holds the repository checks RunBackupChecks recorded as
 	// running, for the scheduler's next pass to run.
 	checkQueue []store.BackupCheck
@@ -437,7 +441,7 @@ func (c *Core) ServiceBackups(ctx context.Context, a Actor, ref ServiceRef) (api
 }
 
 func (c *Core) serviceBackups(ctx context.Context, ss svcScope) (apitypes.ServiceBackups, error) {
-	kind, _, err := c.backupKindOf(ctx, ss)
+	kind, vols, err := c.backupKindOf(ctx, ss)
 	if err != nil {
 		return apitypes.ServiceBackups{}, err
 	}
@@ -451,6 +455,9 @@ func (c *Core) serviceBackups(ctx context.Context, ss svcScope) (apitypes.Servic
 	}
 	if kind == apitypes.BackupVolume {
 		out.Warning = volumeBackupWarning
+		for _, v := range vols {
+			out.Volumes = append(out.Volumes, v.Name)
+		}
 	}
 	if out.Schedule, err = c.scheduleOf(ctx, ss, set); err != nil {
 		return out, err
@@ -476,8 +483,13 @@ func (c *Core) serviceBackups(ctx context.Context, ss svcScope) (apitypes.Servic
 			names[s.ID] = s.Name
 		}
 	}
+	safety, err := c.safetySnapshots(ctx, ss, rows)
+	if err != nil {
+		return out, err
+	}
 	for _, r := range rows {
 		run := toBackupRun(r, ss.svc.Name, names)
+		run.SafetySnapshot = safety[r.ID]
 		if r.Operation == "backup" && r.Status == string(apitypes.BackupSucceeded) && !r.Pruned && r.SnapshotID != "" {
 			run.NotRestorable = notRestorableHere(r.Repository, set.Repository)
 		}
@@ -978,9 +990,18 @@ func (c *Core) ensureImage(ctx context.Context, serverID int64, rt node.Runtime,
 }
 
 // failInterruptedBackups marks runs a restart cut short as failed, the
-// control plane's own backup included.
+// control plane's own backup included. The restores into a new service
+// among them are remembered first (one query), for finishCutRestores to
+// archive their targets once the daemon has started.
 func (c *Core) failInterruptedBackups(ctx context.Context) error {
 	const msg = "the daemon restarted while this was running; run it again"
+	into, err := c.store.ListRunningRestoresInto(ctx)
+	if err != nil {
+		return err
+	}
+	for _, r := range into {
+		c.restoreCut(r.ServiceID, *r.RestoredTo, restoreInto{id: r.ID})
+	}
 	// An in-place restore stopped the service and was replacing its data.
 	const inPlace = "the daemon restarted during the restore, which may have replaced part of the data and left the service stopped: restore in place again, or restore the snapshot taken before it (`dock volume snapshot list`) to undo"
 	if _, err := c.store.FailRunningInPlaceRestores(ctx, store.FailRunningInPlaceRestoresParams{Error: inPlace, FinishedAt: ptr(now())}); err != nil {

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -76,12 +77,90 @@ func (c *Core) planToTime(ctx context.Context, ss svcScope, target time.Time) (p
 		// one's ended (turned off and on, an in-place restore): the time
 		// is in the gap, and waiting won't fill it.
 		if cov, cerr := ix.Cover(base.WalStart, base.WalSegmentBytes); cerr == nil && cov.Last != "" && next != nil {
-			return pitrPlan{}, invalid("%s can't be restored to %s: it wasn't archived from %s to %s (point-in-time restore was off or started over); pick a time before or after that",
-				ss, target.UTC().Format(time.RFC3339), cov.Through.UTC().Format(time.RFC3339), next.UTC().Format(time.RFC3339))
+			return pitrPlan{}, invalid("%s can't be restored to %s: it wasn't archived from %s to %s (point-in-time restore was off or started over); %s",
+				ss, target.UTC().Format(time.RFC3339), cov.Through.UTC().Format(time.RFC3339), next.UTC().Format(time.RFC3339), c.restorableText(ctx, ss, set, bases))
 		}
 		return pitrPlan{}, invalid("%s can't be restored to %s: %v", ss, target.UTC().Format(time.RFC3339), err)
 	}
 	return pitrPlan{base: *base, cfg: cfg, target: target}, nil
+}
+
+// restorableText says which times ss restores to, for a refusal: the
+// ranges its Backups page shows (pitrRanges).
+func (c *Core) restorableText(ctx context.Context, ss svcScope, set store.BackupSetting, bases []store.Backup) string {
+	row, _ := c.store.GetPITR(ctx, ss.svc.ID) // zero without one: every generation ended
+	live, _ := c.archiverLive(ctx, ss, row.Enabled && !c.isLeaving(ss.svc.ID))
+	ranges := c.pitrRanges(ctx, ss, row, pitrGenerations(bases, set.Repository), live)
+	if len(ranges) == 0 {
+		return "pick a time before or after that"
+	}
+	parts := make([]string, len(ranges))
+	for i, r := range ranges {
+		parts[i] = "from " + r.From.UTC().Format(time.RFC3339) + " to " + r.Through.UTC().Format(time.RFC3339)
+	}
+	return "it restores " + strings.Join(parts, " and ")
+}
+
+// latestRestorable is the newest moment ss restores to: where the
+// archive of its newest base backup ends, read from the bucket (one
+// listing). For a running database that is up to a minute behind it
+// (archive_timeout); for a stopped one it is its last commit, since
+// Postgres hands over its last segment at a clean shutdown.
+func (c *Core) latestRestorable(ctx context.Context, ss svcScope) (time.Time, error) {
+	set, err := c.backupSettings(ctx)
+	if err != nil {
+		return time.Time{}, err
+	}
+	bases, err := c.store.ListPITRBases(ctx, ss.svc.ID)
+	if err != nil {
+		return time.Time{}, err
+	}
+	gens := pitrGenerations(bases, set.Repository)
+	if len(gens) == 0 {
+		return time.Time{}, invalid("%s has no base backup to restore to a time from; point-in-time restore takes one when it is turned on (`dock backup pitr on`)", ss)
+	}
+	base := gens[len(gens)-1].last
+	cfg, err := c.walConfig(ctx, ss.svc.ID, base.WalGeneration)
+	if err != nil {
+		return time.Time{}, err
+	}
+	ix, err := walarchive.List(ctx, cfg)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("list the WAL archive: %w", err)
+	}
+	cov, err := ix.Cover(base.WalStart, base.WalSegmentBytes)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if cov.Last == "" || !cov.Through.After(*base.ConsistentAt) {
+		return time.Time{}, invalid("nothing of %s is archived past its newest base backup (%s) yet; try again in a minute, or restore to a time before it",
+			ss, base.ConsistentAt.UTC().Format(time.RFC3339))
+	}
+	return cov.Through.UTC(), nil
+}
+
+// RestoreLatest is RestoreBackup to the newest moment a Postgres
+// database with point-in-time restore restores to (req.ToLatest, ADR
+// 0093), without naming a time: a stopped database, or "as it is now",
+// which no clock on the caller's side can name exactly. The restore it
+// starts records the time it resolved to.
+func (c *Core) RestoreLatest(ctx context.Context, a Actor, ref ServiceRef, req apitypes.RestoreBackupRequest) (apitypes.RestoreResult, error) {
+	if req.Snapshot != "" || req.ToTime != nil {
+		return apitypes.RestoreResult{}, invalid("give a snapshot, a time (to_time) or to_latest, not more than one")
+	}
+	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeDeploy, "restoring a backup")
+	if err != nil {
+		return apitypes.RestoreResult{}, err
+	}
+	if t, ok := templateOf(ss.svc); !ok || t.database != apitypes.DatabasePostgres {
+		return apitypes.RestoreResult{}, invalid("only a Postgres database with point-in-time restore restores to its latest moment; restore one of %s's backups instead", ss)
+	}
+	at, err := c.latestRestorable(ctx, ss)
+	if err != nil {
+		return apitypes.RestoreResult{}, err
+	}
+	req.ToTime = &at
+	return c.RestoreBackup(ctx, a, ref, req)
 }
 
 // restoreToTime restores ss as it was at req.ToTime, into a new service
@@ -215,7 +294,7 @@ func (c *Core) recoverJob(ctx context.Context, to svcScope, t dbTemplate, plan p
 // database is another history than the one archived so far.
 func (c *Core) restoreToTimeInPlace(ctx context.Context, a Actor, ss svcScope, t dbTemplate, plan pitrPlan, keep map[string]string) (apitypes.RestoreResult, error) {
 	at := plan.target.UTC().Format(time.RFC3339)
-	safety, safetyVols, err := c.startSnapshot(ctx, a, ss, apitypes.SnapshotBeforeRestore, "before restoring to "+at, 0)
+	safety, safetyVols, err := c.startSnapshot(ctx, a, ss, apitypes.SnapshotBeforeRestore, timeSafetyNote(plan.target), 0)
 	if err != nil {
 		return apitypes.RestoreResult{}, err
 	}
@@ -267,7 +346,7 @@ func (c *Core) restoreToTimeInPlace(ctx context.Context, a Actor, ss svcScope, t
 		c.unlockVolumes(ss.svc.ID)
 		c.finishToTime(ctx, ss, ss.svc.Name, row, log, err)
 		if err == nil {
-			c.pitrAfterActive(ctx, ss)
+			c.pitrAfterActive(ctx, ss, false)
 		}
 	})
 	out, err := c.toService(ctx, a, ss, apitypes.PendingChanges{})

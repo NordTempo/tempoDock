@@ -2005,6 +2005,10 @@
           "restored_to": {
             "type": "string"
           },
+          "safety_snapshot": {
+            "format": "int64",
+            "type": "integer"
+          },
           "service": {
             "type": "string"
           },
@@ -11487,6 +11491,15 @@
             "format": "date-time",
             "type": "string"
           },
+          "ranges": {
+            "items": {
+              "$ref": "#/components/schemas/PITRRange"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "through": {
             "format": "date-time",
             "type": "string"
@@ -11511,6 +11524,7 @@
         "required": [
           "enabled",
           "days",
+          "ranges",
           "base_backups",
           "wal_bytes",
           "used_by",
@@ -11581,6 +11595,24 @@
           "service",
           "number",
           "at"
+        ],
+        "type": "object"
+      },
+      "PITRRange": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "through": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "through"
         ],
         "type": "object"
       },
@@ -13770,6 +13802,9 @@
           "snapshot": {
             "type": "string"
           },
+          "to_latest": {
+            "type": "boolean"
+          },
           "to_time": {
             "format": "date-time",
             "type": "string"
@@ -15326,6 +15361,15 @@
           },
           "service": {
             "type": "string"
+          },
+          "volumes": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "warning": {
             "type": "string"
@@ -51662,7 +51706,7 @@
     },
     "/api/v1/projects/{project}/environments/{environment}/services/{service}/backups/restore": {
       "post": {
-        "description": "A template database: creates a new service from the template with the snapshot's data; the live service is never touched. Any other service with volumes restores its volume backup (ADR 0095) with `in_place`: it stops, a safety snapshot keeps what its volumes hold, the volumes the backup holds are replaced, and it starts again; or with `as`, into a new service that is a copy of it, which leaves it untouched. With `to_time` instead of `snapshot`, restores a Postgres database with point-in-time restore as it was at that moment (ADR 0093): a time outside the restorable window, or one the WAL archive doesn't reach (a missing segment), is refused with the latest time it can reach. `in_place` restores the time into the database itself: it stops, a safety snapshot keeps what it holds, and it starts on the restored data. Answers with the service at once; the restore finishes in the background. Scope: deploy.",
+        "description": "A template database: creates a new service from the template with the snapshot's data; the live service is never touched. Any other service with volumes restores its volume backup (ADR 0095) with `in_place`: it stops, a safety snapshot keeps what its volumes hold, the volumes the backup holds are replaced, and it starts again; or with `as`, into a new service that is a copy of it, which leaves it untouched. With `to_time` instead of `snapshot`, restores a Postgres database with point-in-time restore as it was at that moment (ADR 0093): a time outside the restorable window, or one the WAL archive doesn't reach (a missing segment), is refused with the times it can reach (the `ranges` of list-backups' `pitr`). `to_latest` instead of a time restores the newest moment the archive holds, for a stopped database too; the restore's `to_time` says which it was. `in_place` restores the time into the database itself: it stops, a safety snapshot keeps what it holds, and it starts on the restored data. Answers with the service at once; the restore finishes in the background. Scope: deploy.",
         "operationId": "restore-backup",
         "parameters": [
           {

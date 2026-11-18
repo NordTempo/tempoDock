@@ -114,8 +114,16 @@ func (c *Core) UpdateBackupSchedule(ctx context.Context, a Actor, ref ServiceRef
 // services. Services on offline servers are skipped; their server
 // reconnecting kicks a pass that runs what is overdue. The weekly
 // repository checks and restore drills (ADR 0096) ride on the same pass.
+// As it starts it finishes the restores into a new service that the last
+// daemon left running (finishCutRestores).
 func (c *Core) scheduleBackups() {
 	defer c.wg.Done()
+	// Once, before the first pass: Start runs this after the alerts and
+	// the routes are up, which archiving a restore's target needs.
+	_, _ = caught(c.log, "archiving the targets of restores a restart cut short", func() (struct{}, error) {
+		c.finishCutRestores(c.ctx)
+		return struct{}{}, nil
+	})
 	timer := time.NewTimer(time.Hour)
 	timer.Stop()
 	for {
@@ -148,8 +156,12 @@ func (c *Core) scheduleBackups() {
 // backup that is due, the services' and then the control plane's own
 // (ADR 0021), then the weekly repository checks and restore drills that
 // are due (ADR 0096), and returns when the next of any of them is due
-// (zero: none scheduled).
+// (zero: none scheduled). In recovery mode (ADR 0098) it does nothing:
+// ending the mode kicks the scheduler.
 func (c *Core) backupPass(ctx context.Context) (time.Time, error) {
+	if c.Recovering() {
+		return time.Time{}, nil
+	}
 	c.pruneExpiredSnapshots(ctx) // ADR 0047: rides on this pass, at least daily
 	next, err := c.serviceBackupPass(ctx)
 	if err != nil {

@@ -10,6 +10,7 @@
 #   sudo --preserve-env=NODE_JOIN_TOKEN DOCK_BINARY=./dock-linux-amd64 ./deploy/install.sh --node
 #   sudo ./deploy/install.sh                               # downloads the release's binary
 #   sudo DOCK_BINARY=./dock-linux-amd64 ./deploy/install.sh --restore /root/dock-backup.tar.gz
+#   curl -fsSL https://dock.nordtempo.com/install.sh | sudo bash -s -- --restore-from-bucket
 #
 # Piped, with no deploy/ directory beside it, the script downloads the
 # release's install tarball and binary, checks them against its signed
@@ -39,6 +40,13 @@
 #                 (addresses, ingress, sizes), which is set as for a new install
 #   --old-server-becomes-node  with --restore: the old server keeps its apps and
 #                 joins this control plane as a node, instead of being replaced
+#   --restore-from-bucket  the server is gone (ADR 0098): fetch the newest control
+#                 plane backup from the backup bucket (`dock admin fetch-backup`, into
+#                 /root/dock-recovered-<time>.tar), then install from it as --restore
+#                 does. The control plane starts in recovery mode: `sudo dock admin
+#                 recover` then shows what it will restore. The bucket comes from
+#                 DOCK_RESTORE_* below; what is missing is asked on the terminal
+#                 (not with --yes). A run that fails later removes the fetched archive
 #
 # Environment:
 #   DOCK_BINARY   path to a dock binary (a release's dock-linux-<arch>, or make build)
@@ -53,6 +61,16 @@
 #   DOCK_ADMIN_EMAIL  the first admin's email, the console login (asked on a fresh
 #                 install with a terminal; default admin@localhost)
 #   DOCK_YES      "1" is --yes
+#   DOCK_RESTORE_S3_ENDPOINT, DOCK_RESTORE_S3_BUCKET, DOCK_RESTORE_S3_PATH  with
+#                 --restore-from-bucket: the store's URL (https://fsn1.your-objectstorage.com),
+#                 the bucket and the folder in it (may be empty) of the backup repository
+#   DOCK_RESTORE_REPOSITORY  instead of those three: the whole restic URL,
+#                 s3:https://<endpoint>/<bucket>/<folder>
+#   DOCK_RESTORE_S3_ACCESS_KEY_ID, DOCK_RESTORE_S3_SECRET_ACCESS_KEY  the bucket's keys
+#   DOCK_RESTORE_S3_REGION  its region, if the store wants one
+#   DOCK_RESTORE_S3_PATH_STYLE  "0" puts the bucket in the host name (default 1: in the path)
+#   DOCK_RESTORE_PASSWORD  the backup repository's password
+#                 (with sudo, pass them through: sudo --preserve-env=DOCK_RESTORE_PASSWORD,...)
 #   GITHUB_TOKEN  for that download from a private repository: a token that can read its releases
 #   DOCK_RELEASE_DIR  take the release from this directory instead of GitHub: its
 #                 dock-install-<version>.tar.gz, dock-linux-<arch>, SHA256SUMS and
@@ -164,7 +182,10 @@ warn() { printf 'warning: %s\n' "$*" >&2; }
 staged=""
 download_dir=""
 bootstrap_err=""
-cleanup() { rm -rf ${staged:+"$staged"} ${download_dir:+"$download_dir"} ${old_config:+"$old_config"} ${merged:+"$merged"} ${bootstrap_err:+"$bootstrap_err"}; }
+# The archive --restore-from-bucket fetched, until the install is through:
+# it holds every secret, so a failed run doesn't leave it lying around.
+fetched=""
+cleanup() { rm -rf ${fetched:+"$fetched"} ${staged:+"$staged"} ${download_dir:+"$download_dir"} ${old_config:+"$old_config"} ${merged:+"$merged"} ${bootstrap_err:+"$bootstrap_err"}; }
 trap cleanup EXIT
 
 # github CURL-ARGS... runs curl against GitHub, https only (redirects
@@ -730,6 +751,9 @@ setup_registry() {
 main() {
   node_mode=false
   restore=""
+  # from_bucket: --restore-from-bucket. restore then names the archive that
+  # `dock admin fetch-backup` writes once the dock binary is installed.
+  from_bucket=false
   old_server_node=false
   assume_yes=false
   [[ "${DOCK_YES:-}" != 1 ]] || assume_yes=true
@@ -742,6 +766,7 @@ main() {
       --restore)
         [[ -n "${2:-}" ]] || die "--restore needs the archive from \`dock admin backup\`"
         restore="$(realpath "$2")"; shift ;;
+      --restore-from-bucket) from_bucket=true ;;
       --old-server-becomes-node) old_server_node=true ;;
       --yes|-y) assume_yes=true ;;
       --uninstall) remove=true ;;
@@ -759,6 +784,13 @@ main() {
   done
   [[ -n "${NODE_JOIN_TOKEN:-}" ]] && node_mode=true
   [[ "$purge" == false || "$remove" == true ]] || die "--purge goes with --uninstall"
+  if [[ "$from_bucket" == true ]]; then
+    [[ -z "$restore" ]] || die "--restore takes an archive you have, --restore-from-bucket fetches it; use one of them"
+    [[ "$node_mode" == false ]] || die "--restore-from-bucket installs a control plane; leave out --node and NODE_JOIN_TOKEN"
+    [[ "$old_server_node" == false ]] \
+      || die "--restore-from-bucket is for a server that is gone, so it can't become a node; leave out --old-server-becomes-node"
+    restore="/root/dock-recovered-$(date +%Y%m%d-%H%M%S).tar"
+  fi
 
   [[ "$(uname -s)" == Linux ]] || die "Dock servers run Linux; on a Mac or Windows, install the CLI instead: curl -fsSL $CLI_URL | sh"
   [[ $EUID -eq 0 ]] || die "run as root: curl -fsSL $INSTALL_URL | sudo bash"
@@ -789,9 +821,9 @@ main() {
   fi
   if [[ -n "$restore" ]]; then
     [[ "$node_mode" == false ]] || die "--restore installs a control plane; leave out --node and NODE_JOIN_TOKEN"
-    [[ -r "$restore" ]] || die "can't read $restore"
+    [[ "$from_bucket" == true || -r "$restore" ]] || die "can't read $restore"
     [[ ! -f /var/lib/dock/dock.db ]] \
-      || die "this server already has a control plane database (/var/lib/dock/dock.db); --restore is for a fresh server"
+      || die "this server already has a control plane database (/var/lib/dock/dock.db); --restore and --restore-from-bucket are for a fresh server"
   elif [[ "$old_server_node" == true ]]; then
     die "--old-server-becomes-node goes with --restore"
   fi
@@ -886,6 +918,23 @@ main() {
   say "==> dock binary"
   install -m 0755 "$DOCK_BINARY" /usr/local/bin/dock.new
   mv /usr/local/bin/dock.new /usr/local/bin/dock
+
+  # The server is gone: the archive comes out of the backup bucket, with
+  # the binary just installed and Docker (ensure_prereqs). Its questions go
+  # to the terminal, as this script's do; without one, what is missing in
+  # DOCK_RESTORE_* is an error.
+  if [[ "$from_bucket" == true ]]; then
+    say "==> fetch the control plane backup"
+    if [[ "$assume_yes" == false ]] && tty_open; then
+      /usr/local/bin/dock admin fetch-backup -o "$restore" <&3 \
+        || die "fetching the backup failed (see above); nothing was restored, run the same command again"
+      exec 3<&-
+    else
+      /usr/local/bin/dock admin fetch-backup -o "$restore" < /dev/null \
+        || die "fetching the backup failed (see above); nothing was restored, run the same command again"
+    fi
+    fetched=$restore
+  fi
 
   say "==> caddy $CADDY_VERSION"
   if ! /usr/local/bin/caddy version 2>/dev/null | grep -q "v$CADDY_VERSION"; then
@@ -1057,6 +1106,14 @@ CONF
       || die "$restore is not a backup this dock can restore (see above)"
     if [[ -s "$old_config" ]]; then
       keys=("${MACHINE_KEYS[@]}")
+      # From the bucket, the old allow list stays: the recovery's restore
+      # jobs must reach a backup store on a private address (a NAS), which
+      # a fresh install's empty list would block.
+      if [[ "$from_bucket" == true ]]; then
+        kept=()
+        for k in "${keys[@]}"; do [[ "$k" == network:allow_private ]] || kept+=("$k"); done
+        keys=("${kept[@]}")
+      fi
       [[ "$old_server_node" == false && -z "${BASE_DOMAIN+x}" ]] || keys+=(:base_domain)
       [[ "$old_server_node" == false && -z "${DISABLE_TLS:-}" ]] || keys+=(caddy:disable_tls)
       merged="$(mktemp /etc/dock/.config.toml.XXXXXX)"
@@ -1217,6 +1274,9 @@ CONF
       [[ "$(toml_get "$CONF" registry enabled)" != true ]] || registry_storage >/dev/null
       restore_args=(admin restore --config "$CONF")
       [[ "$old_server_node" == false ]] || restore_args+=(--old-server-becomes-node)
+      # Apps and their volumes are gone too: the daemon starts in recovery
+      # mode and waits for `dock admin recover` (ADR 0098).
+      [[ "$from_bucket" == false ]] || restore_args+=(--recovery)
       /usr/local/bin/dock "${restore_args[@]}" "$restore" \
         || die "the restore failed and dock was not started; fix the cause and run the same command again"
       if [[ -s "$old_config" ]]; then
@@ -1282,7 +1342,15 @@ CONF
       say "  Restored from $restore."
       [[ ! -f /etc/dock/config.from-backup.toml ]] || say "  The old config.toml is in /etc/dock/config.from-backup.toml for reference."
       [[ -z "$node_listen" ]] || say "  On each node that should follow: sudo dock node set-control-plane $node_listen"
-      say "  Next steps: docs/guide/install.md#moving-the-control-plane"
+      if [[ "$from_bucket" == true ]]; then
+        fetched="" # the install is through: the archive stays until the user deletes it
+        say "  The control plane is back; the apps are not yet. Next:"
+        say "    sudo dock admin recover     shows what will be restored, service by service"
+        say "  $restore holds every secret of the platform: delete it once this install works."
+        say "  Steps: docs/guide/install.md#the-server-is-gone"
+      else
+        say "  Next steps: docs/guide/install.md#moving-the-control-plane"
+      fi
     fi
     if [[ "$(toml_get "$CONF" registry enabled)" == true ]]; then
       registry_listen="$(toml_get "$CONF" registry listen)"

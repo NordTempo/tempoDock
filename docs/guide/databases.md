@@ -258,12 +258,20 @@ dock backup pitr on db --days 7     # restarts db once, then takes a base backup
 dock backup list db                 # the restorable window, and how archiving does
 dock backup restore db --to-time 2026-11-17T14:01Z              # into db-restored
 dock backup restore db --to-time 2026-11-17T15:01+01:00 --in-place
+dock backup restore db --to-time latest --as db-now             # the newest moment archived
 dock backup pitr off db             # restarts db without archiving
 ```
 
 - **The window** runs from the oldest base backup to the newest archived
   WAL, usually under a minute behind (`archive_timeout` is 60 s). Times are
-  UTC unless they carry an offset.
+  UTC unless they carry an offset. It is a list of ranges: usually one,
+  and one more each time archiving stopped and started again (turned off
+  and on, an in-place restore). `dock backup list` and the Backups tab
+  show each; a time between two is refused.
+- **Latest** (`--to-time latest`, the "latest" shortcut in the dialog)
+  restores the newest moment archived without naming a time: up to a
+  minute behind a running database, the last commit of a stopped one.
+  The restore says which moment it was.
 - **Into a new service** (`db-restored`, or `--as`) with the credentials
   db had; check it, then **Use db-restored** as for any restore.
   `--in-place` stops db, keeps what it holds in a safety snapshot
@@ -281,9 +289,13 @@ dock backup pitr off db             # restarts db without archiving
   backups; it ends with the database's last commit before the restart.
   Turned on again, the window starts over with a new base backup: times
   before it was off and after it came back restore, a time in between is
-  refused with the gap's ends.
+  refused with the gap's ends and the ranges that restore. If the restart
+  fails before the database stopped, it still archives, so point-in-time
+  restore stays on and the audit log says so: fix what failed the release
+  and turn it off again.
 - **A stopped database** keeps its window, up to its last commit, and
-  restores into a new service like a running one.
+  restores into a new service like a running one; `--to-time latest`
+  gets that last commit.
 
 ### When archiving stalls
 

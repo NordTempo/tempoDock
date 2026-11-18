@@ -94,6 +94,14 @@ ORDER BY id;
 -- name: PruneBackup :exec
 UPDATE backups SET pruned = 1 WHERE id = +?;
 
+-- name: ListRunningRestoresInto :many
+-- Restores into a new service still marked running. Read once at
+-- start-up, before FailRunningBackups fails them: a restart cut them
+-- short, and their targets are archived like any failed restore's
+-- (finishCutRestores). A scan of the running rows, as the two below.
+SELECT * FROM backups
+WHERE status = 'running' AND operation = 'restore' AND restored_to IS NOT NULL AND restored_to <> service_id;
+
 -- name: FailRunningInPlaceRestores :execrows
 -- In-place restores a restart cut short (a volume backup's, or to a
 -- time): the service is its own target. Run before FailRunningBackups,

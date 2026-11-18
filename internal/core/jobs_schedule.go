@@ -101,8 +101,13 @@ func (c *Core) stopScheduling() bool {
 // jobPass starts every job that is due and returns when the next one is
 // due (zero: none). One query, however many jobs; each due job is
 // recorded as handled for its due time before it starts, so a crash
-// never runs it twice for the same time.
+// never runs it twice for the same time. In recovery mode (ADR 0098) it
+// starts nothing, as a job would run on volumes that are not back yet:
+// ending the mode kicks the scheduler, and a job that was due runs once.
 func (c *Core) jobPass(ctx context.Context) (time.Time, error) {
+	if c.Recovering() {
+		return time.Time{}, nil
+	}
 	rows, err := c.store.ListSchedulableJobs(ctx)
 	if err != nil {
 		return time.Time{}, err

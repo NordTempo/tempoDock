@@ -23,53 +23,66 @@ import (
 // answer comes at once with the new service; the restore finishes in the
 // background (a restore row on the source service, and audit events).
 func (c *Core) RestoreBackup(ctx context.Context, a Actor, ref ServiceRef, req apitypes.RestoreBackupRequest) (apitypes.RestoreResult, error) {
+	res, _, err := c.restoreBackup(ctx, a, ref, req)
+	return res, err
+}
+
+// restoreBackup is RestoreBackup with a done signal, for a caller that
+// waits for the restore (a restore drill): once a template database's
+// snapshot is being restored into a new service, done is not nil and
+// receives the restore's outcome (nil, or why it failed) once, after its
+// row says so. A daemon that is shutting down sends nothing. The other
+// kinds of restore answer no signal.
+func (c *Core) restoreBackup(ctx context.Context, a Actor, ref ServiceRef, req apitypes.RestoreBackupRequest) (res apitypes.RestoreResult, done <-chan error, err error) {
 	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeDeploy, "restoring a backup")
 	if err != nil {
-		return apitypes.RestoreResult{}, err
+		return apitypes.RestoreResult{}, nil, err
 	}
 	if err := notArchived(ss.project); err != nil {
-		return apitypes.RestoreResult{}, err
+		return apitypes.RestoreResult{}, nil, err
 	}
 	t, ok := templateOf(ss.svc)
 	if !ok {
-		return c.restoreVolumeBackup(ctx, a, ss, req)
+		res, err = c.restoreVolumeBackup(ctx, a, ss, req)
+		return res, nil, err
 	}
 	if req.ToTime != nil {
-		return c.restoreToTime(ctx, a, ss, t, req)
+		res, err = c.restoreToTime(ctx, a, ss, t, req)
+		return res, nil, err
 	}
 	if req.InPlace {
-		return apitypes.RestoreResult{}, invalid("a backup restores into a new service; only a restore to a time (to_time) goes in place")
+		return apitypes.RestoreResult{}, nil, invalid("a backup restores into a new service; only a restore to a time (to_time) goes in place")
 	}
 	from, err := c.backupToRestore(ctx, ss, req.Snapshot)
 	if err != nil {
-		return apitypes.RestoreResult{}, err
+		return apitypes.RestoreResult{}, nil, err
 	}
 	name := req.As
 	if name == "" {
 		name = ss.svc.Name + "-restored"
 	}
 	if err := validName("service", name); err != nil {
-		return apitypes.RestoreResult{}, err
+		return apitypes.RestoreResult{}, nil, err
 	}
 	if _, err := c.runtimeFor(ss.env.ServerID); err != nil {
-		return apitypes.RestoreResult{}, err
+		return apitypes.RestoreResult{}, nil, err
 	}
 	if c.backupsMoving() {
-		return apitypes.RestoreResult{}, conflict("the backups are moving to other storage; restore once the move finishes")
+		return apitypes.RestoreResult{}, nil, conflict("the backups are moving to other storage; restore once the move finishes")
 	}
 	if err := c.notMoving(ctx, ss.envScope, "restore"); err != nil {
-		return apitypes.RestoreResult{}, err
+		return apitypes.RestoreResult{}, nil, err
 	}
 	if !c.claimService(ss.svc.ID) {
-		return apitypes.RestoreResult{}, conflict("a backup or restore of %s is already running; wait for it to finish", ss)
+		return apitypes.RestoreResult{}, nil, conflict("a backup or restore of %s is already running; wait for it to finish", ss)
 	}
-	r := &restore{c: c, from: ss, t: t, snapshot: from.SnapshotID}
+	r := &restore{c: c, from: ss, t: t, snapshot: from.SnapshotID, done: make(chan error, 1)}
 	// Created without a deploy, so the restore row exists before anything
 	// can finish.
 	r.to, err = c.createFromTemplate(ctx, a, ss.envScope, name, t, templateOptions{noDeploy: true, marksFrom: ss.svc.ID})
 	if err != nil {
 		c.releaseService(ss.svc.ID)
-		return apitypes.RestoreResult{}, err
+		return apitypes.RestoreResult{}, nil, err
 	}
 	r.row, err = c.store.CreateBackup(ctx, store.CreateBackupParams{
 		ServiceID: ss.svc.ID, Operation: "restore", Kind: string(t.backup), Trigger: "manual",
@@ -77,7 +90,7 @@ func (c *Core) RestoreBackup(ctx context.Context, a Actor, ref ServiceRef, req a
 	})
 	if err != nil {
 		c.releaseService(ss.svc.ID)
-		return apitypes.RestoreResult{}, err
+		return apitypes.RestoreResult{}, nil, err
 	}
 	c.audit(ctx, a, "backup.restore", &ss.project, &ss.env, ss.String(),
 		fmt.Sprintf("restoring snapshot %s into new service %s", from.SnapshotID[:8], name))
@@ -93,7 +106,7 @@ func (c *Core) RestoreBackup(ctx context.Context, a Actor, ref ServiceRef, req a
 		r.finish(c.ctx, err)
 	}
 	svc, err := c.toService(ctx, a, r.to, apitypes.PendingChanges{})
-	return apitypes.RestoreResult{Service: svc, Restore: toBackupRun(r.row, ss.svc.Name, map[int64]string{r.to.svc.ID: name})}, err
+	return apitypes.RestoreResult{Service: svc, Restore: toBackupRun(r.row, ss.svc.Name, map[int64]string{r.to.svc.ID: name})}, r.done, err
 }
 
 // restore is one restore in flight.
@@ -105,6 +118,9 @@ type restore struct {
 	row      store.Backup
 	// log is what the restore job printed (jobLog), kept by finish.
 	log string
+	// done receives the outcome from finish, once (restoreBackup); it
+	// holds one, so finish never waits for a reader.
+	done chan error
 }
 
 // deployed continues a Postgres restore once the new service's first
@@ -232,7 +248,8 @@ func (r *restore) run(ctx context.Context, to svcScope, target backup.Source, mo
 
 // finish records a restore's outcome once. A failed one archives its
 // target under another name and raises an alert (restoreTargetFailed)
-// before the row says so; a successful one closes that alert.
+// before the row says so; a successful one closes that alert. Whoever
+// waits on done gets the outcome last, with the row written.
 func (r *restore) finish(ctx context.Context, err error) {
 	c := r.c
 	c.releaseService(r.from.svc.ID) // before the row says finished, as in runBackup
@@ -260,5 +277,9 @@ func (r *restore) finish(ctx context.Context, err error) {
 	}
 	if ferr := c.store.FinishBackup(ctx, fin); ferr != nil {
 		c.log.Error("record restore", "restore", r.row.ID, "err", ferr)
+	}
+	select {
+	case r.done <- err:
+	default: // a second finish: the first outcome stands
 	}
 }

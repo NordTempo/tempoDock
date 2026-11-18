@@ -29,6 +29,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/acmedns"
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/config"
+	"github.com/NordTempo/tempoDock/internal/cpbackup"
 	"github.com/NordTempo/tempoDock/internal/data"
 	"github.com/NordTempo/tempoDock/internal/data/mysql"
 	"github.com/NordTempo/tempoDock/internal/data/pg"
@@ -96,6 +97,10 @@ type Options struct {
 	// ConfigPath is the daemon config file, archived by the control
 	// plane's own backup (ADR 0021); empty leaves it out.
 	ConfigPath string
+	// Recovery puts the control plane in recovery mode (ADR 0098): the
+	// data dir's recovery file, read by `dock serve`. Nil is the normal
+	// mode.
+	Recovery *cpbackup.Recovery
 	// Updates is the release source (ADR 0028); nil uses [updates] in
 	// Config. UpdaterUnit overrides update.PathUnit, whose existence says
 	// the updater is installed. Tests set both.
@@ -248,7 +253,12 @@ type Core struct {
 	// backups is the backup scheduler's kick and the runs in flight
 	// (backups.go).
 	backups backupState
-	pitr    pitrState
+	// recovery is set while the control plane is in recovery mode
+	// (recovery_mode.go).
+	recovery atomic.Pointer[cpbackup.Recovery]
+	// recoveryRun is the recovery's run and its report (recovery_run.go).
+	recoveryRun recoveryRun
+	pitr        pitrState
 	// volumes keeps restores apart from the other writers of a service's
 	// volumes (volume_writers.go).
 	volumes volumeWriters
@@ -469,6 +479,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 	// Held deploys run again through core itself (held.go).
 	c.SetReplayer("source", c.replaySource)
 	c.SetReplayer("git", c.replayGit)
+	c.recovery.Store(o.Recovery)
 	return c, nil
 }
 
@@ -556,7 +567,7 @@ func (c *Core) Start(ctx context.Context) error {
 		// Backups keep using the URL as before; the next start tries again.
 		c.log.Error("turn the backup repository into a storage connection", "err", err)
 	}
-	if err := c.reconcileServer(ctx, c.localID, c.rt, true); err != nil {
+	if err := c.reconcileServer(ctx, c.localID, c.rt, !c.Recovering()); err != nil {
 		return fmt.Errorf("reconcile: %w", err)
 	}
 	if err := c.startSleep(ctx); err != nil {
@@ -591,6 +602,7 @@ func (c *Core) Start(ctx context.Context) error {
 	}
 	// Alerts a window held while Dock was down, if it has ended.
 	c.releaseHeld(ctx, time.Now())
+	c.signalRecovery(ctx)
 	if err := c.startLogDrains(ctx); err != nil {
 		return err
 	}
