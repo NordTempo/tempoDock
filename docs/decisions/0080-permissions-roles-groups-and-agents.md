@@ -295,3 +295,29 @@ Settled after reviewing phases 6 and 7 as a whole:
   gives the person. Approving changesets follows the agent's Approver
   setting, as other approvals do. Org agents are unchanged: the `tokens`
   rule or their own override, capped by their scope and creator.
+
+## Amended 2026-11-18
+
+- **A new install enforces.** Shadow exists to compare the model with
+  the roles an install already had. A database nobody has an account in
+  has none, so its mode is written as enforce at the daemon's first
+  start, or at `dock admin bootstrap` when that runs first
+  (`InitAccessModel`: one insert that does nothing once a platform
+  setting or a user exists). No migration: an install that had people
+  before the model keeps shadow until its operator has read a clean
+  `dock platform access-diff` and switches, and a mode an operator chose
+  is never written over.
+- **Data panel roles don't decide data access yet.** The data policy
+  still does (phase 3 above), from a person's summary role. A custom
+  role's Data panel level and its `data.*` permissions count for what
+  the role's holder may give others and nothing else; the role editor
+  says so where one is chosen.
+- **A token's data cap follows its creator by ID.** The cap looked the
+  creator up by the name the token was created under. It now reads the
+  user the token records (`tokens.user_id`, migration 0031). When that
+  user is no longer a member of the org (removed, or their membership
+  ran out), the token gets no data access and the explanation says why:
+  nobody's role stands behind it, and an admin makes a new token. A token
+  without a recorded user was made by another token or the system and has
+  no creator cap, as before; deleting a user already revokes the tokens
+  they made.

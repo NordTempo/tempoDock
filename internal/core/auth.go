@@ -1075,6 +1075,11 @@ func (c *Core) Bootstrap(ctx context.Context, email string) (b Bootstrapped, ok 
 	if err != nil {
 		return b, false, err
 	}
+	// A daemon that started on this database has done this already; one
+	// that starts after the first user exists no longer could.
+	if err := c.initAccessModel(ctx); err != nil {
+		return b, false, err
+	}
 	b = Bootstrapped{Email: email, Password: generatePassword()}
 	u, err := c.createUser(ctx, apitypes.CreateUserRequest{Email: email, Name: "admin", Password: b.Password, Role: apitypes.ScopeAdmin, Operator: true}, org.ID)
 	if err != nil {

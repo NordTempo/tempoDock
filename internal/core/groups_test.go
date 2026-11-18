@@ -217,7 +217,7 @@ func (h *harness) enforce() {
 	}
 }
 
-// In shadow mode (the default) a person's role decides and the model
+// In shadow mode (an install from before the model, as the test database is) a person's role decides and the model
 // answers beside it from their real groups and grants: a deploy member
 // moved to a group that only views still restarts, and the disagreement
 // is counted for the operator. Switching to enforce lets the grants

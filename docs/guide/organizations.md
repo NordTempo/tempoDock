@@ -61,10 +61,11 @@ dock role create "Release manager" --include deploy:edit,variables:edit --permis
 dock group grant Leads "Release manager"
 ```
 
-The same is in Settings › Members, Groups and Roles. Until the platform's
-operator switches the permission model to enforce (`dock platform
-access-model enforce`), roles still decide and groups only show what
-would change.
+The same is in Settings › Members, Groups and Roles. On a new install
+groups and grants decide from the start. An install that had people
+before groups keeps deciding by role, with groups only showing what would
+change, until the platform's operator switches the permission model
+(`dock platform access-model enforce`).
 
 ## Tokens
 

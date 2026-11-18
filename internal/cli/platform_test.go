@@ -66,7 +66,7 @@ func TestWhoamiLegacyAndMalformedTokens(t *testing.T) {
 }
 
 // `dock platform access-model` shows the permission model's mode, shadow
-// until switched, and switches it with a platform login.
+// on an install from before the model (the test database) until switched, and switches it with a platform login.
 func TestAccessModelCommand(t *testing.T) {
 	setup(t)
 	srv := newTestServer(t)
