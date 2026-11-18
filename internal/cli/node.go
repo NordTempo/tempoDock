@@ -18,6 +18,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/NordTempo/tempoDock/internal/config"
+	"github.com/NordTempo/tempoDock/internal/httpkit"
 	"github.com/NordTempo/tempoDock/internal/node/caddy"
 	"github.com/NordTempo/tempoDock/internal/node/remote"
 	"github.com/NordTempo/tempoDock/internal/node/stats"
@@ -192,7 +193,17 @@ func runNode(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Runtime: rt,
 		// Facts don't change while the node runs: Docker restarting
 		// restarts this unit too (Requires=docker.service).
-		Facts:       func(context.Context) (remote.Facts, error) { return facts, nil },
+		// The firewall is the exception, read at every hello: it can be
+		// applied or removed while the node runs.
+		Facts: func(context.Context) (remote.Facts, error) {
+			f := facts
+			if check := firewallCheck(); check != nil {
+				if ok, err := check(); err == nil {
+					f.FirewallApplied = &ok
+				}
+			}
+			return f, nil
+		},
 		UpdaterUnit: update.PathUnit,
 		Logger:      log,
 	}
@@ -218,7 +229,7 @@ func runNode(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		// Asleep environments here wake through the link (ADR 0070).
 		mux.Handle("GET "+wakePath, caddy.WakeHandler(&caddy.NodeWaker{Proxy: proxy, Request: n.RequestWake}))
 	}
-	internal := &http.Server{Addr: cfg.InternalListen, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	internal := &http.Server{Addr: cfg.InternalListen, Handler: mux, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: httpkit.IdleTimeout}
 	go func() { errc <- internal.ListenAndServe() }()
 	// Analytics events (ADR 0037) and spans. Apps are served either way.
 	ingest := ingestServers(cfg, in)

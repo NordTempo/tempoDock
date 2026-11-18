@@ -54,6 +54,21 @@ the access check already has: a session cookie.
 | Password mode | Dock holds only the password's hash and can't answer basic auth, and expecting 401 would only prove that the gate answers. So the password's route also passes the probe's session, and nothing else: a request with `User-Agent: dock-uptime/*` and a `dock_access` cookie goes to the access check instead of basic auth (a subroute; everyone else meets basic auth as before, at no extra cost), and the check, asked with `X-Dock-Access-Probe`, answers 2xx only for a valid session naming `dock-uptime`. A visitor's session, a grant at the callback or anything else gets its 401 |
 | Password mode, the key | A probe key per service, derived from the secrets key (`Box.Tag`) and the service's ID: nothing stored, no migration. It rides the route as `node.Access.ProbeKey`, an optional field on the node link. A node older than this ignores it and keeps asking the probe for the password, so its checks answer 401 until it is updated |
 
+## Amendment: grants bound to the browser (2026-11-18)
+
+A grant was a link anyone holding it could open within its minute, in any
+browser and any number of times. A sign-in link now works only in the
+browser that asked for it, and only once.
+
+| Topic | Decision |
+|---|---|
+| The nonce | Before sending a page load to Dock, the access check leaves 16 random bytes in a cookie on the app's hostname (`__Host-dock_access_n` over HTTPS, so no other hostname of the site can set it; `dock_access_n` on plain HTTP; HttpOnly, SameSite=Lax, 10 minutes, time to log in on the way) and adds `n`, the SHA-256 of it, to `/access?host=&to=`. A browser that has one keeps it, so several tabs signing in at once share it. The nonce itself never leaves the app's hostname |
+| The grant | `/access` passes `n` to `POST /access/grants` (`nonce`), and Dock signs a bound grant: a token kind of its own (`b`) whose payload also carries `n` (`access.SignBound`). A value that isn't a SHA-256 is refused |
+| The callback | Takes bound grants only, and only with the cookie whose hash the grant names (compared in constant time). It then sets the session, drops the nonce cookie and remembers the grant as traded. A browser that already holds a session there just goes on to `to` |
+| Once | The access check keeps the hashes of the grants traded in the last minute, in memory (`spentGrants`): only a grant Dock signed, unexpired and from its own browser gets in, expired ones are dropped when the set has grown (no timer), and it holds at most 4096, past which sign-ins on that server wait a minute. The check is no longer stateless in the strict sense, but still needs nothing stored: a restart forgets the set, and a grant stays bound to its browser |
+| The session cookie | Unchanged: `dock_access`, the same token and name, so everyone signed in stays signed in and uptime probes are untouched |
+| Mixed versions | No protocol change: the nonce travels through the browser. A server older than this sends no `n` and gets the plain grant it understands, as before. A server newer than its control plane refuses the plain grants that control plane signs, so its visitors can't sign in until the control plane is updated: update the control plane first, as for every release. Sessions that exist keep working either way |
+
 ## Why this shape
 
 **Per service, not per domain.** Per domain would let a service be

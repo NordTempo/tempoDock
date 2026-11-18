@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -27,7 +28,10 @@ type dbTemplate struct {
 	image   string
 	// port is where the database listens. It isn't published: health
 	// checks probe it on the environment network, as backups reach it.
-	port      int
+	port int
+	// health is what the health checks ask the port beyond a TCP connect
+	// (node.HealthPostgres for Postgres, "" for the others).
+	health    node.HealthKind
 	mountPath string
 	memoryMB  int
 	// cmd keeps the image's entrypoint (it initialises the volume) and
@@ -72,6 +76,7 @@ func postgresTemplate(name apitypes.Template, title, description, image string) 
 	return dbTemplate{
 		name: name, title: title, license: "PostgreSQL", description: description, image: image,
 		port:      defaultPostgresPort,
+		health:    node.HealthPostgres,
 		mountPath: "/var/lib/postgresql/data",
 		memoryMB:  512,
 		// queryStatsFlags: pg_stat_statements for the Data panel's Health
@@ -197,6 +202,14 @@ func (c *Core) createFromTemplate(ctx context.Context, a Actor, es envScope, nam
 			EnvironmentID: es.env.ID, Name: name, Image: cmp.Or(opts.image, t.image), StartCommand: t.cmd, MemoryMb: int64(t.memoryMB),
 		})
 		if store.IsUnique(err) {
+			// An archived service keeps its name: say so, as it isn't in
+			// the list the caller sees.
+			if held, gerr := q.GetServiceByName(ctx, store.GetServiceByNameParams{EnvironmentID: es.env.ID, Name: name}); gerr == nil && held.ArchivedAt != nil {
+				if opts.marksFrom != 0 {
+					return conflict("service %q in %s is archived and still holds that name; restore under another name with `--as <name>`", name, es)
+				}
+				return conflict("service %q in %s is archived and still holds that name; pick another name", name, es)
+			}
 			return conflict("service %q already exists in %s", name, es)
 		}
 		if err != nil {
@@ -286,7 +299,7 @@ func (c *Core) afterActive(ctx context.Context, ss svcScope) {
 	sys := System.InOrg(ss.project.OrgID)
 	setup := func(ctx context.Context) error {
 		if needSetup {
-			if _, err := c.SetupData(ctx, sys, ref); err != nil {
+			if err := c.ensureDataAccess(ctx, ss); err != nil {
 				return err
 			}
 			needSetup = false
@@ -323,10 +336,29 @@ func (c *Core) afterActive(ctx context.Context, ss svcScope) {
 	})
 }
 
-// Setting up a new template database is retried: Postgres accepts TCP
-// (which passes the health check) a moment before it accepts logins, and
-// on a busy server that moment is long enough to miss. The waits (1, 2,
-// 4 and 8 s) run only after a failed attempt, never while idle.
+// ensureDataAccess sets up data access for a template database that has
+// none yet. afterActive's tries and a restore that just filled the
+// database (restore.finish) both call it: the restore so that it isn't
+// reported done while a try that came too early still waits for its
+// retry. A setup rotates the role passwords, so setupMu keeps two of them
+// from crossing.
+func (c *Core) ensureDataAccess(ctx context.Context, ss svcScope) error {
+	c.setupMu.Lock()
+	defer c.setupMu.Unlock()
+	if _, err := c.store.GetDataAccess(ctx, ss.svc.ID); !store.IsNotFound(err) {
+		return err
+	}
+	_, err := c.SetupData(ctx, System.InOrg(ss.project.OrgID), ServiceRef{ss.project.Name, ss.env.Name, ss.svc.Name})
+	return err
+}
+
+// Setting up a new template database is retried. A Postgres template's
+// health check passes only once the server accepts connections
+// (node.HealthPostgres), but a server on an older dock still runs the
+// TCP check, which passes a moment before Postgres accepts logins, and
+// the other engines' checks are TCP too; the image's entrypoint also
+// restarts Postgres once after initialising a new volume. The waits (1,
+// 2, 4 and 8 s) run only after a failed attempt, never while idle.
 const setupAttempts = 5
 
 // setupRetryDelay is the wait before the second attempt; tests shorten it.

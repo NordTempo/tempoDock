@@ -314,7 +314,7 @@ func (c *Core) liveMask(ctx context.Context, a Actor, ss svcScope) (liveCtx, err
 	if err != nil {
 		return liveCtx{}, err
 	}
-	out := liveCtx{mask: traceMask{r}}
+	out := liveCtx{mask: newTraceMask(r)}
 	if cfg, err := c.openConfig(rel); err == nil {
 		out.elsewhere = metricsElsewhere(cfg.Env)
 	}

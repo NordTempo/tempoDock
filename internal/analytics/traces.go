@@ -178,7 +178,9 @@ type TraceLimits struct {
 	// ErrorDay caps a service's error and forced spans a day.
 	ErrorDay int64
 	// MaxBytes caps the traces database's used size; past it the oldest
-	// day goes early.
+	// day goes early, an org that holds more than half first, and with
+	// only today left the spans of orgs at an equal share or more are
+	// refused.
 	MaxBytes int64
 }
 

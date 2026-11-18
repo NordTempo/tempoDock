@@ -187,3 +187,92 @@ ORDER BY consistent_at;
 -- replay from, so they no longer restore to a time; retention still ages
 -- them out (ADR 0093).
 UPDATE backups SET wal_start = '' WHERE kind = 'pitr' AND operation = 'backup' AND wal_start <> '';
+
+-- name: CreateBackupCheck :one
+INSERT INTO backup_checks (kind, server_id, service_id, repository, snapshot_id, trigger, status, started_at)
+VALUES (?, ?, ?, ?, ?, ?, 'running', ?)
+RETURNING *;
+
+-- name: FinishBackupCheck :exec
+UPDATE backup_checks SET status = ?, error = ?, detail = ?, finished_at = ? WHERE id = +?;
+
+-- name: ListLatestRepositoryChecks :many
+-- Each repository's latest check attempt per server (ADR 0096), for the
+-- scheduler and backup settings.
+SELECT * FROM backup_checks WHERE id IN (
+    SELECT max(id) FROM backup_checks WHERE kind = 'repository' GROUP BY repository, server_id
+)
+ORDER BY repository, server_id;
+
+-- name: TrimRepositoryChecks :exec
+-- Keeps the newest ten checks of a repository on a server.
+DELETE FROM backup_checks
+WHERE backup_checks.kind = 'repository' AND backup_checks.repository = +sqlc.arg(repository) AND backup_checks.server_id = +sqlc.arg(server_id)
+  AND backup_checks.id NOT IN (
+    SELECT c.id FROM backup_checks c
+    WHERE c.kind = 'repository' AND c.repository = +sqlc.arg(repository) AND c.server_id = +sqlc.arg(server_id)
+    ORDER BY c.id DESC LIMIT 10
+  );
+
+-- name: FailRunningBackupChecks :execrows
+-- At start-up: a check the last daemon left running never finished.
+UPDATE backup_checks SET status = 'failed', error = ?, finished_at = ? WHERE status = 'running';
+
+-- name: SetBackupVerify :exec
+-- Turns the weekly checks and drills on or off. The settings row exists:
+-- the caller opens the repository first (repoOf creates it).
+UPDATE backup_settings SET verify = ?, updated_at = ?, updated_by = ? WHERE id = 1;
+
+-- name: ListDrillCandidates :many
+-- Every live template database (not archived or stopped, in a live
+-- project, outside previews) with its newest snapshot a restore can use,
+-- for the restore drills (ADR 0096). The snapshot is found by walking
+-- backups_service down from the service's newest run.
+SELECT services.id, environments.server_id, backups.snapshot_id, backups.repository, backups.size_bytes
+FROM services
+JOIN environments ON environments.id = services.environment_id
+JOIN projects ON projects.id = environments.project_id
+JOIN backups ON backups.id = (
+    SELECT b.id FROM backups b
+    WHERE b.service_id = services.id AND b.operation = 'backup' AND b.status = 'succeeded'
+      AND b.pruned = 0 AND b.kind <> 'pitr' AND b.snapshot_id <> ''
+    ORDER BY b.id DESC LIMIT 1
+)
+WHERE services.archived_at IS NULL AND services.stopped_at IS NULL AND projects.archived_at IS NULL
+  AND services.template <> ''
+  AND NOT EXISTS (SELECT 1 FROM previews WHERE previews.environment_id = services.environment_id)
+ORDER BY services.id;
+
+-- name: GetDrillSnapshot :one
+-- A service's newest snapshot a restore can use: what its drill restores.
+SELECT * FROM backups
+WHERE service_id = +? AND operation = 'backup' AND status = 'succeeded'
+  AND pruned = 0 AND kind <> 'pitr' AND snapshot_id <> ''
+ORDER BY id DESC LIMIT 1;
+
+-- name: ListLatestDrills :many
+-- Each service's latest restore drill, for the scheduler.
+SELECT * FROM backup_checks WHERE id IN (
+    SELECT max(id) FROM backup_checks WHERE kind = 'drill' GROUP BY service_id
+);
+
+-- name: GetLatestDrill :one
+-- A service's latest restore drill.
+SELECT * FROM backup_checks WHERE kind = 'drill' AND service_id = +? ORDER BY id DESC LIMIT 1;
+
+-- name: TrimDrillChecks :exec
+-- Keeps the newest ten drills of a service.
+DELETE FROM backup_checks
+WHERE backup_checks.kind = 'drill' AND backup_checks.service_id = +sqlc.arg(service_id)
+  AND backup_checks.id NOT IN (
+    SELECT c.id FROM backup_checks c
+    WHERE c.kind = 'drill' AND c.service_id = +sqlc.arg(service_id)
+    ORDER BY c.id DESC LIMIT 10
+  );
+
+-- name: GetDrillRestore :one
+-- The restore a drill ran from a service into another: how a service
+-- named like a drill's is known to be one (created_by is the system's).
+SELECT * FROM backups
+WHERE service_id = +sqlc.arg(service_id) AND operation = 'restore' AND restored_to = +sqlc.arg(restored_to)
+ORDER BY id DESC LIMIT 1;

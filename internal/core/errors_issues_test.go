@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/analytics"
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 // errorsFor ticks the error sink into the store until the list for f
@@ -361,5 +363,87 @@ func TestErrorFloodIsBounded(t *testing.T) {
 	}
 	if open != errorAlertsPerService {
 		t.Fatalf("%d error alerts open, want %d", open, errorAlertsPerService)
+	}
+}
+
+// A release that fails its health check opens an issue for what its app
+// really logged, and none for the noise of the failed deploy: the app's
+// lines about Dock's probe getting a 404, and what it first wrote while
+// Dock stopped it. While it deploys its errors wait in the sink. The
+// probe's line in the release that is live is an issue.
+func TestFailedReleaseErrorsKeepTheRealOnes(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	h.deploy(web, "app:1")
+	svc := h.serviceID(web)
+	cfg, err := h.c.sealConfig(releaseConfig{HealthCheckPath: "/health"}, svc, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rel, err := h.c.store.CreateRelease(h.ctx, store.CreateReleaseParams{ServiceID: svc, Number: 2, Source: "image", Config: cfg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now()
+	logged := func(title string, when time.Time) pendingError {
+		return pendingError{source: apitypes.ErrorFromLogs, title: title, count: 3, first: when, last: when, release: 2}
+	}
+	stop := at.Add(10 * time.Second)
+	add := func(sink *errorSink) {
+		sink.add(svc, "fp-probe", logged(`error: GET /health 404`, at))
+		sink.add(svc, "fp-crash", logged(`panic: no DATABASE_URL`, at))
+		sink.add(svc, "fp-other", logged(`error: GET /healthz 404 not found`, at))
+		sink.add(svc, "fp-shutdown", logged(`error: connection closed during shutdown`, stop.Add(time.Second)))
+	}
+	// Batches come from a sink of the test's own, so the daemon's
+	// statistics tick can't write one first; only held errors go back
+	// into the daemon's.
+	write := func(sink *errorSink) []issueEvent {
+		t.Helper()
+		batch, _ := sink.take()
+		events, err := h.c.writeErrors(h.ctx, batch, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return events
+	}
+	titles := func() []string {
+		t.Helper()
+		list, err := h.c.ListErrors(h.ctx, testSystem, ErrorFilter{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, i := range list.Issues {
+			out = append(out, i.Title)
+		}
+		slices.Sort(out)
+		return out
+	}
+
+	var sink errorSink
+	add(&sink)
+	if events := write(&sink); len(events) != 0 || len(titles()) != 0 {
+		t.Fatalf("while release 2 deploys: %d alerts, issues %q; want none", len(events), titles())
+	}
+	h.c.stops.mark(releaseKey{svc, 2}, stop)
+	if err := h.c.store.FailRelease(h.ctx, store.FailReleaseParams{Error: "health check failed", ErrorCode: string(apitypes.CodeHealthCheckFailed), FinishedAt: ptr(at), ID: rel.ID}); err != nil {
+		t.Fatal(err)
+	}
+	// The held errors went back into the daemon's sink: the app's own
+	// become issues, the deploy's noise goes.
+	want := []string{`error: GET /healthz 404 not found`, `panic: no DATABASE_URL`}
+	if events := write(&h.c.issues); len(events) != 2 || !slices.Equal(titles(), want) {
+		t.Fatalf("after release 2 failed: %d alerts, issues %q; want 2 and %q", len(events), titles(), want)
+	}
+	if batch, _ := h.c.issues.take(); len(batch) != 0 {
+		t.Fatalf("a failed release's errors stay in the sink: %d", len(batch))
+	}
+
+	probe := logged(`error: GET /health 404`, at)
+	probe.release = 1
+	sink.add(svc, "fp-probe", probe)
+	if events := write(&sink); len(events) != 1 || len(titles()) != 3 {
+		t.Fatalf("in the live release: %d alerts, issues %q; want 1 alert and 3 issues", len(events), titles())
 	}
 }

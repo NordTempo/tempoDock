@@ -88,6 +88,11 @@ type Options struct {
 	// CloudflareAPI overrides Cloudflare's API base URL (ADR 0036); tests
 	// point it at a fake.
 	CloudflareAPI string
+	// FirewallApplied reports whether the app firewall's rules are in on
+	// the control plane's own server (firewall.Applied); Start asks once
+	// and raises an alert when they aren't. Nil where no firewall is
+	// expected (the fake runtime, a daemon outside systemd): no alert.
+	FirewallApplied func() (bool, error)
 	// ConfigPath is the daemon config file, archived by the control
 	// plane's own backup (ADR 0021); empty leaves it out.
 	ConfigPath string
@@ -121,15 +126,19 @@ type Core struct {
 	cfg     config.Config
 	// configPath is Options.ConfigPath.
 	configPath string
-	store      *store.Store
-	box        *secrets.Box
-	rt         node.Runtime
-	nodes      Nodes // nil: no remote servers
-	reg        Registry
-	log        *slog.Logger
-	bus        *bus
+	// firewallApplied is Options.FirewallApplied.
+	firewallApplied func() (bool, error)
+	store           *store.Store
+	box             *secrets.Box
+	rt              node.Runtime
+	nodes           Nodes // nil: no remote servers
+	reg             Registry
+	log             *slog.Logger
+	bus             *bus
 	// renameMu keeps committed renames and their live events in order.
 	renameMu sync.Mutex
+	// setupMu makes ensureDataAccess one at a time.
+	setupMu sync.Mutex
 	// localID is the control plane's own server. Its name is read with
 	// localName (a rename changes it), anything else from the store.
 	localID  int64
@@ -185,9 +194,12 @@ type Core struct {
 
 	// loginLimit throttles password attempts per client IP, per (email,
 	// IP) and, more loosely, per email (httpkit.LoginLimiter); bcryptSem
-	// caps concurrent password checks (each is ~50ms of CPU).
-	loginLimit *httpkit.LoginLimiter
-	bcryptSem  chan struct{}
+	// caps concurrent password checks (each is ~50ms of CPU) and
+	// bcryptWaiting counts the callers waiting for one of its slots
+	// (bcryptSlot).
+	loginLimit    *httpkit.LoginLimiter
+	bcryptSem     chan struct{}
+	bcryptWaiting atomic.Int32
 	// passwordCost is the bcrypt cost of new password hashes
 	// (Options.PasswordCost).
 	passwordCost int
@@ -207,10 +219,15 @@ type Core struct {
 	// issues is the error sink the statistics tick writes as error
 	// issues (errors_ingest.go).
 	issues errorSink
+	// stops is when failed releases' containers began to stop (errors_ingest.go).
+	stops releaseStops
 	// cliLogins wakes CLIs waiting on browser logins (cli_login.go).
 	cliLogins *cliLogins
 	// streams counts the event streams open (streams.go).
 	streams streamCounts
+	// access is what actors hold open, ended when their access changes
+	// (access_watch.go).
+	access accessWatch
 	// ceremonies are the passkey challenges and authenticator app setups
 	// in flight; operators2FA is the platform's requirement of a second
 	// factor of operators (twofactor.go, passkeys.go). Second factors
@@ -343,54 +360,55 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		}
 	}
 	c := &Core{
-		cfg:        o.Config,
-		configPath: o.ConfigPath,
-		store:      o.Store,
-		box:        o.Secrets,
-		rt:         o.Runtime,
-		reg:        o.Registry,
-		stats:      newStatsState(),
-		alerts:     newAlertEngine(o.Config.Network.AllowPrivate),
-		logDrains:  newDrainManager(o.Config.Network.AllowPrivate),
-		retention:  newRetention(),
-		log:        o.Logger,
-		bus:        newBus(),
-		servers:    map[int64]*serverState{},
-		domainKick: make(chan struct{}, 1),
-		checks:     map[int64]domainCheck{},
-		checking:   map[int64]chan struct{}{},
-		lookupTXT:  o.LookupTXT,
-		lookupIP:   o.LookupIP,
-		status:     map[int64]storedStatus{},
-		removing:   map[string]chan struct{}{},
-		health:     newHealthWatch(),
-		uploads:    map[int64]int64{},
-		loginLimit: httpkit.NewLoginLimiter(),
-		bcryptSem:  make(chan struct{}, 2),
-		cliLogins:  newCLILogins(),
-		ceremonies: newCeremonies(),
-		sso:        newSSOState(),
-		backups:    newBackupState(),
-		volumes:    newVolumeWriters(),
-		uptime:     newUptimeState(),
-		runs:       runState{running: map[int64]int{}, ended: map[int64]chan struct{}{}},
-		jobs:       newJobState(),
-		scans:      newScanState(),
-		email:      newEmailState(),
-		moves:      newMoveState(),
-		fwd:        newForwardState(),
-		drains:     newServerDrainState(),
-		drain:      DefaultCutoverDrain,
-		data:       o.DataEngines,
-		git:        newGitState(o.GitHubAPI),
-		previews:   newPreviewState(),
-		tracking:   newSiteChecks(o.Config.Network.AllowPrivate),
-		updates:    newUpdates(o),
-		cf:         newCFState(o.CloudflareAPI),
-		wild:       newWildState(),
-		obtain:     o.ObtainCertificate,
-		waitTXT:    o.WaitTXT,
-		acmeHTTP:   o.ACMEClient,
+		cfg:             o.Config,
+		configPath:      o.ConfigPath,
+		firewallApplied: o.FirewallApplied,
+		store:           o.Store,
+		box:             o.Secrets,
+		rt:              o.Runtime,
+		reg:             o.Registry,
+		stats:           newStatsState(),
+		alerts:          newAlertEngine(o.Config.Network.AllowPrivate),
+		logDrains:       newDrainManager(o.Config.Network.AllowPrivate),
+		retention:       newRetention(),
+		log:             o.Logger,
+		bus:             newBus(),
+		servers:         map[int64]*serverState{},
+		domainKick:      make(chan struct{}, 1),
+		checks:          map[int64]domainCheck{},
+		checking:        map[int64]chan struct{}{},
+		lookupTXT:       o.LookupTXT,
+		lookupIP:        o.LookupIP,
+		status:          map[int64]storedStatus{},
+		removing:        map[string]chan struct{}{},
+		health:          newHealthWatch(),
+		uploads:         map[int64]int64{},
+		loginLimit:      httpkit.NewLoginLimiter(),
+		bcryptSem:       make(chan struct{}, 2),
+		cliLogins:       newCLILogins(),
+		ceremonies:      newCeremonies(),
+		sso:             newSSOState(),
+		backups:         newBackupState(),
+		volumes:         newVolumeWriters(),
+		uptime:          newUptimeState(),
+		runs:            runState{running: map[int64]int{}, ended: map[int64]chan struct{}{}},
+		jobs:            newJobState(),
+		scans:           newScanState(),
+		email:           newEmailState(),
+		moves:           newMoveState(),
+		fwd:             newForwardState(),
+		drains:          newServerDrainState(),
+		drain:           DefaultCutoverDrain,
+		data:            o.DataEngines,
+		git:             newGitState(o.GitHubAPI),
+		previews:        newPreviewState(),
+		tracking:        newSiteChecks(o.Config.Network.AllowPrivate),
+		updates:         newUpdates(o),
+		cf:              newCFState(o.CloudflareAPI),
+		wild:            newWildState(),
+		obtain:          o.ObtainCertificate,
+		waitTXT:         o.WaitTXT,
+		acmeHTTP:        o.ACMEClient,
 	}
 	if c.obtain == nil {
 		c.obtain = acmedns.Obtain
@@ -589,11 +607,11 @@ func (c *Core) Start(ctx context.Context) error {
 		}
 	}
 	c.wg.Add(8)
-	go c.watchRuntime(events)
-	go c.checkDomains()
-	go c.collectStats()
-	go c.scheduleBackups()
-	go c.scheduleUptime()
+	c.goCaught("watching containers", func() { c.watchRuntime(events) })
+	c.goLoop("checking domains", c.checkDomains)
+	c.goCaught("collecting statistics", func() { c.collectStats() })
+	c.goCaught("scheduling backups", func() { c.scheduleBackups() })
+	c.goLoop("scheduling uptime checks", c.scheduleUptime)
 	// Jobs left due by a stop run now; without jobs it exits at once.
 	c.kickJobs()
 	// Scans wait for a quiet minute; with nothing queued it exits.
@@ -601,21 +619,22 @@ func (c *Core) Start(ctx context.Context) error {
 	// A new builder, or one updated to other Railpack images, fetches
 	// them now rather than in its first build.
 	c.warmBuilder(ctx, c.localID)
+	c.checkLocalFirewall(ctx)
 	// Mail queued before a stop goes now; with none the sender exits.
 	c.email.mu.Lock()
 	c.email.started = true
 	c.email.mu.Unlock()
 	c.kickEmail()
-	go c.runCloudflare()
-	go c.runWildcards()
+	c.goCaught("working on Cloudflare", func() { c.runCloudflare() })
+	c.goCaught("keeping wildcard certificates", func() { c.runWildcards() })
 	// In the background: running the tunnel may pull an image.
-	go func() {
+	c.goCaught("running the control plane's tunnel", func() {
 		defer c.wg.Done()
 		c.runServerTunnel(c.ctx, c.localID, c.rt)
 		if srv, err := c.store.GetServer(c.ctx, c.localID); err == nil {
 			c.syncServerRecords(c.ctx, srv)
 		}
-	}()
+	})
 	if err := c.resumeGit(ctx); err != nil {
 		return fmt.Errorf("resume queued pushes: %w", err)
 	}

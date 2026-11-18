@@ -178,6 +178,21 @@ type Backup struct {
 	RestoreToTime   *time.Time
 }
 
+type BackupCheck struct {
+	ID         int64
+	Kind       string
+	ServerID   int64
+	ServiceID  *int64
+	Repository string
+	SnapshotID string
+	Trigger    string
+	Status     string
+	Error      string
+	Detail     string
+	StartedAt  time.Time
+	FinishedAt *time.Time
+}
+
 type BackupLog struct {
 	BackupID  int64
 	ServiceID int64
@@ -203,6 +218,7 @@ type BackupSetting struct {
 	UpdatedBy   string
 	StorageID   *int64
 	StoragePath string
+	Verify      bool
 }
 
 type Changeset struct {

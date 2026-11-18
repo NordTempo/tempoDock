@@ -1,16 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useState } from "react";
+import { localPath } from "../../../src/ui/localPath";
 import { queries, useLogin } from "../data/queries";
 import { Entry, Field, Submit } from "../shell/Entry";
 
-// Sign in. Signed-in people go on to where they were headed.
+// Sign in. Signed-in people go on to where they were headed: a path on
+// tempoBase, never another site (localPath).
 export const Route = createFileRoute("/login")({
   validateSearch: (s: Record<string, unknown>): { redirect?: string } => ({
-    redirect:
-      typeof s.redirect === "string" && s.redirect.startsWith("/")
-        ? s.redirect
-        : undefined,
+    redirect: localPath(s.redirect),
   }),
   beforeLoad: async ({ context, search }) => {
     const me = await context.queryClient.ensureQueryData(queries.me());

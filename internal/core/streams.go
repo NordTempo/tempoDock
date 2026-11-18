@@ -97,7 +97,7 @@ func (c *Core) Events(ctx context.Context, a Actor, f EventFilter) (Stream[LiveE
 	if err != nil {
 		return nil, err
 	}
-	return func(ctx context.Context, ready func(), send func(...LiveEvent) error) error {
+	return held(c, a, func(ctx context.Context, ready func(), send func(...LiveEvent) error) error {
 		defer closed()
 		sub := c.bus.subscribeAs(reveal, match)
 		defer sub.close()
@@ -114,7 +114,7 @@ func (c *Core) Events(ctx context.Context, a Actor, f EventFilter) (Stream[LiveE
 				}
 			}
 		}
-	}, nil
+	}), nil
 }
 
 // BuildLog opens a release's build log (empty if there is none yet), with
@@ -162,7 +162,7 @@ func (c *Core) FollowBuildLog(ctx context.Context, a Actor, ref ServiceRef, numb
 	building := func(status string) bool {
 		return status == string(apitypes.ReleaseQueued) || status == string(apitypes.ReleaseBuilding)
 	}
-	return func(ctx context.Context, ready func(), send func(...apitypes.BuildLogLine) error) error {
+	return held(c, a, counted(c, a, func(ctx context.Context, ready func(), send func(...apitypes.BuildLogLine) error) error {
 		// Subscribe before reading the file so no line falls in between;
 		// line numbers (Seq) drop the duplicates.
 		sub := c.bus.subscribeAs(func(busEvent) bool { return reveal }, func(e busEvent) bool {
@@ -226,7 +226,7 @@ func (c *Core) FollowBuildLog(ctx context.Context, a Actor, ref ServiceRef, numb
 				}
 			}
 		}
-	}, nil
+	})), nil
 }
 
 // Build log catch-up batches hold at most logBatchLines lines and about
@@ -421,14 +421,14 @@ func (c *Core) ServiceLogs(ctx context.Context, a Actor, ref ServiceRef, q LogQu
 		}
 		return nil, notFound("release %d of %s never started a container; see its build log", rel.Number, ss)
 	}
-	return func(ctx context.Context, ready func(), send func(...apitypes.LogLine) error) error {
+	return held(c, a, counted(c, a, func(ctx context.Context, ready func(), send func(...apitypes.LogLine) error) error {
 		lines, err := c.openLogs(ctx, ss, rel, live, q)
 		if err != nil {
 			return err
 		}
 		ready()
 		return sendLogs(lines, red, q, send)
-	}, nil
+	})), nil
 }
 
 // openLogs opens the first source that has a release's output: Docker
@@ -534,16 +534,17 @@ func sendLogs(lines <-chan node.LogLine, red *redactor, q LogQuery, send func(..
 // logSendBatch is the most service log lines sent in one write.
 const logSendBatch = 256
 
-// Event streams are held open, each with a subscription and its buffer,
-// and every published event walks them all: a person or a token has
-// maxActorStreams at once (a tab or a `dock logs -f` each), and the
-// server maxStreams.
+// Live streams are held open (an event stream with a subscription and
+// its buffer, which every published event walks; a log follow with a
+// connection to its server): a person or a token has maxActorStreams at
+// once (a tab or a `dock logs -f` each), and the server maxStreams.
 const (
 	maxActorStreams = 32
 	maxStreams      = 4096
 )
 
-// streamCounts counts the event streams open, by who opened them.
+// streamCounts counts the live streams open (events, log follows, build
+// log follows, live usage), by who opened them.
 type streamCounts struct {
 	mu    sync.Mutex
 	by    map[[2]int64]int // {user, token}: a token's streams are its own

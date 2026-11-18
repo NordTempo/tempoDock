@@ -319,7 +319,9 @@ type JobSpec struct {
 	Env    map[string]string
 	// Script runs as `/bin/sh -c Script`, replacing the image's entrypoint.
 	Script string
-	// Network is joined without aliases; empty means none.
+	// Network is joined without aliases; empty means none at all: the
+	// job has only loopback. A job that needs the internet names a
+	// managed network, which the app firewall covers.
 	Network   string
 	Mounts    []Mount
 	Resources Resources
@@ -451,6 +453,10 @@ type DialRequest struct {
 	ContainerID string
 	// Port is the container port (e.g. 5432), not a published host port.
 	Port int
+	// Forwarded marks a connection a server forwards to a service that
+	// moved away (ADR 0063): a remote server counts it against its
+	// forwarded connections, not against the dials of the data panel.
+	Forwarded bool
 }
 
 // Builder turns source code into an image available to this server.
@@ -821,8 +827,11 @@ const TraceIngestHost = "dock-otlp"
 // within StartPeriod after a start don't count; probes run every
 // StartInterval then, so a healthy start is seen quickly.
 type LivenessCheck struct {
-	Port          int
-	Path          string
+	Port int
+	Path string
+	// Kind, without Path, is what the probe asks the port (HealthKind);
+	// "" is a TCP connect.
+	Kind          HealthKind
 	Interval      time.Duration
 	Timeout       time.Duration
 	Retries       int
@@ -891,6 +900,16 @@ type Container struct {
 	AnonymousVolumes []string
 }
 
+// HealthKind is what a health check asks a port beyond a TCP connect.
+// The zero value asks nothing more. A server on an older dock doesn't
+// know a newer kind and runs the TCP check.
+type HealthKind string
+
+// HealthPostgres checks that a PostgreSQL server accepts connections
+// (internal/node/pgready): one that is starting up or recovering has its
+// port open but refuses every connection with SQLSTATE 57P03.
+const HealthPostgres HealthKind = "pg"
+
 // HealthCheck describes when a new container counts as healthy.
 //   - Path set: HTTP GET http://127.0.0.1:HostPort{Path} returns 2xx/3xx.
 //   - No Path, container publishes a port: TCP connect succeeds.
@@ -898,13 +917,17 @@ type Container struct {
 //
 // Port (set without Path) instead probes that container port over TCP on
 // the container's environment network, for services that publish nothing
-// (database templates, ADR 0019).
+// (database templates, ADR 0019). Kind says what that probe asks the
+// port: "" only connects, HealthPostgres also waits for PostgreSQL to
+// accept connections.
 //
 // Interval is the steady probe interval; the first probes come sooner (the
 // Docker runtime backs off from 50 ms).
 type HealthCheck struct {
-	Path     string
-	Port     int
+	Path string
+	Port int
+	// Kind applies to the Port probe only.
+	Kind     HealthKind
 	Timeout  time.Duration
 	Interval time.Duration
 	// Grace is how long a portless container must stay up to count as healthy.

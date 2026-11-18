@@ -1,9 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { ago, size } from "../../ui/format";
-import { Act, Button, ErrorText, Panel, SectionHead } from "../../ui/kit";
+import {
+  Act,
+  Button,
+  ErrorText,
+  Panel,
+  SectionHead,
+  StateText,
+} from "../../ui/kit";
 import { storageQuery } from "../storage/data";
+import { checkedWords } from "./CheckedLine";
+import { checkOf, repositoryChecked } from "./checked";
 import { type BackupSettings, useMoveBackups } from "./settings";
 
 // Where the backups are and the move to a storage connection (ADR 0039),
@@ -22,10 +31,13 @@ export function BackupStorage({
   settings,
   moving,
   onMoved,
+  children,
 }: {
   settings: BackupSettings;
   moving: boolean;
   onMoved: () => void;
+  /** A row under the table: the weekly checks' switch (ADR 0096). */
+  children?: ReactNode;
 }) {
   const m = settings.move;
   const repos = settings.repositories ?? [];
@@ -51,12 +63,18 @@ export function BackupStorage({
                 <th className="text-right">Snapshots</th>
                 <th className="text-right">Size</th>
                 <th>Move</th>
-                <th className="w-full" />
+                <th className="w-full">Checked</th>
               </tr>
             </thead>
             <tbody>
               {repos.map((r) => {
                 const p = progress.get(`${r.repository}/${r.server ?? ""}`);
+                const check = checkOf(settings.checks ?? [], r);
+                const checked = repositoryChecked(
+                  check,
+                  settings.next_check_at,
+                  checkedWords,
+                );
                 return (
                   <tr key={`${r.repository}/${r.server ?? ""}`}>
                     <td className="py-2 font-mono">
@@ -90,7 +108,17 @@ export function BackupStorage({
                         <span className="text-mut">new backups go here</span>
                       ) : null}
                     </td>
-                    <td />
+                    <td
+                      className="py-2 whitespace-normal"
+                      title={check?.detail}
+                    >
+                      {checked && <StateText state={checked} />}
+                      {check?.status === "failed" && check.error && (
+                        <span className="block font-mono text-xs text-fail">
+                          {check.error}
+                        </span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -98,6 +126,7 @@ export function BackupStorage({
           </table>
         </Panel>
       )}
+      {children}
       <MoveResult settings={settings} />
       {moving && <MoveForm settings={settings} onDone={onMoved} />}
     </section>

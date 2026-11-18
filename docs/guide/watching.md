@@ -39,6 +39,10 @@ Errors that differ only in numbers, IDs or line numbers are one issue,
 so an issue survives a deploy. An issue is **new** in its first release
 or day, **regressed** when it comes back after being resolved, and
 **resolved** by a person or by itself after 7 days without an error.
+A deploy that fails opens issues for the errors its app logged, like a
+live release. Two things are left out: lines about Dock's own health
+check getting a 404, and what the app wrote while Dock stopped it.
+`dock diagnose` shows the failed deploy's output with the likely cause.
 
 ```sh
 dock errors                     # the organization's open issues

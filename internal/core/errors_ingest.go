@@ -28,6 +28,11 @@ import (
 //     trafficErrorMin requests with 5xx, and at least 1 in
 //     trafficErrorShare of its requests (trafficErrors).
 //
+// A release that fails before it goes live is a source too, but for the
+// noise of the failed deploy itself: what the app logged about Dock's
+// health probe getting a 404, and what it wrote while Dock stopped it.
+// Its log errors wait in the sink while it deploys (logFate).
+//
 // Each source adds to the error sink in memory without blocking. On the
 // statistics tick (once a minute, nothing of its own) the sink's issues
 // are written in one transaction: a new fingerprint opens an issue, a
@@ -158,6 +163,7 @@ func (c *Core) errorsTick(ctx context.Context, now time.Time) {
 			c.issueAlert(ctx, a, now)
 		}
 	}
+	c.stops.prune(now)
 	c.expireErrorAlerts(ctx, now)
 }
 
@@ -170,13 +176,16 @@ type issueEvent struct {
 
 // writeErrors writes a tick's issues in one transaction and returns the
 // issues that are new (not frontend ones: Dock Analytics alerts on those
-// itself) or regressed.
+// itself) or regressed. Log errors of a release still deploying are put
+// back into the sink, and a failed deploy's noise is dropped (logFate).
 func (c *Core) writeErrors(ctx context.Context, batch map[errorKey]*pendingError, now time.Time) ([]issueEvent, error) {
 	var events []issueEvent
+	var held []errorKey
 	dropped := 0
 	err := c.store.Tx(ctx, func(q *store.Queries) error {
-		events, dropped = events[:0], 0
+		events, held, dropped = events[:0], held[:0], 0
 		targets := map[int64]*store.GetErrorTargetRow{}
+		fates := map[releaseKey]logFate{}
 		opened := map[int64]int{}
 		for k, p := range batch {
 			t, ok := targets[k.service]
@@ -196,6 +205,23 @@ func (c *Core) writeErrors(ctx context.Context, batch map[errorKey]*pendingError
 			release, err := errorRelease(ctx, q, k.service, p, t)
 			if err != nil {
 				return err
+			}
+			if p.source == apitypes.ErrorFromLogs && release != 0 && release != t.ActiveRelease {
+				rk := releaseKey{k.service, release}
+				fate, ok := fates[rk]
+				if !ok {
+					if fate, err = c.logErrorFate(ctx, q, rk); err != nil {
+						return err
+					}
+					fates[rk] = fate
+				}
+				if fate.held {
+					held = append(held, k)
+					continue
+				}
+				if fate.noise(p) {
+					continue
+				}
 			}
 			cur, err := q.GetErrorIssueByFingerprint(ctx, store.GetErrorIssueByFingerprintParams{ServiceID: k.service, Fingerprint: k.fingerprint})
 			switch {
@@ -265,7 +291,146 @@ func (c *Core) writeErrors(ctx context.Context, batch map[errorKey]*pendingError
 	if dropped > 0 {
 		c.log.Warn("errors: services had more new issues than a minute opens; their errors were dropped", "issues", dropped)
 	}
+	if err == nil {
+		for _, k := range held {
+			c.issues.add(k.service, k.fingerprint, *batch[k])
+		}
+	}
 	return events, err
+}
+
+// releaseKey names a service's release by its number.
+type releaseKey struct{ service, number int64 }
+
+// logFate is what a tick does with the log errors of a release other
+// than the active one.
+type logFate struct {
+	// held: the release is still deploying. Its errors go back into the
+	// sink until a tick finds it live or failed: only then is it known
+	// which of them are noise.
+	held bool
+	// failed: the release failed or was canceled before it went live. Its
+	// errors are issues like any other, but for the noise of the failed
+	// deploy itself (noise).
+	failed bool
+	// healthPath is the failed release's health check path, or "".
+	healthPath string
+	// stopAt is when Dock began to stop the failed release's container,
+	// or zero when that isn't known (the daemon restarted since).
+	stopAt time.Time
+}
+
+// noise reports whether p is noise of the failed deploy and no error of
+// the app: what it logged about Dock's own health probe getting a 404
+// (the deploy's failure says that already, with a diagnosis), and what it
+// first wrote while Dock was stopping it.
+func (f logFate) noise(p *pendingError) bool {
+	if !f.failed {
+		return false
+	}
+	if !f.stopAt.IsZero() && !p.first.Before(f.stopAt) {
+		return true
+	}
+	return probe404(p.title, f.healthPath) || probe404(p.sample, f.healthPath)
+}
+
+// probe404 reports whether text is a line about a request to path
+// answered with 404: path as a whole (not a longer path's start) and the
+// status as a word.
+func probe404(text, path string) bool {
+	if path == "" || !hasWord(text, "404", isDigit) {
+		return false
+	}
+	return hasWord(text, path, func(b byte) bool {
+		return b == '/' || b == '-' || b == '_' || b == '.' || isDigit(b) || b|0x20 >= 'a' && b|0x20 <= 'z'
+	})
+}
+
+// isDigit reports whether b is an ASCII digit.
+func isDigit(b byte) bool { return b >= '0' && b <= '9' }
+
+// hasWord reports whether text holds word with no byte that part accepts
+// right after it, nor (unless word starts with '/') right before it.
+func hasWord(text, word string, part func(byte) bool) bool {
+	for from := 0; ; {
+		i := strings.Index(text[from:], word)
+		if i < 0 {
+			return false
+		}
+		start := from + i
+		end := start + len(word)
+		before := start == 0 || word[0] == '/' || !part(text[start-1])
+		if before && (end == len(text) || !part(text[end])) {
+			return true
+		}
+		from = start + 1
+	}
+}
+
+// logErrorFate decides what happens to the log errors of a release other
+// than the active one. A release that is gone counts as one that was
+// live, as it did before releases were looked at.
+func (c *Core) logErrorFate(ctx context.Context, q *store.Queries, k releaseKey) (logFate, error) {
+	r, err := q.GetReleaseByNumber(ctx, store.GetReleaseByNumberParams{ServiceID: k.service, Number: k.number})
+	if store.IsNotFound(err) {
+		return logFate{}, nil
+	}
+	if err != nil {
+		return logFate{}, err
+	}
+	switch status := apitypes.ReleaseStatus(r.Status); {
+	case status == apitypes.ReleaseFailed || status == apitypes.ReleaseCanceled:
+		f := logFate{failed: true, stopAt: c.stops.at(k)}
+		// Without its settings only the probe's lines can't be told.
+		if cfg, err := c.openConfig(r); err == nil {
+			f.healthPath = cfg.HealthCheckPath
+		}
+		return f, nil
+	case !status.Done():
+		return logFate{held: true}, nil
+	}
+	return logFate{}, nil
+}
+
+// releaseStops remembers when Dock began to stop the container of a
+// release that failed, for the ticks that judge its last log errors
+// (logFate.noise). In memory only and pruned by the statistics tick: a
+// daemon restart forgets them, and those errors then count as the app's.
+type releaseStops struct {
+	mu sync.Mutex
+	m  map[releaseKey]time.Time
+}
+
+// stopsKept is how long a stop is remembered: longer than a container
+// takes to stop plus the ticks its last lines wait in the sink.
+const stopsKept = 10 * time.Minute
+
+// mark records that k's container is being stopped from t on.
+func (s *releaseStops) mark(k releaseKey, t time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.m == nil {
+		s.m = map[releaseKey]time.Time{}
+	}
+	s.m[k] = t
+}
+
+// at is when k's container began to stop, or zero.
+func (s *releaseStops) at(k releaseKey) time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.m[k]
+}
+
+// prune forgets the stops from before now - stopsKept.
+func (s *releaseStops) prune(now time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for k, t := range s.m {
+		if now.Sub(t) > stopsKept {
+			delete(s.m, k)
+		}
+	}
 }
 
 // errorRelease is the release number errors were seen in: the one they

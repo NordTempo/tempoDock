@@ -59,6 +59,12 @@ type backupState struct {
 	// controlPlane is set while the control plane's own backup runs
 	// (backups_controlplane.go).
 	controlPlane bool
+	// started is when the daemon started: a repository or database never
+	// checked is due at the first backup hour after it (verifyDue).
+	started time.Time
+	// checkQueue holds the repository checks RunBackupChecks recorded as
+	// running, for the scheduler's next pass to run.
+	checkQueue []store.BackupCheck
 	// move is the latest move of the backups (backups_move.go); while it
 	// runs, no backup or restore starts. moveTo is its storage connection.
 	move   *apitypes.BackupMove
@@ -76,7 +82,7 @@ func (c *Core) backupsMoving() bool {
 }
 
 func newBackupState() backupState {
-	return backupState{kick: make(chan struct{}, 1), running: map[int64]bool{}, freed: make(chan struct{}), restic: map[int64]bool{}}
+	return backupState{kick: make(chan struct{}, 1), running: map[int64]bool{}, freed: make(chan struct{}), restic: map[int64]bool{}, started: now()}
 }
 
 // kickBackups wakes the backup scheduler; it never blocks.
@@ -137,7 +143,7 @@ func (c *Core) releaseService(serviceID int64) {
 func (c *Core) backupSettings(ctx context.Context) (store.BackupSetting, error) {
 	s, err := c.store.GetBackupSettings(ctx)
 	if store.IsNotFound(err) {
-		return store.BackupSetting{ID: 1, KeepDaily: 7, KeepWeekly: 4, KeepMonthly: 6, Hour: 3}, nil
+		return store.BackupSetting{ID: 1, KeepDaily: 7, KeepWeekly: 4, KeepMonthly: 6, Hour: 3, Verify: true}, nil
 	}
 	if err != nil || s.StorageID == nil {
 		return s, err
@@ -252,6 +258,9 @@ func (c *Core) GetBackupSettings(ctx context.Context, a Actor, reveal bool) (api
 	if err := c.withBackupStorage(ctx, a, &out, s, move); err != nil {
 		return out, err
 	}
+	if err := c.withBackupChecks(ctx, a, &out, s); err != nil {
+		return out, err
+	}
 	if reveal {
 		repo, err := c.repoOf(ctx, s)
 		if err != nil {
@@ -281,8 +290,8 @@ func localZone() string {
 func (c *Core) toBackupSettings(s store.BackupSetting) apitypes.BackupSettings {
 	out := apitypes.BackupSettings{
 		Repository: s.Repository, OffBox: s.Repository != "", HasCredentials: s.Credentials != nil || s.StorageID != nil,
-		Repositories: []apitypes.BackupRepository{},
-		KeepDaily:    int(s.KeepDaily), KeepWeekly: int(s.KeepWeekly), KeepMonthly: int(s.KeepMonthly),
+		Repositories: []apitypes.BackupRepository{}, Verify: s.Verify, Checks: []apitypes.BackupCheck{},
+		KeepDaily: int(s.KeepDaily), KeepWeekly: int(s.KeepWeekly), KeepMonthly: int(s.KeepMonthly),
 		Hour: int(s.Hour), TimeZone: localZone(), ResticImage: c.cfg.Backup.ResticImage, UpdatedBy: s.UpdatedBy,
 	}
 	if !s.UpdatedAt.IsZero() {
@@ -448,6 +457,9 @@ func (c *Core) serviceBackups(ctx context.Context, ss svcScope) (apitypes.Servic
 	if out.PITR, err = c.pitrInfo(ctx, ss, set); err != nil {
 		return out, err
 	}
+	if err := c.withServiceChecks(ctx, ss, set, &out); err != nil {
+		return out, err
+	}
 	rows, err := c.store.ListServiceBackups(ctx, store.ListServiceBackupsParams{ServiceID: ss.svc.ID, Limit: serviceBackupRuns})
 	if err != nil {
 		return out, err
@@ -496,6 +508,8 @@ func repoWords(repository string) string {
 // BackupLog returns what a backup or restore run of a service printed
 // (apitypes.BackupLog). Like a one-off command's output it can hold what
 // a database printed, so it takes the scope running one does: deploy.
+// A run that succeeded and kept no log says so: a restore that works
+// prints nothing (pg_restore is silent), which is not a job that never ran.
 func (c *Core) BackupLog(ctx context.Context, a Actor, ref ServiceRef, id int64) (apitypes.BackupLog, error) {
 	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeDeploy, "reading a backup's log")
 	if err != nil {
@@ -511,6 +525,9 @@ func (c *Core) BackupLog(ctx context.Context, a Actor, ref ServiceRef, id int64)
 	out, err := c.store.GetBackupLog(ctx, store.GetBackupLogParams{BackupID: id, ServiceID: ss.svc.ID})
 	if err != nil && !store.IsNotFound(err) {
 		return apitypes.BackupLog{}, err
+	}
+	if out == "" && row.Status == string(apitypes.BackupSucceeded) {
+		out = fmt.Sprintf("The %s succeeded and kept no log: its job printed nothing, or it is older than the service's newest %d runs.\n", row.Operation, backupLogRuns)
 	}
 	return apitypes.BackupLog{ID: id, Output: out}, nil
 }
@@ -587,10 +604,10 @@ func (c *Core) RunBackup(ctx context.Context, a Actor, ref ServiceRef) (apitypes
 	}
 	c.audit(ctx, a, "backup.run", &ss.project, &ss.env, ss.String(), fmt.Sprintf("started backup %d", row.ID))
 	c.wg.Add(1)
-	go func() {
+	c.goCaught("running a backup", func() {
 		defer c.wg.Done()
 		c.runBackup(c.ctx, ss, row)
-	}()
+	})
 	return toBackupRun(row, ss.svc.Name, nil), nil
 }
 
@@ -849,10 +866,15 @@ func (c *Core) runResticJob(ctx context.Context, serverID int64, rt node.Runtime
 		}
 		spec.Mounts = append(spec.Mounts, node.Mount{Volume: vol, Path: backup.LocalPath})
 	}
-	if spec.Network != "" {
-		if err := rt.EnsureNetwork(ctx, spec.Network, node.Labels{ControlPlane: c.install, Project: spec.Labels.Project, Environment: spec.Labels.Environment}); err != nil {
-			return "", c.nodeErr(serverID, err)
-		}
+	// restic reaches the storage from a managed network, which the app
+	// firewall covers: the service's environment's, or the install's own
+	// for a job of no environment (a job without a network has none).
+	netLabels := node.Labels{ControlPlane: c.install, Project: spec.Labels.Project, Environment: spec.Labels.Environment}
+	if spec.Network == "" {
+		spec.Network, netLabels = c.jobsNetwork(), node.Labels{ControlPlane: c.install}
+	}
+	if err := rt.EnsureNetwork(ctx, spec.Network, netLabels); err != nil {
+		return "", c.nodeErr(serverID, err)
 	}
 	if err := c.ensureImage(ctx, serverID, rt, spec.Image); err != nil {
 		return "", err
@@ -884,6 +906,16 @@ func (c *Core) runResticJob(ctx context.Context, serverID int64, rt node.Runtime
 		c.connectionWorks(ctx, storage)
 	}
 	return res.Output, nil
+}
+
+// jobsNetwork is the network of the install's storage jobs that belong to
+// no environment (the control plane's backup, moving backups to other
+// storage): a managed network like an environment's, so the app firewall
+// covers it. It is named after the install, so control planes sharing a
+// Docker host keep their own.
+func (c *Core) jobsNetwork() string {
+	sum := sha256.Sum256([]byte(c.install))
+	return "dock_jobs_" + hex.EncodeToString(sum[:4])
 }
 
 // localRepoVolume is the volume of a server's local repository. It is
@@ -954,6 +986,12 @@ func (c *Core) failInterruptedBackups(ctx context.Context) error {
 	}
 	cp, err := c.store.FailRunningControlPlaneBackup(ctx, store.FailRunningControlPlaneBackupParams{Error: msg, FinishedAt: ptr(now())})
 	n += cp
+	if err == nil {
+		// Checks and drills too (ADR 0096): the next day's pass runs them again.
+		var checks int64
+		checks, err = c.store.FailRunningBackupChecks(ctx, store.FailRunningBackupChecksParams{Error: msg, FinishedAt: ptr(now())})
+		n += checks
+	}
 	if n > 0 {
 		c.log.Warn("backups interrupted by a restart marked failed", "count", n)
 	}

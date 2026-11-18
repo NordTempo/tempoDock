@@ -24,6 +24,7 @@ import {
 import type { State } from "../../ui/status";
 import { Saved } from "../create/form";
 import { backupWhat, hourLabel } from "./backups";
+import { CheckedLine } from "./CheckedLine";
 import { useDeleteSnapshot, useSnapshots, useTakeSnapshot } from "./data";
 import type { PitrMode } from "./PitrDialog";
 import { PitrRow, PitrSection } from "./PitrSection";
@@ -284,6 +285,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           onSettings={(mode) => setOpen({ what: "pitr", mode })}
         />
       )}
+      <CheckedLine serviceRef={ref} backups={backups} />
       <Panel>
         <table>
           <thead>

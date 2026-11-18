@@ -151,7 +151,9 @@ func (c *Core) heartbeatTick(_ context.Context, now time.Time) {
 	hb.sending, hb.lastAttempt = true, now
 	u, gen := hb.url, hb.gen
 	hb.mu.Unlock()
-	c.wg.Go(func() {
+	c.wg.Add(1)
+	c.goCaught("pinging the outside heartbeat", func() {
+		defer c.wg.Done()
 		// Under the daemon's context: the tick's ends with the tick.
 		_ = c.pingHeartbeat(c.ctx, u, gen, true)
 	})

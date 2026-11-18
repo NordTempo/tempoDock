@@ -72,11 +72,13 @@ func newAccessModelCmd(g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use:   "access-model [shadow|enforce]",
 		Short: "Show or switch whether groups and grants decide people's checks",
-		Long: `In shadow (the default) people's roles decide, and the permission model
-answers beside every check from their groups and grants, counting where it
-differs (dock platform access-diff). In enforce, groups and grants decide.
-Switch to enforce once the diff is clean; it applies from each person's
-next request. Switching needs platform.settings, showing platform.view.`,
+		Long: `In enforce, groups and grants decide: a new install starts there. In
+shadow people's roles decide, and the permission model answers beside every
+check from their groups and grants, counting where it differs (dock
+platform access-diff): an install that had people before the model stays
+there until its operator switches. Switch to enforce once the diff is
+clean; it applies from each person's next request. Switching needs
+platform.settings, showing platform.view.`,
 		Example:   "  dock platform access-model\n  dock platform access-model enforce",
 		Args:      cobra.MaximumNArgs(1),
 		ValidArgs: []string{string(apitypes.AccessModelShadow), string(apitypes.AccessModelEnforce)},

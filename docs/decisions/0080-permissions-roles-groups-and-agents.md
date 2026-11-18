@@ -74,7 +74,18 @@ Everything after is in memory: checks, list filters, live event filters
 and effective access. Custom roles and agent rules are cached per org and
 replaced when core writes them (one process, one writer). Grants aren't
 cached, so removing someone from a group, or an owner losing access,
-takes effect on the next call; long streams re-check on `access.changed`.
+takes effect on the next call. What stays open past its call (live
+streams, an attached `dock run`, a `dock connect` tunnel) is registered
+with its actor, and every write that ends or changes access says whose
+(`accessChanged` in access_watch.go: a user, a token or an org). Access
+that ended (a disabled or deleted account, a changed password, a revoked
+token, a member removed) closes all of it, and so do the tokens removed
+when an account's email is first proven. Access that changed (groups,
+grants, roles, agent rules) ends the streams, which clients open again
+and are checked as they are now, and asks for a run or a tunnel whether
+its actor may still hold it. Suspending or deleting an org does the same
+for everyone acting in it. Nothing polls for this; a token that expires
+while something is open is not seen until its next call.
 
 ### The migration
 
@@ -295,3 +306,29 @@ Settled after reviewing phases 6 and 7 as a whole:
   gives the person. Approving changesets follows the agent's Approver
   setting, as other approvals do. Org agents are unchanged: the `tokens`
   rule or their own override, capped by their scope and creator.
+
+## Amended 2026-11-18
+
+- **A new install enforces.** Shadow exists to compare the model with
+  the roles an install already had. A database nobody has an account in
+  has none, so its mode is written as enforce at the daemon's first
+  start, or at `dock admin bootstrap` when that runs first
+  (`InitAccessModel`: one insert that does nothing once a platform
+  setting or a user exists). No migration: an install that had people
+  before the model keeps shadow until its operator has read a clean
+  `dock platform access-diff` and switches, and a mode an operator chose
+  is never written over.
+- **Data panel roles don't decide data access yet.** The data policy
+  still does (phase 3 above), from a person's summary role. A custom
+  role's Data panel level and its `data.*` permissions count for what
+  the role's holder may give others and nothing else; the role editor
+  says so where one is chosen.
+- **A token's data cap follows its creator by ID.** The cap looked the
+  creator up by the name the token was created under. It now reads the
+  user the token records (`tokens.user_id`, migration 0031). When that
+  user is no longer a member of the org (removed, or their membership
+  ran out), the token gets no data access and the explanation says why:
+  nobody's role stands behind it, and an admin makes a new token. A token
+  without a recorded user was made by another token or the system and has
+  no creator cap, as before; deleting a user already revokes the tokens
+  they made.

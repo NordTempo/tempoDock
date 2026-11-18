@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import type { EnvRef } from "../../data/types";
 import { ago } from "../../ui/format";
+import { httpsHref } from "../../ui/httpsHref";
 import { Confirm, StateText } from "../../ui/kit";
 import { type State, shortId } from "../../ui/status";
 import {
@@ -31,7 +32,7 @@ export const previewStates: Record<Preview["status"], State> = {
 export function PullRequestLink({ pr }: { pr: PullRequestRef }) {
   return (
     <a
-      href={pr.url}
+      href={httpsHref(pr.url)}
       target="_blank"
       rel="noreferrer"
       title={`${pr.repo}#${pr.number}`}

@@ -155,7 +155,10 @@ func rawKey(key string, isHex bool) (string, error) {
 // to the server) until the limit, scanCalls steps or scanBudget, then one
 // pipeline for the keys' types (when not filtered by type) and one for
 // their TTLs, lengths and sampled memory, with the database's size. With
-// c.Masked, keys matching a sensitive pattern come as the pattern.
+// c.Masked, keys matching a sensitive pattern come as the pattern, and
+// under a match they are left out as the scan reads them, before they
+// count towards the limit: a page and its cursor are then the same
+// whether such a key matches or not.
 func (e *Engine) ScanKeys(ctx context.Context, t data.Target, c data.Call, req apitypes.DataKeysRequest) (apitypes.DataKeyPage, error) {
 	limit := req.Limit
 	if limit == 0 {
@@ -185,6 +188,7 @@ func (e *Engine) ScanKeys(ctx context.Context, t data.Target, c data.Call, req a
 			return apitypes.DataKeyPage{}, err
 		}
 		var keys []string
+		hide := c.Masked && req.Match != ""
 		start := time.Now()
 		count := strconv.Itoa(min(scanCount, max(limit, 10)))
 		for i := 0; i < scanCalls && len(keys) < limit && time.Since(start) < scanBudget; i++ {
@@ -208,6 +212,11 @@ func (e *Engine) ScanKeys(ctx context.Context, t data.Target, c data.Call, req a
 			}
 			cursor = v.Arr[0].Str
 			for _, k := range v.Arr[1].Arr {
+				if hide {
+					if _, sensitive := data.KeySensitive(c.SensitiveKeys, k.Str); sensitive {
+						continue
+					}
+				}
 				keys = append(keys, k.Str)
 			}
 			if cursor == "0" {

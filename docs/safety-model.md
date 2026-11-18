@@ -166,7 +166,15 @@ tailnet. Apps and builds reach the public internet, nothing private:
   so is traffic to the server itself (API, SSH), except Caddy's ports and
   DNS. LAN hosts an app needs go on an explicit allowlist
   (`[network] allow_private`). Root installs the rules
-  (`dock-firewall.service`); the daemon can't change them.
+  (`dock-firewall.service`); the daemon can't change them, or read them.
+  Applying them leaves a marker under `/run`, and a daemon that starts
+  without it raises a platform alert: apps on that server reach its
+  private networks until the firewall is applied.
+- **Jobs get the network they need.** A job that only copies files (volume
+  snapshots, copies between servers, measuring a volume) has no network
+  at all. One that reaches storage or a database runs on a firewalled
+  network: its environment's, or the install's own for the control
+  plane's backup. Nothing Dock starts is on Docker's default bridge.
 - **Environments are isolated.** Each environment has its own Docker
   network, with addresses from a dedicated pool. Containers reach their own
   environment by name and nothing in other environments.
@@ -221,7 +229,9 @@ registry operators allow. It isn't contained enough to add yet.
 ## Keeping the box alive
 
 - **Resource limits** on every app container, with defaults. Headroom is reserved
-  for Docker, Caddy and the daemon.
+  for Docker, Caddy and the daemon. Every app container, database and job
+  also has a limit on its processes and threads (`[defaults] pids_limit`,
+  4096), so one that forks without end stops at its own limit.
 - **Builds are capped** in their own BuildKit container (CPU, RAM, low priority).
 - **Disk hygiene:** log rotation via the `local` log driver, automatic pruning of
   images outside the rollback window and of old build cache, retention of

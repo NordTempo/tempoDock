@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn/ctxwatch"
 	"github.com/jackc/pgx/v5/pgproto3"
 
+	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/data"
 	"github.com/NordTempo/tempoDock/internal/data/conncache"
 )
@@ -36,7 +37,20 @@ const (
 	// memory to show 8 KB of it. 16 MiB is far above the rows the panel
 	// is for, and a row past it fails with tooLargeText.
 	maxMessageBytes = 16 << 20
+	// maxAnswerBytes bounds what the server may send in answer to one
+	// request, whatever it is made of (the client keeps some messages for
+	// the connection's life, and none of them is a row): the largest
+	// query result (apitypes.DataQueryMaxBytes, which ends the read
+	// itself) plus one message. A statement past it fails with
+	// tooMuchText, and a connection that has read this much in total is
+	// closed on release instead of cached, so nothing a server sent
+	// beside its results stays with the daemon.
+	maxAnswerBytes = apitypes.DataQueryMaxBytes + maxMessageBytes
 )
+
+// tooMuchText is what a statement whose answer is past maxAnswerBytes
+// fails with.
+const tooMuchText = "the database sent more than 80 MB for this statement, more than the Data panel reads at once; select fewer rows or shorter columns, for example left(column, 1000)"
 
 // tooLargeText is what a statement whose row is past maxMessageBytes
 // answers with.
@@ -58,8 +72,10 @@ func (e *Engine) newCache(idle time.Duration, maxConns int) *conncache.Cache[*pg
 	return conncache.New(conncache.Options[*pgx.Conn]{
 		IdleTimeout: idle,
 		Max:         maxConns,
-		Reusable:    func(pg *pgx.Conn) bool { return !pg.IsClosed() && pg.PgConn().TxStatus() == 'I' },
-		Close:       closeConn,
+		Reusable: func(pg *pgx.Conn) bool {
+			return !pg.IsClosed() && pg.PgConn().TxStatus() == 'I' && !readItsShare(pg)
+		},
+		Close: closeConn,
 		Emptied: func(id int64) {
 			e.mu.Lock()
 			delete(e.schemas, id)
@@ -82,12 +98,41 @@ func (e *Engine) acquire(ctx context.Context, t data.Target, role data.Role) (*c
 	if err != nil {
 		return nil, loginError(ctx, err, data.ErrNotSetUp)
 	}
+	e.bound(ctx, cn.Conn)
 	return cn, nil
 }
 
-// release returns cn to the cache, or closes it when it is broken or not
-// idle (open transaction, closed by the server).
-func (e *Engine) release(cn *conn) { e.conns.Release(cn) }
+// bound gives pg's socket a deadline for the call that is about to use
+// it: e.callTimeout from now, or a little past ctx's deadline when that
+// is later (the context ends the call first, with a cancel request). A
+// context without a deadline (every path but queries) would otherwise
+// wait on a server that stopped answering for good, holding one of the
+// database's few connections each time. Every connection the engine
+// hands out goes through here: acquire and ownerConn.
+func (e *Engine) bound(ctx context.Context, pg *pgx.Conn) {
+	deadline := time.Now().Add(e.callTimeout)
+	if d, ok := ctx.Deadline(); ok && d.After(deadline) {
+		deadline = d.Add(2 * cancelGrace)
+	}
+	_ = pg.PgConn().Conn().SetDeadline(deadline)
+}
+
+// release returns cn to the cache without its call's deadline (bound),
+// or closes it when it is broken or not idle (open transaction, closed
+// by the server).
+func (e *Engine) release(cn *conn) {
+	if !cn.Conn.IsClosed() {
+		_ = cn.Conn.PgConn().Conn().SetDeadline(time.Time{})
+	}
+	e.conns.Release(cn)
+}
+
+// readItsShare reports whether pg has read maxAnswerBytes since it
+// opened (connect meters every connection).
+func readItsShare(pg *pgx.Conn) bool {
+	m, ok := pg.PgConn().Conn().(*data.MeteredConn)
+	return ok && m.Total() > maxAnswerBytes
+}
 
 // closeConn closes a connection. A broken one gets a short deadline first
 // so a stuck socket can't hold the caller.
@@ -156,6 +201,10 @@ func (e *Engine) connect(ctx context.Context, t data.Target, cred data.Credentia
 	cfg.StatementCacheCapacity = stmtCacheSize
 	cfg.DescriptionCacheCapacity = stmtCacheSize
 	cfg.MaxProtocolMessageBodyLen = maxMessageBytes
+	// Metered above TLS, so PgConn().Conn() is the meter (readItsShare).
+	cfg.AfterNetConnect = func(_ context.Context, _ *pgconn.Config, nc net.Conn) (net.Conn, error) {
+		return data.Meter(nc, maxAnswerBytes), nil
+	}
 	return pgx.ConnectConfig(ctx, cfg)
 }
 
@@ -254,6 +303,9 @@ func dbError(err error) error {
 	}
 	if tooLarge(err) {
 		return fmt.Errorf("%w: %s", data.ErrInvalid, tooLargeText)
+	}
+	if errors.Is(err, data.ErrReadBudget) {
+		return fmt.Errorf("%w: %s", data.ErrInvalid, tooMuchText)
 	}
 	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok {
 		if pgErr.Code == "42501" {

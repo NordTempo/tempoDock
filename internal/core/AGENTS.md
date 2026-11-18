@@ -46,6 +46,13 @@ func (c *Core) DoThing(ctx context.Context, a Actor, req apitypes.DoThingRequest
   audit events, including through live events (`canSee`). Operators
   administer every org without membership (ADR 0062); an operator's
   action on an org is recorded in both logs with `c.auditBoth`.
+- What an operation leaves open past its call (a `Stream`, an attached
+  run, a tunnel) ends with its actor's access (access_watch.go): return
+  every `Stream` through `held`, register anything else with
+  `c.access.watch`, and call `c.accessChanged` after any write that ends
+  or changes what a user, a token or an org's members may do.
+  `TestEveryStreamIsHeld` fails for a stream that isn't held and for a
+  caller of `endUserAccess` that doesn't say so.
 - Sensitive actions (revealing secrets, creating tokens, unlocking an
   environment, managing accounts, 2FA and SSO settings) also call
   `a.requireRecent`: the session must have re-authenticated within
@@ -68,10 +75,16 @@ func (c *Core) DoThing(ctx context.Context, a Actor, req apitypes.DoThingRequest
 - Background goroutines are counted in `c.wg` so `Close` waits for them.
   A new ticker or timer needs a doc comment saying why and a row in
   docs/performance.md.
-  Nothing recovers a panic in one: where a worker reads what a repository
-  or a tenant sent (a pushed `dock.toml`, a source archive), run that work
-  through `caught` so it fails as that piece of work, and leave nothing
-  queued that would be read again at the next start.
+  Nothing above a goroutine recovers a panic in it, so start one with
+  `c.goCaught(what, fn)`, never a bare `go` (`TestEveryGoroutineRecovers`
+  fails on one outside `goAllowed`, which takes a reason). A panic then
+  ends that goroutine only, so a long-lived loop also recovers per item
+  inside (`caught`, `c.safely`, or `defer recovered` where a closure per
+  event would cost), or starts with `c.goLoop`, which starts it again.
+  Where a worker reads what a repository or a tenant sent (a pushed
+  `dock.toml`, a source archive), run that work through `caught` so it
+  fails as that piece of work, and leave nothing queued that would be
+  read again at the next start.
 - Background work that holds a claim (`claimService`, `lockForRestore`)
   releases it before recording its outcome (`runBackup`, `takeClaimed`):
   whoever reads "done" (the CLI's wait, MCP, a script) may start the next

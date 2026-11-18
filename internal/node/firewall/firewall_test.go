@@ -2,6 +2,7 @@ package firewall
 
 import (
 	"net/netip"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -107,5 +108,33 @@ options edns0
 	want := []netip.Addr{netip.MustParseAddr("192.168.10.1"), netip.MustParseAddr("2001:db8::53")}
 	if !slices.Equal(got, want) {
 		t.Errorf("nameservers = %v, want %v", got, want)
+	}
+}
+
+// The marker says applied from MarkApplied until ClearApplied, and
+// clearing one that isn't there is fine.
+func TestAppliedMarker(t *testing.T) {
+	appliedPath = filepath.Join(t.TempDir(), "dock-firewall", "applied")
+	t.Cleanup(func() { appliedPath = AppliedPath })
+
+	if ok, err := Applied(); ok || err != nil {
+		t.Fatalf("before apply: applied %v, err %v", ok, err)
+	}
+	if err := ClearApplied(); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 { // applying again replaces the marker
+		if err := MarkApplied(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if ok, err := Applied(); !ok || err != nil {
+		t.Fatalf("after apply: applied %v, err %v", ok, err)
+	}
+	if err := ClearApplied(); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := Applied(); ok || err != nil {
+		t.Fatalf("after remove: applied %v, err %v", ok, err)
 	}
 }

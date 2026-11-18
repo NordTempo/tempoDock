@@ -77,6 +77,7 @@ func (r *Runtime) EnsureSidecar(ctx context.Context, spec node.SidecarSpec) erro
 		LogConfig:     container.LogConfig{Type: "local", Config: map[string]string{"max-size": "10m", "max-file": "3"}},
 		Resources: container.Resources{
 			Memory: spec.Resources.MemoryBytes, MemorySwap: NoSwap(spec.Resources.MemoryBytes), NanoCPUs: spec.Resources.NanoCPUs,
+			PidsLimit: r.pidsLimit(),
 		},
 		SecurityOpt: []string{"no-new-privileges"},
 		Mounts:      []mount.Mount{{Type: mount.TypeBind, Source: r.Self, Target: node.DockPath, ReadOnly: true}},

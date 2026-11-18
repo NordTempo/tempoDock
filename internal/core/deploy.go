@@ -276,7 +276,7 @@ func healthCheckOf(cfg releaseConfig) node.HealthCheck {
 		Grace:    min(healthGrace, time.Duration(cfg.HealthCheckTimeout)*time.Second),
 	}
 	if !cfg.Published {
-		hc.Port = cfg.HealthPort
+		hc.Port, hc.Kind = cfg.HealthPort, cfg.HealthKind
 	}
 	return hc
 }
@@ -286,6 +286,8 @@ func healthWhat(cfg releaseConfig, hc node.HealthCheck) string {
 	switch {
 	case hc.Path != "":
 		return "HTTP check on " + hc.Path
+	case hc.Port != 0 && hc.Kind == node.HealthPostgres:
+		return "PostgreSQL must accept connections on port " + strconv.Itoa(hc.Port) + " in the environment network"
 	case hc.Port != 0:
 		return "TCP check on port " + strconv.Itoa(hc.Port) + " in the environment network"
 	case !cfg.Published:
@@ -669,6 +671,9 @@ func (d *deployment) fail(ctx context.Context, err error) {
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 	defer cancel()
+	// From here on its container is stopping: errors it first logs now
+	// are no issues (logFate.noise).
+	c.stops.mark(releaseKey{d.ss.svc.ID, d.rel.Number}, now())
 	// What explains the failure, read while its container still exists.
 	var captured containerCapture
 	if !canceled {
@@ -882,7 +887,8 @@ const livenessStartInterval = 2 * time.Second
 // liveness is the ongoing health check of a release's container (ADR
 // 0043), probing what the deploy's check does: a published service's port
 // (HTTP GET of the health check path when it has one, else a TCP
-// connect), or an unpublished template database's port over TCP. It is
+// connect), or an unpublished template database's port over TCP (a
+// Postgres one must also accept connections, cfg.HealthKind). It is
 // nil for a container with nothing to probe (a worker without a port) and
 // when the check is off. Zeros, as in configs sealed before the check
 // existed, mean the defaults.
@@ -901,6 +907,12 @@ func liveness(cfg releaseConfig) *node.LivenessCheck {
 	case cfg.Published:
 		lc.Port, lc.Path = cfg.Port, cfg.HealthCheckPath
 	case cfg.HealthPort != 0:
+		// TCP only, whatever cfg.HealthKind says: inside the container
+		// the Postgres image trusts loopback, so the probe's startup
+		// message as user postgres would log "role does not exist" every
+		// interval in a database whose user is another. The deploy's
+		// check asks over the environment network, where it only gets
+		// asked for a password.
 		lc.Port = cfg.HealthPort
 	default:
 		return nil

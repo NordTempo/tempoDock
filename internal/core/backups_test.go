@@ -82,8 +82,8 @@ func TestTemplatePostgres(t *testing.T) {
 	}
 	ss, _ := h.c.serviceFor(h.ctx, testSystem, db, apitypes.ScopeRead, "testing")
 	rel, _ := h.store.GetActiveRelease(h.ctx, ss.svc.ID)
-	if cfg, err := h.c.openConfig(rel); err != nil || cfg.HealthPort != 5432 || cfg.Published {
-		t.Errorf("release config: health port %d, published %v (%v)", cfg.HealthPort, cfg.Published, err)
+	if cfg, err := h.c.openConfig(rel); err != nil || cfg.HealthPort != 5432 || cfg.HealthKind != node.HealthPostgres || cfg.Published {
+		t.Errorf("release config: health port %d, kind %q, published %v (%v)", cfg.HealthPort, cfg.HealthKind, cfg.Published, err)
 	}
 
 	// Other services reference it; a second database gets its own password.
@@ -588,5 +588,29 @@ func TestTemplateMySQLBackupAndRestore(t *testing.T) {
 	newPw := h.revealed(ServiceRef{"shop", "production", "db-old"})["MYSQL_ROOT_PASSWORD"]
 	if !strings.Contains(job.Name, "_restore") || job.Env["DOCK_DB_HOST"] != "db-old" || job.Env["MYSQL_PWD"] != newPw || newPw == vars["MYSQL_ROOT_PASSWORD"] {
 		t.Fatalf("restore job = %+v", job)
+	}
+}
+
+// An archived service still holds its name, so a restore into the default
+// name says that and how to pick another, not just "already exists".
+func TestRestoreIntoAnArchivedServicesNameSaysSo(t *testing.T) {
+	h := newHarness(t)
+	db := h.templateDB("db", apitypes.TemplatePostgres)
+	snap := "dddd4444dddd4444"
+	h.rt.OnJob(func(node.JobSpec) (node.JobResult, error) {
+		return node.JobResult{Output: resticOutput(snap, 100, snap)}, nil
+	})
+	h.runBackup(db)
+	res, err := h.c.RestoreBackup(h.ctx, testSystem, db, apitypes.RestoreBackupRequest{Snapshot: snap})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.waitRun(db, res.Restore.ID)
+	if _, err := h.c.ArchiveService(h.ctx, testSystem, ServiceRef{"shop", "production", "db-restored"}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = h.c.RestoreBackup(h.ctx, testSystem, db, apitypes.RestoreBackupRequest{Snapshot: snap})
+	if CodeOf(err) != apitypes.CodeConflict || !strings.Contains(err.Error(), "is archived") || !strings.Contains(err.Error(), "--as <name>") {
+		t.Fatalf("restore into an archived service's name: %v", err)
 	}
 }

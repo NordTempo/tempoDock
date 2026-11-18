@@ -601,11 +601,11 @@ func (c *Core) DecideRequest(ctx context.Context, a Actor, id int64, approve boo
 	}
 	done := make(chan struct{})
 	c.wg.Add(1)
-	go func() {
+	c.goCaught("running an approved request", func() {
 		defer c.wg.Done()
 		defer close(done)
 		c.runRequest(decided, es, a)
-	}()
+	})
 	select {
 	case <-done:
 	case <-time.After(requestRunWait):

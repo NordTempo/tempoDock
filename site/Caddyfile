@@ -11,14 +11,16 @@
 	header /_astro/* Cache-Control "public, max-age=31536000, immutable"
 	header /fonts/* Cache-Control "public, max-age=604800"
 
-	# The one-line installs (README, install.sh, the console): the latest
-	# release's scripts, which check everything they download against the
-	# release's signed SHA256SUMS. 302, so a new release takes over at once.
-	handle /install.sh {
-		redir https://github.com/NordTempo/tempoDock/releases/latest/download/install.sh 302
-	}
-	handle /cli.sh {
-		redir https://github.com/NordTempo/tempoDock/releases/latest/download/install-cli.sh 302
+	# The one-line installs (README, install.sh, the console): a small script
+	# (public/install.sh, public/cli.sh) that runs the latest release's
+	# install.sh or install-cli.sh once it matches the release's signed
+	# SHA256SUMS. Plain text, so a browser shows it, and checked again on
+	# every request, so a new one takes over at once.
+	@installs path /install.sh /cli.sh
+	header @installs {
+		Content-Type "text/plain; charset=utf-8"
+		Cache-Control "no-cache"
+		X-Content-Type-Options "nosniff"
 	}
 
 	# A page is a file (docs.html, docs/install.html) served without its

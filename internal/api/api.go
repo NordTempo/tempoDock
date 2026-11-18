@@ -83,7 +83,10 @@ func newAPI(mux *http.ServeMux, s *Server) huma.API {
 	cfg := huma.DefaultConfig("Tempo Dock", version.Version)
 	cfg.Info.Description = "The Tempo Dock API. The CLI and web UI are thin clients of it."
 	cfg.OpenAPIPath = Prefix + "/openapi"
-	cfg.DocsPath = Prefix + "/docs"
+	// No docs page: Huma's loads its script from a CDN, and the daemon
+	// serves nothing that makes a browser fetch from another site. The
+	// spec itself is served, for any viewer pointed at it.
+	cfg.DocsPath = ""
 	cfg.SchemasPath = Prefix + "/schemas"
 	// No `$schema` field in response bodies: the JSON contract stays exactly
 	// the apitypes fields.

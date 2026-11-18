@@ -40,10 +40,10 @@ func (c *Core) RunControlPlaneBackup(ctx context.Context, a Actor) (apitypes.Con
 	}
 	c.audit(ctx, a.platform(), "backup.run", nil, nil, "control plane", "started a control plane backup")
 	c.wg.Add(1)
-	go func() {
+	c.goCaught("running a control plane backup", func() {
 		defer c.wg.Done()
 		c.runControlPlaneBackup(c.ctx, row)
-	}()
+	})
 	return toControlPlaneRun(row), nil
 }
 

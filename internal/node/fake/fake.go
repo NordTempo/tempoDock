@@ -1246,8 +1246,14 @@ func (r *Runtime) Jobs() []node.JobSpec {
 // Inspect; an unknown ID, or one of another control plane, is
 // node.ErrNotFound before anything is paused. A Stream's Stdin is echoed
 // to its Stdout. A move's size job and a snapshot answer with their
-// volumes' size, and a Sync job plays dock-sync (syncJob).
+// volumes' size, and a Sync job plays dock-sync (syncJob). A job without
+// a network has none, as on a real server, so one that runs restic (it
+// has a repository in its environment) without one is refused: it could
+// never reach its storage.
 func (r *Runtime) RunJob(ctx context.Context, spec node.JobSpec) (node.JobResult, error) {
+	if _, restic := spec.Env["RESTIC_REPOSITORY"]; restic && spec.Network == "" {
+		return node.JobResult{}, fmt.Errorf("job %s runs restic without a network: a job without one has only loopback", spec.Name)
+	}
 	r.mu.Lock()
 	r.op("job %s", spec.Name)
 	r.jobs = append(r.jobs, spec)

@@ -321,13 +321,45 @@ func (c *Core) Login(ctx context.Context, email, password, clientIP string) (Log
 	return c.signIn(ctx, u, signInVia{}, clientIP)
 }
 
-// checkPassword returns the user if password is theirs. At most a few
-// checks run at once, and unknown emails cost as much as wrong passwords.
-func (c *Core) checkPassword(ctx context.Context, email, password string) (store.User, error) {
+// maxBcryptWaiting is how many callers may wait for a bcrypt slot. The
+// slots clear about 40 a second (two at once, ~50 ms each), so the last
+// in a full line waits under two seconds: a person hardly notices, and a
+// client's request timeout is far off. A longer line would only hold a
+// goroutine and a request's memory for each caller, for an answer that
+// comes after they gave up.
+const maxBcryptWaiting = 64
+
+var errBcryptBusy = errf(apitypes.CodeRateLimited, "too many passwords are being checked right now; try again in a few seconds")
+
+// bcryptSlot takes one of the slots bcrypt work runs in (bcryptSem),
+// waiting for one behind at most maxBcryptWaiting others: past that it
+// returns errBcryptBusy at once, and ctx's error if ctx ends first. With
+// a nil error the caller frees the slot when done: <-c.bcryptSem.
+func (c *Core) bcryptSlot(ctx context.Context) error {
 	select {
 	case c.bcryptSem <- struct{}{}:
+		return nil
+	default:
+	}
+	if c.bcryptWaiting.Add(1) > maxBcryptWaiting {
+		c.bcryptWaiting.Add(-1)
+		return errBcryptBusy
+	}
+	defer c.bcryptWaiting.Add(-1)
+	select {
+	case c.bcryptSem <- struct{}{}:
+		return nil
 	case <-ctx.Done():
-		return store.User{}, ctx.Err()
+		return ctx.Err()
+	}
+}
+
+// checkPassword returns the user if password is theirs. At most a few
+// checks run at once (bcryptSlot), and unknown emails cost as much as
+// wrong passwords.
+func (c *Core) checkPassword(ctx context.Context, email, password string) (store.User, error) {
+	if err := c.bcryptSlot(ctx); err != nil {
+		return store.User{}, err
 	}
 	defer func() { <-c.bcryptSem }()
 	u, err := c.store.GetUserByEmail(ctx, email)
@@ -414,6 +446,7 @@ func (c *Core) ChangePassword(ctx context.Context, a Actor, req apitypes.ChangeP
 	if err != nil {
 		return "", time.Time{}, err
 	}
+	c.accessChanged(accessChange{userID: u.ID, keepToken: a.TokenID})
 	if a.Kind == "user" {
 		if secret, expires, _, err = c.newSession(ctx, u, signInVia{factor: a.Factor, ssoProviderID: a.SSOProviderID, ssoProvider: a.SSOProvider, ssoLabel: a.SSOLabel}); err != nil {
 			return "", time.Time{}, err
@@ -470,6 +503,7 @@ func (c *Core) SetUserDisabled(ctx context.Context, a Actor, id int64, disabled 
 	if err != nil {
 		return apitypes.User{}, err
 	}
+	c.accessChanged(accessChange{userID: u.ID})
 	u.DisabledAt = at
 	c.endOrphanedRequests(ctx)
 	c.audit(ctx, a.platform(), "user."+verb, nil, nil, u.Email, fmt.Sprintf(summary, u.Email)+revokedNote(revoked))
@@ -495,6 +529,7 @@ func (c *Core) DeleteUser(ctx context.Context, a Actor, id int64) error {
 	if err != nil {
 		return err
 	}
+	c.accessChanged(accessChange{userID: u.ID})
 	c.endOrphanedRequests(ctx)
 	c.audit(ctx, a.platform(), "user.delete", nil, nil, u.Email, "deleted user "+u.Email+revokedNote(revoked))
 	return nil
@@ -736,6 +771,7 @@ func (c *Core) RevokeToken(ctx context.Context, a Actor, id int64) error {
 		return err
 	}
 	c.endOrphanedRequests(ctx)
+	c.accessChanged(accessChange{tokenID: t.ID})
 	c.audit(ctx, a, "token.revoke", nil, nil, "token "+t.Name, fmt.Sprintf("revoked token %q (id %d)", t.Name, t.ID))
 	return nil
 }
@@ -852,6 +888,7 @@ func (c *Core) ResetPassword(ctx context.Context, a Actor, id int64, req apitype
 	if err != nil {
 		return out, err
 	}
+	c.accessChanged(accessChange{userID: u.ID})
 	c.endOrphanedRequests(ctx)
 	c.audit(ctx, a.platform(), "user.reset_password", nil, nil, u.Email, "reset the password of "+u.Email+" and ended their sessions"+revokedNote(revoked))
 	c.noticeFor(ctx, a, u, "Your Tempo Dock password was reset")
@@ -994,6 +1031,7 @@ func (c *Core) SetPlatformRole(ctx context.Context, a Actor, id int64, role stri
 		if role == "" {
 			what = fmt.Sprintf("%s no longer has a platform role (was %s)", u.Email, was)
 		}
+		c.accessChanged(accessChange{userID: u.ID, changed: true})
 		c.audit(ctx, a.platform(), "user.operator", nil, nil, u.Email, what)
 	}
 	all, err := c.ListAccounts(ctx, a)
@@ -1073,6 +1111,11 @@ func (c *Core) Bootstrap(ctx context.Context, email string) (b Bootstrapped, ok 
 		org, err = createOrgTx(ctx, c.store.Queries, "default", "Default")
 	}
 	if err != nil {
+		return b, false, err
+	}
+	// A daemon that started on this database has done this already; one
+	// that starts after the first user exists no longer could.
+	if err := c.initAccessModel(ctx); err != nil {
 		return b, false, err
 	}
 	b = Bootstrapped{Email: email, Password: generatePassword()}

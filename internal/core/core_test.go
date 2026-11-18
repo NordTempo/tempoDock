@@ -712,6 +712,12 @@ func TestVariableReferences(t *testing.T) {
 	if _, err := h.c.ApplyChanges(h.ctx, testSystem, env); err == nil || !strings.Contains(err.Error(), "api has no variable NOPE") {
 		t.Fatalf("apply with unknown key: %v", err)
 	}
+	// A missing shared value is named with the command that sets it.
+	set("web", map[string]string{"DB": "${{shared.LOG_LEVEL}}"})
+	if _, err := h.c.ApplyChanges(h.ctx, testSystem, env); err == nil ||
+		!strings.Contains(err.Error(), "dock env set --shared LOG_LEVEL=... -p "+env.Project+" -e "+env.Environment) {
+		t.Fatalf("apply with a missing shared value: %v", err)
+	}
 }
 
 func TestOneDeployPerService(t *testing.T) {

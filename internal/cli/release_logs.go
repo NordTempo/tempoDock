@@ -33,7 +33,8 @@ type releaseView struct {
 type releaseLogs struct {
 	// Container is what the release's container wrote before it was
 	// stopped (a crash or a failed health check), one "time [stderr] text"
-	// string per line.
+	// string per line: its diagnosis's lines, or without one the end of
+	// its log.
 	Container []string `json:"container,omitempty"`
 	// Build is the end of the build or image pull output.
 	Build []string `json:"build,omitempty"`
@@ -52,8 +53,13 @@ func (g *globals) viewRelease(ctx context.Context, s *session, r apitypes.Releas
 	var err error
 	// A release that never started a container has no output, and one
 	// that deployed an image may have no build log: neither is an error.
-	if logs.Container, err = containerTail(ctx, s, path, r.Number, n); err != nil && output.ExitCodeOf(err) != output.ExitNotFound {
-		g.io.Warnf("Could not read the output of release %d: %v", r.Number, err)
+	// Its diagnosis holds the output from before Dock stopped the
+	// container. The log goes on with what the app wrote while shutting
+	// down, which can push the error out of the last n lines.
+	if logs.Container = diagnosedTail(ctx, s, path, r, n); len(logs.Container) == 0 {
+		if logs.Container, err = containerTail(ctx, s, path, r.Number, n); err != nil && output.ExitCodeOf(err) != output.ExitNotFound {
+			g.io.Warnf("Could not read the output of release %d: %v", r.Number, err)
+		}
 	}
 	if logs.Build, err = buildTail(ctx, s, path, r.Number, n); err != nil && output.ExitCodeOf(err) != output.ExitNotFound {
 		g.io.Warnf("Could not read the build log of release %d: %v", r.Number, err)
@@ -62,6 +68,29 @@ func (g *globals) viewRelease(ctx context.Context, s *session, r apitypes.Releas
 		v.Logs = logs
 	}
 	return v
+}
+
+// diagnosedTail is the last n lines r's container wrote before Dock
+// stopped it, as its diagnosis kept them (at most the diagnosis's 60);
+// nil when r has no diagnosis or it can't be read, and the caller reads
+// the log instead.
+func diagnosedTail(ctx context.Context, s *session, path string, r apitypes.Release, n int) []string {
+	if r.Diagnosis == nil {
+		return nil
+	}
+	d, err := get[apitypes.Diagnosis](ctx, s, path+"/diagnoses/"+itoa(r.Diagnosis.ID))
+	if err != nil {
+		return nil
+	}
+	tail := d.ContainerTail
+	if len(tail) > n {
+		tail = tail[len(tail)-n:]
+	}
+	out := make([]string, len(tail))
+	for i, l := range tail {
+		out[i] = l.Text
+	}
+	return out
 }
 
 // containerTail reads the last n lines release number of the service at

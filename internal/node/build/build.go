@@ -27,7 +27,9 @@
 // plan is generated with the Railpack library in a capped child process
 // (PlanMain) and built with the matching Railpack BuildKit frontend, which
 // is what Railpack recommends for platforms; its images are pinned by
-// digest (railpackImages). New layers are compressed with zstd.
+// digest (railpackImages), and the mise binary the planner runs on the
+// host is placed by Dock and checked against miseDigests (ensureMise).
+// New layers are compressed with zstd.
 //
 // # Push
 //

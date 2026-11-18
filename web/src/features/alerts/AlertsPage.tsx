@@ -674,7 +674,7 @@ function AddChannel({ onClose }: { onClose: () => void }) {
           </span>
           <input
             type="password"
-            autoComplete="off"
+            autoComplete="new-password"
             value={signing}
             onChange={(e) => setSigning(e.target.value)}
             className="field font-mono"

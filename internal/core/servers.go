@@ -385,7 +385,10 @@ func (c *Core) AddServer(ctx context.Context, a Actor, req apitypes.AddServerReq
 	}
 	return apitypes.AddedServer{
 		Server: srv, Token: token, ExpiresAt: row.ExpiresAt,
-		Command: "sudo DOCK_BINARY=./dock " + ingress + "NODE_JOIN_TOKEN=" + token + " ./deploy/install.sh --node",
+		// The token is set by the shell and passed through sudo's
+		// environment: on sudo's command line every user of that server
+		// could read it in the process list.
+		Command: "export NODE_JOIN_TOKEN=" + token + " && sudo --preserve-env=NODE_JOIN_TOKEN DOCK_BINARY=./dock " + ingress + "./deploy/install.sh --node",
 	}, nil
 }
 

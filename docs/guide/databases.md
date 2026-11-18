@@ -39,6 +39,9 @@ The others follow the same pattern:
   so on.
 - It publishes no port. Other services reach it by name on the
   environment's private network; the health check connects there too.
+  A Postgres database counts as healthy once it accepts connections, not
+  when its port opens: one that is still starting up, or recovering after
+  a crash or a restore, waits until it is ready.
   From your laptop use the Data tab, `dock db`, or your own client through
   [`dock connect`](data.md#connecting-from-your-machine).
 - Postgres templates get the [Data tab](data.md) set up automatically.
@@ -115,6 +118,46 @@ A store on your LAN (MinIO on a NAS) is a private address: allow it with
 `[network] allow_private` in `config.toml`, since backup jobs run on the
 app network.
 
+### Checked backups
+
+A backup that was written is not yet one that restores. Once a week, in
+the backup hour and after that night's backups, Dock proves both
+([ADR 0096](../decisions/0096-checked-backups.md)):
+
+- **Repository check**: `restic check` on every repository holding
+  backups (the bucket, or each server's local one): the whole structure,
+  and a random 1 GB of the data read back and re-hashed. A small
+  repository is read in full every week.
+- **Restore drill**: every template database's newest snapshot is
+  restored into a throwaway service `<name>-drill`, asked a question
+  (Postgres and MySQL count their tables, Redis its keys), and removed
+  with its volume. The database itself is never touched. A snapshot over
+  2 GB is skipped by the weekly drill, and says so, since restoring it
+  needs that much free disk for a moment; run it by hand when the server
+  has room. Volume backups have no drill; the repository check covers
+  them.
+
+A new install's first check waits for the first backup hour after the
+daemon started, and a failed one is tried again the next night.
+
+```sh
+dock backup list -s db     # repository check: passed 3d ago, restore drill: passed 3d ago: 42 tables in 18 s
+dock backup status         # weekly checks on or off, and each repository's latest check
+dock backup check          # check every repository now, and wait (operator)
+dock backup drill -s db    # run db's drill now, whatever its size (operator)
+dock backup check --off    # turn the weekly checks and drills off; --on turns them back on
+```
+
+The service's **Backups** tab shows the same lines. A failed check or
+drill raises a "backup failed" alert (a warning): the platform's for a
+repository, the service's for a drill. The next one that passes resolves
+it.
+
+"Checked" means the structure is sound and a sample of the data read
+back, not every byte. To read all of it, run restic yourself with the
+repository password (it downloads the whole repository from a bucket):
+`restic -r <repository> check --read-data`.
+
 ## Restore
 
 Backups and snapshots (below) are both **restore points** of a service.
@@ -190,7 +233,12 @@ dock backup pitr off db             # restarts db without archiving
   backup move (`dock backup move`) starts the window over in the new
   storage.
 - **Turning it off** keeps the window until it ages out with the daily
-  backups.
+  backups; it ends with the database's last commit before the restart.
+  Turned on again, the window starts over with a new base backup: times
+  before it was off and after it came back restore, a time in between is
+  refused with the gap's ends.
+- **A stopped database** keeps its window, up to its last commit, and
+  restores into a new service like a running one.
 
 ### When archiving stalls
 

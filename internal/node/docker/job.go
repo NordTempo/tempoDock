@@ -54,6 +54,7 @@ func (r *Runtime) RunJob(ctx context.Context, spec node.JobSpec) (_ node.JobResu
 		return node.JobResult{}, err
 	}
 	opts := jobOptions(spec, pause, r.owner())
+	opts.HostConfig.PidsLimit = r.pidsLimit()
 	if spec.Sync {
 		opts.HostConfig.Mounts = append(opts.HostConfig.Mounts, mount.Mount{Type: mount.TypeBind, Source: r.Sync, Target: node.SyncPath, ReadOnly: true})
 	}
@@ -283,7 +284,8 @@ const labelPauses = "dock.pauses"
 // jobOptions translates a job into Docker's create request. pause are the
 // containers the job will pause and owner the runtime's (Runtime.owner),
 // recorded in labels (always with pauses, else when the runtime has one)
-// so UnpauseStranded can tell its own cut-short jobs.
+// so UnpauseStranded can tell its own cut-short jobs. A job without a
+// network gets none at all (loopback only).
 func jobOptions(spec node.JobSpec, pause []string, owner string) client.ContainerCreateOptions {
 	labels := spec.Labels.Map()
 	labels[node.LabelRole] = node.RoleJob
@@ -330,6 +332,10 @@ func jobOptions(spec node.JobSpec, pause []string, owner string) client.Containe
 	opts := client.ContainerCreateOptions{Name: spec.Name, Config: cfg, HostConfig: host}
 	if spec.Network != "" {
 		opts.NetworkingConfig = networking(spec.Network, nil)
+	} else {
+		// Docker's own default is its bridge, which reaches the internet
+		// and, outside the app firewall, the server's private networks.
+		host.NetworkMode = "none"
 	}
 	return opts
 }

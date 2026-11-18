@@ -13,12 +13,14 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 // Open opens the database at path (which must not exist yet) with every
-// migration applied and the test org (ID 1, slug "test") in it. Like
+// migration applied, the test org (ID 1, slug "test") in it and the
+// permission model in shadow, as on an install from before it. Like
 // store.Open, the caller closes it.
 func Open(t testing.TB, path string) *store.Store {
 	t.Helper()
@@ -53,6 +55,13 @@ var migrated = sync.OnceValues(func() ([]byte, error) {
 	defer func() { _ = st.Close() }()
 	if _, err := st.CreateOrg(ctx, store.CreateOrgParams{Slug: "test", Name: "test"}); err != nil {
 		return nil, fmt.Errorf("create the test org: %w", err)
+	}
+	// The test install is one from before the permission model (ADR
+	// 0080), in shadow: roles decide and the model answers beside every
+	// check, so the packages' TestMains fail on any disagreement. A new
+	// install enforces (core's TestNewInstallEnforces).
+	if err := st.SetAccessModel(ctx, store.SetAccessModelParams{AccessModel: "shadow", UpdatedBy: "test", UpdatedAt: time.Now()}); err != nil {
+		return nil, fmt.Errorf("set the test install's permission model: %w", err)
 	}
 	image := filepath.Join(dir, "image.db")
 	if _, err := st.DB.ExecContext(ctx, "VACUUM INTO ?", image); err != nil {

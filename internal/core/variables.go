@@ -139,6 +139,13 @@ func (c *Core) SetVariables(ctx context.Context, a Actor, ref EnvRef, req apityp
 	return c.changeResult(ctx, a, es, req.Apply)
 }
 
+// addsOrgRefs reports whether the actor may add a reference to an
+// organization variable to a value: they edit variables across the whole
+// organization (orgRefsAllowed says why).
+func (a Actor) addsOrgRefs() bool {
+	return a.covers(permsOf(PermVariablesWrite), 0, 0, uint8(allKinds))
+}
+
 // orgRefsAllowed refuses a value that adds a reference to an organization
 // variable (${{org.KEY}}) unless the caller edits variables across the
 // whole organization. An organization variable is the same secret in
@@ -157,7 +164,7 @@ func (c *Core) orgRefsAllowed(ctx context.Context, q *store.Queries, a Actor, en
 		return keys
 	}
 	asked := orgRefs(value)
-	if len(asked) == 0 || a.covers(permsOf(PermVariablesWrite), 0, 0, uint8(allKinds)) {
+	if len(asked) == 0 || a.addsOrgRefs() {
 		return nil
 	}
 	var has []string
@@ -268,7 +275,8 @@ var refRe = regexp.MustCompile(`\$\{\{\s*([a-z0-9-]+)\.([A-Za-z_][A-Za-z0-9_]*)\
 const sharedScope = "shared"
 
 // resolver expands variable references within one environment. vars maps
-// a service name (or "shared") to its unexpanded variables.
+// a service name (or "shared") to its unexpanded variables; env is the
+// environment as project/name, for messages and the commands they give.
 type resolver struct {
 	env      string
 	vars     map[string]map[string]string
@@ -321,6 +329,13 @@ func (r *resolver) value(scope, key string) (string, error) {
 		}
 		if _, ok := vars[refKey]; !ok && refScope == orgScope {
 			broken(m, fmt.Sprintf("the organization has no variable %s; add it in organization settings or with `dock org env set %s=...`", refKey, refKey), false)
+			return ""
+		}
+		if _, ok := vars[refKey]; !ok && refScope == sharedScope {
+			// Usually an environment cloned or promoted into without the
+			// value: the fix is to set it here, not to change the reference.
+			project, env, _ := strings.Cut(r.env, "/")
+			broken(m, fmt.Sprintf("%s has no shared variable %s; set it with `dock env set --shared %s=... -p %s -e %s`", r.env, refKey, refKey, project, env), false)
 			return ""
 		}
 		if _, ok := vars[refKey]; !ok {

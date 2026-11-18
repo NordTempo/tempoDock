@@ -54,6 +54,10 @@ type Facts struct {
 	// The control plane takes it when the server joins without one; after
 	// that `dock server update --base-domain` decides.
 	BaseDomain string `json:"base_domain,omitempty"`
+	// FirewallApplied says whether the app firewall's rules were applied
+	// on the node since it booted (firewall.Applied). Nil from nodes that
+	// don't report it, and where none is expected (not under systemd).
+	FirewallApplied *bool `json:"firewall_applied,omitempty"`
 }
 
 // Hello is what the control plane learns about a node each time it
@@ -425,7 +429,7 @@ func toWireSpec(s node.ContainerSpec) wireSpec {
 	}
 	if hc := s.Health; hc != nil {
 		w.Health = &wireLivenessCheck{
-			Port: hc.Port, Path: hc.Path, IntervalMS: hc.Interval.Milliseconds(), TimeoutMS: hc.Timeout.Milliseconds(),
+			Port: hc.Port, Path: hc.Path, Kind: string(hc.Kind), IntervalMS: hc.Interval.Milliseconds(), TimeoutMS: hc.Timeout.Milliseconds(),
 			Retries: hc.Retries, StartPeriodMS: hc.StartPeriod.Milliseconds(), StartIntervalMS: hc.StartInterval.Milliseconds(),
 		}
 	}
@@ -441,7 +445,7 @@ func (w wireSpec) node() node.ContainerSpec {
 	}
 	if hc := w.Health; hc != nil {
 		s.Health = &node.LivenessCheck{
-			Port: hc.Port, Path: hc.Path, Interval: ms(hc.IntervalMS), Timeout: ms(hc.TimeoutMS),
+			Port: hc.Port, Path: hc.Path, Kind: node.HealthKind(hc.Kind), Interval: ms(hc.IntervalMS), Timeout: ms(hc.TimeoutMS),
 			Retries: hc.Retries, StartPeriod: ms(hc.StartPeriodMS), StartInterval: ms(hc.StartIntervalMS),
 		}
 	}
@@ -450,8 +454,11 @@ func (w wireSpec) node() node.ContainerSpec {
 
 // wireLivenessCheck is node.LivenessCheck on the wire (protocol 13).
 type wireLivenessCheck struct {
-	Port            int    `json:"port"`
-	Path            string `json:"path,omitempty"`
+	Port int    `json:"port"`
+	Path string `json:"path,omitempty"`
+	// Kind is optional like wireHealthCheck's: an older node ignores it
+	// and has dock-probe run the TCP check.
+	Kind            string `json:"kind,omitempty"`
 	IntervalMS      int64  `json:"interval_ms,omitempty"`
 	TimeoutMS       int64  `json:"timeout_ms,omitempty"`
 	Retries         int    `json:"retries,omitempty"`
@@ -553,8 +560,12 @@ func fromWireContainers(ws []wireContainer) []node.Container {
 }
 
 type wireHealthCheck struct {
-	Path       string `json:"path,omitempty"`
-	Port       int    `json:"port,omitempty"`
+	Path string `json:"path,omitempty"`
+	Port int    `json:"port,omitempty"`
+	// Kind (node.HealthKind) came without a protocol bump: a node that
+	// doesn't know the field ignores it (its JSON decoder allows unknown
+	// fields) and runs the TCP check, as before it existed.
+	Kind       string `json:"kind,omitempty"`
 	TimeoutMS  int64  `json:"timeout_ms,omitempty"`
 	IntervalMS int64  `json:"interval_ms,omitempty"`
 	GraceMS    int64  `json:"grace_ms,omitempty"`
@@ -562,13 +573,13 @@ type wireHealthCheck struct {
 
 func toWireHealthCheck(hc node.HealthCheck) wireHealthCheck {
 	return wireHealthCheck{
-		Path: hc.Path, Port: hc.Port, TimeoutMS: hc.Timeout.Milliseconds(), IntervalMS: hc.Interval.Milliseconds(),
+		Path: hc.Path, Port: hc.Port, Kind: string(hc.Kind), TimeoutMS: hc.Timeout.Milliseconds(), IntervalMS: hc.Interval.Milliseconds(),
 		GraceMS: hc.Grace.Milliseconds(),
 	}
 }
 
 func (w wireHealthCheck) node() node.HealthCheck {
-	return node.HealthCheck{Path: w.Path, Port: w.Port, Timeout: ms(w.TimeoutMS), Interval: ms(w.IntervalMS), Grace: ms(w.GraceMS)}
+	return node.HealthCheck{Path: w.Path, Port: w.Port, Kind: node.HealthKind(w.Kind), Timeout: ms(w.TimeoutMS), Interval: ms(w.IntervalMS), Grace: ms(w.GraceMS)}
 }
 
 func ms(n int64) time.Duration { return time.Duration(n) * time.Millisecond }

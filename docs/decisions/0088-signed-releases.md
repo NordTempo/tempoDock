@@ -159,3 +159,19 @@ Dock's for `dock serve` and the root updater (`dock admin update`).
 
 Sign a directory release with `scripts/release/sign`, giving it the
 public keys to check against in `TRUSTED_KEYS`.
+
+## Amendment (2026-11-18): a signature ssh-keygen can check
+
+The install scripts check the signature with `openssl pkeyutl -rawin`,
+which needs OpenSSL 3. A stock Mac has LibreSSL, so `cli.sh` there could
+only warn and go by `SHA256SUMS` alone. Every Mac since macOS 11 has an
+`ssh-keygen` that checks Ed25519 signatures (`-Y verify`, OpenSSH 8.1), so
+the signer (`scripts/release/sign`) also writes `SHA256SUMS.sshsig`: the
+same keys' signatures of the same bytes in OpenSSH's format
+(PROTOCOL.sshsig, namespace `dock-release`, SHA-512), a line per key,
+`<key id> <base64 signature>`. The scripts use it when OpenSSL 3 is
+missing; `dock` never reads it, and `SHA256SUMS.sig` stays the signature
+everything else checks. No new key and no new dependency: the signer
+builds the format by hand, and a test runs the script's own check against
+it. A release from before this has no such file, and the scripts treat it
+as before (a warning, or a refusal with `DOCK_REQUIRE_SIGNATURE=1`).

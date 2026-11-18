@@ -331,6 +331,7 @@ function Line({
           defaultValue={current ?? ""}
           placeholder={current === undefined ? "new value" : undefined}
           aria-label={`${v.key} value`}
+          autoComplete="off"
           onKeyDown={(e) => {
             if (e.key === "Enter") save(e.currentTarget.value);
             if (e.key === "Escape") setEditing(false);
@@ -485,6 +486,7 @@ function NewLine({
         }}
         placeholder={`NAME=value  ·  for ${service ?? "every service"}`}
         aria-label="New variable, NAME=value"
+        autoComplete="off"
         title={`dock env set NAME=value ${scopeFlags(env, service)}`}
         className="col-span-2 min-h-[24px] min-w-0 rounded-ctl border border-field bg-transparent px-1.5 py-0.5 outline-none placeholder:text-faint focus:border-info focus:bg-page"
       />
@@ -551,6 +553,7 @@ function PasteEnv({
         onKeyDown={(e) => e.key === "Escape" && onDone()}
         placeholder={"DATABASE_URL=postgres://...\nLOG_LEVEL=info"}
         aria-label=".env contents"
+        autoComplete="off"
         rows={6}
         className="field w-full resize-y font-mono text-xs"
       />

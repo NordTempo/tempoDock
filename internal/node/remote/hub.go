@@ -171,6 +171,9 @@ type session struct {
 	cancel context.CancelFunc
 	// dials counts open Dial calls, capped at maxDials.
 	dials atomic.Int32
+	// forwards counts open forwarded connections, capped at maxForwards:
+	// those its listeners accepted and Dial calls with Forwarded set.
+	forwards atomic.Int32
 }
 
 // close closes the connection once. Not a sync.Once: cc.Close can run the

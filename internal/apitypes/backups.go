@@ -89,7 +89,8 @@ type BackupRun struct {
 // BackupLog is what a backup or restore run's job printed: its last 16
 // KB (MaxRunOutputBytes), with the repository's and database's secrets
 // masked. Empty when nothing was kept (the job never ran, or the run is
-// older than the service's newest logs).
+// older than the service's newest logs); a run that succeeded says so
+// instead.
 type BackupLog struct {
 	ID     int64  `json:"id"`
 	Output string `json:"output"`
@@ -120,8 +121,51 @@ type ServiceBackups struct {
 	Schedule   BackupSchedule `json:"schedule"`
 	// PITR is point-in-time restore, for Postgres template databases.
 	PITR *PITR `json:"pitr,omitempty"`
+	// Check is the latest check of the repository this service's backups
+	// go to, and Drill its latest restore drill (template databases);
+	// NextCheckAt is when the next weekly check is due, if they are on
+	// (ADR 0096).
+	Check       *BackupCheck `json:"check,omitempty"`
+	Drill       *BackupCheck `json:"drill,omitempty"`
+	NextCheckAt *time.Time   `json:"next_check_at,omitempty"`
 	// Runs are the latest backups and restores, newest first.
 	Runs []BackupRun `json:"runs"`
+}
+
+// Statuses of a check or drill beyond a run's.
+const (
+	// BackupSkipped: a drill that didn't run, with why in Detail.
+	BackupSkipped BackupStatus = "skipped"
+)
+
+// BackupCheck is one weekly check that backups can be read back (ADR
+// 0096): a repository check (restic check with a sample of the data
+// read) or a restore drill (a template database's newest snapshot
+// restored into a throwaway service, queried, and removed).
+type BackupCheck struct {
+	ID   int64  `json:"id"`
+	Kind string `json:"kind" enum:"repository,drill"`
+	// Server is where a repository check ran; Service the database a
+	// drill restored.
+	Server  string `json:"server,omitempty"`
+	Service string `json:"service,omitempty"`
+	// Repository is "local" or the S3 repository URL, as in BackupRun.
+	Repository string `json:"repository"`
+	// Snapshot is the snapshot a drill restored.
+	Snapshot string       `json:"snapshot,omitempty"`
+	Trigger  string       `json:"trigger" enum:"schedule,manual"`
+	Status   BackupStatus `json:"status" enum:"running,succeeded,failed,skipped"`
+	Error    string       `json:"error,omitempty"`
+	// Detail is one line of what was checked ("1 GiB of data read", "42
+	// tables in 18 s") or why a drill was skipped.
+	Detail     string     `json:"detail,omitempty"`
+	StartedAt  time.Time  `json:"started_at"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+}
+
+// UpdateBackupChecksRequest turns the weekly checks and drills on or off.
+type UpdateBackupChecksRequest struct {
+	Enabled *bool `json:"enabled,omitempty"`
 }
 
 // UpdateBackupScheduleRequest changes a service's schedule. Fields that
@@ -245,6 +289,12 @@ type BackupSettings struct {
 	Password string `json:"password,omitempty"`
 	// ControlPlane is the control plane's own daily backup (ADR 0021).
 	ControlPlane ControlPlaneBackup `json:"control_plane"`
+	// Verify says the weekly repository checks and restore drills are on
+	// (ADR 0096); Checks is each repository's latest check (operators),
+	// NextCheckAt when the next one is due.
+	Verify      bool          `json:"verify"`
+	Checks      []BackupCheck `json:"checks"`
+	NextCheckAt *time.Time    `json:"next_check_at,omitempty"`
 }
 
 // BackupRepository is one repository holding backups restores can use.

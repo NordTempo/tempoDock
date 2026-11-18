@@ -48,9 +48,13 @@ type gitState struct {
 	mu      sync.Mutex
 	workers map[int64]*gitWorker // by service ID, while one runs
 	// limit throttles webhook deliveries per hook; appLimit the App's,
-	// which carry every App connection's pushes.
+	// which carry every App connection's pushes. Both count only
+	// deliveries whose signature checked out, so ones with a wrong
+	// signature never use up the sender's allowance. badLimit counts
+	// those, per hook and client (badSignature).
 	limit    *httpkit.Limiter
 	appLimit *httpkit.Limiter
+	badLimit *httpkit.Limiter
 	github   githubClient
 	app      githubAppState
 	// statusMu guards statusTail: per service, the last commit status
@@ -79,6 +83,7 @@ func newGitState(api string) gitState {
 		// either a flood or a stolen URL.
 		limit:    httpkit.NewLimiter(30, 2*time.Second),
 		appLimit: httpkit.NewLimiter(120, 500*time.Millisecond),
+		badLimit: httpkit.NewLimiter(10, 6*time.Second),
 		github:   newGitHubClient(api),
 		app:      newGitHubAppState(),
 	}
@@ -589,7 +594,7 @@ func (c *Core) kickGit(serviceID int64, newer bool) {
 	w := &gitWorker{}
 	c.git.workers[serviceID] = w
 	c.wg.Add(1)
-	go c.gitWork(serviceID, w)
+	c.goCaught("handling a push", func() { c.gitWork(serviceID, w) })
 }
 
 // gitStep is what a worker does after one look at the queue.
@@ -609,7 +614,9 @@ func (c *Core) gitWork(serviceID int64, w *gitWorker) {
 		c.git.mu.Lock()
 		w.again = false
 		c.git.mu.Unlock()
-		step := c.gitStep(serviceID, w)
+		// A panic in a step ends the step: the push stays queued for the
+		// next kick (gitDone), and the worker is free for it.
+		step, _ := caught(c.log, "handling a push", func() (gitStep, error) { return c.gitStep(serviceID, w), nil })
 		c.git.mu.Lock()
 		if step == gitAgain || w.again {
 			c.git.mu.Unlock()
@@ -850,7 +857,7 @@ func (c *Core) postGitStatus(ss svcScope, conn store.GitConnection, rel store.Re
 	c.git.statusTail[id] = done
 	c.git.statusMu.Unlock()
 	c.wg.Add(1)
-	go func() {
+	c.goCaught("posting a commit status", func() {
 		defer c.wg.Done()
 		defer func() {
 			close(done)
@@ -876,5 +883,5 @@ func (c *Core) postGitStatus(ss svcScope, conn store.GitConnection, rel store.Re
 		if err != nil {
 			c.log.Warn("post commit status", "service", ss.String(), "commit", shortSHA(sha), "err", err)
 		}
-	}()
+	})
 }

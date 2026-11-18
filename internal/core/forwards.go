@@ -181,7 +181,9 @@ func (c *Core) forwardConn(k forwardKey, in net.Conn, svcID int64) {
 // dialTimeout bounds connecting a forwarded connection.
 const dialTimeout = 10 * time.Second
 
-// dialServiceID connects to a service's active container, wherever it is.
+// dialServiceID connects to a service's active container, wherever it
+// is, for a forwarded connection: a remote server counts it against its
+// forwarded connections, apart from the data panel's dials.
 func (c *Core) dialServiceID(ctx context.Context, svcID int64) (net.Conn, error) {
 	svc, err := c.store.GetService(ctx, svcID)
 	if err != nil {
@@ -203,7 +205,7 @@ func (c *Core) dialServiceID(ctx context.Context, svcID int64) (net.Conn, error)
 	if err != nil {
 		return nil, err
 	}
-	conn, err := rt.Dial(ctx, node.DialRequest{ContainerID: rel.ContainerID, Port: cfg.Port})
+	conn, err := rt.Dial(ctx, node.DialRequest{ContainerID: rel.ContainerID, Port: cfg.Port, Forwarded: true})
 	return conn, c.nodeErr(env.ServerID, err)
 }
 

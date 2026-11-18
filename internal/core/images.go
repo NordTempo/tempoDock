@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/distribution/reference"
+
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/httpkit"
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -341,11 +343,11 @@ func (c *Core) maybePruneRegistry() {
 		return
 	}
 	c.wg.Add(1) // like finishArchive's stops
-	go func() {
+	c.goCaught("pruning the registry", func() {
 		defer c.wg.Done()
 		defer yield()
 		_, _ = c.pruneRegistry(ctx)
-	}()
+	})
 }
 
 // pruneRegistry deletes the manifests no release keeps (ListKeptDigests),
@@ -454,12 +456,16 @@ func (c *Core) keepReleases() int { return max(c.cfg.Defaults.KeepReleases, 1) }
 // the platform registry's host (registry, "" without one: those images
 // are pulled with tokens the control plane mints, see pullAllowed), or
 // whose registry is localhost or an address g refuses (imageAddrErr).
-// Docker Hub refs and public registries (ghcr.io,
-// registry.example.com:5000) pass. Hostnames are resolved when pulling
-// (checkRegistry), not here.
+// A reference Docker couldn't parse is refused too, before a release is
+// made for it; "" (no image) passes. Docker Hub refs and public
+// registries (ghcr.io, registry.example.com:5000) pass. Hostnames are
+// resolved when pulling (checkRegistry), not here.
 func validateImageRef(ref, registry string, g *egressGuard) error {
 	if _, ok := buildTagProject(ref); ok {
 		return invalid("image %q is a name Dock gives the images it builds, which are deployed by their service, not by name; deploy from source or promote, or use an image's name on its own registry", ref)
+	}
+	if _, err := reference.ParseNormalizedNamed(ref); ref != "" && err != nil {
+		return invalid("image %q is not a valid image reference; write it in lower case as name[:tag] or registry/name[:tag], like nginx:1.27 or ghcr.io/acme/app:v1", ref)
 	}
 	host := registryHost(ref)
 	if host == "" {

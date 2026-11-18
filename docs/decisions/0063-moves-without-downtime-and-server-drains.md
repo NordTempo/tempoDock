@@ -87,9 +87,13 @@ and the plan readable.
 - A move needs `dock-sync` (`make build`) and protocol 21 on both servers.
 - The source keeps forwarding its moved services until it is removed; the
   control plane carries those bytes for remote servers.
-- Forwarded connections are capped like other dials (64 per target
-  server); Caddy reuses its upstream connections, so that is concurrency,
-  not requests.
+- Forwarded connections have a cap of their own, 96 per remote server
+  (the ones it accepts and the ones dialed to its containers), apart
+  from the 64 dials of the data panel and the stores: neither starves
+  the other. Caddy reuses its upstream connections, so that is
+  concurrency, not requests, but it also keeps idle ones (up to 32 per
+  forwarded port, for two minutes), and each holds a slot while it
+  idles. One open connection costs each end about 100 KB.
 - Log history of releases before the move stays on the source and goes
   with it when it is removed.
 - One migration: `server_drains`, `server_drain_items`, `server_forwards`,

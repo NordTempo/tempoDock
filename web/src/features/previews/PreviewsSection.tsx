@@ -5,6 +5,7 @@ import { canDeploy, useSession } from "../../data/queries";
 import type { EnvRef, Session } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { ago } from "../../ui/format";
+import { httpsHref } from "../../ui/httpsHref";
 import {
   Act,
   Button,
@@ -146,7 +147,7 @@ export function PreviewsSection({ project }: { project: string }) {
                   {pv.environment}
                 </Link>
                 <a
-                  href={pv.pull_url}
+                  href={httpsHref(pv.pull_url)}
                   target="_blank"
                   rel="noreferrer"
                   className="truncate text-sec no-underline hover:text-fg"

@@ -26,6 +26,41 @@ const gitlabDotCom = "https://gitlab.com"
 // microsoftConsumers is the tenant of personal Microsoft accounts.
 const microsoftConsumers = "9188040d-6c67-4c5b-b112-36a304b66dad"
 
+// ssoSendsAuthTime says, for every OpenID Connect kind, whether its ID
+// tokens are known to carry auth_time when Dock asks for a new sign-in
+// (max_age=0, prompt=login). A step-up through a kind that is refuses an
+// answer without it; the others are taken on a new ID token and logged
+// (ssoFlow.confirmed). True only where the provider's own documentation
+// says so plainly (read 2026-11-18); when in doubt, false:
+//
+//   - okta: auth_time is a base claim, "always present".
+//     https://developer.okta.com/docs/reference/api/oidc/
+//   - auth0: auth_time is "included automatically in the ID token" for
+//     prompt=login or max_age=0.
+//     https://auth0.com/docs/authenticate/login/max-age-reauthentication
+//   - gitlab: auth_time is listed among the ID token's claims.
+//     https://docs.gitlab.com/integration/openid_connect_provider/
+//   - microsoft: auth_time is an optional claim, added per app
+//     registration; max_age isn't documented.
+//     https://learn.microsoft.com/en-us/entra/identity-platform/optional-claims-reference
+//   - google: auth_time must be enabled and asked for with a claims
+//     parameter Dock doesn't send.
+//     https://developers.google.com/identity/openid-connect/openid-connect
+//   - keycloak, authentik: their code sets it (Keycloak through a mapper
+//     of the default basic scope, which a client may drop), but their
+//     documentation doesn't say so.
+//   - oidc: anyone's server.
+var ssoSendsAuthTime = map[apitypes.SSOKind]bool{
+	apitypes.SSOOkta:      true,
+	apitypes.SSOAuth0:     true,
+	apitypes.SSOGitLab:    true,
+	apitypes.SSOMicrosoft: false,
+	apitypes.SSOGoogle:    false,
+	apitypes.SSOKeycloak:  false,
+	apitypes.SSOAuthentik: false,
+	apitypes.SSOOIDC:      false,
+}
+
 // namedKind reports whether kind builds its issuer from an SSOWhere.
 func namedKind(kind apitypes.SSOKind) bool {
 	_, ok := apitypes.SSOKindNames[kind]

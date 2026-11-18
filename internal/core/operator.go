@@ -295,6 +295,7 @@ func (c *Core) OperatorSetMemberRole(ctx context.Context, a Actor, slug string, 
 	}
 	out, err := c.SetMemberRole(ctx, a.operatorIn(o), userID, apitypes.SetMemberRoleRequest{Role: req.Role})
 	if err == nil {
+		c.accessChanged(accessChange{userID: userID, orgID: o.ID, changed: true})
 		c.audit(ctx, a.platform(), "org.member_role", nil, nil, o.Slug, fmt.Sprintf("made %s %s in organization %s", out.Email, req.Role, o.Slug))
 	}
 	return out, err
@@ -320,6 +321,7 @@ func (c *Core) OperatorRemoveMember(ctx context.Context, a Actor, slug string, u
 	if err != nil {
 		return err
 	}
+	c.accessChanged(accessChange{userID: u.ID, orgID: o.ID})
 	c.auditBoth(ctx, a, o, "org.member_remove", "the platform's operator removed "+u.Email+" from the organization"+invitesNote(invites))
 	return nil
 }
@@ -410,6 +412,9 @@ func (c *Core) SuspendOrg(ctx context.Context, a Actor, slug string, suspend boo
 		if o, err = c.store.SuspendOrg(ctx, params); err != nil {
 			return apitypes.OperatorOrg{}, err
 		}
+		// Suspended, everyone there may only read: runs and tunnels are
+		// asked again, streams open again as their actors are now.
+		c.accessChanged(accessChange{orgID: o.ID, everyone: true})
 		c.auditBoth(ctx, a, o, action, summary)
 	}
 	return c.operatorOrgView(ctx, a, o.Slug)
@@ -528,6 +533,7 @@ func (c *Core) OperatorDeleteOrg(ctx context.Context, a Actor, slug, confirm str
 	if err != nil {
 		return err
 	}
+	c.accessChanged(accessChange{orgID: o.ID, everyone: true})
 	c.auditBoth(ctx, a, o, "org.delete", fmt.Sprintf("the platform's operator deleted the organization: its %d projects are archived and kept for their history", len(projects)))
 	return nil
 }
@@ -601,6 +607,7 @@ func (c *Core) expireOperatorMembers(ctx context.Context) {
 			c.log.Error("expire an operator's membership", "org", r.OrgID, "err", err)
 			continue
 		}
+		c.accessChanged(accessChange{userID: r.UserID, orgID: r.OrgID})
 		c.audit(ctx, System.InOrg(r.OrgID), "org.operator_leave", nil, nil, r.Email, "the platform's operator "+r.Email+" is no longer a member: their time ran out")
 	}
 }

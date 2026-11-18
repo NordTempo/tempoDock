@@ -5,7 +5,9 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -185,12 +187,25 @@ Other services restore in place only.`,
 					return err
 				}
 			}
-			return g.io.Print(res, func() error {
+			// The volumes added since the snapshot, which the restore
+			// doesn't touch. Only a note: failing to read them doesn't
+			// fail a restore that started.
+			out := snapshotRestoreOutput{SnapshotRestoreResult: res}
+			if res.Restore.InPlace {
+				if ss, err := get[apitypes.ServiceSnapshots](cmd.Context(), s, t.servicePath()+"/snapshots"); err == nil {
+					out.VolumesLeft = volumesLeft(ss, res.Restore)
+				}
+			}
+			return g.io.Print(out, func() error {
 				r := res.Restore
 				if r.Status == apitypes.BackupRunning {
 					g.io.Successf("Restoring snapshot %d into %s; follow it with `dock volume snapshot list %s`", id, r.To, t.flags())
 				} else {
 					g.io.Successf("Restored snapshot %d into %s", id, r.To)
+				}
+				if len(out.VolumesLeft) > 0 {
+					g.io.Warnf("Left as they are: %s. Snapshot %d doesn't hold them: it was taken before %s had them.",
+						strings.Join(out.VolumesLeft, ", "), id, r.To)
 				}
 				if r.InPlace {
 					g.io.Detail(fmt.Sprintf("Snapshot %d holds the data it replaced; restore it to undo: `dock volume snapshot restore %d --in-place %s`.", r.Safety, r.Safety, t.flags()))
@@ -207,6 +222,41 @@ Other services restore in place only.`,
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
 	cmd.Flags().BoolVar(&detach, "detach", false, "return once the restore started")
 	return cmd
+}
+
+// snapshotRestoreOutput is `dock volume snapshot restore`'s result: the
+// restore, and for one in place the volumes it left as they are.
+type snapshotRestoreOutput struct {
+	apitypes.SnapshotRestoreResult
+	// VolumesLeft are the service's volumes the snapshot doesn't hold
+	// (added after it was taken), which an in-place restore doesn't touch.
+	VolumesLeft []string `json:"volumes_left,omitempty"`
+}
+
+// volumesLeft names the volumes in-place restore r left as they are: the
+// ones its safety snapshot holds (every volume the service has now) that
+// the restored snapshot doesn't. ss is the service's snapshots, read
+// after the restore started.
+func volumesLeft(ss apitypes.ServiceSnapshots, r apitypes.SnapshotRestore) []string {
+	var restored, now []string
+	for _, sn := range ss.Snapshots {
+		switch sn.ID {
+		case r.Snapshot:
+			restored = sn.Volumes
+		case r.Safety:
+			now = sn.Volumes
+		}
+	}
+	if restored == nil {
+		return nil // the snapshot is gone from the list: nothing to compare
+	}
+	var left []string
+	for _, v := range now {
+		if !slices.Contains(restored, v) {
+			left = append(left, v)
+		}
+	}
+	return left
 }
 
 // newSnapshotDeleteCmd is `dock volume snapshot delete`.

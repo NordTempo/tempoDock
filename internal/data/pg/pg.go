@@ -50,6 +50,8 @@ type Engine struct {
 	// countTimeout bounds each exact count of a never-analysed table
 	// (countUnanalysed).
 	countTimeout time.Duration
+	// callTimeout bounds a call whose context has no deadline (bound).
+	callTimeout time.Duration
 
 	// roles are the role names the engine creates and logs in as; app
 	// is application_name's prefix (Options).
@@ -86,6 +88,7 @@ func New(o Options) *Engine {
 		schemas:      map[int64]*catalog{},
 		schemaTTL:    data.SchemaTTL,
 		countTimeout: exactCountTimeout,
+		callTimeout:  data.CallTimeout,
 		roles:        o.Roles,
 		app:          o.AppName,
 	}

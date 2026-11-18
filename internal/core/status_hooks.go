@@ -241,10 +241,13 @@ func (c *Core) queueHook(id int64, post apitypes.StatusHookPost) {
 		return
 	}
 	c.wg.Add(1)
-	go func() {
+	c.goCaught("posting to a status hook", func() {
 		defer c.wg.Done()
-		c.alerts.hooks.sendAll(c.ctx, id, func(d hookDelivery) { c.postWithRetries(id, d.post) })
-	}()
+		c.alerts.hooks.sendAll(c.ctx, id, func(d hookDelivery) {
+			// A panic drops this post; the queue goes on.
+			c.safely("posting to a status hook", func() { c.postWithRetries(id, d.post) })
+		})
+	})
 }
 
 // postWithRetries posts an update to a hook with the alert channels'

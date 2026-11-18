@@ -114,6 +114,7 @@ func (e *Engine) ownerConn(ctx context.Context, t data.Target, owner data.Creden
 	if err != nil {
 		return nil, data.ServerInfo{}, loginError(ctx, err, data.ErrLoginFailed)
 	}
+	e.bound(ctx, pg)
 	var num int
 	if err := pg.QueryRow(ctx, "SELECT current_setting('server_version_num')::int").Scan(&num); err != nil {
 		_ = pg.Close(context.Background())

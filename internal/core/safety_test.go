@@ -185,7 +185,10 @@ func TestHostnameValidation(t *testing.T) {
 func TestImageRefValidation(t *testing.T) {
 	for ref, ok := range map[string]bool{
 		"nginx": true, "nginx:1.27": true, "library/nginx": true, "ghcr.io/acme/app:v1": true,
-		"registry.example.com:5000/app": true, "docker.io/traefik/whoami@sha256:abc": true, "8.8.8.8/app": true,
+		"registry.example.com:5000/app": true, "docker.io/traefik/whoami@sha256:" + strings.Repeat("ab", 32): true, "8.8.8.8/app": true,
+		// Not a reference at all: refused before a release is made. No
+		// image is fine.
+		"bad image!!": false, "nginx:": false, "ghcr.io/Acme/App": false, "": true,
 		"localhost/app": false, "localhost:5000/app": false, "registry.localhost/app": false,
 		"127.0.0.1:5000/app": false, "10.1.2.3/app": false, "192.168.1.5:5000/app": false, "172.16.0.1/app": false,
 		"169.254.169.254/app": false, "[::1]:5000/app": false, "[fd00::1]/app": false, "0.0.0.0/app": false,

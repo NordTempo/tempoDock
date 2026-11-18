@@ -265,6 +265,7 @@ func (c *Core) DeleteGroup(ctx context.Context, a Actor, ref string) error {
 	if err != nil {
 		return err
 	}
+	c.accessChanged(accessChange{orgID: a.OrgID})
 	c.audit(ctx, a, "group.delete", nil, nil, "group "+g.Name, "removed group "+g.Name)
 	return nil
 }
@@ -306,6 +307,7 @@ func (c *Core) AddGroupMember(ctx context.Context, a Actor, ref, who string) (ap
 	if err := c.store.AddGroupMember(ctx, store.AddGroupMemberParams{GroupID: g.ID, UserID: u.ID}); err != nil {
 		return apitypes.Group{}, err
 	}
+	c.accessChanged(accessChange{userID: u.ID, orgID: a.OrgID, changed: true})
 	c.audit(ctx, a, "group.add", nil, nil, u.Email, fmt.Sprintf("added %s to group %s", u.Email, g.Name))
 	return c.group(ctx, a, g.ID)
 }
@@ -336,6 +338,7 @@ func (c *Core) RemoveGroupMember(ctx context.Context, a Actor, ref, who string) 
 	if err != nil {
 		return apitypes.Group{}, err
 	}
+	c.accessChanged(accessChange{userID: u.ID, orgID: a.OrgID, changed: true})
 	c.audit(ctx, a, "group.remove", nil, nil, u.Email, fmt.Sprintf("took %s out of group %s", u.Email, g.Name))
 	return c.group(ctx, a, g.ID)
 }
@@ -412,6 +415,7 @@ func (c *Core) GrantGroup(ctx context.Context, a Actor, ref string, req apitypes
 	if _, err := c.store.CreateGrant(ctx, p); err != nil {
 		return apitypes.Group{}, err
 	}
+	c.accessChanged(accessChange{orgID: a.OrgID})
 	c.audit(ctx, a, "group.grant", nil, nil, "group "+g.Name, fmt.Sprintf("gave group %s %s on %s", g.Name, strings.TrimSpace(req.Role), place))
 	return c.group(ctx, a, g.ID)
 }
@@ -450,6 +454,7 @@ func (c *Core) RevokeGrant(ctx context.Context, a Actor, id int64) error {
 	if err != nil {
 		return err
 	}
+	c.accessChanged(accessChange{orgID: a.OrgID})
 	c.audit(ctx, a, "access.revoke", nil, nil, "grant "+fmt.Sprint(id), fmt.Sprintf("ended grant %d (%s)", id, g.RoleName))
 	return nil
 }
@@ -479,6 +484,7 @@ func (c *Core) GrantMember(ctx context.Context, a Actor, who string, req apitype
 		return apitypes.Grant{}, err
 	}
 	role := strings.TrimSpace(req.Role)
+	c.accessChanged(accessChange{userID: u.ID, orgID: a.OrgID, changed: true})
 	c.audit(ctx, a, "access.grant", nil, nil, u.Email, fmt.Sprintf("gave %s %s on %s", u.Email, role, place))
 	out := apitypes.Grant{ID: row.ID, Role: role, Custom: row.RoleID != nil, Project: req.Project, Environment: req.Environment, Kinds: grantKindNames(uint8(row.Kinds)), User: u.Email}
 	if row.ExpiresAt != nil {

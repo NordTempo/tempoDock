@@ -393,6 +393,10 @@ type Defaults struct {
 	HealthCheckTimeout int     `toml:"health_check_timeout_seconds"`
 	// KeepReleases is how many previous release images are kept for rollback.
 	KeepReleases int `toml:"keep_releases"`
+	// PidsLimit caps the processes and threads of each container on
+	// this server (apps, databases, jobs), so one that forks without end
+	// can't take the server with it. Negative is no limit.
+	PidsLimit int `toml:"pids_limit"`
 }
 
 // Node configures the link between the control plane and other servers
@@ -541,6 +545,7 @@ func Default() Config {
 			CPUs:               1,
 			HealthCheckTimeout: 60,
 			KeepReleases:       5,
+			PidsLimit:          4096,
 		},
 		Registry: Registry{
 			Listen:        "127.0.0.1:5000",

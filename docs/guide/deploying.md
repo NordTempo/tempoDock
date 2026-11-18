@@ -90,8 +90,11 @@ tar:
   so apps win any contention. A build that
   needs more memory fails with `build_failed` and says so; running apps are
   unaffected. Raise the cap or build in CI and deploy the image.
-- **First Railpack build** downloads a ~150 MB version resolver to
-  `/tmp/railpack`.
+- **First Railpack build** downloads the version resolver Railpack plans
+  with (mise, 55 MB, 150 MB unpacked) from its GitHub release to
+  `/tmp/railpack`. Dock downloads it itself and uses it only when it
+  matches the SHA-256 this Dock version was built with; a download that
+  doesn't match fails the build and is not kept.
 - Servers with `[buildkit] enabled = false` reject source deploys.
 
 ### Build caches
@@ -599,7 +602,7 @@ or the name, and it goes to the project's server for that kind.
 |---|---|
 | Services and settings | Copied, archived services left out |
 | Volumes | New and empty, created on each service's first deploy |
-| Variables | Live at once. Values that are only references are always copied. Other values are copied if you may read them (admin), but never between production and non-production unless an admin passes `--copy-values` (the output then lists them). Otherwise database templates get new credentials and the rest are listed for you to set |
+| Variables | Live at once. Values that are only references are always copied, except a reference to an organization variable (`${{org.KEY}}`), which is copied only if you may edit variables across the whole organization. Other values are copied if you may read them (admin), but never between production and non-production unless an admin passes `--copy-values` (the output then lists them). Otherwise database templates get new credentials and the rest are listed for you to set |
 | Domains, git connections, releases, backups, staged changes | Not copied; the output counts them |
 
 Nothing runs until you deploy. `--deploy` deploys the images serving in

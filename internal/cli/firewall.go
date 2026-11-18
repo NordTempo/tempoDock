@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -64,6 +65,12 @@ Rerun it after changing [network] in the config, or restart dock-firewall.`,
 				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "skipped %s\n", s)
 			}
 			if err != nil {
+				// What is installed now is unknown: the daemon alerts.
+				_ = firewall.ClearApplied()
+				return err
+			}
+			// The daemon can't read iptables; this tells it the rules are in.
+			if err := firewall.MarkApplied(); err != nil {
 				return err
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "firewall applied: bridges %s; allowed private %v; DNS %v\n",
@@ -82,7 +89,10 @@ Rerun it after changing [network] in the config, or restart dock-firewall.`,
 			if os.Geteuid() != 0 {
 				return errors.New("firewall rules need root: run with sudo")
 			}
-			return firewall.Remove(cmd.Context())
+			if err := firewall.Remove(cmd.Context()); err != nil {
+				return err
+			}
+			return firewall.ClearApplied()
 		},
 	}
 	cmd.AddCommand(apply, remove)
@@ -153,4 +163,17 @@ func subnets(cfgs []network.IPAMConfig) []netip.Prefix {
 		}
 	}
 	return out
+}
+
+// firewallCheck is how a daemon learns whether its server's firewall is
+// in (core.Options.FirewallApplied, remote.Facts.FirewallApplied), or nil
+// where none is expected: off Linux, on the fake runtime and outside
+// systemd (INVOCATION_ID), so a daemon started by hand or by `make dev`
+// raises no alert. The config has no switch for the firewall; an
+// installed server always gets dock-firewall.service.
+func firewallCheck() func() (bool, error) {
+	if runtime.GOOS != "linux" || os.Getenv("DOCK_FAKE_RUNTIME") == "1" || os.Getenv("INVOCATION_ID") == "" {
+		return nil
+	}
+	return firewall.Applied
 }

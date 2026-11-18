@@ -847,9 +847,10 @@ func (q *Queries) RevokeUserLoginTokens(ctx context.Context, arg RevokeUserLogin
 	return result.RowsAffected()
 }
 
-const revokeUserTokens = `-- name: RevokeUserTokens :execrows
+const revokeUserTokens = `-- name: RevokeUserTokens :many
 UPDATE tokens SET revoked_at = +?1
 WHERE user_id = +?2 AND revoked_at IS NULL
+RETURNING id
 `
 
 type RevokeUserTokensParams struct {
@@ -857,13 +858,29 @@ type RevokeUserTokensParams struct {
 	UserID *int64
 }
 
-// RevokeUserTokens revokes every token a user holds or made by hand.
-func (q *Queries) RevokeUserTokens(ctx context.Context, arg RevokeUserTokensParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, revokeUserTokens, arg.Now, arg.UserID)
+// RevokeUserTokens revokes every token a user holds or made by hand and
+// returns their IDs.
+func (q *Queries) RevokeUserTokens(ctx context.Context, arg RevokeUserTokensParams) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, revokeUserTokens, arg.Now, arg.UserID)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return result.RowsAffected()
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const setTokenOperator = `-- name: SetTokenOperator :exec

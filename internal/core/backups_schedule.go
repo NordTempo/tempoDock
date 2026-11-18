@@ -112,13 +112,15 @@ func (c *Core) UpdateBackupSchedule(ctx context.Context, a Actor, ref ServiceRef
 // reconnected, a backup finished). The control plane's own daily backup
 // (ADR 0021) keeps the timer armed once a day even with no stateful
 // services. Services on offline servers are skipped; their server
-// reconnecting kicks a pass that runs what is overdue.
+// reconnecting kicks a pass that runs what is overdue. The weekly
+// repository checks and restore drills (ADR 0096) ride on the same pass.
 func (c *Core) scheduleBackups() {
 	defer c.wg.Done()
 	timer := time.NewTimer(time.Hour)
 	timer.Stop()
 	for {
-		next, err := c.backupPass(c.ctx)
+		// A panic in a pass is that pass's error: the next comes after backupRetry.
+		next, err := caught(c.log, "a pass of the backup scheduler", func() (time.Time, error) { return c.backupPass(c.ctx) })
 		if c.ctx.Err() != nil {
 			return
 		}
@@ -144,8 +146,9 @@ func (c *Core) scheduleBackups() {
 
 // backupPass deletes snapshots past their age, runs every scheduled
 // backup that is due, the services' and then the control plane's own
-// (ADR 0021), and returns when the next one is due (zero: none
-// scheduled).
+// (ADR 0021), then the weekly repository checks and restore drills that
+// are due (ADR 0096), and returns when the next of any of them is due
+// (zero: none scheduled).
 func (c *Core) backupPass(ctx context.Context) (time.Time, error) {
 	c.pruneExpiredSnapshots(ctx) // ADR 0047: rides on this pass, at least daily
 	next, err := c.serviceBackupPass(ctx)
@@ -153,10 +156,22 @@ func (c *Core) backupPass(ctx context.Context) (time.Time, error) {
 		return next, err
 	}
 	cp, err := c.controlPlaneBackupPass(ctx)
-	if next.IsZero() || (!cp.IsZero() && cp.Before(next)) {
-		next = cp
+	next = sooner(next, cp)
+	if err != nil {
+		return next, err
 	}
-	return next, err
+	// The weekly checks and drills (ADR 0096) come last, so they never
+	// hold a backup back.
+	checks, err := c.verifyPass(ctx)
+	return sooner(next, checks), err
+}
+
+// sooner returns the earlier of two due times, where zero is "none".
+func sooner(a, b time.Time) time.Time {
+	if a.IsZero() || (!b.IsZero() && b.Before(a)) {
+		return b
+	}
+	return a
 }
 
 // serviceBackupPass runs every scheduled service backup that is due

@@ -45,4 +45,18 @@ func TestPITRCommands(t *testing.T) {
 	if code, _, stderr := exec(t, append([]string{"backup", "pitr", "on"}, at...)...); code == 0 || !strings.Contains(stderr, "storage connection") {
 		t.Errorf("pitr on with local backups: exit %d %q", code, stderr)
 	}
+	// Off for a database that never had it says so, and claims no restart.
+	// The install's token is the org's and the platform's, so it can read
+	// what it was; a platform token alone can't, and isn't told either way.
+	if code, stdout, stderr := exec(t, append([]string{"backup", "pitr", "off"}, at...)...); code != 0 || !strings.Contains(stdout+stderr, "if it was on") {
+		t.Errorf("pitr off with a platform token: exit %d %q", code, stdout+stderr)
+	}
+	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeAdmin])
+	code, stdout, stderr := exec(t, append([]string{"backup", "pitr", "off"}, at...)...)
+	if out := stdout + stderr; code != 0 || !strings.Contains(out, "was off already") || strings.Contains(out, "it restarts") {
+		t.Errorf("pitr off when never on: exit %d %q", code, out)
+	}
+	if rels, err := srv.core.ListReleases(context.Background(), sys, ref, 5); err != nil || len(rels) > 1 {
+		t.Errorf("pitr off when never on restarted the database: %v %+v", err, rels)
+	}
 }

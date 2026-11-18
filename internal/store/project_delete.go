@@ -55,6 +55,7 @@ var projectDeletes = []struct{ table, where string }{
 	{"environment_moves", `environment_id IN ` + projEnvs},
 	{"backup_schedules", `service_id IN ` + projServices},
 	{"pitr", `service_id IN ` + projServices},
+	{"backup_checks", `service_id IN ` + projServices},
 	{"backups", `service_id IN ` + projServices},
 	{"volume_snapshot_restores", `service_id IN ` + projServices + ` OR to_service_id IN ` + projServices},
 	{"volume_snapshots", `service_id IN ` + projServices},

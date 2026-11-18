@@ -55,6 +55,22 @@ func registerBackups(s *Server, a huma.API) {
 		return reply(s.core.RunControlPlaneBackup(ctx, actor))
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "update-backup-checks", Method: http.MethodPut, Path: Prefix + "/backup/checks",
+		Summary: "Turn the weekly backup checks on or off", Tags: tags,
+		Description: "Once a week, in the backup hour, every repository is checked (restic check with 1 GB of its data read back) and every template database's newest snapshot is restored into a throwaway service, queried and removed (ADR 0096). `enabled` turns both on or off; they are on by default. Operators only.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Body apitypes.UpdateBackupChecksRequest
+	}) (*out[apitypes.BackupSettings], error) {
+		return reply(s.core.UpdateBackupChecks(ctx, actor, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "run-backup-checks", Method: http.MethodPost, Path: Prefix + "/backup/checks/run",
+		Summary: "Check every backup repository now", Tags: tags, DefaultStatus: http.StatusAccepted,
+		Description: "Starts every repository's check in the background, one at a time, and answers with the settings: `checks` shows them running, then finished (get-backup-settings). A failed check raises a backup_failed alert. Operators only.",
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.BackupSettings], error) {
+		return reply(s.core.RunBackupChecks(ctx, actor))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "list-backups", Method: http.MethodGet, Path: servicePathT + "/backups",
 		Summary: "List a service's backups", Tags: tags,
 		Description: "How and when a stateful service is backed up, and its latest backups and restores.",
@@ -97,6 +113,13 @@ func registerBackups(s *Server, a huma.API) {
 		Body apitypes.SetPITRRequest
 	}) (*out[apitypes.ServiceBackups], error) {
 		return reply(s.core.SetPITR(ctx, actor, in.ref(), in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "run-backup-drill", Method: http.MethodPost, Path: servicePathT + "/backups/drill",
+		Summary: "Run a database's restore drill now", Tags: tags, DefaultStatus: http.StatusAccepted,
+		Description: "Restores a template database's newest snapshot into a throwaway service `<name>-drill`, queries it and removes it (ADR 0096), in the background: the answer is the drill, running, and list-backups shows it as `drill` when it ends. Run by hand, a snapshot over the weekly drill's 2 GB cap is restored too. Backups are the platform's: operators only.",
+	}, func(ctx context.Context, actor core.Actor, in *ServicePath) (*out[apitypes.BackupCheck], error) {
+		return reply(s.core.RunBackupDrill(ctx, actor, in.ref()))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "restore-backup", Method: http.MethodPost, Path: servicePathT + "/backups/restore",

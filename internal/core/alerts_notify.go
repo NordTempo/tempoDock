@@ -318,7 +318,7 @@ func (c *Core) deliver(ch store.AlertChannel, n apitypes.AlertNotification) {
 		return
 	}
 	c.wg.Add(1)
-	go func() {
+	c.goCaught("sending alert notifications", func() {
 		defer c.wg.Done()
 		if groupWindow > 0 {
 			// One shot per burst, never a ticker: it runs only while the
@@ -331,8 +331,11 @@ func (c *Core) deliver(ch store.AlertChannel, n apitypes.AlertNotification) {
 			}
 		}
 		// With the daemon closing, sendGroups only drops the queue.
-		c.alerts.outbox.sendGroups(c.ctx, ch.ID, func(group []apitypes.AlertNotification) { c.sendGroup(ch, group) })
-	}()
+		c.alerts.outbox.sendGroups(c.ctx, ch.ID, func(group []apitypes.AlertNotification) {
+			// A panic drops this group; the queue goes on.
+			c.safely("sending alert notifications", func() { c.sendGroup(ch, group) })
+		})
+	})
 }
 
 // sendGroup sends a channel's queued notifications: to Slack as one

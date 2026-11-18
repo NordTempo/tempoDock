@@ -2,10 +2,12 @@ package core
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,7 +25,13 @@ const testS3Secret = "pitr-s3-secret-0123456789"
 // bucket), as `dock backup move` leaves them.
 func (h *harness) offBoxBackups() {
 	h.t.Helper()
-	if _, err := h.c.AddStorage(h.ctx, testSystem, apitypes.CreateStorageRequest{Name: "bucket", Endpoint: fakeS3(h.t), Bucket: "images", AccessKeyID: "pitr-access-key", SecretAccessKey: testS3Secret}); err != nil {
+	h.offBoxBackupsAt(fakeS3(h.t))
+}
+
+// offBoxBackupsAt is offBoxBackups with the bucket "images" at endpoint.
+func (h *harness) offBoxBackupsAt(endpoint string) {
+	h.t.Helper()
+	if _, err := h.c.AddStorage(h.ctx, testSystem, apitypes.CreateStorageRequest{Name: "bucket", Endpoint: endpoint, Bucket: "images", AccessKeyID: "pitr-access-key", SecretAccessKey: testS3Secret}); err != nil {
 		h.t.Fatal(err)
 	}
 	conn, err := h.c.store.GetStorageConnection(h.ctx, "bucket")
@@ -50,13 +58,15 @@ func (h *harness) offBoxBackups() {
 // counting them; other jobs succeed quietly.
 func (h *harness) baseJobs() *int {
 	n := new(int)
+	var kept []string
 	h.rt.OnJob(func(spec node.JobSpec) (node.JobResult, error) {
 		if !strings.Contains(spec.Name, "_base") {
 			return node.JobResult{}, nil
 		}
 		*n++
 		base := walarchive.Base{Start: "000000010000000000000003", SegmentBytes: walarchive.DefaultSegmentBytes, Consistent: time.Now()}
-		return node.JobResult{Output: resticOutput("base0000snap"+strings.Repeat("0", *n), 4096, "base0000snap"+strings.Repeat("0", *n)) + base.String() + "\n"}, nil
+		kept = append(kept, "base0000snap"+strings.Repeat("0", *n)) // retention keeps the earlier ones
+		return node.JobResult{Output: resticOutput(kept[len(kept)-1], 4096, kept...) + base.String() + "\n"}, nil
 	})
 	return n
 }
@@ -133,9 +143,12 @@ func TestPITROnOff(t *testing.T) {
 	if rel := h.wait(db, 3); rel.Status != apitypes.ReleaseActive {
 		t.Fatalf("release 3: %s", rel.Status)
 	}
-	if _, ok := h.rt.Sidecars()[archiverName(ss)]; ok {
-		t.Fatal("the archiver still runs")
-	}
+	// It outlives the old container, which archives its last segment as
+	// it stops, and goes once the restart is live.
+	h.until("the archiver is removed", func() bool {
+		_, ok := h.rt.Sidecars()[archiverName(ss)]
+		return !ok
+	})
 	if spec, _ := h.rt.Spec(h.ctr(db, 3)); strings.Contains(spec.Cmd, "archive") {
 		t.Fatalf("archiving after off: %s", spec.Cmd)
 	}
@@ -146,6 +159,78 @@ func TestPITROnOff(t *testing.T) {
 	}
 	if _, ok := h.rt.Sidecars()[archiverName(ss)]; ok {
 		t.Fatal("a late start brought the archiver back")
+	}
+}
+
+// TestPITRWindowAcrossOffAndOn: turned off, the window still ends where
+// the archive does (read from the bucket, there is no archiver to ask);
+// turned on again, a time in between is refused as a gap that waiting
+// won't fill, and a time before it still restores.
+func TestPITRWindowAcrossOffAndOn(t *testing.T) {
+	h := newHarness(t)
+	db := h.templateDB("db", apitypes.TemplatePostgres)
+	h.baseJobs()
+	var keys atomic.Pointer[[]string] // the bucket's objects
+	keys.Store(&[]string{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `<ListBucketResult><IsTruncated>false</IsTruncated>`)
+		for _, k := range *keys.Load() {
+			if strings.HasPrefix(k, r.URL.Query().Get("prefix")) {
+				_, _ = io.WriteString(w, `<Contents><Key>`+k+`</Key><Size>1</Size></Contents>`)
+			}
+		}
+		_, _ = io.WriteString(w, `</ListBucketResult>`)
+	}))
+	t.Cleanup(srv.Close)
+	h.offBoxBackupsAt(srv.URL)
+	window := func() *apitypes.PITR {
+		t.Helper()
+		b, err := h.c.ServiceBackups(h.ctx, testSystem, db)
+		if err != nil || b.PITR == nil {
+			t.Fatalf("backups: %+v, %v", b.PITR, err)
+		}
+		return b.PITR
+	}
+	turn := func(on bool, release int64, bases int) {
+		t.Helper()
+		if _, err := h.c.SetPITR(h.ctx, testSystem, db, setPITR(on, 7)); err != nil {
+			t.Fatal(err)
+		}
+		if rel := h.wait(db, release); rel.Status != apitypes.ReleaseActive {
+			t.Fatalf("release %d: %s (%s)", release, rel.Status, rel.Error)
+		}
+		h.until("the base backup", func() bool { return window().BaseBackups == bases })
+	}
+	turn(true, 2, 1)
+	ss, err := h.c.loadService(h.ctx, 1, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bases, err := h.c.store.ListPITRBases(h.ctx, ss.svc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := h.c.walConfig(h.ctx, ss.svc.ID, bases[0].WalGeneration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// One segment archived a moment after the base backup, then off.
+	end := bases[0].ConsistentAt.Add(time.Millisecond).Truncate(time.Millisecond)
+	gap := end.Add(time.Millisecond)
+	keys.Store(&[]string{walarchive.Key(cfg.Prefix, bases[0].WalStart, end)})
+	turn(false, 3, 1)
+	if w := window(); w.Through == nil || !w.Through.Equal(end) || w.UsedBy == nil {
+		t.Fatalf("the window while off: through %v, want %v; used by %v", w.Through, end, w.UsedBy)
+	}
+	for !time.Now().After(gap.Add(time.Millisecond)) { // the next base backup is after the gap's time
+		time.Sleep(time.Millisecond)
+	}
+	turn(true, 4, 2)
+	if _, err := h.c.planToTime(h.ctx, ss, gap); err == nil || !strings.Contains(err.Error(), "wasn't archived from "+end.UTC().Format(time.RFC3339)) {
+		t.Fatalf("a time in the gap: %v", err)
+	}
+	if plan, err := h.c.planToTime(h.ctx, ss, end); err != nil || plan.base.ID != bases[0].ID {
+		t.Fatalf("a time before the gap: base %d, %v", plan.base.ID, err)
 	}
 }
 

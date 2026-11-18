@@ -119,7 +119,7 @@ func (g *globals) finishPromote(ctx context.Context, s *session, res apitypes.Pr
 		return &output.Error{
 			Exit:    output.ExitNotFound,
 			Message: fmt.Sprintf("nothing was promoted from %s to %s", res.From, res.To),
-			Hint:    "Each skipped service above says why. Promote never creates services; `dock service create` makes one in " + res.To + ".",
+			Hint:    nothingPromotedHint(res),
 		}
 	}
 	for _, p := range res.Promoted {
@@ -128,6 +128,18 @@ func (g *globals) finishPromote(ctx context.Context, s *session, res apitypes.Pr
 		}
 	}
 	return promoteStopped(res.Skipped)
+}
+
+// nothingPromotedHint says what to do after a promotion that skipped
+// every service. That promote never creates services is said only when
+// one is missing in the target, not for a deploy in progress or a source
+// without a release.
+func nothingPromotedHint(res apitypes.PromoteResult) string {
+	hint := "Each skipped service above says why."
+	if slices.ContainsFunc(res.Skipped, func(sk apitypes.SkippedService) bool { return sk.Reason == apitypes.SkipMissingInTarget }) {
+		hint += " Promote never creates services; `dock service create` makes one in " + res.To + "."
+	}
+	return hint
 }
 
 // promoteStopped is the deploy failure of a promotion (or a clone's

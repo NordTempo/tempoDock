@@ -62,6 +62,11 @@ type Runtime struct {
 	// downloaded on (a builder's BuildKit network, which the app firewall
 	// covers); "" refuses ScanDatabase updates (ADR 0074).
 	ScanNetwork string
+	// PidsLimit caps the processes and threads of each app container,
+	// job and sidecar (config [defaults] pids_limit), so one that forks
+	// without end runs into its own limit instead of the server's. Zero
+	// is DefaultPidsLimit; negative is no limit.
+	PidsLimit int64
 
 	scan scanState
 }
@@ -80,6 +85,23 @@ func New(pool netip.Prefix) (*Runtime, error) {
 		return nil, fmt.Errorf("docker client: %w", err)
 	}
 	return &Runtime{cli: cli, pool: pool.Masked()}, nil
+}
+
+// DefaultPidsLimit is Runtime.PidsLimit when it isn't set: far above what
+// apps and databases use (a Postgres with a thousand connections, a JVM
+// with a few thousand threads), far below what a server has.
+const DefaultPidsLimit = 4096
+
+// pidsLimit is HostConfig's PidsLimit for the containers r starts: nil
+// is no limit.
+func (r *Runtime) pidsLimit() *int64 {
+	switch {
+	case r.PidsLimit < 0:
+		return nil
+	case r.PidsLimit == 0:
+		return new(int64(DefaultPidsLimit))
+	}
+	return new(r.PidsLimit)
 }
 
 // Close releases the underlying Docker client.
@@ -483,6 +505,7 @@ func (r *Runtime) Start(ctx context.Context, spec node.ContainerSpec) (node.Cont
 	}
 	anon := node.AnonymousPaths(declared, spec.Mounts)
 	opts := createOptions(spec, r.Probe, anon)
+	opts.HostConfig.PidsLimit = r.pidsLimit()
 	if img.Config == nil || !ownInit(img.Config.Entrypoint, opts.Config.Cmd, img.Config.Cmd) {
 		opts.HostConfig.Init = new(true)
 	}
@@ -684,8 +707,11 @@ func healthcheck(hc node.LivenessCheck) *container.HealthConfig {
 		timeout = probeTimeout
 	}
 	test := []string{"CMD", probePath, "tcp", strconv.Itoa(hc.Port)}
-	if hc.Path != "" {
+	switch {
+	case hc.Path != "":
 		test = []string{"CMD", probePath, "http", strconv.Itoa(hc.Port), hc.Path}
+	case hc.Kind == node.HealthPostgres:
+		test[2] = "pg"
 	}
 	test = append(test, strconv.FormatInt(timeout.Milliseconds(), 10))
 	return &container.HealthConfig{

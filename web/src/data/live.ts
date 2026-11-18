@@ -739,7 +739,18 @@ function invalidateForAudit(
   if (audit.action === "template.save" || audit.action === "template.remove")
     invalidate(["app-templates"]);
   // The install's settings and the control plane's own backups.
-  if (kind === "backup" && !audit.project) invalidate(backupSettingsKey);
+  if (kind === "backup" && !audit.project) {
+    invalidate(backupSettingsKey);
+    // A repository checked, or the weekly checks turned on or off (ADR
+    // 0096): every service's Backups tab says when it was and is next.
+    if (backupCheckActions.has(audit.action))
+      queryClient.invalidateQueries({
+        predicate: ({ queryKey }) =>
+          queryKey[0] === "project" &&
+          queryKey.at(-1) === "backups" &&
+          !refetchedOnSettle(queryKey),
+      });
+  }
   if (kind === "registry") invalidate(registryKey);
   // Storage connections, and which one the registry uses.
   if (kind === "storage" || kind === "registry") invalidate(storageKey);
@@ -785,6 +796,15 @@ function invalidateForAudit(
   );
   invalidate(keys.overview(audit.project));
 }
+
+// Backup actions without a project that change what services' backups
+// say about checks (features/backups/checked.ts).
+const backupCheckActions: ReadonlySet<string> = new Set([
+  "backup.check",
+  "backup.checked",
+  "backup.check_failed",
+  "backup.configure",
+]);
 
 // Audited reads: they add to the audit log and change nothing else. The
 // data panel's reads (browse, reveal, connect) are left out by dataParts.

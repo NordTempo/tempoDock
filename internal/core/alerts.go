@@ -243,7 +243,7 @@ func (c *Core) startAlerts(ctx context.Context) error {
 	e.mu.Unlock()
 	c.reconcileAlerts(ctx, time.Now())
 	c.wg.Add(1)
-	go c.watchAlerts(sub)
+	c.goCaught("watching for alerts", func() { c.watchAlerts(sub) })
 	return nil
 }
 
@@ -266,12 +266,19 @@ func (c *Core) watchAlerts(sub *subscription) {
 				close(ev.barrier)
 				continue
 			}
-			if sub.takeLagged() {
-				c.reconcileAlerts(c.ctx, time.Now())
-			}
-			c.onAlertEvent(c.ctx, ev, time.Now())
+			c.alertEvent(sub, ev)
 		}
 	}
+}
+
+// alertEvent applies one bus event for watchAlerts. A panic on it ends
+// that event's handling, and the engine goes on with the next.
+func (c *Core) alertEvent(sub *subscription, ev LiveEvent) {
+	defer recovered(c.log, "applying an event to the alerts")
+	if sub.takeLagged() {
+		c.reconcileAlerts(c.ctx, time.Now())
+	}
+	c.onAlertEvent(c.ctx, ev, time.Now())
 }
 
 // alertsHandled returns once the engine has handled every bus event
@@ -424,7 +431,7 @@ func (c *Core) onAlertEvent(ctx context.Context, ev LiveEvent, now time.Time) {
 		}
 		id := strconv.FormatInt(s.ID, 10)
 		if ev.Message == "removed" {
-			for _, k := range []string{"disk:", "memory:", "cpu:", "update:"} {
+			for _, k := range []string{"disk:", "memory:", "cpu:", "update:", "firewall:"} {
 				c.resolveAlert(ctx, k+id, now)
 			}
 			c.alerts.mu.Lock()
@@ -579,7 +586,7 @@ func (c *Core) onServiceStatus(ctx context.Context, ev LiveEvent, svc string, st
 	switch {
 	case diagnose:
 		c.wg.Add(1)
-		go c.diagnosedAlert(sig, apitypes.DiagnosisCrashLoop)
+		c.goCaught("diagnosing a crash loop", func() { c.diagnosedAlert(sig, apitypes.DiagnosisCrashLoop) })
 	case !waiting:
 		c.raiseAlert(ctx, sig, now)
 	}
@@ -1018,7 +1025,7 @@ func alertProjectID(a store.Alert) int64 {
 func (c *Core) resolveServiceAlerts(ctx context.Context, serviceID int64, hostnames []string) {
 	now := time.Now()
 	svc := alertServiceKey(serviceID, "", "", "")
-	for _, kind := range []string{"deploy:", "backup:", "crash:", "health:", vulnAlertKey} {
+	for _, kind := range []string{"deploy:", "backup:", "backup-drill:", "crash:", "health:", vulnAlertKey} {
 		c.resolveAlertNow(ctx, kind+svc, now)
 	}
 	for _, h := range hostnames {

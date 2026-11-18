@@ -108,6 +108,7 @@ line means a later record added to it without changing what it decided.
 | [0092](0092-preview-database-copies.md) | Previews start with a copy of the base's database: empty, newest snapshot, copy, or masked (sensitive columns replaced while the base is read); forks get none unless allowed; refresh from base | accepted |
 | [0093](0093-point-in-time-restore.md) | Point-in-time restore for Postgres: WAL archived by a sidecar that holds the keys, daily base backups in restic, restores to a time into a new service or in place | accepted |
 | [0094](0094-deploying-from-github-actions.md) | Deploying from GitHub Actions: an official composite action with the server's CLI, signature checked, `--json-file` for logs with results; GitHub OIDC trust for org agents designed | accepted; OIDC not built |
+| [0096](0096-checked-backups.md) | Checked backups: a weekly `restic check` reading 1 GB of each repository and a restore drill of every template database into a throwaway service, on the backup scheduler's pass; the result on the Backups tab, an alert on failure | accepted |
 
 ## Template
 

@@ -129,6 +129,7 @@ func (c *Core) DeleteOrg(ctx context.Context, a Actor) error {
 	if err != nil {
 		return err
 	}
+	c.accessChanged(accessChange{orgID: a.OrgID, everyone: true})
 	c.audit(ctx, a.platform(), "org.delete", nil, nil, a.OrgSlug, "deleted organization "+a.OrgSlug)
 	return nil
 }
@@ -158,6 +159,7 @@ func (c *Core) LeaveOrg(ctx context.Context, a Actor) error {
 	if err != nil {
 		return err
 	}
+	c.accessChanged(accessChange{userID: a.UserID, orgID: a.OrgID})
 	c.audit(ctx, a, "org.leave", nil, nil, a.Email, a.Email+" left the organization"+invitesNote(invites))
 	return nil
 }
@@ -211,6 +213,7 @@ func (c *Core) SetMemberRole(ctx context.Context, a Actor, userID int64, req api
 	if err != nil {
 		return apitypes.User{}, err
 	}
+	c.accessChanged(accessChange{userID: u.ID, orgID: a.OrgID, changed: true})
 	c.audit(ctx, a, "org.member_role", nil, nil, u.Email, fmt.Sprintf("made %s %s", u.Email, req.Role)+invitesNote(invites))
 	return c.memberView(ctx, a.OrgID, u.ID)
 }
@@ -250,6 +253,7 @@ func (c *Core) RemoveMember(ctx context.Context, a Actor, userID int64) error {
 	if err != nil {
 		return err
 	}
+	c.accessChanged(accessChange{userID: u.ID, orgID: a.OrgID})
 	c.audit(ctx, a, "org.member_remove", nil, nil, u.Email, "removed "+u.Email+" from the organization"+invitesNote(invites))
 	return nil
 }

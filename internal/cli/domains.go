@@ -359,15 +359,28 @@ func newDomainRemoveCmd(g *globals) *cobra.Command {
 					return err
 				}
 			}
+			// Read before removing: the redirects that will be left
+			// pointing at a hostname that no longer serves.
+			domains, err := get[[]apitypes.Domain](cmd.Context(), s, t.servicePath()+"/domains")
+			if err != nil {
+				return err
+			}
+			left := redirectsTo(domains, host)
 			if err := del(cmd.Context(), s, t.servicePath()+"/domains/"+url.PathEscape(host)); err != nil {
 				return err
 			}
 			v := struct {
 				Hostname string `json:"hostname"`
 				Removed  bool   `json:"removed"`
-			}{host, true}
+				// RedirectsLeft are the service's hostnames that still
+				// redirect to the removed one.
+				RedirectsLeft []string `json:"redirects_left,omitempty"`
+			}{host, true, left}
 			return g.io.Print(v, func() error {
 				g.io.Successf("Removed %s from %s", host, t)
+				for _, from := range left {
+					g.io.Warnf("%s still redirects to %s, which no longer serves. Remove it too: `dock domain remove %s %s`", from, host, from, t.flags())
+				}
 				return nil
 			})
 		},
@@ -375,6 +388,19 @@ func newDomainRemoveCmd(g *globals) *cobra.Command {
 	f.add(cmd, needService)
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
 	return cmd
+}
+
+// redirectsTo lists the hostnames among domains that redirect to host,
+// compared the way Dock stores hostnames (lower case, no trailing dot).
+func redirectsTo(domains []apitypes.Domain, host string) []string {
+	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	var out []string
+	for _, d := range domains {
+		if d.RedirectTo == host && d.Hostname != host {
+			out = append(out, d.Hostname)
+		}
+	}
+	return out
 }
 
 // dnsWords describes how Dock routes a domain through its tunnel, for

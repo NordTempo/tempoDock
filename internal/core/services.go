@@ -451,7 +451,7 @@ func (c *Core) finishArchive(ctx context.Context, done []archivedService) (notes
 		}
 		c.wg.Add(1)
 		stopped.Add(1)
-		go func() {
+		c.goCaught("stopping an archived service", func() {
 			defer c.wg.Done()
 			defer stopped.Done()
 			ctx, ss, rel := c.ctx, as.svcScope, *as.active
@@ -463,7 +463,7 @@ func (c *Core) finishArchive(ctx context.Context, done []archivedService) (notes
 				return
 			}
 			c.releaseEvent(ctx, ss, rel, fmt.Sprintf("Stopped release %d; volumes are kept", rel.Number))
-		}()
+		})
 	}
 	return notes, stopped
 }

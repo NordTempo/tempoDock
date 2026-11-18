@@ -6,7 +6,9 @@ import "net/netip"
 // alert channels and log drains (core's egressGuard) and uptime probes
 // (internal/node/uptime). Each runs them in a dialer's Control, after
 // DNS, so a hostname can't resolve its way past them. Private, CGNAT and
-// tailnet addresses are fine: a homelab's services live there.
+// tailnet addresses are fine: a homelab's services live there. An IPv6
+// address that carries an IPv4 one (NAT64, 6to4, ...) is judged as that
+// IPv4 address (EffectiveAddr).
 
 // Cloud metadata services outside 169.254.0.0/16: AWS over IPv6, Alibaba
 // Cloud, and Azure's WireServer, which answers only from inside a VM and
@@ -21,7 +23,7 @@ var (
 // unspecified. Those reach the daemon's loopback-only services (the
 // internal listener, the registry) past the app firewall.
 func IsSelfAddr(ip netip.Addr) bool {
-	ip = ip.Unmap()
+	ip = EffectiveAddr(ip)
 	return ip.IsLoopback() || ip.IsUnspecified()
 }
 
@@ -32,7 +34,7 @@ var cgnat = netip.MustParsePrefix("100.64.0.0/10")
 // server's loopback, link-local, multicast or metadata, private (RFC
 // 1918, ULA), CGNAT or tailnet. Uptime probes dial only these (ADR 0055).
 func IsPublicAddr(ip netip.Addr) bool {
-	ip = ip.Unmap()
+	ip = EffectiveAddr(ip)
 	return !IsSelfAddr(ip) && !IsInternalAddr(ip) && !ip.IsPrivate() && !cgnat.Contains(ip) && ip.IsGlobalUnicast()
 }
 
@@ -40,14 +42,15 @@ func IsPublicAddr(ip netip.Addr) bool {
 // metadata address (169.254.169.254 is link-local): never a destination
 // for a request a user configured.
 func IsInternalAddr(ip netip.Addr) bool {
-	ip = ip.Unmap()
+	ip = EffectiveAddr(ip)
 	return ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip == awsMetadataV6 || ip == alibabaMetadata || ip == azureWireServer
 }
 
 // ClientKey is what per-client limits count a client IP as: an IPv4
-// address (IPv4-mapped IPv6 too) as itself, an IPv6 address as its /64,
-// which one subscriber usually holds whole and can pick any address in.
-// A value that isn't an IP is its own key.
+// address (IPv4-mapped IPv6 too) as itself, an IPv6 address as its /48:
+// the site prefix one subscriber is commonly assigned (a /56 or a /64 is
+// a part of one), and can pick any address in. A value that isn't an IP
+// is its own key.
 func ClientKey(ip string) string {
 	a, err := netip.ParseAddr(ip)
 	if err != nil {
@@ -56,7 +59,7 @@ func ClientKey(ip string) string {
 	if a = a.Unmap(); a.Is4() {
 		return a.String()
 	}
-	p, err := a.WithZone("").Prefix(64)
+	p, err := a.WithZone("").Prefix(48)
 	if err != nil {
 		return ip
 	}

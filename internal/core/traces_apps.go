@@ -23,8 +23,13 @@ import (
 // to Dock's endpoint, and Dock sets only what the service hasn't: one
 // that sends traces elsewhere itself (exportsElsewhere) gets nothing, and
 // metrics and logs are left alone once the service configures OTLP at
-// all. The variables change with tracing only for containers started
-// after it: the next deploy or restart of each service.
+// all. A container's variables come before its image's own (a
+// Dockerfile's ENV), which Dock doesn't read: so that an image's can't
+// turn off or redirect what Dock set up, Dock also sets the traces
+// exporter and the SDK switch to their defaults. A service that wants its
+// own says so in its variables. The variables change with tracing only
+// for containers started after it: the next deploy or restart of each
+// service.
 
 // exportsElsewhere is the variable a service set that sends its traces
 // somewhere else, or turns them off, and "" when Dock may trace it.
@@ -70,7 +75,11 @@ func (c *Core) addTracing(spec *node.ContainerSpec, ss svcScope, rel store.Relea
 	set := map[string]string{
 		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": base + traces.TracesPath,
 		"OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "http/protobuf",
-		"OTEL_SERVICE_NAME":                  ss.svc.Name,
+		// The defaults, said out loud: the service set neither
+		// (exportsElsewhere), and its image's ENV isn't its choice here.
+		"OTEL_TRACES_EXPORTER": "otlp",
+		"OTEL_SDK_DISABLED":    "false",
+		"OTEL_SERVICE_NAME":    ss.svc.Name,
 		"OTEL_RESOURCE_ATTRIBUTES": "service.namespace=" + url.QueryEscape(ss.project.Name) +
 			",deployment.environment.name=" + url.QueryEscape(ss.env.Name) + ",service.version=r" + strconv.FormatInt(rel.Number, 10),
 	}
@@ -123,12 +132,15 @@ func (c *Core) otlpPort(serverID int64) (int, bool) {
 // traced from the edge (node.Route.Trace): every service with a live
 // release (the active one, or the one override switches to) while tracing
 // is on, but those whose release sends its traces elsewhere, whose own
-// backend would get spans with a parent it never sees, and the held ones:
-// those a server forwards for another (traced there) and those a move
-// holds, which it forwards next. A held route that stops being traced at
-// the switch would change Caddy's config, and the reload fails every
-// request it holds.
-func (c *Core) edgeTraced(ctx context.Context, rows []store.ListRoutableDomainsRow, skip map[int64]bool, override map[int64]routeOverride) (map[int64]string, error) {
+// backend would get spans with a parent it never sees. A route a move
+// holds, and one a server forwards after it, is traced like any other,
+// with the token of the service's active release: a route that stopped
+// being traced when its hold starts would change Caddy's config, and the
+// reload ends the requests on idle keep-alive connections (a POST among
+// them is never retried). Only whether a route is traced is in Caddy's
+// config, not its token, so the release changing at the switch reloads
+// nothing either.
+func (c *Core) edgeTraced(ctx context.Context, rows []store.ListRoutableDomainsRow, override map[int64]routeOverride) (map[int64]string, error) {
 	out := map[int64]string{}
 	if cl, _ := c.tracesClient(); cl == nil {
 		return out, nil
@@ -141,7 +153,7 @@ func (c *Core) edgeTraced(ctx context.Context, rows []store.ListRoutableDomainsR
 	}
 	var ids []int64
 	for _, d := range rows {
-		if live(d) != 0 && !skip[d.ServiceID] {
+		if live(d) != 0 {
 			ids = append(ids, live(d))
 		}
 	}
@@ -151,7 +163,7 @@ func (c *Core) edgeTraced(ctx context.Context, rows []store.ListRoutableDomainsR
 	}
 	for _, d := range rows {
 		rel, ok := rels[live(d)]
-		if !ok || skip[d.ServiceID] || out[d.ServiceID] != "" {
+		if !ok || out[d.ServiceID] != "" {
 			continue
 		}
 		cfg, err := c.openConfig(rel)

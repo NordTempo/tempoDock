@@ -20,8 +20,10 @@ import (
 // volumes staged until the service's first deploy) and the variables.
 // Variables are live in the clone at once, so a first deploy or promote
 // sees them all. A value that is nothing but references is always copied
-// (it holds no secret). A literal value is copied only if the actor may
-// read it (admin, as for --reveal) and, when the clone's kind differs from
+// (it holds no secret), except one that references an organization
+// variable, which is copied only for an actor who may add such a
+// reference (addsOrgRefs) and skipped otherwise. A literal value is
+// copied only if the actor may read it (admin, as for --reveal) and, when the clone's kind differs from
 // from's, only with req.CopyValues (admin only), so production's secrets
 // and external database URLs never reach a non-production environment, or
 // the reverse, by default. Otherwise a template service's own variables
@@ -67,7 +69,7 @@ func (c *Core) CloneEnvironment(ctx context.Context, a Actor, from EnvRef, req a
 	out.SourceKind = apitypes.EnvironmentKind(src.env.Kind)
 	cross := out.SourceKind != kind
 	copyLiterals := a.revealsIn(src) && (!cross || req.CopyValues)
-	rules := cloneRules{literal: func(apitypes.VariableRef) bool { return copyLiterals }}
+	rules := cloneRules{literal: func(apitypes.VariableRef) bool { return copyLiterals }, noOrgRefs: !a.addsOrgRefs()}
 
 	var dst envScope
 	var left clonedLeft
@@ -226,7 +228,7 @@ func (c *Core) cloneInto(ctx context.Context, q *store.Queries, src, dst envScop
 			continue // never live: only staged
 		}
 		name := apitypes.VariableRef{Service: cl.svc.Name, Key: v.Key}
-		value, how, err := c.clonedValue(v, variableAAD(dst.env.ID, serviceID, v.Key), cl.gen, rules.literal(name), rules.orgRefsLiteral)
+		value, how, err := c.clonedValue(v, variableAAD(dst.env.ID, serviceID, v.Key), cl.gen, rules.literal(name), rules)
 		if err != nil {
 			return left, err
 		}
@@ -275,18 +277,24 @@ const (
 
 // clonedValue is the value a variable gets in a clone, sealed for where
 // the clone stores it (to): the source's, when it is nothing but
-// references (unless orgRefsLiteral and one names an org variable) or
-// copyLiteral is set; otherwise the template's new value
-// for key (gen), if it has one. A copied value is sealed again: the box
-// binds each value to its row.
-func (c *Core) clonedValue(src store.Variable, to secrets.AAD, gen map[string]string, copyLiteral, orgRefsLiteral bool) ([]byte, cloneHow, error) {
+// references (unless rules.orgRefsLiteral and one names an org variable)
+// or copyLiteral is set; otherwise the template's new value
+// for key (gen), if it has one. With rules.noOrgRefs a value that
+// references an org variable is never the source's. A copied value is
+// sealed again: the box binds each value to its row.
+func (c *Core) clonedValue(src store.Variable, to secrets.AAD, gen map[string]string, copyLiteral bool, rules cloneRules) ([]byte, cloneHow, error) {
 	plain, err := c.openValue(src.Value, variableAAD(src.EnvironmentID, src.ServiceID, src.Key), src.Key)
 	if err != nil {
 		return nil, cloneSkip, err
 	}
 	value, how := *plain, cloneCopied
+	orgRef := refersToOrg(value)
 	switch v, generated := gen[src.Key]; {
-	case onlyReferences(value) && (!orgRefsLiteral || !refersToOrg(value)):
+	case orgRef && rules.noOrgRefs && generated:
+		value, how = v, cloneGenerated
+	case orgRef && rules.noOrgRefs:
+		return nil, cloneSkip, nil
+	case onlyReferences(value) && (!rules.orgRefsLiteral || !orgRef):
 	case copyLiteral:
 		how = cloneLiteral
 	case generated:
@@ -307,6 +315,11 @@ type cloneRules struct {
 	// (${{org.KEY}}) as a literal value: it reads a secret the org holds,
 	// which a preview gets only when listed (ADR 0056).
 	orgRefsLiteral bool
+	// noOrgRefs leaves out every value that references an org variable,
+	// for a caller who may not add such a reference by hand
+	// (addsOrgRefs): the clone would hand them the org's secret in an
+	// environment where they choose what runs.
+	noOrgRefs bool
 }
 
 // refersToOrg reports whether a value references an org variable.
