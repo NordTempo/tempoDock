@@ -65,7 +65,7 @@ type Runtime struct {
 	// PidsLimit caps the processes and threads of each app container,
 	// job and sidecar (config [defaults] pids_limit), so one that forks
 	// without end runs into its own limit instead of the server's. Zero
-	// is DefaultPidsLimit; negative is no limit.
+	// is DefaultPidsLimit; negative is no limit (noPidsLimit).
 	PidsLimit int64
 
 	scan scanState
@@ -92,12 +92,20 @@ func New(pool netip.Prefix) (*Runtime, error) {
 // with a few thousand threads), far below what a server has.
 const DefaultPidsLimit = 4096
 
-// pidsLimit is HostConfig's PidsLimit for the containers r starts: nil
-// is no limit.
+// noPidsLimit is what "no limit" asks Docker for: the most the kernel
+// counts (PID_MAX_LIMIT). Leaving the limit out is not the same: Docker
+// then sets none, and systemd gives the container's scope its own
+// default, DefaultTasksMax, 15% of the server's thread limit (which
+// grows with its memory): a small server's "no limit" would be near the
+// default it was meant to lift.
+const noPidsLimit = 4194304
+
+// pidsLimit is HostConfig's PidsLimit for the containers r starts. It is
+// always set, for no limit to noPidsLimit.
 func (r *Runtime) pidsLimit() *int64 {
 	switch {
 	case r.PidsLimit < 0:
-		return nil
+		return new(int64(noPidsLimit))
 	case r.PidsLimit == 0:
 		return new(int64(DefaultPidsLimit))
 	}

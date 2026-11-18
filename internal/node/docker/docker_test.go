@@ -463,12 +463,13 @@ func TestJobOptionsNetwork(t *testing.T) {
 }
 
 // Containers get the default limit on processes unless the config sets
-// another or turns it off.
+// another or turns it off. Off is still a number: left out, systemd caps
+// the container at its own default.
 func TestPidsLimit(t *testing.T) {
-	for set, want := range map[int64]int64{0: DefaultPidsLimit, 512: 512, -1: 0} {
+	for set, want := range map[int64]int64{0: DefaultPidsLimit, 512: 512, -1: noPidsLimit} {
 		got := (&Runtime{PidsLimit: set}).pidsLimit()
-		if (want == 0) != (got == nil) || (got != nil && *got != want) {
-			t.Errorf("PidsLimit %d: got %v, want %d (0 is none)", set, got, want)
+		if got == nil || *got != want {
+			t.Errorf("PidsLimit %d: got %v, want %d", set, got, want)
 		}
 	}
 }
