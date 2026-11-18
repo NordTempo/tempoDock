@@ -230,8 +230,6 @@ function SetHeartbeat({
             </span>
           </span>
           <input
-            // biome-ignore lint/a11y/noAutofocus: the form opens on request
-            autoFocus
             autoComplete="off"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
