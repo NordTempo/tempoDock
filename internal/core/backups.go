@@ -604,10 +604,10 @@ func (c *Core) RunBackup(ctx context.Context, a Actor, ref ServiceRef) (apitypes
 	}
 	c.audit(ctx, a, "backup.run", &ss.project, &ss.env, ss.String(), fmt.Sprintf("started backup %d", row.ID))
 	c.wg.Add(1)
-	go func() {
+	c.goCaught("running a backup", func() {
 		defer c.wg.Done()
 		c.runBackup(c.ctx, ss, row)
-	}()
+	})
 	return toBackupRun(row, ss.svc.Name, nil), nil
 }
 

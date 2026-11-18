@@ -264,7 +264,7 @@ func (c *Core) removeNetworks(ctx context.Context, p store.Project, envs []store
 		return notes
 	}
 	c.wg.Add(1)
-	go func() {
+	c.goCaught("removing an archived project's networks", func() {
 		defer c.wg.Done()
 		stopped.Wait()
 		for _, es := range online {
@@ -278,7 +278,7 @@ func (c *Core) removeNetworks(ctx context.Context, p store.Project, envs []store
 				c.log.Warn("remove the network of an archived environment", "network", name, "server", es.env.ServerID, "err", err)
 			}
 		}
-	}()
+	})
 	return notes
 }
 
@@ -385,7 +385,7 @@ func (c *Core) GetEnvironment(ctx context.Context, a Actor, ref EnvRef) (apitype
 	}
 	out := c.toEnvironment(a, es.project, es.env, srv)
 	if pv, err := c.store.GetPreviewByEnvironment(ctx, es.env.ID); err == nil {
-		out.Preview = &apitypes.PullRequestRef{Repo: pv.Repo, Number: pv.Number, Title: pv.Title, Author: pv.Author, URL: pv.HtmlUrl}
+		out.Preview = &apitypes.PullRequestRef{Repo: pv.Repo, Number: pv.Number, Title: pv.Title, Author: pv.Author, URL: pullURL(pv.Repo, pv.Number)}
 	} else if !store.IsNotFound(err) {
 		return out, err
 	}

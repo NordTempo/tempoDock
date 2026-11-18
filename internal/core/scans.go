@@ -120,7 +120,7 @@ func (c *Core) kickScans() {
 	case s.enabled && c.ctx != nil && c.ctx.Err() == nil:
 		s.running = true
 		c.wg.Add(1)
-		go c.runScans()
+		c.goCaught("scanning images", func() { c.runScans() })
 	}
 }
 
@@ -210,7 +210,9 @@ func (c *Core) runScans() {
 	for {
 		wait := c.scanWait()
 		if wait == 0 {
-			more, retry := c.scanPass()
+			// A panic in a pass ends that pass: the next comes in a minute.
+			more, retry := false, now().Add(time.Minute)
+			c.safely("a pass of the image scanner", func() { more, retry = c.scanPass() })
 			if c.ctx.Err() != nil {
 				return
 			}

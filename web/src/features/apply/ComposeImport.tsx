@@ -108,6 +108,7 @@ export default function ComposeImport({
             }
             rows={8}
             spellCheck={false}
+            autoComplete="off"
             className="field w-full resize-y font-mono text-xs"
           />
         </Field>
@@ -128,6 +129,7 @@ export default function ComposeImport({
             placeholder="optional, for ${VAR} in the Compose file"
             rows={2}
             spellCheck={false}
+            autoComplete="off"
             className="field w-full resize-y font-mono text-xs"
           />
         </Field>

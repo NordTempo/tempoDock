@@ -6963,6 +6963,8 @@ export interface components {
         };
         AccessGrantRequest: {
             hostname: string;
+            /** @description The n parameter the service's server sent along; the grant then works only in the browser it came from */
+            nonce?: string;
             to?: string;
         };
         AccessModel: {
@@ -10327,7 +10329,7 @@ export interface components {
              * @description Pull request number
              */
             number: number;
-            /** @description The pull request on GitHub */
+            /** @description The pull request on GitHub: https://github.com/<repo>/pull/<number> */
             pull_url: string;
             /** @description owner/name */
             repo: string;
@@ -10537,7 +10539,7 @@ export interface components {
             /** @description owner/name */
             repo: string;
             title: string;
-            /** @description The pull request on GitHub */
+            /** @description The pull request on GitHub: https://github.com/<repo>/pull/<number> */
             url: string;
         };
         RecoveryCodes: {

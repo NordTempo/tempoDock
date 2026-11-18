@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"testing"
 	"time"
 
@@ -37,10 +38,30 @@ func TestAccessHandler(t *testing.T) {
 	}
 	nav := http.Header{"Sec-Fetch-Mode": {"navigate"}}
 
-	// A page load without a session goes to Dock, keeping the path.
+	// A page load without a session goes to Dock, keeping the path, with
+	// a nonce left in the browser and its hash sent along.
 	w := serve(checkRequest(key, "GET", "/orders?id=7", nav))
-	if w.Code != http.StatusFound || w.Header().Get("Location") != "https://dock.example.com/access?host=app.example.com&to=%2Forders%3Fid%3D7" {
-		t.Fatalf("page load: %d %q", w.Code, w.Header().Get("Location"))
+	left := w.Result().Cookies()
+	if w.Code != http.StatusFound || len(left) != 1 {
+		t.Fatalf("page load: %d %v", w.Code, left)
+	}
+	nonce := left[0]
+	if nonce.Name != access.SecureNonceCookie || !access.ValidNonce(nonce.Value) || !nonce.HttpOnly || !nonce.Secure || nonce.Path != "/" || nonce.Domain != "" || nonce.SameSite != http.SameSiteLaxMode {
+		t.Fatalf("nonce cookie = %+v", nonce)
+	}
+	if got, want := w.Header().Get("Location"), "https://dock.example.com/access?host=app.example.com&n="+access.NonceHash(nonce.Value)+"&to=%2Forders%3Fid%3D7"; got != want {
+		t.Fatalf("page load goes to %q, want %q", got, want)
+	}
+	browser := http.Header{"Sec-Fetch-Mode": {"navigate"}, "Cookie": {nonce.Name + "=" + nonce.Value}}
+	// A second tab keeps the nonce the first one got.
+	if again := serve(checkRequest(key, "GET", "/", browser)).Result().Cookies(); len(again) != 1 || again[0].Value != nonce.Value {
+		t.Fatalf("second page load: %v", again)
+	}
+	// Each grant differs (by its expiry), as each is traded once.
+	grants := 0
+	bound := func() string {
+		grants++
+		return access.SignBound(key, "app.example.com", access.NonceHash(nonce.Value), "ada@example.com", time.Now().Add(access.GrantTTL-time.Duration(grants)*time.Second))
 	}
 	// A script's request or a POST can't follow that: 401.
 	for _, r := range []*http.Request{
@@ -54,12 +75,31 @@ func TestAccessHandler(t *testing.T) {
 	}
 
 	// The callback trades a grant for a session cookie and goes on.
-	grant := access.Sign(key, access.Grant, "app.example.com", "ada@example.com", time.Now().Add(access.GrantTTL))
+	grant := bound()
 	callback := access.CallbackPath + "?" + url.Values{"grant": {grant}, "to": {"/orders?id=7"}}.Encode()
-	w = serve(checkRequest(key, "GET", callback, nav))
+	// Not without the nonce the grant was made for, or with another
+	// browser's: neither spends the grant.
+	other := http.Header{"Sec-Fetch-Mode": {"navigate"}, "Cookie": {access.SecureNonceCookie + "=" + access.NewNonce()}}
+	for name, h := range map[string]http.Header{"no nonce": nav, "another browser's nonce": other} {
+		if w := serve(checkRequest(key, "GET", callback, h)); w.Code != http.StatusForbidden || len(w.Result().Cookies()) != 0 {
+			t.Fatalf("%s: %d %v, want 403 and no cookie", name, w.Code, w.Result().Cookies())
+		}
+	}
+	w = serve(checkRequest(key, "GET", callback, browser))
 	cookies := w.Result().Cookies()
-	if w.Code != http.StatusFound || w.Header().Get("Location") != "/orders?id=7" || len(cookies) != 1 {
+	if w.Code != http.StatusFound || w.Header().Get("Location") != "/orders?id=7" || len(cookies) != 2 {
 		t.Fatalf("callback: %d %q %v", w.Code, w.Header().Get("Location"), cookies)
+	}
+	// The nonce is dropped with the sign-in, and the grant works once.
+	if c := cookies[1]; c.Name != access.SecureNonceCookie || c.MaxAge >= 0 {
+		t.Errorf("nonce after sign-in = %+v", c)
+	}
+	if w := serve(checkRequest(key, "GET", callback, browser)); w.Code != http.StatusForbidden || len(w.Result().Cookies()) != 0 {
+		t.Fatalf("second trade: %d %v, want 403 and no cookie", w.Code, w.Result().Cookies())
+	}
+	// The browser that is signed in by now (a second tab) just goes on.
+	if w := serve(checkRequest(key, "GET", callback, http.Header{"Cookie": {cookies[0].Name + "=" + cookies[0].Value}})); w.Code != http.StatusFound || w.Header().Get("Location") != "/orders?id=7" || len(w.Result().Cookies()) != 0 {
+		t.Fatalf("signed-in browser at the callback: %d %q", w.Code, w.Header().Get("Location"))
 	}
 	if c := cookies[0]; c.Name != accessCookie || !c.HttpOnly || !c.Secure || c.SameSite != http.SameSiteLaxMode {
 		t.Errorf("cookie = %+v", c)
@@ -76,19 +116,21 @@ func TestAccessHandler(t *testing.T) {
 	}
 
 	// A session cookie is no grant, a grant from another key is refused,
-	// and the callback never redirects off the hostname.
+	// so is one that names no browser, and the callback never redirects
+	// off the hostname.
 	session := access.Sign(key, access.Session, "app.example.com", "ada@example.com", time.Now().Add(time.Hour))
 	for name, grant := range map[string]string{
 		"session as grant": session,
-		"other key":        access.Sign(access.NewKey(), access.Grant, "app.example.com", "eve", time.Now().Add(time.Minute)),
+		"other key":        access.SignBound(access.NewKey(), "app.example.com", access.NonceHash(nonce.Value), "eve", time.Now().Add(time.Minute)),
+		"unbound grant":    access.Sign(key, access.Grant, "app.example.com", "ada@example.com", time.Now().Add(access.GrantTTL)),
 	} {
-		if w := serve(checkRequest(key, "GET", access.CallbackPath+"?grant="+url.QueryEscape(grant), nav)); w.Code != http.StatusForbidden {
+		if w := serve(checkRequest(key, "GET", access.CallbackPath+"?grant="+url.QueryEscape(grant), browser)); w.Code != http.StatusForbidden {
 			t.Errorf("%s: %d, want 403", name, w.Code)
 		}
 	}
 	for _, to := range []string{"https://evil.example", "//evil.example/", "/\\evil.example", "/\t/evil.example", "/\n/evil.example", ""} {
-		cb := access.CallbackPath + "?" + url.Values{"grant": {grant}, "to": {to}}.Encode()
-		if w := serve(checkRequest(key, "GET", cb, nav)); w.Header().Get("Location") != "/" {
+		cb := access.CallbackPath + "?" + url.Values{"grant": {bound()}, "to": {to}}.Encode()
+		if w := serve(checkRequest(key, "GET", cb, browser)); w.Header().Get("Location") != "/" {
 			t.Errorf("to %q: redirected to %q", to, w.Header().Get("Location"))
 		}
 	}
@@ -145,16 +187,40 @@ func TestAccessHandlerPassesOnlyTheProbeOnAPasswordRoute(t *testing.T) {
 		t.Fatalf("probe: %d %q", w.Code, w.Header().Get(access.UserHeader))
 	}
 	visitor := accessCookie + "=" + access.Sign(key, access.Session, "app.example.com", "ada@example.com", now.Add(access.SessionTTL))
-	grant := access.Sign(key, access.Grant, "app.example.com", access.ProbeUser, now.Add(access.GrantTTL))
+	nonce := access.NewNonce()
+	grant := access.SignBound(key, "app.example.com", access.NonceHash(nonce), access.ProbeUser, now.Add(access.GrantTTL))
 	for name, w := range map[string]*httptest.ResponseRecorder{
 		"a visitor's session":          serve("/", http.Header{"Cookie": {visitor}}),
 		"another hostname's probe":     serve("/", http.Header{"Cookie": {access.ProbeCookie(key, "other.example.com", now)}}),
 		"another key's probe":          serve("/", http.Header{"Cookie": {access.ProbeCookie(access.NewKey(), "app.example.com", now)}}),
-		"a grant at the callback":      serve(access.CallbackPath+"?grant="+grant, http.Header{"Sec-Fetch-Mode": {"navigate"}}),
+		"a grant at the callback":      serve(access.CallbackPath+"?grant="+grant, http.Header{"Sec-Fetch-Mode": {"navigate"}, "Cookie": {access.SecureNonceCookie + "=" + nonce}}),
 		"a page load without a cookie": serve("/", http.Header{"Sec-Fetch-Mode": {"navigate"}}),
 	} {
 		if w.Code != http.StatusUnauthorized || len(w.Result().Cookies()) != 0 {
 			t.Errorf("%s: %d, want 401 and no cookie", name, w.Code)
 		}
+	}
+}
+
+// The set of traded grants drops expired ones as it grows and refuses new
+// ones at its cap, so it never holds more than maxSpentGrants.
+func TestSpentGrantsStayBounded(t *testing.T) {
+	var s spentGrants
+	token := func(i int) string { return "grant-" + strconv.Itoa(i) }
+	// Grants that expire at 100, traded at 50: all kept, each works once.
+	for i := range maxSpentGrants {
+		if got := s.spend(token(i), 100, 50); got != grantFresh {
+			t.Fatalf("grant %d: %d", i, got)
+		}
+	}
+	if got := s.spend(token(0), 100, 50); got != grantUsed {
+		t.Fatalf("second trade: %d", got)
+	}
+	if got := s.spend("one more", 100, 50); got != grantsFull || len(s.until) != maxSpentGrants {
+		t.Fatalf("at the cap: %d, %d kept", got, len(s.until))
+	}
+	// Once they have expired, a new one sweeps them out.
+	if got := s.spend("later", 200, 100); got != grantFresh || len(s.until) != 1 {
+		t.Fatalf("after expiry: %d, %d kept", got, len(s.until))
 	}
 }

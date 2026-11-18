@@ -154,7 +154,7 @@ func (c *Core) kickEmail() {
 	case c.ctx.Err() == nil:
 		c.email.sending = true
 		c.wg.Add(1)
-		go c.sendEmails()
+		c.goCaught("sending email", func() { c.sendEmails() })
 	}
 }
 
@@ -165,7 +165,8 @@ func (c *Core) sendEmails() {
 	timer := time.NewTimer(time.Hour)
 	timer.Stop()
 	for {
-		next, err := c.emailPass(c.ctx)
+		// A panic in a pass is that pass's error: the next comes in a minute.
+		next, err := caught(c.log, "a pass of the email sender", func() (time.Time, error) { return c.emailPass(c.ctx) })
 		if c.ctx.Err() != nil {
 			return
 		}

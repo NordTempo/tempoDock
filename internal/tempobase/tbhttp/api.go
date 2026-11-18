@@ -76,7 +76,10 @@ func newAPI(mux *http.ServeMux, s *server) huma.API {
 	cfg := huma.DefaultConfig("tempoBase", version.Version)
 	cfg.Info.Description = "The tempoBase API: a self-hosted Postgres viewer with safe editing. The web UI is a thin client of it."
 	cfg.OpenAPIPath = Prefix + "/openapi"
-	cfg.DocsPath = Prefix + "/docs"
+	// No docs page: Huma's loads its script from a CDN, and tempoBase
+	// serves nothing that makes a browser fetch from another site. The
+	// spec itself is served, for any viewer pointed at it.
+	cfg.DocsPath = ""
 	cfg.SchemasPath = Prefix + "/schemas"
 	// No `$schema` field in response bodies: the contract stays exactly the
 	// types' fields.

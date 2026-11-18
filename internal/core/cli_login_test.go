@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -371,5 +373,41 @@ func TestCLILoginWaitersAreBounded(t *testing.T) {
 	defer stop()
 	if _, err := h.c.WaitCLILogin(short, s.DeviceCode); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("a waiter after the others left: %v", err)
+	}
+}
+
+// At most maxPendingCLILogins logins wait for approval. Past that a new
+// one is refused, to try again later, and none of the waiting ones is
+// dropped for it; expired ones don't count.
+func TestCLILoginPendingCapRefusesNewOnes(t *testing.T) {
+	h := newHarness(t)
+	start := func(ip string) (apitypes.CLILoginStart, error) {
+		return h.c.StartCLILogin(h.ctx, apitypes.CLILoginStartRequest{ClientName: "dock CLI", Hostname: "laptop"}, ip)
+	}
+	first, err := start("192.0.2.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i < maxPendingCLILogins; i++ {
+		if _, err := start(fmt.Sprintf("198.51.%d.%d", i/200, i%200)); err != nil {
+			t.Fatalf("start %d: %v", i, err)
+		}
+	}
+	if _, err := start("203.0.113.9"); CodeOf(err) != apitypes.CodeRateLimited || !strings.Contains(err.Error(), "try again in a few minutes") {
+		t.Fatalf("a login past the cap: %v", err)
+	}
+	if _, err := h.store.GetCLILoginByDeviceHash(h.ctx, hashSecret(first.DeviceCode)); err != nil {
+		t.Fatalf("the oldest waiting login: %v", err)
+	}
+	if n, err := h.store.CountPendingCLILogins(h.ctx, now()); err != nil || n != maxPendingCLILogins {
+		t.Fatalf("%d pending, %v; want %d", n, err, maxPendingCLILogins)
+	}
+
+	// Ten of them expire: there is room again.
+	if _, err := h.store.DB.ExecContext(h.ctx, "UPDATE cli_logins SET expires_at = ? WHERE id IN (SELECT id FROM cli_logins ORDER BY id DESC LIMIT 10)", now().Add(-time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := start("203.0.113.9"); err != nil {
+		t.Fatalf("a login after others expired: %v", err)
 	}
 }

@@ -60,7 +60,11 @@ func (c *Core) runCloudflare() {
 	defer c.wg.Done()
 	var timer *time.Timer
 	for {
-		next := c.cloudflarePass(c.ctx)
+		// A panic in a pass ends that pass: the next comes in a minute.
+		next, err := caught(c.log, "a pass of the Cloudflare worker", func() (time.Time, error) { return c.cloudflarePass(c.ctx), nil })
+		if err != nil {
+			next = time.Now().Add(time.Minute)
+		}
 		if timer != nil {
 			timer.Stop()
 		}
@@ -353,7 +357,7 @@ func (c *Core) tunnelReady(ctx context.Context, srv store.Server, rowID int64, t
 		return
 	}
 	c.wg.Add(1)
-	go func() {
+	c.goCaught("running a Cloudflare tunnel", func() {
 		defer c.wg.Done()
 		ctx, cancel := context.WithTimeout(c.ctx, ensureTunnelTimeout)
 		defer cancel()
@@ -368,7 +372,7 @@ func (c *Core) tunnelReady(ctx context.Context, srv store.Server, rowID int64, t
 			c.log.Error("save a tunnel's reason", "server", srv.Name, "err", err)
 		}
 		c.publishServer(c.ctx, srv.ID)
-	}()
+	})
 }
 
 // deleteTunnel deletes the tunnel of a server that went, unless Dock

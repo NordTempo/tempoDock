@@ -51,8 +51,9 @@ dock group add Triage claude-shop-staging --agent           # what Triage gives
 dock grant revoke 42                                        # end a grant
 ```
 
-They decide while the platform's permission model does (`dock platform
-access-model enforce`); until then its scope and limit do.
+They decide while the platform's permission model does: from the start
+on a new install, and after `dock platform access-model enforce` on one
+from before the model; until then its scope and limit do.
 
 ### The organization's agent rules
 
@@ -299,8 +300,9 @@ dock agent set logs=view --agent 42                   # narrow one agent only
   only you decide, in the Inbox: `setting variables in shop/production
   waits for ada@example.com's approval as access request #12`. Approved,
   it runs as the agent.
-- This applies while the platform's permission model decides
-  (`dock platform access-model enforce`); until then your role does.
+- This applies while the platform's permission model decides (a new
+  install's does; an older one after `dock platform access-model
+  enforce`); until then your role does.
 
 ## What a `deploy` token can and can't do
 

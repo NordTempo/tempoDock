@@ -252,6 +252,12 @@ function RoleEditor({
             </label>
           ))}
         </div>
+        {[...holds].some((p) => p.startsWith("data.")) && (
+          <p className="text-mut">
+            Data panel levels don't decide data access yet. The data policy
+            does: Settings › Data access, or dock db policy.
+          </p>
+        )}
         <p className="text-mut">
           Holds {holds.size} permissions
           {role &&

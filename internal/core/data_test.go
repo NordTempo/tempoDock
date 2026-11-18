@@ -936,3 +936,49 @@ func TestAgentDataCapTakesManageAway(t *testing.T) {
 		t.Errorf("an admin token under no rule: %+v, %v", free, err)
 	}
 }
+
+// A token's creator is the user it records by ID. Once they are no
+// longer a member of the org the token gets no data access, and whoever
+// holds the creator's email later doesn't stand in for them.
+func TestTokenDataFollowsItsCreatorByID(t *testing.T) {
+	h := newHarness(t)
+	h.service("db", apitypes.CreateServiceRequest{Image: "postgres:17"})
+	admin := h.user("admin@x", apitypes.ScopeAdmin)
+	lead := h.user("lead@x", apitypes.ScopeAdmin)
+	dev := h.user("dev@x", apitypes.ScopeDeploy)
+	if _, err := h.c.CreateEnvironment(h.ctx, testSystem, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
+		t.Fatal(err)
+	}
+	es, _ := h.c.loadEnv(h.ctx, 1, EnvRef{"shop", "staging"})
+	read := apitypes.DataTokenAccess{Production: apitypes.LevelNone, NonProduction: apitypes.LevelRead, Sensitive: apitypes.SensitiveMasked}
+
+	bot := h.token(lead, apitypes.CreateTokenRequest{Name: "bot", Scope: apitypes.ScopeDeploy, Data: &read})
+	if perm, err := h.c.dataPermission(h.ctx, bot, es); err != nil || perm.Level != apitypes.LevelRead {
+		t.Fatalf("an admin's token: %+v %v", perm, err)
+	}
+	if err := h.c.RemoveMember(h.ctx, admin, lead.UserID); err != nil {
+		t.Fatal(err)
+	}
+	perm, err := h.c.dataPermission(h.ctx, bot, es)
+	if err != nil || perm.Level != apitypes.LevelNone || perm.Sensitive != apitypes.SensitiveMasked {
+		t.Fatalf("its creator left the org: %+v %v", perm, err)
+	}
+	if last := perm.Why[len(perm.Why)-1]; last.Source != apitypes.PermissionCap || !strings.Contains(last.Detail, "lead@x is no longer a member") {
+		t.Fatalf("the explanation doesn't say why: %+v", last)
+	}
+
+	// dev's token, then dev is lowered to read and an admin takes over
+	// the email address the token was created under.
+	devBot := h.token(dev, apitypes.CreateTokenRequest{Name: "dev-bot", Scope: apitypes.ScopeDeploy, Data: &read})
+	if _, err := h.c.SetMemberRole(h.ctx, admin, dev.UserID, apitypes.SetMemberRoleRequest{Role: apitypes.ScopeRead}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.store.DB.ExecContext(h.ctx, "UPDATE users SET email = 'was-dev@x' WHERE id = ?", dev.UserID); err != nil {
+		t.Fatal(err)
+	}
+	h.user("dev@x", apitypes.ScopeAdmin)
+	perm, err = h.c.dataPermission(h.ctx, devBot, es)
+	if err != nil || perm.Level != apitypes.LevelNone || perm.Why[len(perm.Why)-1].Source != apitypes.PermissionCap {
+		t.Fatalf("capped by its creator's read role, not by who holds the email: %+v %v", perm, err)
+	}
+}

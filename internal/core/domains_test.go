@@ -331,3 +331,26 @@ func TestGeneratedDomainNamesTheWildcard(t *testing.T) {
 		t.Fatalf("generated domain: %v %+v", err, ds)
 	}
 }
+
+// The names the platform keeps under a base domain can't be taken for a
+// service by an organization's members; other names there, the same name
+// under their own domain, and operators are unaffected.
+func TestReservedNamesUnderTheBaseDomain(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	alice := h.in(h.member("alice@x", map[string]apitypes.Scope{"test": apitypes.ScopeDeploy}), "test")
+	for _, name := range []string{"registry", "console", "dock", "api", "www", "mail", "mta-sts", "autodiscover", "ns1", "wpad", "status", "admin"} {
+		_, err := h.c.AddDomain(h.ctx, alice, web, apitypes.AddDomainRequest{Hostname: name + ".apps.test"})
+		if CodeOf(err) != apitypes.CodeHostnameTaken || !strings.Contains(err.Error(), "pick another name") {
+			t.Errorf("%s.apps.test: %v, want hostname_taken saying to pick another name", name, err)
+		}
+	}
+	for _, host := range []string{"shop.apps.test", "www.shop.apps.test", "www.example.com"} {
+		if _, err := h.c.AddDomain(h.ctx, alice, web, apitypes.AddDomainRequest{Hostname: host}); err != nil {
+			t.Errorf("%s: %v", host, err)
+		}
+	}
+	if _, err := h.c.AddDomain(h.ctx, testSystem, web, apitypes.AddDomainRequest{Hostname: "www.apps.test"}); err != nil {
+		t.Errorf("an operator adding www.apps.test: %v", err)
+	}
+}

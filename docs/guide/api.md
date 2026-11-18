@@ -6,7 +6,6 @@ daemon's `listen` address. Anything they do, you can do with `curl`.
 | Path | What |
 |---|---|
 | `/api/v1/openapi.json`, `/api/v1/openapi.yaml` | OpenAPI 3.1 spec (`openapi-3.0.json` / `.yaml` for older tools) |
-| `/api/v1/docs` | Interactive docs |
 | `/api/v1/schemas/{Name}.json` | JSON Schema of one request or response body |
 | `/api/v1/health`, `/api/v1/version` | Daemon health and version |
 
@@ -16,7 +15,9 @@ endpoint for agents (JSON-RPC, not in the spec; see
 `dock connect` connection: an HTTP/1.1 upgrade to `dock-tunnel` with a
 bearer token, then raw bytes ([ADR 0023](../decisions/0023-connect-tunnels.md)).
 
-The spec is also printed offline by `dock openapi` (hidden command).
+The spec is also printed offline by `dock openapi` (hidden command). The
+daemon serves no docs page of its own: point an OpenAPI viewer at the
+spec.
 
 ## Auth
 

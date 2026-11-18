@@ -119,7 +119,8 @@ func (c *Core) scheduleBackups() {
 	timer := time.NewTimer(time.Hour)
 	timer.Stop()
 	for {
-		next, err := c.backupPass(c.ctx)
+		// A panic in a pass is that pass's error: the next comes after backupRetry.
+		next, err := caught(c.log, "a pass of the backup scheduler", func() (time.Time, error) { return c.backupPass(c.ctx) })
 		if c.ctx.Err() != nil {
 			return
 		}

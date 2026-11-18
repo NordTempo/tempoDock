@@ -103,10 +103,8 @@ func checkNewPassword(p string) error {
 // hashPassword hashes a new password, sharing the bcrypt slots login
 // attempts use so sign-ups can't starve them.
 func (c *Core) hashPassword(ctx context.Context, password string) (string, error) {
-	select {
-	case c.bcryptSem <- struct{}{}:
-	case <-ctx.Done():
-		return "", ctx.Err()
+	if err := c.bcryptSlot(ctx); err != nil {
+		return "", err
 	}
 	defer func() { <-c.bcryptSem }()
 	h, err := bcrypt.GenerateFromPassword([]byte(password), c.passwordCost)

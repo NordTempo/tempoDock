@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -83,6 +84,8 @@ func TestOneWebhooksDeliveriesHoldUpNoOthers(t *testing.T) {
 		pr, pw := io.Pipe()
 		slow = append(slow, pw)
 		req, _ := http.NewRequest(http.MethodPost, hooks.URL+"/hooks/github/"+path.Base(mine.Connection.WebhookURL), pr)
+		// Shaped like a signature: one that isn't is refused unread.
+		req.Header.Set("X-Hub-Signature-256", "sha256="+strings.Repeat("0", 64))
 		go func() {
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {

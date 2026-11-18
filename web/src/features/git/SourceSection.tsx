@@ -820,7 +820,7 @@ function TokenEdit({
       <input
         type="password"
         aria-label="GitHub token"
-        autoComplete="off"
+        autoComplete="new-password"
         ref={autofocus}
         value={token}
         placeholder={
@@ -1378,7 +1378,7 @@ function ConnectForm({
           <input
             type="password"
             aria-label="GitHub token"
-            autoComplete="off"
+            autoComplete="new-password"
             value={token}
             placeholder="for a private repository: fine-grained, Contents read"
             onChange={(e) => setToken(e.target.value)}

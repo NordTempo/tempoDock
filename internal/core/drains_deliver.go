@@ -419,7 +419,7 @@ func (c *Core) followContainer(serverID, envID int64, id string, releaseID int64
 	m.perServer[serverID]++
 	c.wg.Add(1)
 	m.mu.Unlock()
-	go c.follow(f, id, releaseID, since, row, labels)
+	c.goCaught("following a container's logs", func() { c.follow(f, id, releaseID, since, row, labels) })
 }
 
 // follow reads a container's output for errors and copies it, masked,
@@ -526,7 +526,7 @@ func (c *Core) enqueue(d *drain, r drainRecord) {
 		// The caller is a follower, counted in c.wg, so Close can't be
 		// past its Wait.
 		c.wg.Add(1)
-		go c.sendDrain(d)
+		c.goCaught("delivering to a log drain", func() { c.sendDrain(d) })
 	case full:
 		select {
 		case d.kick <- struct{}{}:
@@ -562,11 +562,19 @@ func (c *Core) sendDrain(d *drain) {
 		clear(d.queue[rest:])
 		d.queue, d.queued = d.queue[:rest], d.queued-size
 		d.mu.Unlock()
-		if !c.deliverBatch(d, batch, &buf) {
+		if !c.deliverCaught(d, batch, &buf) {
 			return
 		}
 		clear(batch)
 	}
+}
+
+// deliverCaught is deliverBatch for sendDrain: a panic on a batch drops
+// that batch, and the sender goes on with the next.
+func (c *Core) deliverCaught(d *drain, batch []drainRecord, buf *bytes.Buffer) (more bool) {
+	more = true
+	defer recovered(c.log, "delivering to a log drain")
+	return c.deliverBatch(d, batch, buf)
 }
 
 // waitBatch waits until the queue holds a full batch or drainBatchWait

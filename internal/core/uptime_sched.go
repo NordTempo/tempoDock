@@ -232,7 +232,7 @@ func (c *Core) startProbe(e *uptimeEntry, servers []store.Server) {
 	u.mu.Unlock()
 	srv := c.uptimeProber(servers, chk.ID, chk.ServerID, e.access != "")
 	c.wg.Add(1)
-	go c.runProbe(e, srv)
+	c.goCaught("probing an uptime check", func() { c.runProbe(e, srv) })
 }
 
 // probeCookie is the session a probe of e's check carries through its

@@ -89,13 +89,14 @@ func (c *Core) refreshPreview(id int64) {
 	r := &previewRefresh{}
 	c.previews.refreshing[id] = r
 	c.wg.Add(1)
-	go func() {
+	c.goCaught("refreshing a preview", func() {
 		defer c.wg.Done()
 		for {
 			c.previews.refreshMu.Lock()
 			r.again = false
 			c.previews.refreshMu.Unlock()
-			c.syncPreview(id)
+			// A panic ends this refresh; one asked for meanwhile still runs.
+			c.safely("refreshing a preview", func() { c.syncPreview(id) })
 			c.previews.refreshMu.Lock()
 			if r.again && c.ctx.Err() == nil {
 				c.previews.refreshMu.Unlock()
@@ -105,7 +106,7 @@ func (c *Core) refreshPreview(id int64) {
 			c.previews.refreshMu.Unlock()
 			return
 		}
-	}()
+	})
 }
 
 // syncPreview posts a preview's commit status, if it changed, and writes
@@ -309,7 +310,7 @@ func (c *Core) postPreviewStatus(base envScope, conn store.GitConnection, sha, s
 		return
 	}
 	c.wg.Add(1)
-	go func() {
+	c.goCaught("posting a preview's status", func() {
 		defer c.wg.Done()
 		ctx, cancel := context.WithTimeout(c.ctx, githubCallTimeout)
 		defer cancel()
@@ -320,7 +321,7 @@ func (c *Core) postPreviewStatus(base envScope, conn store.GitConnection, sha, s
 		if err != nil {
 			c.log.Warn("post preview status", "project", base.project.Name, "commit", shortSHA(sha), "err", err)
 		}
-	}()
+	})
 }
 
 // previewTell is an open preview of a project being deleted, with what

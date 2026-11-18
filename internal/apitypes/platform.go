@@ -42,8 +42,8 @@ type SplitTokenResult struct {
 type AccessModelMode string
 
 // Permission model modes: in shadow, roles decide and the model watches
-// beside them (the default until an operator switches); in enforce,
-// groups and grants decide.
+// beside them (an install from before the model, until its operator
+// switches); in enforce, groups and grants decide (a new install).
 const (
 	AccessModelShadow  AccessModelMode = "shadow"
 	AccessModelEnforce AccessModelMode = "enforce"

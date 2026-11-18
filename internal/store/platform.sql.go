@@ -15,7 +15,8 @@ SELECT access_model FROM platform_settings WHERE id = 1
 `
 
 // Whether the permission model decides (ADR 0080); no row until a
-// platform setting was first changed, which means shadow.
+// platform setting was first changed, which means shadow on an install
+// that has users (InitAccessModel).
 func (q *Queries) GetAccessModel(ctx context.Context) (string, error) {
 	row := q.db.QueryRowContext(ctx, getAccessModel)
 	var access_model string
@@ -33,6 +34,24 @@ func (q *Queries) GetPublicHost(ctx context.Context) (string, error) {
 	var public_host string
 	err := row.Scan(&public_host)
 	return public_host, err
+}
+
+const initAccessModel = `-- name: InitAccessModel :execrows
+INSERT INTO platform_settings (id, access_model, updated_by, updated_at)
+SELECT 1, 'enforce', 'system', ?1 WHERE NOT EXISTS (SELECT 1 FROM users)
+ON CONFLICT (id) DO NOTHING
+`
+
+// InitAccessModel makes a new install enforce: it writes the mode only
+// when no platform setting was ever written and nobody has an account
+// yet, so an install from before the model keeps shadow until its
+// operator switches.
+func (q *Queries) InitAccessModel(ctx context.Context, now time.Time) (int64, error) {
+	result, err := q.db.ExecContext(ctx, initAccessModel, now)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const setAccessModel = `-- name: SetAccessModel :exec

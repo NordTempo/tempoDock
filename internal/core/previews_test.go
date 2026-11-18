@@ -145,7 +145,8 @@ func (h *harness) deliver(appHook, id string, ev prEvent) (string, error) {
 	return h.c.GitWebhook(h.ctx, GitDelivery{HookID: appHook, Event: "pull_request", ID: id, Signature: sign("app-secret", body), Body: body})
 }
 
-// prBody is ev as GitHub's pull_request payload.
+// prBody is ev as GitHub's pull_request payload. Its html_url is not
+// the pull request's page: Dock builds that itself (pullURL).
 func prBody(ev prEvent) []byte {
 	head := map[string]any{"id": fakeRepoID, "full_name": "acme/shop"}
 	if ev.fork {
@@ -158,7 +159,7 @@ func prBody(ev prEvent) []byte {
 	body, _ := json.Marshal(map[string]any{
 		"action": ev.action, "number": ev.number,
 		"pull_request": map[string]any{
-			"html_url": fmt.Sprintf("https://github.com/acme/shop/pull/%d", ev.number), "title": "Faster checkout",
+			"html_url": fmt.Sprintf("https://example.com/acme/shop/pull/%d", ev.number), "title": "Faster checkout",
 			"updated_at": ev.updated, "merged": ev.merged, "user": map[string]string{"login": "ada"},
 			"head": map[string]any{"ref": "faster-checkout", "sha": ev.sha, "repo": head},
 			"base": map[string]any{"ref": base, "repo": map[string]any{"id": fakeRepoID, "full_name": "acme/shop"}},
@@ -452,5 +453,38 @@ func TestPreviewWebhookOnlyFromBase(t *testing.T) {
 	var conns int
 	if err := h.store.DB.QueryRowContext(h.ctx, "SELECT count(*) FROM git_connections JOIN services ON services.id = git_connections.service_id JOIN environments ON environments.id = services.environment_id WHERE environments.name LIKE 'pr-8~%'").Scan(&conns); err != nil || conns != 0 {
 		t.Fatalf("%d git connections left in the closed preview, %v", conns, err)
+	}
+}
+
+// A preview links to its pull request in the connected repository on
+// GitHub, whatever address the delivery or an older row has for it.
+func TestPreviewPullURL(t *testing.T) {
+	h, _, _, appHook := previewHarness(t)
+	if _, err := h.deliver(appHook, "d1", prEvent{action: "opened", number: 7, sha: shaA, updated: time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC)}); err != nil {
+		t.Fatal(err)
+	}
+	const want = "https://github.com/acme/shop/pull/7"
+	if pv, err := h.c.GetPreview(h.ctx, testSystem, EnvRef{"shop", "pr-7"}); err != nil || pv.PullURL != want {
+		t.Fatalf("preview's pull_url %q, %v", pv.PullURL, err)
+	}
+	if env, err := h.c.GetEnvironment(h.ctx, testSystem, EnvRef{"shop", "pr-7"}); err != nil || env.Preview == nil || env.Preview.URL != want {
+		t.Fatalf("environment's preview %+v, %v", env.Preview, err)
+	}
+	for _, tc := range []struct {
+		repo   string
+		number int64
+		want   string
+	}{
+		{"acme/shop", 7, want},
+		{"acme/shop", 0, ""},
+		{"acme", 7, ""},
+		{"acme/shop/pull/1", 7, ""},
+		{"example.com/acme/shop", 7, ""},
+		{"acme/shop?x=", 7, ""},
+		{"", 7, ""},
+	} {
+		if got := pullURL(tc.repo, tc.number); got != tc.want {
+			t.Errorf("pullURL(%q, %d) = %q, want %q", tc.repo, tc.number, got, tc.want)
+		}
 	}
 }

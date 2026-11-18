@@ -169,13 +169,18 @@ func (c *Core) loginSupported(serverID int64) error {
 
 // GrantAccess lets the caller open a login-protected domain: it returns
 // the domain's sign-in callback with a one-minute grant naming the
-// caller, for Dock's /access page to send the browser to. The caller
+// caller, for Dock's /access page to send the browser to. With the
+// nonce hash the domain's server sent along, the grant works only in the
+// browser that server sent (access.SignBound). The caller
 // needs read access to the service's environment, in its org whichever
 // org they are acting in.
 func (c *Core) GrantAccess(ctx context.Context, a Actor, req apitypes.AccessGrantRequest) (apitypes.AccessGrant, error) {
 	// Only looked up, not validated: generated hostnames (under a dev
 	// base domain like localhost) never passed normalizeHostname.
 	host := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(req.Hostname)), ".")
+	if req.Nonce != "" && !access.ValidNonceHash(req.Nonce) {
+		return apitypes.AccessGrant{}, invalid("this sign-in link is incomplete; open https://%s/ again to sign in", host)
+	}
 	d, err := c.store.GetDomainByHostname(ctx, host)
 	if store.IsNotFound(err) {
 		return apitypes.AccessGrant{}, notFound("%s is not a domain in Dock", host)
@@ -218,7 +223,12 @@ func (c *Core) GrantAccess(ctx context.Context, a Actor, req apitypes.AccessGran
 	if user == "" {
 		user = a.Name
 	}
+	// A server that left a nonce in the browser gets a grant bound to it;
+	// one older than that sends none and only knows the plain grant.
 	grant := access.Sign(key, access.Grant, host, user, now().Add(access.GrantTTL))
+	if req.Nonce != "" {
+		grant = access.SignBound(key, host, req.Nonce, user, now().Add(access.GrantTTL))
+	}
 	q := url.Values{"grant": {grant}, "to": {access.LocalPath(req.To)}}
 	return apitypes.AccessGrant{
 		URL:      c.toDomain(ss, d, nil, ing).URL + access.CallbackPath + "?" + q.Encode(),
