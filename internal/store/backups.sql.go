@@ -66,6 +66,50 @@ func (q *Queries) CreateBackup(ctx context.Context, arg CreateBackupParams) (Bac
 	return i, err
 }
 
+const createBackupCheck = `-- name: CreateBackupCheck :one
+INSERT INTO backup_checks (kind, server_id, service_id, repository, snapshot_id, trigger, status, started_at)
+VALUES (?, ?, ?, ?, ?, ?, 'running', ?)
+RETURNING id, kind, server_id, service_id, repository, snapshot_id, "trigger", status, error, detail, started_at, finished_at
+`
+
+type CreateBackupCheckParams struct {
+	Kind       string
+	ServerID   int64
+	ServiceID  *int64
+	Repository string
+	SnapshotID string
+	Trigger    string
+	StartedAt  time.Time
+}
+
+func (q *Queries) CreateBackupCheck(ctx context.Context, arg CreateBackupCheckParams) (BackupCheck, error) {
+	row := q.db.QueryRowContext(ctx, createBackupCheck,
+		arg.Kind,
+		arg.ServerID,
+		arg.ServiceID,
+		arg.Repository,
+		arg.SnapshotID,
+		arg.Trigger,
+		arg.StartedAt,
+	)
+	var i BackupCheck
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.ServerID,
+		&i.ServiceID,
+		&i.Repository,
+		&i.SnapshotID,
+		&i.Trigger,
+		&i.Status,
+		&i.Error,
+		&i.Detail,
+		&i.StartedAt,
+		&i.FinishedAt,
+	)
+	return i, err
+}
+
 const createBackupPassword = `-- name: CreateBackupPassword :exec
 INSERT INTO backup_settings (id, password, updated_at) VALUES (1, ?, ?)
 ON CONFLICT (id) DO NOTHING
@@ -153,6 +197,24 @@ func (q *Queries) DetachBaseBackupsWAL(ctx context.Context) error {
 	return err
 }
 
+const failRunningBackupChecks = `-- name: FailRunningBackupChecks :execrows
+UPDATE backup_checks SET status = 'failed', error = ?, finished_at = ? WHERE status = 'running'
+`
+
+type FailRunningBackupChecksParams struct {
+	Error      string
+	FinishedAt *time.Time
+}
+
+// At start-up: a check the last daemon left running never finished.
+func (q *Queries) FailRunningBackupChecks(ctx context.Context, arg FailRunningBackupChecksParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, failRunningBackupChecks, arg.Error, arg.FinishedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const failRunningBackups = `-- name: FailRunningBackups :execrows
 UPDATE backups SET status = 'failed', error = ?, finished_at = ? WHERE status = 'running'
 `
@@ -190,6 +252,29 @@ func (q *Queries) FinishBackup(ctx context.Context, arg FinishBackupParams) erro
 		arg.SnapshotID,
 		arg.SizeBytes,
 		arg.Error,
+		arg.FinishedAt,
+		arg.ID,
+	)
+	return err
+}
+
+const finishBackupCheck = `-- name: FinishBackupCheck :exec
+UPDATE backup_checks SET status = ?, error = ?, detail = ?, finished_at = ? WHERE id = +?
+`
+
+type FinishBackupCheckParams struct {
+	Status     string
+	Error      string
+	Detail     string
+	FinishedAt *time.Time
+	ID         int64
+}
+
+func (q *Queries) FinishBackupCheck(ctx context.Context, arg FinishBackupCheckParams) error {
+	_, err := q.db.ExecContext(ctx, finishBackupCheck,
+		arg.Status,
+		arg.Error,
+		arg.Detail,
 		arg.FinishedAt,
 		arg.ID,
 	)
@@ -299,7 +384,7 @@ func (q *Queries) GetBackupSchedule(ctx context.Context, serviceID int64) (Backu
 }
 
 const getBackupSettings = `-- name: GetBackupSettings :one
-SELECT id, repository, credentials, password, keep_daily, keep_weekly, keep_monthly, hour, updated_at, updated_by, storage_id, storage_path FROM backup_settings WHERE id = 1
+SELECT id, repository, credentials, password, keep_daily, keep_weekly, keep_monthly, hour, updated_at, updated_by, storage_id, storage_path, verify FROM backup_settings WHERE id = 1
 `
 
 func (q *Queries) GetBackupSettings(ctx context.Context) (BackupSetting, error) {
@@ -318,6 +403,7 @@ func (q *Queries) GetBackupSettings(ctx context.Context) (BackupSetting, error) 
 		&i.UpdatedBy,
 		&i.StorageID,
 		&i.StoragePath,
+		&i.Verify,
 	)
 	return i, err
 }
@@ -415,6 +501,51 @@ func (q *Queries) ListBackupRepositories(ctx context.Context) ([]ListBackupRepos
 			&i.Server,
 			&i.Snapshots,
 			&i.SizeBytes,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLatestRepositoryChecks = `-- name: ListLatestRepositoryChecks :many
+SELECT id, kind, server_id, service_id, repository, snapshot_id, "trigger", status, error, detail, started_at, finished_at FROM backup_checks WHERE id IN (
+    SELECT max(id) FROM backup_checks WHERE kind = 'repository' GROUP BY repository, server_id
+)
+ORDER BY repository, server_id
+`
+
+// Each repository's latest check attempt per server (ADR 0096), for the
+// scheduler and backup settings.
+func (q *Queries) ListLatestRepositoryChecks(ctx context.Context) ([]BackupCheck, error) {
+	rows, err := q.db.QueryContext(ctx, listLatestRepositoryChecks)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BackupCheck
+	for rows.Next() {
+		var i BackupCheck
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.ServerID,
+			&i.ServiceID,
+			&i.Repository,
+			&i.SnapshotID,
+			&i.Trigger,
+			&i.Status,
+			&i.Error,
+			&i.Detail,
+			&i.StartedAt,
+			&i.FinishedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -863,6 +994,23 @@ func (q *Queries) SetBackupBase(ctx context.Context, arg SetBackupBaseParams) er
 	return err
 }
 
+const setBackupVerify = `-- name: SetBackupVerify :exec
+UPDATE backup_settings SET verify = ?, updated_at = ?, updated_by = ? WHERE id = 1
+`
+
+type SetBackupVerifyParams struct {
+	Verify    bool
+	UpdatedAt time.Time
+	UpdatedBy string
+}
+
+// Turns the weekly checks and drills on or off; the settings row exists
+// (CreateBackupPassword) before anyone can switch them.
+func (q *Queries) SetBackupVerify(ctx context.Context, arg SetBackupVerifyParams) error {
+	_, err := q.db.ExecContext(ctx, setBackupVerify, arg.Verify, arg.UpdatedAt, arg.UpdatedBy)
+	return err
+}
+
 const setServiceFromTemplate = `-- name: SetServiceFromTemplate :exec
 UPDATE services SET from_template = ?, from_template_revision = ? WHERE id = +?
 `
@@ -913,6 +1061,27 @@ func (q *Queries) TrimBackupLogs(ctx context.Context, arg TrimBackupLogsParams) 
 	return err
 }
 
+const trimRepositoryChecks = `-- name: TrimRepositoryChecks :exec
+DELETE FROM backup_checks
+WHERE backup_checks.kind = 'repository' AND backup_checks.repository = +?1 AND backup_checks.server_id = +?2
+  AND backup_checks.id NOT IN (
+    SELECT c.id FROM backup_checks c
+    WHERE c.kind = 'repository' AND c.repository = +?1 AND c.server_id = +?2
+    ORDER BY c.id DESC LIMIT 10
+  )
+`
+
+type TrimRepositoryChecksParams struct {
+	Repository string
+	ServerID   int64
+}
+
+// Keeps the newest ten checks of a repository on a server.
+func (q *Queries) TrimRepositoryChecks(ctx context.Context, arg TrimRepositoryChecksParams) error {
+	_, err := q.db.ExecContext(ctx, trimRepositoryChecks, arg.Repository, arg.ServerID)
+	return err
+}
+
 const upsertBackupSchedule = `-- name: UpsertBackupSchedule :exec
 INSERT INTO backup_schedules (service_id, enabled, hour) VALUES (?, ?, ?)
 ON CONFLICT (service_id) DO UPDATE SET enabled = excluded.enabled, hour = excluded.hour
@@ -937,7 +1106,7 @@ ON CONFLICT (id) DO UPDATE SET
     keep_daily = excluded.keep_daily, keep_weekly = excluded.keep_weekly, keep_monthly = excluded.keep_monthly,
     hour = excluded.hour, updated_at = excluded.updated_at, updated_by = excluded.updated_by,
     storage_id = excluded.storage_id, storage_path = excluded.storage_path
-RETURNING id, repository, credentials, password, keep_daily, keep_weekly, keep_monthly, hour, updated_at, updated_by, storage_id, storage_path
+RETURNING id, repository, credentials, password, keep_daily, keep_weekly, keep_monthly, hour, updated_at, updated_by, storage_id, storage_path, verify
 `
 
 type UpsertBackupSettingsParams struct {
@@ -982,6 +1151,7 @@ func (q *Queries) UpsertBackupSettings(ctx context.Context, arg UpsertBackupSett
 		&i.UpdatedBy,
 		&i.StorageID,
 		&i.StoragePath,
+		&i.Verify,
 	)
 	return i, err
 }

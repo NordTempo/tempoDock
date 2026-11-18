@@ -187,3 +187,38 @@ ORDER BY consistent_at;
 -- replay from, so they no longer restore to a time; retention still ages
 -- them out (ADR 0093).
 UPDATE backups SET wal_start = '' WHERE kind = 'pitr' AND operation = 'backup' AND wal_start <> '';
+
+-- name: CreateBackupCheck :one
+INSERT INTO backup_checks (kind, server_id, service_id, repository, snapshot_id, trigger, status, started_at)
+VALUES (?, ?, ?, ?, ?, ?, 'running', ?)
+RETURNING *;
+
+-- name: FinishBackupCheck :exec
+UPDATE backup_checks SET status = ?, error = ?, detail = ?, finished_at = ? WHERE id = +?;
+
+-- name: ListLatestRepositoryChecks :many
+-- Each repository's latest check attempt per server (ADR 0096), for the
+-- scheduler and backup settings.
+SELECT * FROM backup_checks WHERE id IN (
+    SELECT max(id) FROM backup_checks WHERE kind = 'repository' GROUP BY repository, server_id
+)
+ORDER BY repository, server_id;
+
+-- name: TrimRepositoryChecks :exec
+-- Keeps the newest ten checks of a repository on a server.
+DELETE FROM backup_checks
+WHERE backup_checks.kind = 'repository' AND backup_checks.repository = +sqlc.arg(repository) AND backup_checks.server_id = +sqlc.arg(server_id)
+  AND backup_checks.id NOT IN (
+    SELECT c.id FROM backup_checks c
+    WHERE c.kind = 'repository' AND c.repository = +sqlc.arg(repository) AND c.server_id = +sqlc.arg(server_id)
+    ORDER BY c.id DESC LIMIT 10
+  );
+
+-- name: FailRunningBackupChecks :execrows
+-- At start-up: a check the last daemon left running never finished.
+UPDATE backup_checks SET status = 'failed', error = ?, finished_at = ? WHERE status = 'running';
+
+-- name: SetBackupVerify :exec
+-- Turns the weekly checks and drills on or off; the settings row exists
+-- (CreateBackupPassword) before anyone can switch them.
+UPDATE backup_settings SET verify = ?, updated_at = ?, updated_by = ? WHERE id = 1;

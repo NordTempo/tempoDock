@@ -59,6 +59,12 @@ type backupState struct {
 	// controlPlane is set while the control plane's own backup runs
 	// (backups_controlplane.go).
 	controlPlane bool
+	// started is when the daemon started: a repository or database never
+	// checked is due at the first backup hour after it (verifyDue).
+	started time.Time
+	// checkNow asks the scheduler's next pass to run every repository's
+	// check whatever its due time (RunBackupChecks).
+	checkNow bool
 	// move is the latest move of the backups (backups_move.go); while it
 	// runs, no backup or restore starts. moveTo is its storage connection.
 	move   *apitypes.BackupMove
@@ -76,7 +82,7 @@ func (c *Core) backupsMoving() bool {
 }
 
 func newBackupState() backupState {
-	return backupState{kick: make(chan struct{}, 1), running: map[int64]bool{}, freed: make(chan struct{}), restic: map[int64]bool{}}
+	return backupState{kick: make(chan struct{}, 1), running: map[int64]bool{}, freed: make(chan struct{}), restic: map[int64]bool{}, started: now()}
 }
 
 // kickBackups wakes the backup scheduler; it never blocks.
