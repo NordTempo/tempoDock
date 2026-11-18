@@ -109,7 +109,7 @@ channel was told about.
 - Every notification is up to 10 seconds later.
 - Webhook receivers see a new event, `repeated`, and a new field,
   `count`.
-- Migration 0126: table `heartbeat`, columns `alerts.count` and
+- Migration 0127: table `heartbeat`, columns `alerts.count` and
   `alerts.cleared_at`.
 - Not done: per-channel grouping windows, a node sending alerts itself,
   grouping by cause across channels (a group is whatever arrives within
