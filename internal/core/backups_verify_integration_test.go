@@ -76,8 +76,42 @@ func TestIntegrationCheckedBackups(t *testing.T) {
 	if drill.Status != apitypes.BackupSucceeded || !strings.HasPrefix(drill.Detail, "1 table in ") {
 		t.Fatalf("drill: %+v", drill)
 	}
+	// Redis restores differently (its volume is filled before it starts)
+	// and answers a key count.
+	cache := ServiceRef{project, "production", "cache"}
+	if _, err := c.CreateService(ctx, testSystem, cache.Env(), apitypes.CreateServiceRequest{Name: cache.Service, Template: apitypes.TemplateRedis}); err != nil {
+		t.Fatal(err)
+	}
+	if r := waitRelease(t, c, cache, 1); r.Status != apitypes.ReleaseActive {
+		t.Fatalf("cache: %s %s", r.Status, r.Error)
+	}
+	execIn(t, c, cache, "redis-cli", "-a", liveVar(t, c, cache, "REDIS_PASSWORD"), "--no-auth-warning", "SET", "greeting", "hello")
+	if run, err = c.RunBackup(ctx, testSystem, cache); err != nil {
+		t.Fatal(err)
+	}
+	if done := waitBackupRun(t, c, cache, run.ID); done.Status != apitypes.BackupSucceeded {
+		t.Fatalf("cache backup: %+v", done)
+	}
+	if _, err := c.RunBackupDrill(ctx, testSystem, cache); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(5 * time.Minute); ; time.Sleep(200 * time.Millisecond) {
+		b, err := c.ServiceBackups(ctx, testSystem, cache)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d := b.Drill; d != nil && d.Status != apitypes.BackupRunning {
+			if d.Status != apitypes.BackupSucceeded || !strings.HasPrefix(d.Detail, "1 key in ") {
+				t.Fatalf("cache drill: %+v", d)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the cache's drill still running")
+		}
+	}
 	svcs, err := c.ListServices(ctx, testSystem, db.Env())
-	if err != nil || len(svcs) != 1 {
+	if err != nil || len(svcs) != 2 {
 		t.Fatalf("services after the drill: %+v, %v", svcs, err)
 	}
 }
