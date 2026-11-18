@@ -366,7 +366,7 @@ func (c *Core) tellPreviewsDeleted(p store.Project, tells []previewTell) {
 	if len(tells) == 0 {
 		return
 	}
-	c.wg.Go(func() {
+	c.goCounted("telling pull requests their previews are gone", func() {
 		ctx := c.ctx
 		for _, t := range tells {
 			st := githubStatus{State: "success", Context: previewStatusContext,

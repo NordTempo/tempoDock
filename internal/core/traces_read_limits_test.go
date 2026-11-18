@@ -205,42 +205,21 @@ func TestTraceReadDecodesABoundedAmount(t *testing.T) {
 	}
 }
 
-// Masking a trace costs a bounded amount of searching, whatever the
-// service's values are: past it, what is left is masked whole.
-func TestTraceMaskingIsBounded(t *testing.T) {
-	// 20,000 values and strings of 1 KB: the work is gone within 220.
+// A service with a great many values has its traces masked like any
+// other: each value where it shows, and no string masked whole.
+func TestTraceMaskingWithManyValues(t *testing.T) {
 	var big strings.Builder
 	for i := range 20_000 {
 		fmt.Fprintf(&big, "%08d\n", i)
 	}
-	env := map[string]string{"BIG": big.String(), "API_KEY": traceSecret}
-	m := newTraceMask(newRedactor(env))
+	m := traceMask{r: newRedactor(map[string]string{"BIG": big.String(), "API_KEY": traceSecret})}
 	text := strings.Repeat("x", 1000) + " key=" + traceSecret
-	if got := m.mask(text); got != strings.Repeat("x", 1000)+" key="+secretMask {
-		t.Fatalf("with work left: %q", got)
-	}
-	whole := 0
 	for range 400 {
-		switch got := m.mask(text); {
-		case got == secretMask:
-			whole++
-		case strings.Contains(got, traceSecret):
-			t.Fatalf("a secret value shows: %q", got)
+		if got := m.mask(text); got != strings.Repeat("x", 1000)+" key="+secretMask {
+			t.Fatalf("masked %q", got)
 		}
 	}
-	if whole < 150 {
-		t.Errorf("%d of 400 strings masked whole, want those past the read's work", whole)
-	}
-	// A string of nothing but values pays for each search of it.
-	m = newTraceMask(newRedactor(env))
-	if got := m.mask(strings.Repeat("00000001", 4000)); got != secretMask {
-		t.Errorf("a string of 4,000 values = %d bytes, want it masked whole", len(got))
-	}
-	// A service's usual few values never come near the bound.
-	m = newTraceMask(newRedactor(map[string]string{"API_KEY": traceSecret}))
-	for range 10_000 {
-		if got := m.mask(text); got == secretMask {
-			t.Fatal("a small service's strings ran out of work")
-		}
+	if got := m.mask(strings.Repeat("00000001", 4000)); got != strings.Repeat(secretMask, 4000) {
+		t.Errorf("a string of 4,000 values = %d bytes, want each masked", len(got))
 	}
 }

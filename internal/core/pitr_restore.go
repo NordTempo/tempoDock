@@ -225,14 +225,17 @@ func (c *Core) restoreToTime(ctx context.Context, a Actor, ss svcScope, t dbTemp
 	}
 	at := plan.target.UTC().Format(time.RFC3339)
 	c.audit(ctx, a, "backup.restore", &ss.project, &ss.env, ss.String(), fmt.Sprintf("restoring %s as it was at %s into new service %s", ss.svc.Name, at, name))
-	c.wg.Go(func() {
+	c.goCounted("restoring to a time into a new service", func() {
 		ctx := c.ctx
 		vol := volumeName(to, templateVolume)
-		err := c.nodeErr(to.env.ServerID, c.runtime(to.env.ServerID).EnsureVolume(ctx, vol, c.labels(to, 0)))
 		log := ""
-		if err == nil {
-			log, err = c.recoverJob(ctx, to, t, plan, row.ID, vol, keep)
-		}
+		err := caughtErr(c.log, "restoring to a time into a new service", func() error {
+			err := c.nodeErr(to.env.ServerID, c.runtime(to.env.ServerID).EnsureVolume(ctx, vol, c.labels(to, 0)))
+			if err == nil {
+				log, err = c.recoverJob(ctx, to, t, plan, row.ID, vol, keep)
+			}
+			return err
+		})
 		c.unlockVolumes(to.svc.ID)
 		if err != nil {
 			c.finishToTime(ctx, ss, to.svc.Name, row, log, err)
@@ -330,15 +333,17 @@ func (c *Core) restoreToTimeInPlace(ctx context.Context, a Actor, ss svcScope, t
 	}
 	c.audit(ctx, a, "backup.restore", &ss.project, &ss.env, ss.String(),
 		fmt.Sprintf("restoring %s in place to %s; it stops, and snapshot %d keeps the data it holds now", ss.svc.Name, at, safety.ID))
-	c.wg.Go(func() {
+	c.goCounted("restoring to a time in place", func() {
 		ctx := c.ctx
 		var log string
-		err := c.restoreInPlaceWith(ctx, ss, safety, safetyVols, mounts, "restore to "+at, func(ctx context.Context) error {
-			var err error
-			log, err = c.recoverJob(ctx, ss, t, plan, row.ID, vol.DockerName, keep)
-			return err
-		}, func(ctx context.Context) {
-			c.pitrNewGeneration(ctx, ss)
+		err := caughtErr(c.log, "restoring to a time in place", func() error {
+			return c.restoreInPlaceWith(ctx, ss, safety, safetyVols, mounts, "restore to "+at, func(ctx context.Context) error {
+				var err error
+				log, err = c.recoverJob(ctx, ss, t, plan, row.ID, vol.DockerName, keep)
+				return err
+			}, func(ctx context.Context) {
+				c.pitrNewGeneration(ctx, ss)
+			})
 		})
 		if ctx.Err() == nil {
 			c.pruneSnapshots(ctx, ss, 0)

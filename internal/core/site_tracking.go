@@ -234,7 +234,11 @@ func (c *Core) checkSite(ctx context.Context, hosts []string) apitypes.SiteCheck
 	out := apitypes.SiteCheck{At: now(), Hosts: make([]apitypes.SiteCheckHost, min(len(hosts), siteCheckHosts))}
 	var wg sync.WaitGroup
 	for i := range out.Hosts {
-		wg.Go(func() { out.Hosts[i] = c.checkSiteHost(ctx, hosts[i], hosts) })
+		// What a check that panics leaves: the hostname, and that it failed.
+		out.Hosts[i] = apitypes.SiteCheckHost{Hostname: hosts[i], Steps: []apitypes.SiteCheckStep{
+			{Result: apitypes.CheckFail, Text: "the check failed on a bug in Dock; try again, and report it if it stays"},
+		}}
+		goIn(&wg, c.log, "checking a site's hostname", func() { out.Hosts[i] = c.checkSiteHost(ctx, hosts[i], hosts) })
 	}
 	wg.Wait()
 	return out

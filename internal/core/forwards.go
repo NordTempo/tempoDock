@@ -105,7 +105,7 @@ func (c *Core) ensureForwards(ctx context.Context, serverID int64) {
 			continue
 		}
 		c.fwd.open[k] = ln
-		c.wg.Go(func() { c.serveForward(k, ln, svcID) })
+		c.goCounted("serving a forwarded port", func() { c.serveForward(k, ln, svcID) })
 	}
 }
 
@@ -155,6 +155,9 @@ func (c *Core) serveForward(k forwardKey, ln net.Listener, svcID int64) {
 // forwardConn pipes one connection to service svcID's active container,
 // wherever it is now, once no move holds the service.
 func (c *Core) forwardConn(k forwardKey, in net.Conn, svcID int64) {
+	// Recovered here, not by a helper around it: one closure per
+	// connection is enough. The connection is closed first.
+	defer recovered(c.log, "forwarding a connection")
 	defer func() { _ = in.Close() }()
 	c.waitHold(svcID)
 	ctx, cancel := context.WithTimeout(c.ctx, dialTimeout)
@@ -273,7 +276,7 @@ func (c *Core) holdFreshPort(ctx context.Context, serverID, svcID int64) (int64,
 	c.fwd.mu.Lock()
 	c.fwd.open[k] = ln
 	c.fwd.mu.Unlock()
-	c.wg.Go(func() { c.serveForward(k, ln, svcID) })
+	c.goCounted("serving a forwarded port", func() { c.serveForward(k, ln, svcID) })
 	return port, nil
 }
 
@@ -301,7 +304,7 @@ func (c *Core) holdPort(ctx context.Context, serverID, port, svcID int64) {
 	c.fwd.holdMu.Lock()
 	c.fwd.holding[k] = svcID
 	c.fwd.holdMu.Unlock()
-	c.wg.Go(func() { c.serveForward(k, ln, svcID) })
+	c.goCounted("serving a forwarded port", func() { c.serveForward(k, ln, svcID) })
 }
 
 // holdPorts are the ports a server holds for services in a move's hold,

@@ -100,6 +100,41 @@ func TestApplyPreDeployCommand(t *testing.T) {
 	}
 }
 
+// A file giving a service a name the platform keeps under the base domain
+// says so in the plan, with the refusal adding the domain gives, and the
+// rest of the file applies; an operator's plan adds it.
+func TestApplyReservedHostname(t *testing.T) {
+	h := newHarness(t)
+	h.service("web", apitypes.CreateServiceRequest{Image: "web:1", Port: 3000})
+	alice := h.in(h.member("alice@x", map[string]apitypes.Scope{"test": apitypes.ScopeAdmin}), "test")
+	req := apitypes.ApplyRequest{File: `version = 1
+project = "shop"
+[[environments]]
+  name = "production"
+  [[environments.services]]
+    name = "web"
+    image = "web:1"
+    port = 3000
+    domains = [{hostname = "status.apps.test"}, {hostname = "shop.apps.test"}]
+`}
+	const reserved, free = "production web domain add status.apps.test", "production web domain add shop.apps.test"
+	plan, err := h.c.PlanProject(h.ctx, alice, "shop", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, want := h.c.AddDomain(h.ctx, alice, ServiceRef{"shop", "production", "web"}, apitypes.AddDomainRequest{Hostname: "status.apps.test"})
+	i := slices.Index(lines(plan.Manual), reserved)
+	if want == nil || i < 0 || plan.Manual[i].Note != want.Error() || slices.Contains(lines(plan.Changes), reserved) || !slices.Contains(lines(plan.Changes), free) {
+		t.Fatalf("a member's plan: changes %q, manual %+v; adding the domain says %v", lines(plan.Changes), plan.Manual, want)
+	}
+	if _, err := h.c.ApplyProject(h.ctx, alice, "shop", req); err != nil {
+		t.Fatalf("applying the rest of the file: %v", err)
+	}
+	if plan, err = h.c.PlanProject(h.ctx, testSystem, "shop", req); err != nil || !slices.Contains(lines(plan.Changes), reserved) {
+		t.Fatalf("an operator's plan: %v, changes %q, manual %q", err, lines(plan.Changes), lines(plan.Manual))
+	}
+}
+
 // A file adding a hostname another service has plans it as needing a
 // person, not as a change that would fail once applied; one the file
 // takes off its service (--prune) is free.

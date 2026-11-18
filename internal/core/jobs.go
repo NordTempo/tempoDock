@@ -111,7 +111,7 @@ func (c *Core) startJob(ctx context.Context, jobID, serviceID int64, trigger api
 		return apitypes.CommandRun{}, err
 	}
 	info := r.Info() // before it runs: the run's end rewrites it
-	c.wg.Go(func() { r.Wait(c.ctx, nil) })
+	c.goCounted("running a job", func() { r.Wait(c.ctx, nil) })
 	return info, nil
 }
 

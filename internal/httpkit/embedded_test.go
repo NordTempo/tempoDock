@@ -17,6 +17,13 @@ func TestEmbeddedIPv4Addresses(t *testing.T) {
 		{"64:ff9b::a9fe:a9fe", "169.254.169.254", false, true, false},
 		{"64:ff9b:1::a9fe:a9fe", "169.254.169.254", false, true, false},
 		{"64:ff9b::c0a8:101", "192.168.1.1", false, false, false},
+		// The local-use NAT64 prefix in each RFC 6052 layout: /64, /56
+		// and /48 put the IPv4 address elsewhere than the last 32 bits.
+		{"64:ff9b:1:0:a9:fea9:fe00:0", "169.254.169.254", false, true, false},
+		{"64:ff9b:1:a9:fe:a9fe::", "169.254.169.254", false, true, false},
+		{"64:ff9b:1:a9fe:a9:fe00::", "169.254.0.0", false, true, false}, // /48 layout; its /64 reading is refused first
+		{"64:ff9b:1:7f00:0:100::", "127.0.0.1", true, false, false},
+		{"64:ff9b:1::808:808", "8.8.8.8", false, false, true},
 		{"2002:7f00:1::", "127.0.0.1", true, false, false},
 		{"2002:c0a8:1::1", "192.168.0.1", false, false, false},
 		{"2002:a9fe:a9fe::1", "169.254.169.254", false, true, false},

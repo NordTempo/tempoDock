@@ -195,7 +195,7 @@ func (c *Core) warmBuilder(ctx context.Context, serverID int64) {
 	if rt == nil {
 		return
 	}
-	c.wg.Go(func() {
+	c.goCounted("warming a builder", func() {
 		if err := rt.WarmBuilder(c.ctx); err != nil && c.ctx.Err() == nil {
 			c.log.Warn("fetch Railpack's images ahead of builds; the first Railpack build fetches them", "server", srv.Name, "err", c.nodeErr(serverID, err))
 		}

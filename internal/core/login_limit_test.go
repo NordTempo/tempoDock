@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go/ast"
 	"testing"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 // A guesser hammering one account from their address is refused, but the
@@ -97,5 +99,71 @@ func TestPasswordChecksWaitInABoundedLine(t *testing.T) {
 	}
 	if _, err := h.c.Login(h.ctx, "ada@example.com", "password-123456", "192.0.2.1"); err != nil {
 		t.Fatalf("a sign-in once the line cleared: %v", err)
+	}
+}
+
+// Everything that hashes a password does it in a bcrypt slot, so setting
+// passwords can't crowd out sign-ins: with every slot busy and the line
+// full, each path is turned away with rate_limited instead of hashing.
+func TestEveryPasswordHashTakesASlot(t *testing.T) {
+	// A change of one's own password checks the current one first, which
+	// waits for a slot whatever the hash does, so the source is read too:
+	// only hashAt hashes (dummyHash's is made once per process).
+	_, funcs := coreFuncs(t)
+	for _, fd := range funcs {
+		ast.Inspect(fd.Body, func(n ast.Node) bool {
+			sel, ok := n.(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "GenerateFromPassword" || fd.Name.Name == "hashAt" || fd.Name.Name == "dummyHash" {
+				return true
+			}
+			if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == "bcrypt" {
+				t.Errorf("%s hashes with bcrypt outside the slots; use c.hashPassword or c.hashAt", fd.Name.Name)
+			}
+			return true
+		})
+	}
+
+	h := newHarness(t)
+	ada := h.user("ada@example.com", apitypes.ScopeAdmin)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	// A first single sign-on makes an account without an invite.
+	if _, err := h.c.SetSignInSettings(h.ctx, testSystem, apitypes.SignInSettingsRequest{InviteOnly: new(false)}); err != nil {
+		t.Fatal(err)
+	}
+	for range cap(h.c.bcryptSem) {
+		h.c.bcryptSem <- struct{}{}
+	}
+	h.c.bcryptWaiting.Store(maxBcryptWaiting)
+	t.Cleanup(func() {
+		h.c.bcryptWaiting.Store(0)
+		for range cap(h.c.bcryptSem) {
+			<-h.c.bcryptSem
+		}
+	})
+	for name, set := range map[string]func() error{
+		"a password change": func() error {
+			_, _, err := h.c.ChangePassword(h.ctx, ada, apitypes.ChangePasswordRequest{CurrentPassword: "password-123456", NewPassword: "another long password"}, "192.0.2.1")
+			return err
+		},
+		"an admin's reset": func() error {
+			_, err := h.c.ResetPassword(h.ctx, testSystem, ada.UserID, apitypes.ResetPasswordRequest{})
+			return err
+		},
+		"a new user": func() error {
+			_, err := h.c.CreateUser(h.ctx, testSystem, apitypes.CreateUserRequest{Email: "bo@example.com", Name: "bo", Password: "a long enough password", Role: apitypes.ScopeRead})
+			return err
+		},
+		"a first single sign-on": func() error {
+			_, err := h.c.ssoNewUser(h.ctx, store.SsoProvider{}, ssoPerson{subject: "1", email: "cy@example.com"})
+			return err
+		},
+		"a service's access password": func() error {
+			_, err := h.c.SetServiceAccess(h.ctx, testSystem, web, apitypes.SetAccessRequest{Mode: apitypes.AccessPassword, Username: "team", Password: "correct horse battery"})
+			return err
+		},
+	} {
+		if err := set(); CodeOf(err) != apitypes.CodeRateLimited {
+			t.Errorf("%s with every slot busy: %v, want rate_limited", name, err)
+		}
 	}
 }

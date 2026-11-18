@@ -220,7 +220,7 @@ func (c *Core) pruneAnalytics() {
 	if cl == nil {
 		return
 	}
-	c.wg.Go(func() {
+	c.goCounted("pruning analytics data", func() {
 		ctx, cancel := context.WithTimeout(c.ctx, time.Hour)
 		defer cancel()
 		sites, err := c.store.ListAllSites(ctx)
@@ -263,7 +263,7 @@ func (c *Core) updateGeoIP() {
 	if cl == nil {
 		return
 	}
-	c.wg.Go(func() {
+	c.goCounted("updating the location database", func() {
 		// The store may still be opening its database after a start.
 		for attempt := range 5 {
 			ctx, cancel := context.WithTimeout(c.ctx, 15*time.Minute)
@@ -380,7 +380,7 @@ func (c *Core) rotateSalts(ctx context.Context, t time.Time) {
 // than the one before it: without that, a push that read yesterday's
 // salts could land after the one with today's.
 func (c *Core) pushSalts(serverID int64) {
-	c.wg.Go(func() {
+	c.goCounted("handing a server its analytics rules", func() {
 		lock := c.pushLock(serverID)
 		lock.Lock()
 		defer lock.Unlock()
@@ -494,7 +494,7 @@ func (c *Core) forwardFrom(serverID int64) {
 		sp := spoolOf{serverID, which}
 		if !c.analytics.forwarding[sp] {
 			c.analytics.forwarding[sp] = true
-			c.wg.Go(func() { c.forward(sp) })
+			c.goCounted("forwarding a server's analytics", func() { c.forward(sp) })
 		}
 	}
 }
@@ -522,7 +522,9 @@ func (c *Core) forward(sp spoolOf) {
 	retry := forwardRetryMin
 	for c.ctx.Err() == nil {
 		wake := c.waitWake()
-		err := c.forwardOnce(sp)
+		// Through caught: a tail that panics is a failed tail, tried
+		// again after the backoff.
+		err := caughtErr(c.log, "forwarding a server's analytics", func() error { return c.forwardOnce(sp) })
 		var timer <-chan time.Time
 		switch {
 		case err == nil:

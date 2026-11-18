@@ -78,10 +78,19 @@ func drillDB(t *testing.T, size int64) (h *harness, db ServiceRef, restoreErr *e
 		}
 		return node.JobResult{Output: resticOutput(snap, size, snap)}, nil
 	})
-	h.runBackup(db)
+	// Off before the backup, so the pass its end kicks can't read them on.
+	// The settings row is made with the repository: open it first.
+	set, err := h.c.backupSettings(h.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.repoOf(h.ctx, set); err != nil {
+		t.Fatal(err)
+	}
 	if err := h.c.store.SetBackupVerify(h.ctx, store.SetBackupVerifyParams{UpdatedAt: now(), UpdatedBy: System.Name}); err != nil {
 		t.Fatal(err)
 	}
+	h.runBackup(db)
 	return h, db, restoreErr
 }
 

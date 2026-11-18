@@ -75,12 +75,20 @@ func (c *Core) DoThing(ctx context.Context, a Actor, req apitypes.DoThingRequest
 - Background goroutines are counted in `c.wg` so `Close` waits for them.
   A new ticker or timer needs a doc comment saying why and a row in
   docs/performance.md.
-  Nothing above a goroutine recovers a panic in it, so start one with
-  `c.goCaught(what, fn)`, never a bare `go` (`TestEveryGoroutineRecovers`
-  fails on one outside `goAllowed`, which takes a reason). A panic then
+  Nothing above a goroutine recovers a panic in it, so start every one
+  through caught.go's helpers, whatever starts it: `c.goCaught(what, fn)`
+  for a bare `go`, `c.goCounted` for `c.wg.Go`, `goIn` or `goErr` for a
+  local WaitGroup, `goGroup` for an errgroup, `c.afterCaught` for
+  `time.AfterFunc` (`TestEveryGoroutineRecovers` fails on any of those
+  forms outside `goAllowed`, which takes a reason). A panic then
   ends that goroutine only, so a long-lived loop also recovers per item
   inside (`caught`, `c.safely`, or `defer recovered` where a closure per
   event would cost), or starts with `c.goLoop`, which starts it again.
+  A recovered worker returns nothing, so mind what it was to leave
+  behind: clear a flag or release a claim in a defer, give side-by-side
+  workers an error slot (`goErr`: an unset slot must not read as
+  success), and run the step that can panic through `caughtErr` where the
+  rest of the worker records how it went (`takeClaimed`, `runStoreMove`).
   Where a worker reads what a repository or a tenant sent (a pushed
   `dock.toml`, a source archive), run that work through `caught` so it
   fails as that piece of work, and leave nothing queued that would be

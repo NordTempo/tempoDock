@@ -92,7 +92,7 @@ func (c *Core) watchSite(ctx context.Context, site int64) (leave func(), err err
 	// Events forwarded between the load and now weren't noted: the first
 	// reload comes soon.
 	ls = &liveSite{watchers: 1, view: toLiveView(snap), changed: make(chan struct{}), last: t, due: t.Add(liveRefreshEvery)}
-	ls.timer = time.AfterFunc(liveRefreshEvery, func() { c.reloadSite(site, ls) })
+	ls.timer = c.afterCaught(liveRefreshEvery, "reloading a site's live view", func() { c.reloadSite(site, ls) })
 	l.sites[site] = ls
 	l.watched.Add(1)
 	return func() { c.unwatchSite(site) }, nil
@@ -133,9 +133,17 @@ func (c *Core) reloadSite(site int64, ls *liveSite) {
 		return
 	}
 	ls.loading, ls.dirty = true, false
-	c.wg.Go(func() {
+	c.goCounted("loading a site's live view", func() {
 		ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
-		snap, err := cl.Live(ctx, analytics.LiveQuery{Site: site, Since: now().Add(-liveWindow).UnixMilli()})
+		// Through caught: a load that panics is a failed load, which
+		// clears loading and arms the next one below.
+		view, err := caught(c.log, "loading a site's live view", func() (apitypes.SiteLive, error) {
+			snap, err := cl.Live(ctx, analytics.LiveQuery{Site: site, Since: now().Add(-liveWindow).UnixMilli()})
+			if err != nil {
+				return apitypes.SiteLive{}, err
+			}
+			return toLiveView(snap), nil
+		})
 		cancel()
 		l.mu.Lock()
 		defer l.mu.Unlock()
@@ -145,7 +153,7 @@ func (c *Core) reloadSite(site int64, ls *liveSite) {
 		}
 		// A failed load keeps the view; the next one tries again.
 		if err == nil {
-			ls.view = toLiveView(snap)
+			ls.view = view
 			ls.notify()
 		}
 		ls.last = now()

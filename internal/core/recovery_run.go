@@ -63,9 +63,18 @@ func (c *Core) StartRecovery(ctx context.Context, a Actor) error {
 	c.recoveryRun.mu.Unlock()
 	c.audit(ctx, a.platform(), "control_plane.recovery", nil, nil, "control plane", fmt.Sprintf("started recovering %d services", len(todo)))
 	orgs := map[int64]string{}
-	c.wg.Go(func() {
+	c.goCounted("recovering the control plane's services", func() {
 		ctx := c.ctx
 		counts := map[apitypes.RecoveryOutcome]int{}
+		// A run that ends early (a panic) must not read as running for
+		// good: that would refuse the next one.
+		defer func() {
+			c.recoveryRun.mu.Lock()
+			if c.recoveryRun.report.Running {
+				c.recoveryRun.report.Running, c.recoveryRun.report.FinishedAt = false, ptr(now())
+			}
+			c.recoveryRun.mu.Unlock()
+		}()
 		for _, ss := range todo {
 			if ctx.Err() != nil {
 				break
