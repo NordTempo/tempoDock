@@ -819,6 +819,9 @@ func (c *Core) finishSnapshotRestore(ctx context.Context, ss svcScope, row store
 		}
 	} else {
 		c.restoreSucceeded(ctx, ss)
+		if !row.InPlace {
+			c.dataAccessAfterRestore(ctx, row.ToServiceID)
+		}
 	}
 	// Recorded before the audit event announces it, so whoever the event
 	// wakes (MCP's restore_snapshot) reads the outcome.

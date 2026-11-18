@@ -178,3 +178,13 @@ func upperFirst(s string) string {
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
 }
+
+// dataAccessAfterRestore sets up data access for the template database a
+// restore made or filled, before its row says done, so `dock db query`
+// works as soon as the restore reads as finished (as restore.finish does
+// for a backup's). Failing is left to afterActive's retry.
+func (c *Core) dataAccessAfterRestore(ctx context.Context, serviceID int64) {
+	if to, err := c.scopeOf(ctx, serviceID); err == nil {
+		_ = c.ensureDataAccess(ctx, to)
+	}
+}

@@ -321,6 +321,9 @@ func (c *Core) finishToTime(ctx context.Context, from svcScope, to string, row s
 		c.audit(ctx, System, "backup.restore_failed", &from.project, &from.env, from.String(), msg)
 	} else {
 		c.restoreSucceeded(ctx, from)
+		if row.RestoredTo != nil {
+			c.dataAccessAfterRestore(ctx, *row.RestoredTo)
+		}
 		c.audit(ctx, System, "backup.restored", &from.project, &from.env, from.String(), fmt.Sprintf("restored %s as it was at %s into %s", from.svc.Name, at, to))
 	}
 	if ferr := c.store.FinishBackup(ctx, fin); ferr != nil {
