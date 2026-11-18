@@ -43,9 +43,11 @@ type egressGuard struct {
 // the platform's alerts, where a homelab's ntfy or chat bridge lives (ADR
 // 0020), and refused for what orgs configure (g.private, ADR 0046, ADR
 // 0062) unless the operator allows them for apps (g.allow). Uptime probes refuse the
-// same addresses (httpkit.IsSelfAddr, IsInternalAddr).
+// same addresses (httpkit.IsSelfAddr, IsInternalAddr). An IPv6 address
+// that carries an IPv4 one (NAT64, 6to4) is judged, and named, as that
+// IPv4 address.
 func (g *egressGuard) addrErr(ip netip.Addr) error {
-	ip = ip.Unmap()
+	ip = httpkit.EffectiveAddr(ip)
 	switch {
 	case httpkit.IsSelfAddr(ip):
 		if g.loopback.Load() {
