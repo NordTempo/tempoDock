@@ -94,6 +94,10 @@ func (c *Core) DoThing(ctx context.Context, a Actor, req apitypes.DoThingRequest
   under whatever hold serializes it with the request that can undo it
   (`keepArchiver`), never from a row it read before: the setting may
   have been turned off, and what it starts then is left behind.
+  The same for a driver started from a list (`resumeMoves`,
+  `resumeServerDrains`): it reads its row again and returns when the
+  work has ended (`driveMove`, `driveServerDrain`). The row was open
+  when it was listed, not necessarily when the driver runs.
 
 ## Tests
 
