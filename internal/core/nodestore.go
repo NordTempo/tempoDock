@@ -302,7 +302,7 @@ func (c *Core) kickServer(serverID int64) {
 		ctx, stop := context.WithCancel(c.ctx)
 		st.stop = stop
 		c.wg.Add(1)
-		go c.watchServer(ctx, serverID, st.kick)
+		c.goCaught("watching a server", func() { c.watchServer(ctx, serverID, st.kick) })
 	}
 	select {
 	case st.kick <- struct{}{}:
@@ -326,22 +326,27 @@ func (c *Core) watchServer(ctx context.Context, serverID int64, kick <-chan stru
 		case <-ctx.Done():
 			return
 		case <-kick:
-			c.reconnected(ctx, serverID)
+			c.safely("bringing a reconnected server in line", func() { c.reconnected(ctx, serverID) })
 		case ev, ok := <-events:
 			if !ok {
 				return
 			}
 			if ev.Action == remote.ActionResync {
-				if rt := c.connected(serverID); rt != nil {
-					if err := c.reconcileServer(ctx, serverID, rt, false); err != nil {
-						c.log.Warn("resync server", "server", serverID, "err", err)
-					}
-					c.followServer(ctx, serverID)
-				}
+				c.safely("resyncing a server", func() { c.resyncServer(ctx, serverID) })
 				continue
 			}
-			c.onContainerEvent(ctx, serverID, ev)
+			c.containerEvent(ctx, serverID, ev)
 		}
+	}
+}
+
+// resyncServer reads a server's containers again after it lost events.
+func (c *Core) resyncServer(ctx context.Context, serverID int64) {
+	if rt := c.connected(serverID); rt != nil {
+		if err := c.reconcileServer(ctx, serverID, rt, false); err != nil {
+			c.log.Warn("resync server", "server", serverID, "err", err)
+		}
+		c.followServer(ctx, serverID)
 	}
 }
 

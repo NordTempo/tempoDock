@@ -115,10 +115,10 @@ func (c *Core) MoveBackups(ctx context.Context, a Actor, req apitypes.MoveBackup
 	st.mu.Unlock()
 	c.audit(ctx, a.platform(), "backup.move", nil, nil, "backups", fmt.Sprintf("started moving the backups from %s to %s", repoLabel(set.Repository), targetURL))
 	c.wg.Add(1)
-	go func() {
+	c.goCaught("moving the backups", func() {
 		defer c.wg.Done()
 		c.runMove(c.ctx, a, sources, target, conn.ID, path)
-	}()
+	})
 	return c.GetBackupSettings(ctx, a, false)
 }
 

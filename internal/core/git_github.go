@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -213,7 +214,11 @@ func (g githubClient) tarball(ctx context.Context, repo, sha string, cred github
 	}
 	pr, pw := io.Pipe()
 	go func() {
-		err := rerootTar(tar.NewReader(gz), pw, dir)
+		// The repository's archive is read here: a panic on it fails the
+		// read of the pipe, and with it the deploy, like any bad archive.
+		_, err := caught(slog.Default(), "reading a repository's archive", func() (struct{}, error) {
+			return struct{}{}, rerootTar(tar.NewReader(gz), pw, dir)
+		})
 		_ = resp.Body.Close()
 		_ = pw.CloseWithError(err)
 	}()

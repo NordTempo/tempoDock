@@ -280,7 +280,8 @@ func (col *collector) loadNames(ctx context.Context, q *store.Queries, targets [
 func (c *Core) collectStats() {
 	defer c.wg.Done()
 	col := newCollector()
-	c.statsTick(c.ctx, col, time.Now())
+	// A panic in a tick ends that tick; the next comes on the minute.
+	c.safely("a statistics tick", func() { c.statsTick(c.ctx, col, time.Now()) })
 	close(c.stats.firstTick)
 	t := time.NewTimer(untilNextMinute(time.Now()))
 	defer t.Stop()
@@ -289,7 +290,7 @@ func (c *Core) collectStats() {
 		case <-c.ctx.Done():
 			return
 		case now := <-t.C:
-			c.statsTick(c.ctx, col, now)
+			c.safely("a statistics tick", func() { c.statsTick(c.ctx, col, now) })
 			t.Reset(untilNextMinute(time.Now()))
 		}
 	}
@@ -614,7 +615,7 @@ func (c *Core) watch(w *watcher) (unwatch func(), ok bool) {
 	if s.stopLive == nil {
 		s.stopLive = make(chan struct{})
 		c.wg.Add(1)
-		go c.runLive(s.stopLive)
+		c.goCaught("sampling live statistics", func() { c.runLive(s.stopLive) })
 	}
 	return func() {
 		s.mu.Lock()
@@ -650,7 +651,8 @@ func (c *Core) runLive(stop <-chan struct{}) {
 			return
 		default:
 		}
-		c.liveRound(c.ctx, smp)
+		// A panic in a round ends that round; the next comes on the tick.
+		c.safely("a round of live statistics", func() { c.liveRound(c.ctx, smp) })
 		select {
 		case <-stop:
 			return

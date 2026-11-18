@@ -211,7 +211,11 @@ func (c *Core) runWildcards() {
 	kicked := true // the first pass retries what waited for a change
 	var timer *time.Timer
 	for {
-		next := c.wildcardPass(c.ctx, kicked)
+		// A panic in a pass ends that pass: the next comes after wildcardRetryMin.
+		next, err := caught(c.log, "a pass over the wildcard certificates", func() (time.Time, error) { return c.wildcardPass(c.ctx, kicked), nil })
+		if err != nil {
+			next = now().Add(wildcardRetryMin)
+		}
 		if timer != nil {
 			timer.Stop()
 		}

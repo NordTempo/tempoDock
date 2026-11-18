@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/NordTempo/tempoDock/internal/httpkit"
 	"github.com/NordTempo/tempoDock/internal/tempobase"
 	"github.com/NordTempo/tempoDock/internal/tempobase/tbhttp"
 	"github.com/NordTempo/tempoDock/internal/tempobase/tbtypes"
@@ -113,7 +114,7 @@ func serve(ctx context.Context, args []string, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
-	srv := &http.Server{Handler: tbhttp.New(app, tbhttp.Options{Logger: log}), ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Handler: tbhttp.New(app, tbhttp.Options{Logger: log}), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: httpkit.IdleTimeout}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()
 	log.Info("tempobase listening", "version", version.Version, "listen", cfg.Listen, "data", cfg.DataDir)

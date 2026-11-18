@@ -278,10 +278,13 @@ func (c *Core) deliver(ch store.AlertChannel, n apitypes.AlertNotification) {
 		return
 	}
 	c.wg.Add(1)
-	go func() {
+	c.goCaught("sending alert notifications", func() {
 		defer c.wg.Done()
-		c.alerts.outbox.sendAll(c.ctx, ch.ID, func(n apitypes.AlertNotification) { c.sendWithRetries(ch.ID, n) })
-	}()
+		c.alerts.outbox.sendAll(c.ctx, ch.ID, func(n apitypes.AlertNotification) {
+			// A panic drops this notification; the queue goes on.
+			c.safely("sending an alert notification", func() { c.sendWithRetries(ch.ID, n) })
+		})
+	})
 }
 
 // sendWithRetries makes up to len(deliveryBackoff) attempts at one

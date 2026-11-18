@@ -2,10 +2,12 @@ package api
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -92,6 +94,18 @@ func (b *hookBody) Read(p []byte) (int, error) {
 	return b.ReadCloser.Read(p)
 }
 
+// signatureShaped reports whether header looks like GitHub's
+// X-Hub-Signature-256: "sha256=" and 64 hex digits. A delivery without
+// one can't pass the check, so it is refused before its body is read.
+func signatureShaped(header string) bool {
+	hexPart, ok := strings.CutPrefix(header, "sha256=")
+	if !ok || len(hexPart) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(hexPart)
+	return err == nil
+}
+
 // hooksPath is the prefix of every webhook URL.
 const hooksPath = "/hooks/github/"
 
@@ -104,7 +118,8 @@ const hooksPath = "/hooks/github/"
 //	                         GitHub App's (ADR 0031) (core.GitWebhook)
 //
 // Answers are plain text, which GitHub shows in the delivery log. The
-// webhook must exist, and the body fit, before a read slot is taken: the
+// webhook must exist, the body fit and a signature be there (checked by
+// core.GitWebhook, once the body is read) before a read slot is taken: the
 // listener is public, and slots held by strangers would stall deliveries.
 // A slot is held for at most hookReadTimeout, also on the public listener,
 // which has no read timeout of its own, and for no longer than
@@ -138,6 +153,10 @@ func Hooks(c *core.Core, log *slog.Logger) http.Handler {
 			http.Error(w, "payload larger than 4 MB", http.StatusRequestEntityTooLarge)
 			return
 		}
+		if !signatureShaped(r.Header.Get("X-Hub-Signature-256")) {
+			http.Error(w, "signature missing or wrong; set the webhook's secret in GitHub, which then signs each delivery (X-Hub-Signature-256)", http.StatusUnauthorized)
+			return
+		}
 		turn, ok := turns.Load(r.PathValue("id"))
 		if !ok {
 			turn, _ = turns.LoadOrStore(r.PathValue("id"), make(chan struct{}, 1))
@@ -162,7 +181,7 @@ func Hooks(c *core.Core, log *slog.Logger) http.Handler {
 		}
 		msg, err := c.GitWebhook(r.Context(), core.GitDelivery{
 			HookID: r.PathValue("id"), Event: r.Header.Get("X-GitHub-Event"), ID: r.Header.Get("X-GitHub-Delivery"),
-			Signature: r.Header.Get("X-Hub-Signature-256"), Body: body,
+			Signature: r.Header.Get("X-Hub-Signature-256"), Body: body, Client: clientIP(r),
 		})
 		if err != nil {
 			fail(w, err)

@@ -18,6 +18,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/analytics/ingest"
 	"github.com/NordTempo/tempoDock/internal/analytics/spool"
 	"github.com/NordTempo/tempoDock/internal/config"
+	"github.com/NordTempo/tempoDock/internal/httpkit"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/node/build"
 	"github.com/NordTempo/tempoDock/internal/node/caddy"
@@ -171,14 +172,14 @@ func ingestServers(cfg config.Config, in ingests) []*http.Server {
 	if in.analytics != nil && cfg.Analytics.IngestListen != "" {
 		out = append(out, &http.Server{
 			Addr: cfg.Analytics.IngestListen, Handler: in.analytics,
-			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second,
+			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: httpkit.IdleTimeout,
 			MaxHeaderBytes: 16 << 10,
 		})
 	}
 	if in.traces != nil && cfg.Traces.IngestListen != "" {
 		out = append(out, &http.Server{
 			Addr: cfg.Traces.IngestListen, Handler: in.traces,
-			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 10 * time.Second,
+			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: httpkit.IdleTimeout,
 			MaxHeaderBytes: 16 << 10,
 		})
 	}

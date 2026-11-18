@@ -182,6 +182,7 @@ authenticates from `dock_session` over HTTPS until it expires; a newer one
 under the bare name doesn't, so a tossed cookie can't carry one.
 
 Unauthenticated ceremonies (a passkey sign-in, a single sign-on) are
-held at most 20 per client, an IPv4 address or an IPv6 /64, and a full
-store drops its oldest one instead of refusing everyone. The sign-in rate
-limits count IPv6 clients by /64 too.
+held at most 20 per client, an IPv4 address or an IPv6 /48 (one site
+commonly holds a /48 or a /56, so all its /64s are one client), and a full store makes room instead of refusing everyone: from
+the caller's own first, else from whoever holds the most. The sign-in
+rate limits count IPv6 clients by /48 too.

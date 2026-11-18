@@ -824,3 +824,29 @@ func TestGitTokenStaysWithItsRepository(t *testing.T) {
 		t.Fatalf("a change of repository with a token of its own: %+v, %v", res.Connection, err)
 	}
 }
+
+// Deliveries with a wrong signature have their own allowance, per client:
+// however many arrive, a signed delivery to the same webhook is accepted.
+func TestBadSignaturesLeaveSignedDeliveriesAlone(t *testing.T) {
+	h, _ := gitHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	k := h.connect(web, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main"})
+	body := pushBody("refs/heads/main", shaA, "server.js")
+	limited := false
+	for i := range 100 {
+		_, err := h.c.GitWebhook(h.ctx, GitDelivery{HookID: k.id, Event: "push", ID: fmt.Sprintf("bad-%d", i), Signature: sign("guess", body), Body: body, Client: "203.0.113.9"})
+		switch CodeOf(err) {
+		case apitypes.CodeUnauthorized:
+		case apitypes.CodeRateLimited:
+			limited = true
+		default:
+			t.Fatalf("wrong signature %d: %v", i, err)
+		}
+	}
+	if !limited {
+		t.Fatal("100 deliveries with a wrong signature were never rate limited")
+	}
+	if msg, err := h.push(k, body); err != nil || msg != "push aaaaaaa: queued" {
+		t.Fatalf("signed delivery after them: %q, %v", msg, err)
+	}
+}

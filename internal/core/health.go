@@ -152,7 +152,7 @@ func (c *Core) onHealth(ss svcScope, containerID string, health string, now time
 		w.mu.Unlock()
 		if start {
 			c.wg.Add(1)
-			go c.handleUnhealthy(ss, containerID, now)
+			c.goCaught("restarting an unhealthy service", func() { c.handleUnhealthy(ss, containerID, now) })
 		}
 	default:
 		w.mu.Unlock()
@@ -185,7 +185,7 @@ func (c *Core) healthTick(ctx context.Context, now time.Time) {
 			continue
 		}
 		c.wg.Add(1)
-		go c.handleUnhealthy(ss, d.container, now)
+		c.goCaught("restarting an unhealthy service", func() { c.handleUnhealthy(ss, d.container, now) })
 	}
 }
 

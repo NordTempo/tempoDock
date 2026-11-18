@@ -299,7 +299,7 @@ func (c *Core) StartUpdate(ctx context.Context, a Actor, req apitypes.StartUpdat
 		c.audit(ctx, a.platform(), "platform.update_started", nil, nil, "dock", fmt.Sprintf("started updating the servers behind to %s", target))
 	}
 	c.wg.Add(1)
-	go func() {
+	c.goCaught("updating Dock", func() {
 		defer c.wg.Done()
 		r := update.Request{Version: target, RequestedBy: a.Name, RequestedAt: now(), Servers: true}
 		if self {
@@ -307,7 +307,7 @@ func (c *Core) StartUpdate(ctx context.Context, a Actor, req apitypes.StartUpdat
 		} else {
 			c.updateNodes(r)
 		}
-	}()
+	})
 	st, err := c.updateStatus(ctx, false)
 	c.publishUpdate(st)
 	return st, err
@@ -403,10 +403,10 @@ func (c *Core) UpdateFinished(ctx context.Context) {
 		u.running = &apitypes.UpdateRun{Version: res.Version, Stage: apitypes.UpdateServers, RequestedBy: res.RequestedBy, StartedAt: res.StartedAt}
 		u.mu.Unlock()
 		c.wg.Add(1)
-		go func() {
+		c.goCaught("updating the servers", func() {
 			defer c.wg.Done()
 			c.updateNodes(res.Request)
-		}()
+		})
 	}
 	if st, err := c.updateStatus(ctx, false); err == nil {
 		c.publishUpdate(st)

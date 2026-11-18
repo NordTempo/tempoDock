@@ -845,7 +845,7 @@ func (c *Core) launch(ctx context.Context, a Actor, ss svcScope, rel store.Relea
 	// is queued (ADR 0086).
 	dctx, run := c.deploys.track(c.ctx, rel.ID)
 	c.wg.Add(1)
-	go c.deploy(dctx, run, ss, rel, spec)
+	c.goCaught("deploying a release", func() { c.deploy(dctx, run, ss, rel, spec) })
 }
 
 // setServiceImage changes a service's live image setting, if it differs.
