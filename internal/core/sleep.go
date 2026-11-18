@@ -418,7 +418,7 @@ func (c *Core) resolveUptimeAlerts(ctx context.Context, serviceID int64) {
 	}
 	t := time.Now()
 	for _, chk := range checks {
-		c.resolveAlert(ctx, uptimeKey(chk.ID), t)
+		c.resolveAlertNow(ctx, uptimeKey(chk.ID), t)
 	}
 }
 

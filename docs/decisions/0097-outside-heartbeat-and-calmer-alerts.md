@@ -70,7 +70,9 @@ except one one-shot per channel while a group is being collected.
 down, crash loop, server offline) don't resolve the moment their
 condition clears. The alert is marked cleared (`alerts.cleared_at`) and
 stays open; the statistics tick resolves it once it has been clear for
-`[alerts] settle_minutes` (default 3; 0 turns settling off). If the
+`[alerts] settle_minutes` (default 3; 0 turns settling off). The API
+returns `cleared_at` meanwhile, and the alert event is published when it
+is set, so the Inbox can say since when it is clear. If the
 condition comes back first, it is the same alert: `cleared_at` is
 reset, its count goes up, and nothing is sent. So a flapping service
 sends one "opened" and, after it has been quiet, one "resolved" that
@@ -88,9 +90,10 @@ rewriting the alert.
 
 **Grouping.** A channel's sender waits 10 seconds after the first
 notification arrives, then sends everything queued for that channel as
-one message: Slack and email get one message listing each alert; a
-webhook gets one POST per notification as before, since receivers parse
-one alert per body. A server going offline with its checks is then one
+one message: Slack gets one message listing each alert; a webhook gets
+one POST per notification as before, since receivers parse one alert
+per body. Email is meant to get one mail per group too; that part isn't
+built (see "Not done"). A server going offline with its checks is then one
 Slack message. The wait is a one-shot timer that exists only while a
 channel has something queued.
 
@@ -110,9 +113,48 @@ channel was told about.
   `alerts.cleared_at`.
 - Not done: per-channel grouping windows, a node sending alerts itself,
   grouping by cause across channels (a group is whatever arrives within
-  the window).
+  the window), and grouping for email channels: they queue a mail per
+  recipient in Dock's email outbox the moment an alert is raised (ADR
+  0079), past the channel senders that hold the window, so each
+  notification is still its own mail.
 
 ## Built so far
 
 See the handoff note in the pull request; this section is updated as
 parts land.
+
+### Calmer alerts
+
+Built, in `internal/core/alerts.go` and `alerts_notify.go`:
+
+- **Count.** `alerts.count` is in the API (`count`), in webhook bodies
+  and in the Slack and email text ("(3 times)"; a resolution says
+  "(happened 3 times)").
+- **Settling.** `[alerts] settle_minutes` (default 3, 0 to 60, 0 off).
+  `resolveAlert` marks an unhealthy, uptime down, crash loop or server
+  offline alert cleared (`cleared_at`, returned by the API, published as
+  an alert event) and the statistics tick (`settleAlerts`) resolves it
+  once it stayed clear. Raising it meanwhile counts it again and sends
+  nothing unless its severity went up. It survives a restart, since
+  `cleared_at` is stored. What resolves at once (`resolveAlertNow`):
+  resolving by hand, an archived service, a service stopped on purpose,
+  asleep or without a container, a server removed or revoked, an uptime
+  check removed (or its domain) or paused by sleep. A new release going
+  live and a container replaced at a cutover settle like a condition
+  that cleared by itself: if the new container fails the same way it is
+  the same alert.
+- **Repeats.** A deploy or backup alert whose target changed counts and
+  sends `repeated` ("[warning, again] ... (2 times)") to the channels
+  its severity reaches, unless a maintenance window holds it.
+- **Grouping.** A webhook or Slack channel's sender waits 10 s
+  (`groupWindow`, one one-shot timer) and then sends what is queued:
+  Slack as one message ("3 alerts", then each alert, a blank line
+  between), retried as one delivery; a webhook one POST per notification
+  in order. What arrives while a group is being sent is the next group,
+  without another wait. Status page hooks are as before: no window, one
+  at a time.
+- **Resolutions aren't dropped.** `deliveryQueue.add` queues a
+  resolution past `maxQueued`.
+
+Not built: grouping for email channels (see "Not done"), and the web
+UI's side (the Inbox showing `count` and `cleared_at`).

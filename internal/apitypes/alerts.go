@@ -115,6 +115,12 @@ type Alert struct {
 	OpenedAt   time.Time    `json:"opened_at"`
 	UpdatedAt  time.Time    `json:"updated_at"`
 	ResolvedAt *time.Time   `json:"resolved_at,omitempty"`
+	// Count is how many times the condition occurred while the alert was
+	// open (ADR 0097): a service that flapped, a deploy that failed again.
+	Count int64 `json:"count" example:"1"`
+	// ClearedAt is when the alert's condition last cleared; it resolves
+	// once it stays clear for [alerts] settle_minutes (ADR 0097).
+	ClearedAt *time.Time `json:"cleared_at,omitempty" doc:"When the alert's condition last cleared; it resolves once it stays clear for settle_minutes"`
 	// Platform marks the platform's alerts (servers, connections, Dock
 	// itself); the rest are the organization's.
 	Platform bool `json:"platform,omitempty"`
@@ -221,9 +227,10 @@ type AlertChannelTest struct {
 
 // AlertNotification is the JSON body webhook channels receive. Event says
 // what happened to the alert: opened, escalated (its severity went up),
-// reminder (still open), resolved, or test.
+// repeated (it happened again while open: another deploy or backup
+// failed, ADR 0097), reminder (still open), resolved, or test.
 type AlertNotification struct {
-	Event  string    `json:"event" enum:"opened,escalated,reminder,resolved,test"`
+	Event  string    `json:"event" enum:"opened,escalated,repeated,reminder,resolved,test"`
 	Alert  Alert     `json:"alert"`
 	SentAt time.Time `json:"sent_at"`
 }

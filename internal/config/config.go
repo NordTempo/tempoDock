@@ -298,6 +298,11 @@ type Alerts struct {
 	MemoryMinutes         int `toml:"memory_minutes"`
 	CPUPercent            int `toml:"cpu_percent"`
 	CPUMinutes            int `toml:"cpu_minutes"`
+	// SettleMinutes is how long the condition of an alert that flaps
+	// (unhealthy, uptime down, crash loop, server offline) must stay clear
+	// before the alert resolves (ADR 0097); if it comes back sooner it is
+	// the same alert, counted again. 0 resolves at once.
+	SettleMinutes int `toml:"settle_minutes"`
 }
 
 // Backup configures backup jobs (ADR 0019). The repository, credentials,
@@ -580,6 +585,7 @@ func Default() Config {
 			MemoryMinutes:         5,
 			CPUPercent:            90,
 			CPUMinutes:            15,
+			SettleMinutes:         3,
 		},
 	}
 }
@@ -848,6 +854,8 @@ func (a Alerts) validate() error {
 		return errors.New("[alerts] cpu_percent must be 0 (off) to 100")
 	case a.MemoryMinutes < 1 || a.CPUMinutes < 1:
 		return errors.New("[alerts] memory_minutes and cpu_minutes must be at least 1")
+	case a.SettleMinutes < 0 || a.SettleMinutes > 60:
+		return errors.New("[alerts] settle_minutes must be 0 (off) to 60")
 	}
 	return nil
 }

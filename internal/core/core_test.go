@@ -88,6 +88,9 @@ func newHarness(t *testing.T) *harness {
 	cfg.DataDir = dir
 	cfg.BaseDomain = "apps.test"
 	cfg.PublicIP = "203.0.113.10"
+	// Alerts resolve the moment their condition clears, which is what
+	// most tests are about; the settling tests turn it on (ADR 0097).
+	cfg.Alerts.SettleMinutes = 0
 	// The analytics store's binary: a development build has no release
 	// to download it from.
 	cfg.Analytics.StoreBinary = filepath.Join(dir, "dock-analytics")

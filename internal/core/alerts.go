@@ -31,6 +31,14 @@ import (
 // in the DB; each change is written, published as an alert event and
 // handed to the notifier (alerts_notify.go).
 //
+// Alerts are kept calm (ADR 0097). An alert counts how many times its
+// condition occurred while it was open (alerts.count). One of a kind that
+// flaps (settles) doesn't resolve when its condition clears: it is marked
+// cleared and the tick resolves it once it stayed clear for [alerts]
+// settle_minutes; a condition back sooner is the same alert, counted
+// again, and nothing is sent. A deploy or backup failing again while its
+// alert is open counts too and sends "repeated".
+//
 // An alert belongs to an org or to the platform (ADR 0062), decided by
 // what it names when it opens (alertOrg): one about a project or service
 // is that org's, for its members and its channels; one about a server or
@@ -57,8 +65,12 @@ type alertSignal struct {
 	// orgID, when set, is the org the alert belongs to, for one that
 	// names no project or service (an org's own connection).
 	orgID int64
-	// Resolve closes the open alert with Key; the other fields are unused.
+	// Resolve closes the open alert with Key; of the other fields only
+	// Gone is read.
 	Resolve bool
+	// Gone, with Resolve, says what the alert was about is gone (a check
+	// removed), so it resolves at once instead of settling (ADR 0097).
+	Gone bool
 }
 
 // alertEngine is the alert state. Its methods are called from the bus
@@ -316,11 +328,19 @@ func (e *alertEngine) hold(ctx context.Context, key string) (release func(), ok 
 
 // signalAlert raises or resolves an alert right away.
 func (c *Core) signalAlert(ctx context.Context, s alertSignal) {
-	if s.Resolve {
-		c.resolveAlert(ctx, s.Key, time.Now())
-		return
+	c.applySignal(ctx, s, time.Now())
+}
+
+// applySignal raises or resolves the alert a signal names.
+func (c *Core) applySignal(ctx context.Context, s alertSignal, now time.Time) {
+	switch {
+	case s.Resolve && s.Gone:
+		c.resolveAlertNow(ctx, s.Key, now)
+	case s.Resolve:
+		c.resolveAlert(ctx, s.Key, now)
+	default:
+		c.raiseAlert(ctx, s, now)
 	}
-	c.raiseAlert(ctx, s, time.Now())
 }
 
 // serviceKey is the human-readable address of a service.
@@ -338,11 +358,7 @@ func alertServiceKey(id int64, project, env, service string) string {
 // onAlertEvent applies one bus event.
 func (c *Core) onAlertEvent(ctx context.Context, ev LiveEvent, now time.Time) {
 	if s := ev.signal; s != nil {
-		if s.Resolve {
-			c.resolveAlert(ctx, s.Key, now)
-		} else {
-			c.raiseAlert(ctx, *s, now)
-		}
+		c.applySignal(ctx, *s, now)
 	}
 	svc := alertServiceKey(ev.serviceID, ev.Project, ev.Environment, ev.Service)
 	switch ev.Type {
@@ -417,7 +433,12 @@ func (c *Core) onAlertEvent(ctx context.Context, ev LiveEvent, now time.Time) {
 			c.alerts.mu.Unlock()
 		}
 		if ev.Message == "removed" || s.Status == apitypes.ServerOnline || s.Status == apitypes.ServerRevoked {
-			c.resolveAlert(ctx, "server:"+id, now)
+			// Back online settles; a server that is gone resolves at once.
+			if s.Status == apitypes.ServerOnline && ev.Message != "removed" {
+				c.resolveAlert(ctx, "server:"+id, now)
+			} else {
+				c.resolveAlertNow(ctx, "server:"+id, now)
+			}
 			c.alerts.mu.Lock()
 			delete(c.alerts.offline, s.ID)
 			c.alerts.mu.Unlock()
@@ -493,17 +514,17 @@ func noContainer(s apitypes.ServiceState) bool {
 // onServiceStatus counts a service's restarts and raises a crash loop
 // alert when [alerts] crash_loop_restarts fall within crash_loop_minutes.
 // A service without a container (nothing deployed, archived, stopped
-// on purpose, ADR 0050, or asleep) resolves it.
+// on purpose, ADR 0050, or asleep) resolves it at once, without settling.
 func (c *Core) onServiceStatus(ctx context.Context, ev LiveEvent, svc string, st apitypes.ServiceStatus, now time.Time) {
 	if noContainer(st.State) {
 		c.alerts.mu.Lock()
 		delete(c.alerts.restarts, svc)
 		c.alerts.mu.Unlock()
-		c.resolveAlert(ctx, "crash:"+svc, now)
+		c.resolveAlertNow(ctx, "crash:"+svc, now)
 		// This event may be read late: only a service that is still
 		// stopped loses its health check state and alert.
 		if s := c.getStatus(ev.serviceID).State; ev.serviceID != 0 && noContainer(s) {
-			c.resolveAlert(ctx, "health:"+svc, now)
+			c.resolveAlertNow(ctx, "health:"+svc, now)
 			c.health.forget(ev.serviceID)
 		}
 		return
@@ -566,8 +587,8 @@ func (c *Core) onServiceStatus(ctx context.Context, ev LiveEvent, svc string, st
 
 // alertTick runs on the statistics tick: disk, memory and CPU alerts from
 // the samples just taken (hosts, by server ID), servers offline for too
-// long, crash loops that calmed down, analytics alerts that need a clock,
-// and reminders.
+// long, crash loops that calmed down, alerts that stayed clear for their
+// settling time, analytics alerts that need a clock, and reminders.
 func (c *Core) alertTick(ctx context.Context, now time.Time, servers []store.Server, hosts map[int64]apitypes.ServerUsage) {
 	for _, srv := range servers {
 		if u, ok := hosts[srv.ID]; ok && len(u.Disks) > 0 {
@@ -582,6 +603,7 @@ func (c *Core) alertTick(ctx context.Context, now time.Time, servers []store.Ser
 		}
 	}
 	c.calmCrashLoops(ctx, now)
+	c.settleAlerts(ctx, now)
 	c.analyticsAlertTick(ctx, now)
 	c.remind(ctx, now)
 }
@@ -707,7 +729,7 @@ func gb(b int64) string { return strconv.FormatFloat(float64(b)/(1<<30), 'f', 1,
 
 // offlineAlert raises a server's offline alert once it has been
 // unreachable for [alerts] server_offline_minutes, and resolves it when it
-// is back or revoked.
+// is back (after settling) or revoked (at once).
 func (c *Core) offlineAlert(ctx context.Context, srv store.Server, now time.Time) {
 	key := "server:" + strconv.FormatInt(srv.ID, 10)
 	status := c.serverStatus(srv)
@@ -716,7 +738,11 @@ func (c *Core) offlineAlert(ctx context.Context, srv store.Server, now time.Time
 	if status == apitypes.ServerOnline || status == apitypes.ServerRevoked {
 		delete(e.offline, srv.ID)
 		e.mu.Unlock()
-		c.resolveAlert(ctx, key, now)
+		if status == apitypes.ServerRevoked {
+			c.resolveAlertNow(ctx, key, now)
+		} else {
+			c.resolveAlert(ctx, key, now)
+		}
 		return
 	}
 	since, ok := e.offline[srv.ID]
@@ -822,7 +848,11 @@ func (c *Core) reconcileAlerts(ctx context.Context, now time.Time) {
 
 // raiseAlert opens an alert for s.Key, or updates the open one when its
 // severity, title or message changed. A new alert, or one whose severity
-// went up, is sent to the channels.
+// went up, is sent to the channels. An open alert whose condition had
+// cleared (it was settling) is the same alert again: its count goes up
+// and nothing is sent. A deploy or backup alert whose target changed
+// (another release or backup failed) counts too and is sent as
+// "repeated" (ADR 0097).
 func (c *Core) raiseAlert(ctx context.Context, s alertSignal, now time.Time) {
 	t := now.UTC()
 	// A maintenance window in progress holds alerts about what it covers:
@@ -850,14 +880,21 @@ func (c *Core) raiseAlert(ctx context.Context, s alertSignal, now time.Time) {
 	e.mu.Unlock()
 	target := alertTargetJSON(s.Target)
 	if ok {
-		if cur.Severity == string(s.Severity) && cur.Title == s.Title && cur.Message == s.Message && cur.Project == s.Project &&
+		back := cur.ClearedAt != nil
+		if !back && cur.Severity == string(s.Severity) && cur.Title == s.Title && cur.Message == s.Message && cur.Project == s.Project &&
 			cur.Command == s.Command && cur.Target == target {
 			e.writes.RUnlock()
 			return
 		}
 		escalated := severityRank(s.Severity) > severityRank(apitypes.AlertSeverity(cur.Severity))
+		repeated := repeats(apitypes.AlertKind(cur.Kind)) && cur.Target != target
+		count := max(cur.Count, 1)
+		if back || repeated {
+			count++
+		}
 		err := c.store.UpdateAlert(ctx, store.UpdateAlertParams{
-			Severity: string(s.Severity), Title: s.Title, Message: s.Message, Project: s.Project, Command: s.Command, Target: target, UpdatedAt: t, ID: cur.ID,
+			Severity: string(s.Severity), Title: s.Title, Message: s.Message, Project: s.Project, Command: s.Command, Target: target,
+			Count: count, UpdatedAt: t, ID: cur.ID,
 		})
 		if err != nil {
 			e.writes.RUnlock()
@@ -871,13 +908,17 @@ func (c *Core) raiseAlert(ctx context.Context, s alertSignal, now time.Time) {
 			cur = latest
 		}
 		cur.Severity, cur.Title, cur.Message, cur.Project, cur.UpdatedAt = string(s.Severity), s.Title, s.Message, s.Project, t
-		cur.Command, cur.Target = s.Command, target
+		cur.Command, cur.Target, cur.Count, cur.ClearedAt = s.Command, target, count, nil
 		e.open[s.Key] = cur
 		e.mu.Unlock()
 		e.writes.RUnlock()
 		c.publishAlert(cur)
-		if escalated && cur.MutedBy == nil {
+		switch {
+		case cur.MutedBy != nil:
+		case escalated:
 			c.notify(ctx, cur, "escalated", now)
+		case repeated:
+			c.notify(ctx, cur, "repeated", now)
 		}
 		return
 	}
@@ -972,30 +1013,92 @@ func alertProjectID(a store.Alert) int64 {
 
 // resolveServiceAlerts closes every alert an archived service can hold:
 // its deploy, backup, crash and health alerts and those of its domains
-// (hostnames), and drops its health check state. finishArchive calls it,
+// (hostnames), at once, and drops its health check state. finishArchive calls it,
 // so the alerts close at once instead of at the next reconcileAlerts.
 func (c *Core) resolveServiceAlerts(ctx context.Context, serviceID int64, hostnames []string) {
 	now := time.Now()
 	svc := alertServiceKey(serviceID, "", "", "")
 	for _, kind := range []string{"deploy:", "backup:", "crash:", "health:", vulnAlertKey} {
-		c.resolveAlert(ctx, kind+svc, now)
+		c.resolveAlertNow(ctx, kind+svc, now)
 	}
 	for _, h := range hostnames {
-		c.resolveAlert(ctx, "domain:"+h, now)
+		c.resolveAlertNow(ctx, "domain:"+h, now)
 	}
 	c.health.forget(serviceID)
 }
 
-// resolveAlert closes the open alert for key, if there is one, and tells
-// the channels that were told about it.
+// settles reports whether alerts of kind settle before they resolve (ADR
+// 0097): the kinds whose condition flaps.
+func settles(kind apitypes.AlertKind) bool {
+	switch kind {
+	case apitypes.AlertUnhealthy, apitypes.AlertUptimeDown, apitypes.AlertCrashLoop, apitypes.AlertServerOffline:
+		return true
+	}
+	return false
+}
+
+// repeats reports whether an open alert of kind whose target changed is
+// another occurrence (ADR 0097): another release or backup failed.
+func repeats(kind apitypes.AlertKind) bool {
+	return kind == apitypes.AlertDeployFailed || kind == apitypes.AlertBackupFailed
+}
+
+// resolveMode is how resolveAlertID closes an alert.
+type resolveMode int
+
+const (
+	// resolveCleared: the condition cleared by itself. An alert of a kind
+	// that settles is only marked cleared; any other resolves.
+	resolveCleared resolveMode = iota
+	// resolveNow: what the alert is about is gone, or a person said so.
+	resolveNow
+	// resolveSettled: the tick found the alert clear for its settling
+	// time; it resolves unless the condition came back meanwhile.
+	resolveSettled
+)
+
+// resolveAlert is for a condition that cleared by itself. It closes the
+// open alert for key, if there is one, and tells the channels that were
+// told about it; an alert of a kind that settles (settles, with [alerts]
+// settle_minutes above 0) is marked cleared instead and stays open: its
+// alert event is published, nothing is sent to channels, until
+// settleAlerts resolves it or raiseAlert finds the condition back.
 func (c *Core) resolveAlert(ctx context.Context, key string, now time.Time) {
-	c.resolveAlertID(ctx, key, 0, now)
+	c.resolveAlertID(ctx, key, 0, now, resolveCleared)
+}
+
+// resolveAlertNow closes the open alert for key at once, settling or
+// not: what it is about is gone (a service archived or stopped on
+// purpose, a server or check removed) or a person resolved it.
+func (c *Core) resolveAlertNow(ctx context.Context, key string, now time.Time) {
+	c.resolveAlertID(ctx, key, 0, now, resolveNow)
+}
+
+// settleAlerts resolves the open alerts whose condition has stayed clear
+// for [alerts] settle_minutes. It runs on the statistics tick; with no
+// cleared alert it is a pass over the open ones in memory.
+func (c *Core) settleAlerts(ctx context.Context, now time.Time) {
+	settle := time.Duration(c.cfg.Alerts.SettleMinutes) * time.Minute
+	e := c.alerts
+	var keys []string
+	var ids []int64
+	e.mu.Lock()
+	for key, a := range e.open {
+		if a.ClearedAt != nil && now.Sub(*a.ClearedAt) >= settle {
+			keys, ids = append(keys, key), append(ids, a.ID)
+		}
+	}
+	e.mu.Unlock()
+	for i, key := range keys {
+		c.resolveAlertID(ctx, key, ids[i], now, resolveSettled)
+	}
 }
 
 // resolveAlertID is resolveAlert for the open alert with row ID id only
 // (0: whichever is open), for a caller that decided on an alert it read
-// earlier and must not close one opened since.
-func (c *Core) resolveAlertID(ctx context.Context, key string, id int64, now time.Time) {
+// earlier and must not close one opened since; mode says whether it
+// settles first.
+func (c *Core) resolveAlertID(ctx context.Context, key string, id int64, now time.Time, mode resolveMode) {
 	e := c.alerts
 	release, ok := e.hold(ctx, key) // as raiseAlert: no write under mu
 	if !ok {
@@ -1010,13 +1113,36 @@ func (c *Core) resolveAlertID(ctx context.Context, key string, id int64, now tim
 		e.writes.RUnlock()
 		return // a newer alert under the key: not this caller's
 	}
-	delete(e.causes, key) // the next occurrence is diagnosed again
-	e.mu.Unlock()
-	if !ok {
+	clear := ok && mode == resolveCleared && c.cfg.Alerts.SettleMinutes > 0 && settles(apitypes.AlertKind(a.Kind))
+	// Cleared already, or (for the tick) the condition is back: as it is.
+	if !ok || (clear && a.ClearedAt != nil) || (mode == resolveSettled && a.ClearedAt == nil) {
+		e.mu.Unlock()
 		e.writes.RUnlock()
 		return
 	}
+	if !clear {
+		delete(e.causes, key) // the next occurrence is diagnosed again
+	}
+	e.mu.Unlock()
 	t := now.UTC()
+	if clear {
+		err := c.store.ClearAlert(ctx, store.ClearAlertParams{At: &t, ID: a.ID})
+		if err != nil {
+			e.writes.RUnlock()
+			c.log.Error("clear alert", "alert", key, "err", err)
+			return
+		}
+		e.mu.Lock()
+		if latest, still := e.open[key]; still {
+			a = latest
+		}
+		a.ClearedAt = &t
+		e.open[key] = a
+		e.mu.Unlock()
+		e.writes.RUnlock()
+		c.publishAlert(a) // open pages show it clear since t
+		return
+	}
 	if err := c.store.ResolveAlert(ctx, store.ResolveAlertParams{At: &t, ID: a.ID}); err != nil {
 		e.writes.RUnlock()
 		c.log.Error("resolve alert", "alert", key, "err", err)
@@ -1061,7 +1187,8 @@ func toAlert(a store.Alert) apitypes.Alert {
 	out := apitypes.Alert{
 		ID: a.ID, Kind: apitypes.AlertKind(a.Kind), Severity: apitypes.AlertSeverity(a.Severity), Title: a.Title, Message: a.Message,
 		Project: a.Project, Environment: a.Environment, Service: a.Service, Server: a.Server, Command: a.Command,
-		OpenedAt: a.OpenedAt, UpdatedAt: a.UpdatedAt, ResolvedAt: a.ResolvedAt, Platform: a.OrgID == nil,
+		OpenedAt: a.OpenedAt, UpdatedAt: a.UpdatedAt, ResolvedAt: a.ResolvedAt, Platform: a.OrgID == nil, Count: max(a.Count, 1),
+		ClearedAt: a.ClearedAt,
 	}
 	if a.Target != "" {
 		var t apitypes.AlertTarget
@@ -1155,8 +1282,9 @@ func sortAlerts(as []apitypes.Alert) {
 	})
 }
 
-// ResolveAlert closes an open alert by hand, for one whose condition
-// won't clear by itself (a failed backup never retried). If the condition
+// ResolveAlert closes an open alert by hand, at once (it doesn't settle),
+// for one whose condition won't clear by itself (a failed backup never
+// retried). If the condition
 // is still there, the engine raises a new one. An org's alert takes deploy
 // in the org; a platform alert an operator.
 func (c *Core) ResolveAlert(ctx context.Context, a Actor, id int64) (apitypes.Alert, error) {
@@ -1197,7 +1325,7 @@ func (c *Core) ResolveAlert(ctx context.Context, a Actor, id int64) (apitypes.Al
 	if row.ResolvedAt != nil {
 		return toAlert(row), nil
 	}
-	c.resolveAlert(ctx, row.Key, time.Now())
+	c.resolveAlertNow(ctx, row.Key, time.Now())
 	by := a
 	if org == 0 {
 		by = a.platform()

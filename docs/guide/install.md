@@ -333,6 +333,7 @@ running).
 | `[alerts] crash_loop_restarts`, `crash_loop_minutes` | `3`, `10` | This many restarts within this many minutes is a crash loop |
 | `[alerts] memory_warning_percent`, `memory_critical_percent`, `memory_minutes` | `90`, `97`, `5` | A server's memory use above this for this many minutes raises a warning or critical alert |
 | `[alerts] cpu_percent`, `cpu_minutes` | `90`, `15` | A server's CPUs busier than this for this many minutes raise a warning; `0` never |
+| `[alerts] settle_minutes` | `3` | How long an unhealthy, uptime down, crash loop or server offline alert's condition must stay clear before the alert resolves; if it comes back sooner it is the same alert, counted again. `0` resolves at once |
 | `[analytics] ingest_listen` | `127.0.0.1:7077` | Loopback address Caddy sends [Dock Analytics](../decisions/0037-analytics.md) events to. Must be loopback; empty turns the ingest off |
 | `[analytics] stats_listen` | `127.0.0.1:7078` | Loopback address of sites' public dashboards. Empty turns them off |
 | `[status] listen` | `127.0.0.1:7079` | Loopback address of [status pages](status-pages.md). Empty turns them off. Control plane only |

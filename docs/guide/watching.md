@@ -65,10 +65,18 @@ for about 20 minutes, waiting longer when Slack asks (`Retry-After`); an
 answer that can't change, like Slack's 404 for a removed webhook, isn't
 retried and marks the channel broken: its error says what Slack said,
 and an alert stays open until a test or a delivery works again, or the
-channel is removed. Not done yet: alerts aren't batched, throttled or
-damped when they flap, a resolution dropped while a channel is backed
-up leaves Slack showing the alert open, and a service that fails to
-deploy again while its alert is open sends nothing new.
+channel is removed. Alerts are kept calm ([ADR
+0097](../decisions/0097-outside-heartbeat-and-calmer-alerts.md)): an
+unhealthy, uptime down, crash loop or server offline alert resolves only
+once its condition has stayed clear for `[alerts] settle_minutes`
+(3 by default), so a service that flaps sends one message when it opens
+and one when it has been quiet, saying how many times it happened. A
+deploy or backup that fails again while its alert is open sends
+`repeated` with the count. A webhook or Slack channel waits 10 seconds
+and sends what arrived together: Slack gets one message listing each
+alert, a webhook one POST per notification. A backed-up channel drops
+new alerts past 32 waiting, never a resolution. Email channels aren't
+grouped yet: one mail per notification.
 
 ```sh
 dock alerts                                                      # open ones

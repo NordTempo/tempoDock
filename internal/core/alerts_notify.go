@@ -30,14 +30,19 @@ import (
 // alerts, operators channels for the platform's (ADR 0062): a generic webhook
 // (JSON, HMAC-signed), a Slack-compatible incoming webhook, or email over
 // SMTP. A channel gets alerts at or above its minimum severity when they
-// open, escalate and resolve, and a reminder every renotify_minutes while
-// one stays open. Each channel's notifications are sent in order by a
-// goroutine that runs while it has some queued, each retried with backoff
-// (deliveryBackoff, longer when the receiver asks with Retry-After; never
-// after an answer retrying can't change, deliveryError.final); the outcome
-// is kept on the channel, so failures show in `dock alerts channel list`
-// and the UI. Queues live in memory only: a restart drops what wasn't
-// sent.
+// open, escalate, repeat (ADR 0097) and resolve, and a reminder every
+// renotify_minutes while one stays open. Each channel's notifications are
+// sent in order by a goroutine that runs while it has some queued. It
+// first waits groupWindow, then sends what is queued as one group (ADR
+// 0097): a Slack channel gets one message listing every alert, a webhook
+// one POST per notification as before. Each delivery is retried with
+// backoff (deliveryBackoff, longer when the receiver asks with
+// Retry-After; never after an answer retrying can't change,
+// deliveryError.final); the outcome is kept on the channel, so failures
+// show in `dock alerts channel list` and the UI. Queues live in memory
+// only: a restart drops what wasn't sent. Email channels queue a mail per
+// notification in Dock's outbox at once (email_channels.go): they aren't
+// grouped.
 
 // deliveryBackoff is how long each delivery attempt waits before it runs:
 // the first right away, the last about 20 minutes after the alert.
@@ -47,9 +52,17 @@ var deliveryBackoff = []time.Duration{0, 10 * time.Second, time.Minute, 5 * time
 // attempt wait: the longest backoff step.
 const maxRetryAfter = 15 * time.Minute
 
+// groupWindow is how long a channel's sender waits after the first
+// notification arrives before it sends what is queued as one group (ADR
+// 0097): a server going offline with its checks is then one Slack message
+// instead of one per alert. A one-shot timer that exists only while a
+// channel has something queued (docs/performance.md); tests set it to 0.
+var groupWindow = 10 * time.Second
+
 const (
 	// maxQueued caps the notifications waiting for one channel (or status
-	// page hook); more are dropped and counted as failures.
+	// page hook); more are dropped and counted as failures, except an
+	// alert's resolution, which is always queued (deliver).
 	maxQueued = 32
 	// deliveryTimeout bounds one attempt.
 	deliveryTimeout = 15 * time.Second
@@ -83,10 +96,10 @@ type legacySMTP struct {
 	To       []string `json:"to"`
 }
 
-// notify sends what happened to an alert (opened, escalated, resolved) to
-// the channels that should hear it: for opened and escalated its org's
-// (or the platform's) whose minimum severity it meets, for resolved those
-// that were told it opened.
+// notify sends what happened to an alert (opened, escalated, repeated,
+// resolved) to the channels that should hear it: for opened, escalated
+// and repeated its org's (or the platform's) whose minimum severity it
+// meets, for resolved those that were told about it.
 func (c *Core) notify(ctx context.Context, a store.Alert, event string, now time.Time) {
 	var to []store.AlertChannel
 	if event == "resolved" {
@@ -169,16 +182,17 @@ type deliveryQueue[T any] struct {
 type outbox = deliveryQueue[apitypes.AlertNotification]
 
 // add queues item for target id. start says the caller must start the
-// target's sender (sendAll); full that maxQueued items wait already, so
-// item was dropped.
-func (q *deliveryQueue[T]) add(id int64, item T) (start, full bool) {
+// target's sender (sendAll or sendGroups); full that maxQueued items wait
+// already, so item was dropped. An item with keep is queued past the cap:
+// for what must arrive and is bounded some other way (resolutions).
+func (q *deliveryQueue[T]) add(id int64, item T, keep bool) (start, full bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.queues == nil {
 		q.queues = map[int64][]T{}
 	}
 	cur, running := q.queues[id]
-	if len(cur) >= maxQueued {
+	if len(cur) >= maxQueued && !keep {
 		return false, true
 	}
 	q.queues[id] = append(cur, item)
@@ -201,6 +215,27 @@ func (q *deliveryQueue[T]) sendAll(ctx context.Context, id int64, send func(T)) 
 		send(item)
 		q.mu.Lock()
 		q.queues[id] = q.queues[id][1:]
+		q.mu.Unlock()
+	}
+}
+
+// sendGroups is sendAll for a target that takes several items at once:
+// each round hands send everything queued, in order, and removes it once
+// send returns. What arrives meanwhile is the next round's.
+func (q *deliveryQueue[T]) sendGroups(ctx context.Context, id int64, send func([]T)) {
+	for {
+		q.mu.Lock()
+		cur := q.queues[id]
+		if len(cur) == 0 || ctx.Err() != nil {
+			delete(q.queues, id)
+			q.mu.Unlock()
+			return
+		}
+		group := append([]T(nil), cur...)
+		q.mu.Unlock()
+		send(group)
+		q.mu.Lock()
+		q.queues[id] = q.queues[id][len(group):]
 		q.mu.Unlock()
 	}
 }
@@ -263,13 +298,18 @@ func (e *deliveryError) final() bool {
 
 // deliver queues n for ch and starts the channel's sender if it isn't
 // running. A channel with maxQueued notifications waiting (it has been
-// failing for a while) drops new ones and records that.
+// failing for a while) drops new ones and records that, except a
+// resolution: the channel would show the alert open for good, and
+// resolutions are bounded by the alerts it was told about (ADR 0097).
+// The sender waits groupWindow before its first send, so alerts raised
+// together go out as one group (sendGroup). Email goes to Dock's outbox
+// at once, ungrouped.
 func (c *Core) deliver(ch store.AlertChannel, n apitypes.AlertNotification) {
 	if apitypes.AlertChannelKind(ch.Kind) == apitypes.ChannelEmail {
 		c.mailChannel(c.ctx, ch, n)
 		return
 	}
-	start, full := c.alerts.outbox.add(ch.ID, n)
+	start, full := c.alerts.outbox.add(ch.ID, n, n.Event == "resolved")
 	if full {
 		c.channelFailed(c.ctx, ch.ID, errors.New("too many notifications waiting to be sent; this one was dropped"))
 		return
@@ -280,27 +320,68 @@ func (c *Core) deliver(ch store.AlertChannel, n apitypes.AlertNotification) {
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
-		c.alerts.outbox.sendAll(c.ctx, ch.ID, func(n apitypes.AlertNotification) { c.sendWithRetries(ch.ID, n) })
+		if groupWindow > 0 {
+			// One shot per burst, never a ticker: it runs only while the
+			// channel has something queued.
+			t := time.NewTimer(groupWindow)
+			select {
+			case <-c.ctx.Done():
+				t.Stop()
+			case <-t.C:
+			}
+		}
+		// With the daemon closing, sendGroups only drops the queue.
+		c.alerts.outbox.sendGroups(c.ctx, ch.ID, func(group []apitypes.AlertNotification) { c.sendGroup(ch, group) })
 	}()
+}
+
+// sendGroup sends a channel's queued notifications: to Slack as one
+// message, retried as one delivery; to a webhook one POST each, in order,
+// each with its own retries, since receivers parse one alert per body.
+func (c *Core) sendGroup(ch store.AlertChannel, group []apitypes.AlertNotification) {
+	if apitypes.AlertChannelKind(ch.Kind) != apitypes.ChannelSlack {
+		for _, n := range group {
+			c.sendWithRetries(ch.ID, n)
+		}
+		return
+	}
+	c.recordDelivery(ch.ID, group[0].Alert.Title, c.withRetries(func() error {
+		cur, err := c.store.GetAlertChannelByID(c.ctx, ch.ID)
+		if err != nil {
+			return errGone // removed, or the daemon is closing
+		}
+		cfg, err := c.openChannel(cur)
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(c.ctx, deliveryTimeout)
+		defer cancel()
+		return c.postSlack(ctx, cur, cfg, group)
+	}))
 }
 
 // sendWithRetries makes up to len(deliveryBackoff) attempts at one
 // notification and records the outcome on the channel. A channel removed
 // meanwhile isn't sent to.
 func (c *Core) sendWithRetries(id int64, n apitypes.AlertNotification) {
-	err := c.withRetries(func() error {
+	c.recordDelivery(id, n.Alert.Title, c.withRetries(func() error {
 		ch, err := c.store.GetAlertChannelByID(c.ctx, id)
 		if err != nil {
 			return errGone // removed, or the daemon is closing
 		}
 		return c.send(c.ctx, ch, n)
-	})
+	}))
+}
+
+// recordDelivery records a delivery's outcome (withRetries' error) on
+// channel id; title names the alert, or a group's first, in the log.
+func (c *Core) recordDelivery(id int64, title string, err error) {
 	switch {
 	case err == nil:
 		c.channelSent(c.ctx, id)
 	case errors.Is(err, errGone) || c.ctx.Err() != nil:
 	default:
-		c.log.Warn("alerts: delivery failed", "channel", id, "alert", n.Alert.Title, "err", err)
+		c.log.Warn("alerts: delivery failed", "channel", id, "alert", title, "err", err)
 		c.channelFailed(c.ctx, id, err)
 	}
 }
@@ -397,16 +478,30 @@ func (c *Core) send(ctx context.Context, ch store.AlertChannel, n apitypes.Alert
 			SignatureHeader: signWebhook(cfg.Secret, time.Now(), body), "Dock-Event": n.Event,
 		})
 	case apitypes.ChannelSlack:
-		body, err := json.Marshal(map[string]string{"text": slackText(n, c.alertLink(ctx, ch.OrgID, n.Alert))})
-		if err != nil {
-			return err
-		}
-		return c.alerts.post(ctx, ch.OrgID != nil, cfg.URL, body, nil)
+		return c.postSlack(ctx, ch, cfg, []apitypes.AlertNotification{n})
 	case apitypes.ChannelEmail:
 		subject, text := emailText(n)
 		return c.sendNow(ctx, mailAddresses(cfg.To), mail.Content{Subject: subject, Text: text})
 	}
 	return fmt.Errorf("unknown channel kind %q", ch.Kind)
+}
+
+// postSlack posts notifications to a Slack channel as one message: each
+// alert's text (slackText), a blank line between them, under a first line
+// saying how many when there are several.
+func (c *Core) postSlack(ctx context.Context, ch store.AlertChannel, cfg channelConfig, group []apitypes.AlertNotification) error {
+	texts := make([]string, 0, len(group)+1)
+	if len(group) > 1 {
+		texts = append(texts, strconv.Itoa(len(group))+" alerts")
+	}
+	for _, n := range group {
+		texts = append(texts, slackText(n, c.alertLink(ctx, ch.OrgID, n.Alert)))
+	}
+	body, err := json.Marshal(map[string]string{"text": strings.Join(texts, "\n\n")})
+	if err != nil {
+		return err
+	}
+	return c.alerts.post(ctx, ch.OrgID != nil, cfg.URL, body, nil)
 }
 
 // signWebhook signs a webhook body: receivers recompute the HMAC-SHA256
@@ -494,18 +589,28 @@ func (e *alertEngine) post(ctx context.Context, org bool, target string, body []
 	return nil
 }
 
-// headline is a notification's one-line summary.
+// headline is a notification's one-line summary. An alert whose
+// condition occurred more than once says so (ADR 0097).
 func headline(n apitypes.AlertNotification) string {
 	a := n.Alert
+	times := ""
+	if a.Count > 1 {
+		times = " (" + strconv.FormatInt(a.Count, 10) + " times)"
+	}
 	switch n.Event {
 	case "resolved":
-		return "[resolved] " + a.Title
+		if a.Count > 1 {
+			times = " (happened " + strconv.FormatInt(a.Count, 10) + " times)"
+		}
+		return "[resolved] " + a.Title + times
 	case "reminder":
-		return "[" + string(a.Severity) + ", still open] " + a.Title
+		return "[" + string(a.Severity) + ", still open] " + a.Title + times
+	case "repeated":
+		return "[" + string(a.Severity) + ", again] " + a.Title + times
 	case "test":
 		return "[test] " + a.Title
 	}
-	return "[" + string(a.Severity) + "] " + a.Title
+	return "[" + string(a.Severity) + "] " + a.Title + times
 }
 
 // slackText is a Slack message, escaped: alert messages quote release
@@ -559,6 +664,8 @@ func (c *Core) alertLink(ctx context.Context, org *int64, a apitypes.Alert) stri
 // slackEscaper escapes Slack's control characters.
 var slackEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
 
+// emailText is a notification as a mail: the headline as its subject,
+// the alert's details, and how often it happened when more than once.
 func emailText(n apitypes.AlertNotification) (subject, text string) {
 	a := n.Alert
 	var b strings.Builder
@@ -573,6 +680,9 @@ func emailText(n apitypes.AlertNotification) (subject, text string) {
 		if kv[1] != "" {
 			b.WriteString(kv[0] + ": " + kv[1] + "\n")
 		}
+	}
+	if a.Count > 1 {
+		b.WriteString("Happened: " + strconv.FormatInt(a.Count, 10) + " times\n")
 	}
 	b.WriteString("Opened: " + a.OpenedAt.UTC().Format(time.RFC1123) + "\n")
 	if a.ResolvedAt != nil {
