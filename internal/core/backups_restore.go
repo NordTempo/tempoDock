@@ -100,7 +100,7 @@ func (c *Core) restoreBackup(ctx context.Context, a Actor, ref ServiceRef, req a
 		if err := c.lockForRestore(ctx, r.to, volumeRestore{what: "the restore of backup " + from.SnapshotID[:8], watch: "`dock backup list`"}); err != nil {
 			r.finish(c.ctx, err)
 		} else {
-			c.wg.Go(func() { r.fillVolume(c.ctx, a) })
+			c.goCounted("restoring a backup into a new service", func() { r.fillVolume(c.ctx, a) })
 		}
 	} else if err := c.deployTemplate(ctx, a, r.to, r.deployed); err != nil {
 		r.finish(c.ctx, err)
@@ -190,7 +190,7 @@ func (r *restore) pgRestore(ctx context.Context) error {
 // RestoreBackup locked for it, then deploys it.
 func (r *restore) fillVolume(ctx context.Context, a Actor) {
 	c := r.c
-	err := r.fill(ctx)
+	err := caughtErr(c.log, "restoring a backup into a new service", func() error { return r.fill(ctx) })
 	c.unlockVolumes(r.to.svc.ID)
 	if err != nil {
 		r.finish(ctx, err)

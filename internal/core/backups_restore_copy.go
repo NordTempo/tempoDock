@@ -72,9 +72,13 @@ func (c *Core) restoreVolumeCopy(ctx context.Context, a Actor, ss svcScope, req 
 	}
 	c.audit(ctx, a, "backup.restore", &ss.project, &ss.env, ss.String(),
 		fmt.Sprintf("restoring backup %s into new service %s; %s keeps running", short, name, ss.svc.Name))
-	c.wg.Go(func() {
+	c.goCounted("restoring a backup into a copy", func() {
 		ctx := c.ctx
-		log, err := c.fillFromBackup(ctx, to, from.SnapshotID, row.ID)
+		var log string
+		err := caughtErr(c.log, "restoring a backup into a copy", func() (err error) {
+			log, err = c.fillFromBackup(ctx, to, from.SnapshotID, row.ID)
+			return err
+		})
 		// The fill is done; the deploy is the copy's.
 		c.unlockVolumes(to.svc.ID)
 		if err != nil {

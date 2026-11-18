@@ -121,14 +121,16 @@ func (c *Core) restoreVolumeBackup(ctx context.Context, a Actor, ss svcScope, re
 	}
 	c.audit(ctx, a, "backup.restore", &ss.project, &ss.env, ss.String(),
 		fmt.Sprintf("restoring backup %s in place; %s stops, and snapshot %d keeps the data it holds now", short, ss.svc.Name, safety.ID))
-	c.wg.Go(func() {
+	c.goCounted("restoring a backup in place", func() {
 		ctx := c.ctx
 		var log string
-		err := c.restoreInPlaceWith(ctx, ss, safety, safetyVols, mounts, "restore backup "+short, func(ctx context.Context) error {
-			var err error
-			log, err = c.fillFromBackup(ctx, ss, from.SnapshotID, row.ID)
-			return err
-		}, nil)
+		err := caughtErr(c.log, "restoring a backup in place", func() error {
+			return c.restoreInPlaceWith(ctx, ss, safety, safetyVols, mounts, "restore backup "+short, func(ctx context.Context) error {
+				var err error
+				log, err = c.fillFromBackup(ctx, ss, from.SnapshotID, row.ID)
+				return err
+			}, nil)
+		})
 		if ctx.Err() == nil {
 			c.pruneSnapshots(ctx, ss, 0)
 		}

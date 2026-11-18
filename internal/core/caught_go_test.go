@@ -23,10 +23,7 @@ import (
 // panic in it can't come from what a tenant or a repository sent, or how
 // it is recovered there. An entry covers every start in its function.
 var goAllowed = map[string]string{
-	"backups_controlplane.go:controlPlaneJob":       "writes Dock's own database snapshot and data directory into a pipe; reads no tenant input",
-	"backups_restore.go:RestoreBackup":              "not wrapped yet: its file is being changed by an open pull request; follow-up",
-	"backups_restore_copy.go:restoreVolumeCopy":     "not wrapped yet: its file is being changed by an open pull request; follow-up",
-	"backups_restore_volume.go:restoreVolumeBackup": "not wrapped yet: its file is being changed by an open pull request; follow-up",
+	"backups_controlplane.go:controlPlaneJob": "writes Dock's own database snapshot and data directory into a pipe; reads no tenant input",
 	"core.go:Start":                 "not wrapped yet: its file is being changed by an open pull request; follow-up",
 	"data_connect.go:Pipe":          "copies bytes between a client's connection and a service's without reading them",
 	"drains_deliver.go:addLogDrain": "context.AfterFunc: only closes the drain's connection when its context ends",
