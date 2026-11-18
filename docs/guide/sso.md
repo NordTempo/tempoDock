@@ -22,7 +22,7 @@ page and `dock sso list` show it). Register it at the provider:
 |---|---|---|
 | Google | Google Cloud, APIs & Services, Credentials, Create OAuth client ID, Web application, Authorized redirect URI | Client ID and secret |
 | GitHub | Settings, Developer settings, OAuth Apps, New OAuth App, Authorization callback URL | Client ID and secret. Dock reads the account's primary verified email |
-| Microsoft Entra ID | App registrations, New registration (single tenant), Web redirect URI; Certificates & secrets; Token configuration, the optional ID token claims `email` and `xms_edov` | Tenant (its ID or a domain of it), client ID and secret |
+| Microsoft Entra ID | App registrations, New registration (single tenant), Web redirect URI; Certificates & secrets; Token configuration, the optional ID token claims `email`, `xms_edov` and `auth_time` | Tenant (its ID or a domain of it), client ID and secret |
 | GitLab | User settings (or a group's, or Admin area), Applications, scopes `openid email profile` | Client ID and secret; a self-hosted GitLab's URL |
 | Okta | Applications, Create App Integration, OIDC, Web Application, Sign-in redirect URI | Okta domain, client ID and secret |
 | Auth0 | Applications, Create Application, Regular Web Application, Allowed Callback URLs | Auth0 domain, client ID and secret |
@@ -66,6 +66,9 @@ again; replace it with `dock sso set <name> --client-secret-stdin`.
   when the optional claim `xms_edov` says the email's domain is verified,
   so add `email` and `xms_edov` to the ID token in Token configuration.
   Without them, sign-ins are refused with a message saying so.
+- Adding the optional claim `auth_time` too is recommended: with it Dock
+  checks when you signed in at Microsoft each time you confirm it's you
+  (below). Without it confirming still works, on a weaker check.
 
 ### Issuers of other providers
 
@@ -107,11 +110,26 @@ the provider. An operator can give them one from the console's Users.
   provider.
 - When Dock asks you to confirm it's you, you sign in through the same
   provider again (or use your Dock second factor). Dock asks the provider
-  to sign you in again even if you are still signed in there, and counts
-  a sign-in as confirmed when you last signed in at the provider, so
-  signing in to Dock on a provider session hours old asks you to
-  confirm before sensitive actions. GitHub can't be asked: its step-ups
-  reuse your GitHub session.
+  to sign you in again even if you are still signed in there, and checks
+  that it did:
+  - When the provider says when you signed in (the ID token's
+    `auth_time`), that must be since Dock asked. A provider that answers
+    from the session you already had confirms nothing, and you keep the
+    session you had.
+  - Okta, Auth0 and GitLab always say when, so an answer of theirs
+    without it is refused.
+  - Microsoft Entra ID says when only with the optional claim
+    `auth_time`, Google doesn't, and for Keycloak, Authentik and other
+    OpenID Connect providers it depends on their setup. When one doesn't
+    say, Dock accepts an ID token issued since it asked and writes a
+    warning to the daemon's log naming the provider. That shows the
+    provider answered this request, not that you typed your password
+    again, so have the provider send `auth_time` where you can.
+  - GitHub can't be asked: its step-ups reuse your GitHub session.
+- A sign-in counts as confirmed when you last signed in at the provider,
+  so signing in to Dock on a provider session hours old asks you to
+  confirm before sensitive actions. A provider that doesn't say when
+  counts from the sign-in to Dock.
 
 ## Turning passwords off
 

@@ -218,7 +218,11 @@ func (c *Core) DataQuery(ctx context.Context, a Actor, ref ServiceRef, req apity
 	if err != nil {
 		return nil, err
 	}
-	return c.panel.Query(ctx, panelActor(a), db, req)
+	s, err := c.panel.Query(ctx, panelActor(a), db, req)
+	if err != nil {
+		return nil, err
+	}
+	return held(c, a, s), nil
 }
 
 // DataHistory returns the caller's own queries on the database, newest

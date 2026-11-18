@@ -46,6 +46,13 @@ func (c *Core) DoThing(ctx context.Context, a Actor, req apitypes.DoThingRequest
   audit events, including through live events (`canSee`). Operators
   administer every org without membership (ADR 0062); an operator's
   action on an org is recorded in both logs with `c.auditBoth`.
+- What an operation leaves open past its call (a `Stream`, an attached
+  run, a tunnel) ends with its actor's access (access_watch.go): return
+  every `Stream` through `held`, register anything else with
+  `c.access.watch`, and call `c.accessChanged` after any write that ends
+  or changes what a user, a token or an org's members may do.
+  `TestEveryStreamIsHeld` fails for a stream that isn't held and for a
+  caller of `endUserAccess` that doesn't say so.
 - Sensitive actions (revealing secrets, creating tokens, unlocking an
   environment, managing accounts, 2FA and SSO settings) also call
   `a.requireRecent`: the session must have re-authenticated within

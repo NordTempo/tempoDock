@@ -2,6 +2,8 @@ package core
 
 import (
 	"bytes"
+	"errors"
+	"log/slog"
 	"net/url"
 	"strings"
 	"testing"
@@ -392,7 +394,10 @@ func TestSSOWithSecondFactor(t *testing.T) {
 
 // A session counts as confirmed when the provider last had the person
 // sign in, so signing in again on the provider's old session is no
-// step-up; a step-up asks the provider to sign them in again.
+// step-up; a step-up asks the provider to sign them in again, and an
+// answer from the session it already had (an auth_time, or without one
+// an ID token, from before the step-up started) confirms nothing and
+// leaves the session the person had.
 func TestSSOStepUpNeedsAFreshSignIn(t *testing.T) {
 	h, idp := ssoHarness(t)
 	h.cliUser(adaEmail, apitypes.ScopeDeploy)
@@ -407,23 +412,102 @@ func TestSSOStepUpNeedsAFreshSignIn(t *testing.T) {
 	stale := session(t, h, res.Secret)
 	wantCode(t, "step-up on an hour-old provider sign-in", stale.a.requireRecent("revealing a secret"), apitypes.CodeReauthRequired)
 
-	start, err := h.c.StartSSO(h.ctx, apitypes.SSOStartRequest{Provider: "corp", To: "/test/shop", Confirm: true}, testClient)
+	// stepUp runs a step-up whose answer edit changes.
+	stepUp := func(edit func(map[string]any)) (SSOResult, error) {
+		t.Helper()
+		start, err := h.c.StartSSO(h.ctx, apitypes.SSOStartRequest{Provider: "corp", To: "/test/shop", Confirm: true}, testClient)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if q := mustQuery(t, start.URL); q.Get("prompt") != "login" || q.Get("max_age") != "0" {
+			t.Fatalf("a step-up doesn't ask the provider to sign in again: %s", start.URL)
+		}
+		req := oidctest.Read(t, start.URL)
+		claims := idp.Claims(req, "ada-sub", adaEmail)
+		edit(claims)
+		return h.c.FinishSSO(h.ctx, SSOCallback{State: req.State, Code: idp.Authorize(req, claims), Binding: start.Binding}, testClient)
+	}
+	// A provider that answers from its old session confirms nothing, with
+	// a new ID token or, when it doesn't say when the person signed in,
+	// with an old one.
+	_, err = stepUp(signedInAt(now().Add(-time.Hour)))
+	wantCode(t, "a step-up answered from the provider's old session", err, apitypes.CodeDenied)
+	_, err = stepUp(func(c map[string]any) {
+		delete(c, "auth_time")
+		c["iat"] = now().Add(-10 * time.Minute).Unix()
+	})
+	wantCode(t, "a step-up answered with an old ID token and no auth_time", err, apitypes.CodeDenied)
+	if f, ok := errors.AsType[*SSOFailure](err); !ok || f.Reason != SSONotConfirmed {
+		t.Fatalf("a refused step-up's reason: %v", err)
+	}
+	wantCode(t, "the session after refused step-ups", session(t, h, stale.secret).a.requireRecent("revealing a secret"), apitypes.CodeReauthRequired)
+
+	// A provider not known to send auth_time confirms with a new ID token.
+	res, err = stepUp(func(c map[string]any) { delete(c, "auth_time") })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if u, _ := url.Parse(start.URL); u.Query().Get("prompt") != "login" {
-		t.Fatalf("a step-up doesn't ask the provider to sign in again: %s", start.URL)
+	if err := session(t, h, res.Secret).a.requireRecent("revealing a secret"); err != nil {
+		t.Fatalf("a new ID token without auth_time doesn't confirm: %v", err)
 	}
-	req := oidctest.Read(t, start.URL)
-	claims := idp.Claims(req, "ada-sub", adaEmail)
-	signedInAt(now())(claims)
-	res, err = h.c.FinishSSO(h.ctx, SSOCallback{State: req.State, Code: idp.Authorize(req, claims), Binding: start.Binding}, testClient)
+	res, err = stepUp(signedInAt(now()))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := session(t, h, res.Secret).a.requireRecent("revealing a secret"); err != nil {
 		t.Fatalf("a fresh sign-in at the provider doesn't confirm: %v", err)
 	}
+	// An ordinary sign-in may leave auth_time out: it counts from now.
+	if s := h.ssoSession(idp, "ada-sub", adaEmail); s.a.requireRecent("revealing a secret") != nil {
+		t.Fatal("an ordinary sign-in without auth_time isn't confirmed")
+	}
+}
+
+// A step-up's answer without an auth_time is refused for the kinds known
+// to send one and taken on a new ID token for the others; an auth_time
+// from before the step-up started is refused for every kind.
+func TestSSOStepUpWithoutASignInTime(t *testing.T) {
+	started := now()
+	f := &ssoFlow{confirm: true, started: started}
+	old := started.Add(-time.Hour)
+	for _, tc := range []struct {
+		what             string
+		kind             apitypes.SSOKind
+		authAt, issuedAt time.Time
+		reason           string
+	}{
+		{"okta without auth_time", apitypes.SSOOkta, time.Time{}, started, SSONoSignInTime},
+		{"okta with a new auth_time", apitypes.SSOOkta, started, started, ""},
+		{"microsoft without auth_time", apitypes.SSOMicrosoft, time.Time{}, started, ""},
+		{"microsoft without auth_time, old ID token", apitypes.SSOMicrosoft, time.Time{}, old, SSONotConfirmed},
+		{"microsoft with an old auth_time", apitypes.SSOMicrosoft, old, started, SSONotConfirmed},
+		{"a provider's clock a little behind", apitypes.SSOOIDC, started.Add(-ssoConfirmSkew / 2), started, ""},
+	} {
+		err := f.confirmed(slog.New(slog.DiscardHandler), store.SsoProvider{Kind: string(tc.kind), Label: "X"}, tc.authAt, tc.issuedAt)
+		got := ""
+		if fail, ok := errors.AsType[*SSOFailure](err); ok {
+			got = fail.Reason
+		}
+		if got != tc.reason || (err != nil) != (tc.reason != "") {
+			t.Errorf("%s: %v, want reason %q", tc.what, err, tc.reason)
+		}
+	}
+	// Every OpenID Connect kind is in the table, so a new one is a choice.
+	for kind := range apitypes.SSOKindNames {
+		if _, ok := ssoSendsAuthTime[kind]; !ok && kind != apitypes.SSOGitHub {
+			t.Errorf("ssoSendsAuthTime doesn't say whether %s sends auth_time", kind)
+		}
+	}
+}
+
+// mustQuery is a URL's query.
+func mustQuery(t *testing.T, raw string) url.Values {
+	t.Helper()
+	u, err := url.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u.Query()
 }
 
 // Signing out of a provider's session also signs out at the provider

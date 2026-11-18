@@ -780,7 +780,7 @@ func (c *Core) ServerStatsLive(ctx context.Context, a Actor, name string) (Strea
 	if _, err := c.runtimeFor(srv.ID); err != nil {
 		return nil, err
 	}
-	return func(ctx context.Context, ready func(), send func(...apitypes.ServerUsage) error) error {
+	return held(c, a, counted(c, a, func(ctx context.Context, ready func(), send func(...apitypes.ServerUsage) error) error {
 		w := &watcher{server: srv.ID, host: make(chan apitypes.ServerUsage, liveBufferLen)}
 		unwatch, ok := c.watch(w)
 		if !ok {
@@ -794,7 +794,7 @@ func (c *Core) ServerStatsLive(ctx context.Context, a Actor, name string) (Strea
 			}
 		}
 		return relay(ctx, c.ctx, w.host, send)
-	}, nil
+	})), nil
 }
 
 // ServiceStatsLive streams a service's usage every few seconds while the
@@ -808,7 +808,7 @@ func (c *Core) ServiceStatsLive(ctx context.Context, a Actor, ref ServiceRef) (S
 	if _, err := c.runtimeFor(ss.env.ServerID); err != nil {
 		return nil, err
 	}
-	return func(ctx context.Context, ready func(), send func(...apitypes.ServiceUsage) error) error {
+	return held(c, a, counted(c, a, func(ctx context.Context, ready func(), send func(...apitypes.ServiceUsage) error) error {
 		w := &watcher{server: ss.env.ServerID, service: ss.svc.ID, ctr: make(chan apitypes.ServiceUsage, liveBufferLen)}
 		unwatch, ok := c.watch(w)
 		if !ok {
@@ -822,7 +822,7 @@ func (c *Core) ServiceStatsLive(ctx context.Context, a Actor, ref ServiceRef) (S
 			}
 		}
 		return relay(ctx, c.ctx, w.ctr, send)
-	}, nil
+	})), nil
 }
 
 // relay sends samples from ch until the client or Core goes away.

@@ -97,6 +97,12 @@ func sse[I, T any](s *Server, a huma.API, op huma.Operation, events []string, f 
 			switch {
 			case err != nil && !w.started():
 				w.problem(s.problem(err))
+			case errors.Is(err, core.ErrAccessChanged):
+				// The actor's access changed: the stream is over, and
+				// the connection closes without the clean end's cleared
+				// deadline. A client that connects again is checked as
+				// it is now.
+				_ = w.write(sseEvent{name: "end", data: []byte("{}")})
 			case err != nil && ctx.Err() == nil:
 				b, _ := json.Marshal(s.problem(err))
 				_ = w.write(sseEvent{name: "error", data: b})

@@ -259,7 +259,7 @@ func (c *Core) SiteLive(ctx context.Context, a Actor, project, name string) (Str
 	if err != nil {
 		return nil, err
 	}
-	return func(ctx context.Context, ready func(), send func(...apitypes.SiteLive) error) error {
+	return held(c, a, counted(c, a, func(ctx context.Context, ready func(), send func(...apitypes.SiteLive) error) error {
 		defer leave()
 		ready()
 		var last apitypes.SiteLive
@@ -282,5 +282,5 @@ func (c *Core) SiteLive(ctx context.Context, a Actor, project, name string) (Str
 			case <-changed:
 			}
 		}
-	}, nil
+	})), nil
 }

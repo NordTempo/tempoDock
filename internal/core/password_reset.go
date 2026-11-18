@@ -154,6 +154,7 @@ func (c *Core) ResetPasswordWithLink(ctx context.Context, code string, req apity
 	if err != nil {
 		return err
 	}
+	c.accessChanged(accessChange{userID: u.ID})
 	c.endOrphanedRequests(ctx)
 	summary := "set a new password with an emailed link from " + clientIP + "; sessions ended" + revokedNote(revoked)
 	if took {

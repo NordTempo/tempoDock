@@ -217,6 +217,11 @@ func (c *Core) OpenTunnel(ctx context.Context, a Actor, ref ServiceRef, req Tunn
 		c.tunnels.release(t.key)
 		return nil, errf(apitypes.CodeServerOffline, "the daemon is shutting down; try again in a moment")
 	}
+	// It closes when the actor's access ends or changes; Pipe then ends.
+	t.unwatch = c.access.watch(a, func() { _ = conn.Close() }, func(ctx context.Context, now Actor) error {
+		_, _, err := c.connectAccess(ctx, now, ref, req.Confirm)
+		return err
+	})
 	c.audit(ctx, a, apitypes.AuditDataConnect, &ss.project, &ss.env, ss.String(), fmt.Sprintf("opened a tunnel to port %d from %s", t.port, t.from))
 	return t, nil
 }
@@ -251,6 +256,8 @@ type Tunnel struct {
 	conn   net.Conn // to the service
 	opened time.Time
 	once   sync.Once
+	// unwatch takes the tunnel out of the access watch (access_watch.go).
+	unwatch func()
 }
 
 // Pipe copies between client and the service until either side ends or
@@ -292,6 +299,7 @@ func (t *Tunnel) Close() {
 // end audits the close and frees the actor's slot, once.
 func (t *Tunnel) end(up, down int64) {
 	t.once.Do(func() {
+		t.unwatch()
 		t.c.tunnels.untrack(t)
 		took := time.Since(t.opened).Round(time.Second)
 		t.c.audit(context.Background(), t.a, apitypes.AuditDataDisconnect, &t.ss.project, &t.ss.env, t.ss.String(),

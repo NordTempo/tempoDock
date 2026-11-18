@@ -64,6 +64,30 @@ front.
 
 The other kinds use the `email_verified` claim as `oidc` does.
 
+### Step-ups check the sign-in time (2026-11-18)
+
+A step-up through a provider (ADR 0057) sends `max_age=0` and
+`prompt=login` (Google: `max_age=0` only; Microsoft: `prompt=login` only, as its documentation lists no `max_age`) and takes the answer only when
+it is from since the step-up started. An `auth_time` from before is
+refused for every kind. Without an `auth_time`:
+
+| Kind | `auth_time` in the ID token | Without it |
+|---|---|---|
+| `okta` | Always ([base claim](https://developer.okta.com/docs/reference/api/oidc/)) | Refused |
+| `auth0` | With `max_age=0` or `prompt=login` ([docs](https://auth0.com/docs/authenticate/login/max-age-reauthentication)) | Refused |
+| `gitlab` | Listed among the ID token's claims ([docs](https://docs.gitlab.com/integration/openid_connect_provider/)) | Refused |
+| `microsoft` | An optional claim per app registration ([docs](https://learn.microsoft.com/en-us/entra/identity-platform/optional-claims-reference)) | Accepted, logged |
+| `google` | Only when enabled and asked for with a `claims` parameter ([docs](https://developers.google.com/identity/openid-connect/openid-connect)) | Accepted, logged |
+| `keycloak`, `authentik` | Set by their code, not stated in their documentation | Accepted, logged |
+| `oidc` | Unknown | Accepted, logged |
+
+"Accepted" needs an ID token issued (`iat`) since the step-up started,
+for this flow's state and nonce. That shows the provider answered this
+request, not that the person gave their credentials again, so it is the
+weaker check; the warning in the log names the provider. The table is
+`ssoSendsAuthTime` (sso_presets.go). None of this was tried against the
+real providers; a kind moves to "refused" once someone has.
+
 ### Not added
 
 - **Slack** is OpenID Connect with a fixed issuer (`https://slack.com`),

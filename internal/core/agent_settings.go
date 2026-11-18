@@ -139,6 +139,7 @@ func (c *Core) SetAgentSettings(ctx context.Context, a Actor, req apitypes.Agent
 	if req.Agent != 0 {
 		which = fmt.Sprintf("agent %d", req.Agent)
 	}
+	c.accessChanged(accessChange{userID: a.UserID, orgID: a.OrgID, changed: true})
 	c.audit(ctx, a, "agents.settings", nil, nil, a.who(), "changed what "+which+" may do")
 	return c.AgentSettings(ctx, a, req.Agent)
 }
@@ -228,6 +229,7 @@ func (c *Core) SetAgentRules(ctx context.Context, a Actor, req apitypes.AgentSet
 	if err != nil {
 		return cur, err
 	}
+	c.accessChanged(accessChange{orgID: a.OrgID})
 	c.audit(ctx, a, "agents.rules", nil, nil, "agent rules", "changed the organization's agent rules")
 	return c.AgentRules(ctx, a)
 }
@@ -261,6 +263,7 @@ func (c *Core) SetAgentRulesBypass(ctx context.Context, a Actor, ref string, byp
 	if bypass {
 		word = "bypasses"
 	}
+	c.accessChanged(accessChange{tokenID: t.ID, changed: true})
 	c.audit(ctx, a, "agents.bypass", nil, nil, "token "+t.Name, fmt.Sprintf("token %s %s the agent rules", t.Name, word))
 	return c.AgentAccess(ctx, a, t.Name)
 }

@@ -326,6 +326,17 @@ func (r *Run) Wait(ctx context.Context, stream *node.JobStream) apitypes.Command
 func (r *Run) wait(ctx context.Context, stream *node.JobStream) apitypes.CommandRun {
 	c := r.c
 	timeout := time.Duration(r.row.TimeoutSeconds) * runSecond
+	if stream != nil {
+		// Attached to its caller: it ends when their access does.
+		var unwatch func()
+		ctx, unwatch = c.watched(ctx, r.actor, func(_ context.Context, now Actor) error {
+			if err := now.requireScope(apitypes.ScopeDeploy, "running a command"); err != nil {
+				return err
+			}
+			return now.checkEnv(apitypes.ScopeDeploy, "running a command", r.ss.project, r.ss.env)
+		})
+		defer unwatch()
+	}
 	jctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	stop := context.AfterFunc(c.ctx, cancel)
