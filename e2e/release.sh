@@ -97,7 +97,11 @@ scenario_status() {
 
 scenario_vulns() {
 	local id
-	wait_for 300 sat "dk vulns ${PE[*]} -s web --json | jq -e '.scan.state == \"scanned\"'" >/dev/null ||
+	# The scanner takes one image at a time, after a quiet minute, and the
+	# scenarios before this one left theirs queued: asking for web's scan
+	# puts it first. The first scan on a server also fetches the database.
+	api POST "$(svc_path "$P" web)/scan" '{}' >/dev/null 2>&1
+	wait_for 600 sat "dk vulns ${PE[*]} -s web --json | jq -e '.scan.state == \"scanned\"'" >/dev/null ||
 		{ fail "web's image wasn't scanned: $(dk vulns "${PE[@]}" -s web 2>&1 | head -3)"; return; }
 	pass "web's live image was scanned"
 	id=$(dk vulns "${PE[@]}" -s web --min low --json | jq -r '.findings[0] | "\(.id) \(.package)"')
