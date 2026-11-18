@@ -317,7 +317,7 @@ running).
 | `[defaults] memory_mb` | `512` | Memory limit for services that don't set one |
 | `[defaults] cpus` | `1` | CPU limit for services that don't set one |
 | `[defaults] health_check_timeout_seconds` | `60` | Health check timeout for services that don't set one |
-| `[defaults] pids_limit` | `4096` | Processes and threads each container on this server may have (apps, databases, jobs), so one that forks without end stops at its own limit. Applies to containers started after the change; negative is no limit |
+| `[defaults] pids_limit` | `4096` | Processes and threads each container on this server may have (apps, databases, jobs), so one that forks without end stops at its own limit. Each server reads its own config. An app at its limit can't start a process or thread and says so in its own words (`Resource temporarily unavailable`, `can't fork`, `unable to create native thread`, `failed to create new OS thread`); Dock doesn't name the limit. Raise it, restart the daemon (`dock`, or `dock-node` on a node) and `dock restart` the service: a container keeps the limit it started with. Negative is no limit. Build steps aren't counted |
 | `[defaults] keep_releases` | `5` | Releases kept for rollback per service: their images and history are never pruned |
 | `[ingress] mode` | `direct` | `direct`: public IP, Caddy issues certificates. `cloudflare_tunnel`: Caddy serves plain HTTP on `127.0.0.1:<http_port>` only, for the local `cloudflared`; `disable_tls` must stay `false` (apps are `https://` at Cloudflare) |
 | `[ingress] tunnel_hostname` | empty | `<tunnel-id>.cfargotunnel.com`, the CNAME target for hostnames on a tunnel server. Set by `install.sh` from the tunnel token |
