@@ -119,7 +119,7 @@ func (c *Core) forwardTracesFrom(serverID int64) {
 		sp := spoolOf{serverID, which}
 		if !c.traces.forwarding[sp] {
 			c.traces.forwarding[sp] = true
-			c.wg.Go(func() { c.forwardTraceSpool(sp) })
+			c.goCounted("forwarding a trace spool", func() { c.forwardTraceSpool(sp) })
 		}
 	}
 }

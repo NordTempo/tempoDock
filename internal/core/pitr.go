@@ -595,7 +595,7 @@ func (c *Core) pitrAfterActive(ctx context.Context, ss svcScope, off bool) {
 		c.releaseFirstBase(ss.svc.ID)
 		return
 	}
-	c.wg.Go(func() {
+	c.goCounted("the first base backup", func() {
 		defer c.releaseFirstBase(ss.svc.ID)
 		row, err := c.startBase(c.ctx, System, ss, "manual")
 		if err != nil {
@@ -648,20 +648,22 @@ func (c *Core) loadPITR(ctx context.Context) error {
 	if len(rows) == 0 {
 		return nil
 	}
-	c.wg.Go(func() {
+	c.goCounted("starting the WAL archivers", func() {
 		for _, r := range rows {
-			ss, err := c.scopeOf(c.ctx, r.ServiceID)
-			if err != nil {
-				continue
-			}
-			switch {
-			case !r.Enabled || ss.svc.ArchivedAt != nil:
-				c.removeArchiver(c.ctx, ss)
-			case c.online(ss.env.ServerID):
-				if _, _, err := c.keepArchiver(c.ctx, ss); err != nil {
-					c.log.Warn("start the WAL archiver", "service", ss.String(), "err", err)
+			c.safely("starting a WAL archiver", func() {
+				ss, err := c.scopeOf(c.ctx, r.ServiceID)
+				if err != nil {
+					return
 				}
-			}
+				switch {
+				case !r.Enabled || ss.svc.ArchivedAt != nil:
+					c.removeArchiver(c.ctx, ss)
+				case c.online(ss.env.ServerID):
+					if _, _, err := c.keepArchiver(c.ctx, ss); err != nil {
+						c.log.Warn("start the WAL archiver", "service", ss.String(), "err", err)
+					}
+				}
+			})
 		}
 	})
 	return nil
