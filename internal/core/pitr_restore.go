@@ -293,7 +293,9 @@ func (c *Core) pitrNewGeneration(ctx context.Context, ss svcScope) {
 
 // finishToTime records a restore to a time's outcome once; to is the
 // service restored into. The claim on the source ends first, as in
-// runBackup.
+// runBackup. A failed restore into a new service archives that service
+// under another name and raises an alert (restoreTargetFailed) before
+// the row says so; a successful one closes that alert.
 func (c *Core) finishToTime(ctx context.Context, from svcScope, to string, row store.Backup, log string, err error) {
 	c.releaseService(from.svc.ID)
 	c.panel.Forget(from.svc.ID)
@@ -311,8 +313,14 @@ func (c *Core) finishToTime(ctx context.Context, from svcScope, to string, row s
 	fin := store.FinishBackupParams{Status: string(apitypes.BackupSucceeded), SnapshotID: row.SnapshotID, FinishedAt: ptr(now()), ID: row.ID}
 	if err != nil {
 		fin.Status, fin.Error = string(apitypes.BackupFailed), err.Error()
-		c.audit(ctx, System, "backup.restore_failed", &from.project, &from.env, from.String(), fmt.Sprintf("restore to %s into %s failed: %v", at, to, err))
+		msg := fmt.Sprintf("restore to %s into %s failed: %v", at, to, err)
+		if row.RestoredTo != nil && *row.RestoredTo != from.svc.ID {
+			kept := c.restoreTargetFailed(ctx, from, *row.RestoredTo, restoreInto{id: row.ID}, err)
+			msg += fmt.Sprintf("; it is archived as %s for a look, and its name is free to restore again", kept)
+		}
+		c.audit(ctx, System, "backup.restore_failed", &from.project, &from.env, from.String(), msg)
 	} else {
+		c.restoreSucceeded(ctx, from)
 		c.audit(ctx, System, "backup.restored", &from.project, &from.env, from.String(), fmt.Sprintf("restored %s as it was at %s into %s", from.svc.Name, at, to))
 	}
 	if ferr := c.store.FinishBackup(ctx, fin); ferr != nil {

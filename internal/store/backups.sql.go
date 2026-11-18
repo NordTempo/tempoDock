@@ -510,6 +510,43 @@ func (q *Queries) GetLatestDrill(ctx context.Context, serviceID *int64) (BackupC
 	return i, err
 }
 
+const getRestoreInto = `-- name: GetRestoreInto :one
+SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups
+WHERE restored_to = +? AND operation = 'restore' AND service_id != restored_to
+ORDER BY id DESC LIMIT 1
+`
+
+// The newest restore of a backup or to a time that made the service (its
+// new service; an in-place restore's target is its own service and
+// doesn't count).
+func (q *Queries) GetRestoreInto(ctx context.Context, restoredTo *int64) (Backup, error) {
+	row := q.db.QueryRowContext(ctx, getRestoreInto, restoredTo)
+	var i Backup
+	err := row.Scan(
+		&i.ID,
+		&i.ServiceID,
+		&i.Operation,
+		&i.Kind,
+		&i.Trigger,
+		&i.Status,
+		&i.Repository,
+		&i.SnapshotID,
+		&i.SizeBytes,
+		&i.Pruned,
+		&i.RestoredTo,
+		&i.Error,
+		&i.CreatedBy,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.WalGeneration,
+		&i.WalStart,
+		&i.WalSegmentBytes,
+		&i.ConsistentAt,
+		&i.RestoreToTime,
+	)
+	return i, err
+}
+
 const listBackupCandidates = `-- name: ListBackupCandidates :many
 SELECT services.id, services.created_at, environments.server_id,
        CAST(coalesce(backup_schedules.enabled, 1) AS BOOLEAN) AS enabled,

@@ -205,6 +205,12 @@ is refused while the environment has other staged changes (apply or
 discard them first). Literal URLs naming the host (`postgres://db:5432`)
 are not rewritten; use references so a switch catches them.
 
+The new service is no place to switch to until its restore succeeded: the
+switch is refused while the restore runs, and after it failed. A failed
+restore raises an alert and archives its service as
+`db-restored-failed-<restore id>`, volume kept for a look, so the name is
+free: run the restore again.
+
 Restores read only the repository backups go to now. A backup whose
 snapshot is in another one (its storage connection's endpoint or bucket
 changed, say) says so on Settings, Backups, Restore is off for it, and it is

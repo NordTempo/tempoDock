@@ -230,7 +230,9 @@ func (r *restore) run(ctx context.Context, to svcScope, target backup.Source, mo
 	return err
 }
 
-// finish records a restore's outcome once.
+// finish records a restore's outcome once. A failed one archives its
+// target under another name and raises an alert (restoreTargetFailed)
+// before the row says so; a successful one closes that alert.
 func (r *restore) finish(ctx context.Context, err error) {
 	c := r.c
 	c.releaseService(r.from.svc.ID) // before the row says finished, as in runBackup
@@ -248,9 +250,11 @@ func (r *restore) finish(ctx context.Context, err error) {
 	fin := store.FinishBackupParams{Status: string(apitypes.BackupSucceeded), SnapshotID: r.snapshot, FinishedAt: ptr(now()), ID: r.row.ID}
 	if err != nil {
 		fin.Status, fin.Error = string(apitypes.BackupFailed), err.Error()
+		kept := c.restoreTargetFailed(ctx, r.from, r.to.svc.ID, restoreInto{id: r.row.ID}, err)
 		c.audit(ctx, System, "backup.restore_failed", &r.from.project, &r.from.env, r.from.String(),
-			fmt.Sprintf("restore into %s failed: %v; %s is kept for a look, archive it when done", r.to.svc.Name, err, r.to.svc.Name))
+			fmt.Sprintf("restore into %s failed: %v; it is archived as %s for a look, and its name is free to restore again", r.to.svc.Name, err, kept))
 	} else {
+		c.restoreSucceeded(ctx, r.from)
 		c.audit(ctx, System, "backup.restored", &r.from.project, &r.from.env, r.from.String(),
 			fmt.Sprintf("restored snapshot %s into %s; point references at ${{%s.%s}} when it checks out", r.snapshot[:8], r.to.svc.Name, r.to.svc.Name, r.t.exports[0]))
 	}

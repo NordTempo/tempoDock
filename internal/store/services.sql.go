@@ -735,6 +735,22 @@ func (q *Queries) ListVolumes(ctx context.Context, serviceID int64) ([]Volume, e
 	return items, nil
 }
 
+const renameService = `-- name: RenameService :exec
+UPDATE services SET name = ? WHERE id = +?
+`
+
+type RenameServiceParams struct {
+	Name string
+	ID   int64
+}
+
+// Renames a service nothing references (a failed restore's target, to
+// free its name): references and the network alias follow the name.
+func (q *Queries) RenameService(ctx context.Context, arg RenameServiceParams) error {
+	_, err := q.db.ExecContext(ctx, renameService, arg.Name, arg.ID)
+	return err
+}
+
 const restoreVariable = `-- name: RestoreVariable :exec
 UPDATE variables SET value = ?, pending = ?, pending_value = ?, updated_at = ? WHERE id = +?
 `

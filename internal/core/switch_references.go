@@ -21,7 +21,8 @@ var errDryRun = errors.New("dry run")
 // same to switch back. It stages and applies like `dock env set --apply`,
 // so it refuses while the environment has other staged changes, which
 // would go live with it. to must be a live service of the environment
-// with every key referenced. With DryRun nothing changes and Services
+// with every key referenced, and not one whose restore is still running
+// or failed (restoredTarget): that one doesn't hold the data. With DryRun nothing changes and Services
 // says who would. Scope: deploy.
 func (c *Core) SwitchReferences(ctx context.Context, a Actor, ref ServiceRef, req apitypes.SwitchReferencesRequest) (apitypes.SwitchReferencesResult, error) {
 	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeDeploy, "switching references")
@@ -40,6 +41,11 @@ func (c *Core) SwitchReferences(ctx context.Context, a Actor, ref ServiceRef, re
 	}
 	to, err := c.loadService(ctx, a.OrgID, ServiceRef{ref.Project, ref.Environment, toName})
 	if err != nil {
+		return apitypes.SwitchReferencesResult{}, err
+	}
+	// Before the archived check: a failed restore's target is archived,
+	// and this says why.
+	if err := c.restoredTarget(ctx, to); err != nil {
 		return apitypes.SwitchReferencesResult{}, err
 	}
 	if to.svc.ArchivedAt != nil || to.svc.Staged != "" {

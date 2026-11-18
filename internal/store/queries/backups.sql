@@ -276,3 +276,11 @@ WHERE backup_checks.kind = 'drill' AND backup_checks.service_id = +sqlc.arg(serv
 SELECT * FROM backups
 WHERE service_id = +sqlc.arg(service_id) AND operation = 'restore' AND restored_to = +sqlc.arg(restored_to)
 ORDER BY id DESC LIMIT 1;
+
+-- name: GetRestoreInto :one
+-- The newest restore of a backup or to a time that made the service (its
+-- new service; an in-place restore's target is its own service and
+-- doesn't count).
+SELECT * FROM backups
+WHERE restored_to = +? AND operation = 'restore' AND service_id != restored_to
+ORDER BY id DESC LIMIT 1;

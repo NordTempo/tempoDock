@@ -199,6 +199,33 @@ func (q *Queries) GetSnapshot(ctx context.Context, id int64) (VolumeSnapshot, er
 	return i, err
 }
 
+const getSnapshotRestoreInto = `-- name: GetSnapshotRestoreInto :one
+SELECT id, snapshot_id, service_id, to_service_id, in_place, safety_id, status, error, created_by, started_at, finished_at FROM volume_snapshot_restores
+WHERE to_service_id = +? AND in_place = 0
+ORDER BY id DESC LIMIT 1
+`
+
+// The newest snapshot restore that made the service (into a new service,
+// not in place).
+func (q *Queries) GetSnapshotRestoreInto(ctx context.Context, toServiceID int64) (VolumeSnapshotRestore, error) {
+	row := q.db.QueryRowContext(ctx, getSnapshotRestoreInto, toServiceID)
+	var i VolumeSnapshotRestore
+	err := row.Scan(
+		&i.ID,
+		&i.SnapshotID,
+		&i.ServiceID,
+		&i.ToServiceID,
+		&i.InPlace,
+		&i.SafetyID,
+		&i.Status,
+		&i.Error,
+		&i.CreatedBy,
+		&i.StartedAt,
+		&i.FinishedAt,
+	)
+	return i, err
+}
+
 const listExpiredSnapshots = `-- name: ListExpiredSnapshots :many
 SELECT id, service_id, server_id, "trigger", status, volumes, size_bytes, paused_ms, note, error, created_by, started_at, finished_at, log FROM volume_snapshots WHERE started_at < +? AND status != 'running' ORDER BY started_at, id LIMIT +?
 `

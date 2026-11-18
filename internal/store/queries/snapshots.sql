@@ -39,3 +39,10 @@ SELECT * FROM volume_snapshot_restores WHERE service_id = +? ORDER BY id DESC LI
 
 -- name: ListRunningSnapshotRestores :many
 SELECT * FROM volume_snapshot_restores WHERE status = 'running';
+
+-- name: GetSnapshotRestoreInto :one
+-- The newest snapshot restore that made the service (into a new service,
+-- not in place).
+SELECT * FROM volume_snapshot_restores
+WHERE to_service_id = +? AND in_place = 0
+ORDER BY id DESC LIMIT 1;

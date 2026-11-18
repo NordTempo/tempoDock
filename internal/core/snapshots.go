@@ -797,7 +797,10 @@ func (c *Core) fillFromSnapshot(ctx context.Context, to svcScope, snap store.Vol
 }
 
 // finishSnapshotRestore records and audits a restore's outcome; to is the
-// service restored into.
+// service restored into. A failed restore into a new service archives
+// that service under another name and raises an alert
+// (restoreTargetFailed) before the row says so; a successful one closes
+// that alert.
 func (c *Core) finishSnapshotRestore(ctx context.Context, ss svcScope, row store.VolumeSnapshotRestore, to string, err error) {
 	if row.InPlace {
 		// Its data changed under the Data panel's cached schema. A copy
@@ -808,8 +811,14 @@ func (c *Core) finishSnapshotRestore(ctx context.Context, ss svcScope, row store
 		return // shutting down: the next start marks it failed
 	}
 	fin := store.FinishSnapshotRestoreParams{Status: string(apitypes.BackupSucceeded), FinishedAt: ptr(now()), ID: row.ID}
+	kept := ""
 	if err != nil {
 		fin.Status, fin.Error = string(apitypes.BackupFailed), err.Error()
+		if !row.InPlace {
+			kept = c.restoreTargetFailed(ctx, ss, row.ToServiceID, restoreInto{id: row.ID, snapshot: true}, err)
+		}
+	} else {
+		c.restoreSucceeded(ctx, ss)
 	}
 	// Recorded before the audit event announces it, so whoever the event
 	// wakes (MCP's restore_snapshot) reads the outcome.
@@ -820,7 +829,7 @@ func (c *Core) finishSnapshotRestore(ctx context.Context, ss svcScope, row store
 	if err != nil {
 		msg := fmt.Sprintf("restoring snapshot %d into %s failed: %v", snapID, to, err)
 		if !row.InPlace {
-			msg += fmt.Sprintf("; %s is kept for a look, archive it when done", to)
+			msg += fmt.Sprintf("; it is archived as %s for a look, and its name is free to restore again", kept)
 		}
 		c.audit(ctx, System, "snapshot.restore_failed", &ss.project, &ss.env, ss.String(), msg)
 	} else if row.InPlace {
