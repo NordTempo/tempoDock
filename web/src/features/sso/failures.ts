@@ -30,6 +30,10 @@ const failures: Record<string, (p: string) => string> = {
   unverified_microsoft: () =>
     "Microsoft didn't say your email address is verified; ask an operator to add the optional claims email and xms_edov to the ID token of Dock's app registration (Token configuration).",
   disabled: () => "Your Dock account is disabled; ask an operator.",
+  not_confirmed: (p) =>
+    `${p} answered from the session you already had there instead of signing you in again, so this didn't confirm it's you; sign out at ${p} and try again, or ask an operator why it doesn't ask.`,
+  no_sign_in_time: (p) =>
+    `${p} didn't say when you signed in there (its answer has no auth_time), so this couldn't confirm it's you; ask an operator to have ${p} send the auth_time claim in Dock's ID tokens.`,
   start_again: () =>
     "Another sign-in created your account meanwhile; start again.",
   failed: () => "Signing in failed; try again.",

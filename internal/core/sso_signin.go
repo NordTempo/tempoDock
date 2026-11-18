@@ -43,7 +43,8 @@ import (
 //     recorded, and a user with an authenticator app still gives a code.
 //     It counts as confirmed when the provider last had the person sign
 //     in (auth_time), so a step-up (SSOStartRequest.Confirm) asks the
-//     provider to sign them in again.
+//     provider to sign them in again and, for OpenID Connect, takes only
+//     an answer from since the step-up started (ssoFlow.confirmed).
 
 const (
 	// ssoTimeout bounds each request to an identity provider.
@@ -107,6 +108,10 @@ type ssoFlow struct {
 	// binding is the hash of the value in the browser's cookie.
 	binding string
 	to      string
+	// confirm marks a step-up, started at started: its answer must be
+	// from a sign-in at the provider since (confirmed).
+	confirm bool
+	started time.Time
 }
 
 // discover reads issuer's OpenID Connect discovery document. A failure is
@@ -166,6 +171,7 @@ func (c *Core) StartSSO(ctx context.Context, req apitypes.SSOStartRequest, clien
 	verifier := oauth2.GenerateVerifier()
 	state, err := c.sso.flows.put(&ceremony{purpose: ceremonySSO, client: clientIP, sso: &ssoFlow{
 		providerID: p.ID, kind: p.Kind, issuer: p.Issuer, provider: prov, nonce: nonce, verifier: verifier, binding: bindingHash, to: to,
+		confirm: req.Confirm, started: now(),
 	}})
 	if err != nil {
 		return SSOStart{}, err
@@ -174,7 +180,7 @@ func (c *Core) StartSSO(ctx context.Context, req apitypes.SSOStartRequest, clien
 	if prov != nil {
 		opts = append(opts, oidc.Nonce(nonce))
 		if req.Confirm {
-			opts = append(opts, ssoConfirmOptions(p.Kind))
+			opts = append(opts, ssoConfirmOptions(p.Kind)...)
 		}
 	}
 	authURL := c.oauthConfig(p, prov, "").AuthCodeURL(state, opts...)
@@ -183,15 +189,54 @@ func (c *Core) StartSSO(ctx context.Context, req apitypes.SSOStartRequest, clien
 
 // ssoConfirmOptions asks an OpenID Connect provider to have the person
 // sign in again even with a live session of its own, for a step-up:
-// prompt=login, which Google refuses, so it gets max_age=0 instead. The
-// session then counts as confirmed at the ID token's auth_time
-// (signInVia.authAt), so a provider that ignores the request confirms
+// max_age=0, which also makes auth_time a required claim of the answer
+// (OpenID Connect Core 3.1.2.1), and prompt=login. Each provider gets
+// only what its documentation lists: Google no prompt=login, Microsoft
+// no max_age. The answer counts only when it is from since the step-up
+// started (confirmed), so a provider that ignores the request confirms
 // nothing. GitHub's OAuth has neither; its step-ups reuse its session.
-func ssoConfirmOptions(kind string) oauth2.AuthCodeOption {
-	if kind == string(apitypes.SSOGoogle) {
-		return oauth2.SetAuthURLParam("max_age", "0")
+func ssoConfirmOptions(kind string) []oauth2.AuthCodeOption {
+	var opts []oauth2.AuthCodeOption
+	if kind != string(apitypes.SSOMicrosoft) {
+		opts = append(opts, oauth2.SetAuthURLParam("max_age", "0"))
 	}
-	return oauth2.SetAuthURLParam("prompt", "login")
+	if kind != string(apitypes.SSOGoogle) {
+		opts = append(opts, oauth2.SetAuthURLParam("prompt", "login"))
+	}
+	return opts
+}
+
+// ssoConfirmSkew is how far a provider's clock may be behind Dock's when
+// a step-up compares its auth_time with when the step-up started.
+const ssoConfirmSkew = time.Minute
+
+// confirmed checks a step-up's answer: the provider must have signed the
+// person in since the step-up started. Its auth_time says so, and one
+// from before (the provider answered from the session it already had)
+// confirms nothing for any provider. Without an auth_time, a kind known
+// to send it (ssoSendsAuthTime) is refused; for the others the ID token
+// must at least be issued since the step-up started, for the request
+// that asked for a new sign-in (state and nonce are checked before
+// this), and the gap is logged. A refusal leaves the session the person
+// has as it was.
+func (f *ssoFlow) confirmed(log *slog.Logger, p store.SsoProvider, authAt, issuedAt time.Time) error {
+	if !f.confirm {
+		return nil
+	}
+	since := f.started.Add(-ssoConfirmSkew)
+	stale := ssoFail(SSONotConfirmed, errf(apitypes.CodeDenied, "%s answered from the session you already had there instead of signing you in again, so this didn't confirm it's you; sign out at %s and try again, or ask an operator why it doesn't ask", p.Label, p.Label))
+	switch {
+	case !authAt.IsZero() && authAt.Before(since):
+		return stale
+	case !authAt.IsZero():
+		return nil
+	case ssoSendsAuthTime[apitypes.SSOKind(p.Kind)]:
+		return ssoFail(SSONoSignInTime, errf(apitypes.CodeForbidden, "%s didn't say when you signed in there (its answer has no auth_time), so this couldn't confirm it's you; ask an operator to have %s send the auth_time claim in Dock's ID tokens", p.Label, p.Label))
+	case issuedAt.Before(since):
+		return stale
+	}
+	log.Warn("sso: step-up answer has no auth_time; accepted on a new ID token for a request that asked for a new sign-in", "kind", p.Kind)
+	return nil
 }
 
 // SSOLogoutRedirectPath is where a provider sends the browser after
@@ -331,7 +376,10 @@ const (
 	SSOUnverifiedGitHub    = "unverified_github"
 	SSOUnverifiedMicrosoft = "unverified_microsoft"
 	SSODisabled            = "disabled"
-	SSOStartAgain          = "start_again"
+	// SSONotConfirmed and SSONoSignInTime refuse a step-up (confirmed).
+	SSONotConfirmed = "not_confirmed"
+	SSONoSignInTime = "no_sign_in_time"
+	SSOStartAgain   = "start_again"
 	// SSOFailed is every other failure: the page says only that it failed.
 	SSOFailed = "failed"
 )
@@ -340,7 +388,7 @@ const (
 // has words for each.
 var SSOReasons = []string{
 	SSOExpired, SSOProviderChanged, SSOOtherBrowser, SSOCancelled, SSORefused, SSONoCode, SSONotAccepted, SSOBadAnswer,
-	SSONoEmail, SSONoEmailGitHub, SSOUnverified, SSOUnverifiedGitHub, SSOUnverifiedMicrosoft, SSODisabled, SSOStartAgain, SSOFailed,
+	SSONoEmail, SSONoEmailGitHub, SSOUnverified, SSOUnverifiedGitHub, SSOUnverifiedMicrosoft, SSODisabled, SSONotConfirmed, SSONoSignInTime, SSOStartAgain, SSOFailed,
 }
 
 // ssoFail is err as an SSOFailure for reason.
@@ -524,7 +572,7 @@ func oidcPerson(ctx context.Context, log *slog.Logger, p store.SsoProvider, f *s
 		return who, ssoFail(SSOUnverified, errf(apitypes.CodeForbidden, "%s hasn't verified %s; verify it there and try again", p.Label, who.email))
 	}
 	who.name = cmp.Or(strings.TrimSpace(claims.Name), strings.TrimSpace(claims.PreferredUsername))
-	return who, nil
+	return who, f.confirmed(log, p, who.authAt, idt.IssuedAt)
 }
 
 // githubPerson reads who signed in at GitHub from its API: the account
