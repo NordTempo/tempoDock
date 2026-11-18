@@ -408,6 +408,108 @@ func (q *Queries) GetBackupSettings(ctx context.Context) (BackupSetting, error) 
 	return i, err
 }
 
+const getDrillRestore = `-- name: GetDrillRestore :one
+SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups
+WHERE service_id = +?1 AND operation = 'restore' AND restored_to = +?2
+ORDER BY id DESC LIMIT 1
+`
+
+type GetDrillRestoreParams struct {
+	ServiceID  int64
+	RestoredTo *int64
+}
+
+// The restore a drill ran from a service into another: how a service
+// named like a drill's is known to be one (created_by is the system's).
+func (q *Queries) GetDrillRestore(ctx context.Context, arg GetDrillRestoreParams) (Backup, error) {
+	row := q.db.QueryRowContext(ctx, getDrillRestore, arg.ServiceID, arg.RestoredTo)
+	var i Backup
+	err := row.Scan(
+		&i.ID,
+		&i.ServiceID,
+		&i.Operation,
+		&i.Kind,
+		&i.Trigger,
+		&i.Status,
+		&i.Repository,
+		&i.SnapshotID,
+		&i.SizeBytes,
+		&i.Pruned,
+		&i.RestoredTo,
+		&i.Error,
+		&i.CreatedBy,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.WalGeneration,
+		&i.WalStart,
+		&i.WalSegmentBytes,
+		&i.ConsistentAt,
+		&i.RestoreToTime,
+	)
+	return i, err
+}
+
+const getDrillSnapshot = `-- name: GetDrillSnapshot :one
+SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups
+WHERE service_id = +? AND operation = 'backup' AND status = 'succeeded'
+  AND pruned = 0 AND kind <> 'pitr' AND snapshot_id <> ''
+ORDER BY id DESC LIMIT 1
+`
+
+// A service's newest snapshot a restore can use: what its drill restores.
+func (q *Queries) GetDrillSnapshot(ctx context.Context, serviceID int64) (Backup, error) {
+	row := q.db.QueryRowContext(ctx, getDrillSnapshot, serviceID)
+	var i Backup
+	err := row.Scan(
+		&i.ID,
+		&i.ServiceID,
+		&i.Operation,
+		&i.Kind,
+		&i.Trigger,
+		&i.Status,
+		&i.Repository,
+		&i.SnapshotID,
+		&i.SizeBytes,
+		&i.Pruned,
+		&i.RestoredTo,
+		&i.Error,
+		&i.CreatedBy,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.WalGeneration,
+		&i.WalStart,
+		&i.WalSegmentBytes,
+		&i.ConsistentAt,
+		&i.RestoreToTime,
+	)
+	return i, err
+}
+
+const getLatestDrill = `-- name: GetLatestDrill :one
+SELECT id, kind, server_id, service_id, repository, snapshot_id, "trigger", status, error, detail, started_at, finished_at FROM backup_checks WHERE kind = 'drill' AND service_id = +? ORDER BY id DESC LIMIT 1
+`
+
+// A service's latest restore drill.
+func (q *Queries) GetLatestDrill(ctx context.Context, serviceID *int64) (BackupCheck, error) {
+	row := q.db.QueryRowContext(ctx, getLatestDrill, serviceID)
+	var i BackupCheck
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.ServerID,
+		&i.ServiceID,
+		&i.Repository,
+		&i.SnapshotID,
+		&i.Trigger,
+		&i.Status,
+		&i.Error,
+		&i.Detail,
+		&i.StartedAt,
+		&i.FinishedAt,
+	)
+	return i, err
+}
+
 const listBackupCandidates = `-- name: ListBackupCandidates :many
 SELECT services.id, services.created_at, environments.server_id,
        CAST(coalesce(backup_schedules.enabled, 1) AS BOOLEAN) AS enabled,
@@ -501,6 +603,107 @@ func (q *Queries) ListBackupRepositories(ctx context.Context) ([]ListBackupRepos
 			&i.Server,
 			&i.Snapshots,
 			&i.SizeBytes,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDrillCandidates = `-- name: ListDrillCandidates :many
+SELECT services.id, environments.server_id, backups.snapshot_id, backups.repository, backups.size_bytes
+FROM services
+JOIN environments ON environments.id = services.environment_id
+JOIN projects ON projects.id = environments.project_id
+JOIN backups ON backups.id = (
+    SELECT b.id FROM backups b
+    WHERE b.service_id = services.id AND b.operation = 'backup' AND b.status = 'succeeded'
+      AND b.pruned = 0 AND b.kind <> 'pitr' AND b.snapshot_id <> ''
+    ORDER BY b.id DESC LIMIT 1
+)
+WHERE services.archived_at IS NULL AND services.stopped_at IS NULL AND projects.archived_at IS NULL
+  AND services.template <> ''
+  AND NOT EXISTS (SELECT 1 FROM previews WHERE previews.environment_id = services.environment_id)
+ORDER BY services.id
+`
+
+type ListDrillCandidatesRow struct {
+	ID         int64
+	ServerID   int64
+	SnapshotID string
+	Repository string
+	SizeBytes  int64
+}
+
+// Every live template database (not archived or stopped, in a live
+// project, outside previews) with its newest snapshot a restore can use,
+// for the restore drills (ADR 0096). The snapshot is found by walking
+// backups_service down from the service's newest run.
+func (q *Queries) ListDrillCandidates(ctx context.Context) ([]ListDrillCandidatesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listDrillCandidates)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDrillCandidatesRow
+	for rows.Next() {
+		var i ListDrillCandidatesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ServerID,
+			&i.SnapshotID,
+			&i.Repository,
+			&i.SizeBytes,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLatestDrills = `-- name: ListLatestDrills :many
+SELECT id, kind, server_id, service_id, repository, snapshot_id, "trigger", status, error, detail, started_at, finished_at FROM backup_checks WHERE id IN (
+    SELECT max(id) FROM backup_checks WHERE kind = 'drill' GROUP BY service_id
+)
+`
+
+// Each service's latest restore drill, for the scheduler.
+func (q *Queries) ListLatestDrills(ctx context.Context) ([]BackupCheck, error) {
+	rows, err := q.db.QueryContext(ctx, listLatestDrills)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BackupCheck
+	for rows.Next() {
+		var i BackupCheck
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.ServerID,
+			&i.ServiceID,
+			&i.Repository,
+			&i.SnapshotID,
+			&i.Trigger,
+			&i.Status,
+			&i.Error,
+			&i.Detail,
+			&i.StartedAt,
+			&i.FinishedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1058,6 +1261,22 @@ type TrimBackupLogsParams struct {
 // logs.
 func (q *Queries) TrimBackupLogs(ctx context.Context, arg TrimBackupLogsParams) error {
 	_, err := q.db.ExecContext(ctx, trimBackupLogs, arg.ServiceID, arg.Keep)
+	return err
+}
+
+const trimDrillChecks = `-- name: TrimDrillChecks :exec
+DELETE FROM backup_checks
+WHERE backup_checks.kind = 'drill' AND backup_checks.service_id = +?1
+  AND backup_checks.id NOT IN (
+    SELECT c.id FROM backup_checks c
+    WHERE c.kind = 'drill' AND c.service_id = +?1
+    ORDER BY c.id DESC LIMIT 10
+  )
+`
+
+// Keeps the newest ten drills of a service.
+func (q *Queries) TrimDrillChecks(ctx context.Context, serviceID *int64) error {
+	_, err := q.db.ExecContext(ctx, trimDrillChecks, serviceID)
 	return err
 }
 
