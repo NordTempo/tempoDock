@@ -80,13 +80,13 @@ type linkListener struct {
 func (l *linkListener) warnRefused() {
 	now := time.Now().Unix()
 	if last := l.warned.Load(); now-last >= 60 && l.warned.CompareAndSwap(last, now) {
-		l.log.Warn("forwarded connection closed", "server", l.s.name(), "port", l.port, "err", errTooManyDials)
+		l.log.Warn("forwarded connection closed", "server", l.s.name(), "port", l.port, "err", errTooManyForwards)
 	}
 }
 
 // Accept waits for the node's next connection and claims it. Only the
 // end of the listen call is an error: a connection that can't be claimed
-// (the server is at its cap of open connections, or the node no longer
+// (the server is at its cap of forwarded connections, or the node no longer
 // holds it) is dropped and the next one waited for, so one refused
 // connection never ends the listener for the ones after it.
 func (l *linkListener) Accept() (net.Conn, error) {
@@ -107,12 +107,12 @@ func (l *linkListener) Accept() (net.Conn, error) {
 		// Over the cap the connection is still claimed, to close it at
 		// once: left alone, its client would wait out the node's claim
 		// timeout for nothing.
-		over := l.s.dials.Add(1) > maxDials
+		over := l.s.forwards.Add(1) > maxForwards
 		ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
-		conn, err := openConn(ctx, l.s, opForwardAccept, forwardAcceptRequest{Port: l.port, ID: id}, string(l.addr), func() { l.s.dials.Add(-1) })
+		conn, err := openConn(ctx, l.s, opForwardAccept, forwardAcceptRequest{Port: l.port, ID: id}, string(l.addr), func() { l.s.forwards.Add(-1) })
 		cancel()
 		if err != nil {
-			l.s.dials.Add(-1)
+			l.s.forwards.Add(-1)
 			continue
 		}
 		if over {

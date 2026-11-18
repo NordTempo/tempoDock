@@ -678,7 +678,7 @@ func serveConn(ctx context.Context, conn *tls.Conn, h http.Handler, ka time.Dura
 			// stall every other call on the link. Memory is only used for
 			// bytes actually waiting.
 			MaxReceiveBufferPerStream:     streamWindow,
-			MaxReceiveBufferPerConnection: (maxDials + maxRegistryConns + 64) * streamWindow,
+			MaxReceiveBufferPerConnection: (maxDials + maxForwards + maxRegistryConns + 64) * streamWindow,
 		},
 		ErrorLog: slog.NewLogLogger(log.Handler(), slog.LevelDebug),
 	}

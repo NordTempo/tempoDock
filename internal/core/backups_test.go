@@ -590,3 +590,27 @@ func TestTemplateMySQLBackupAndRestore(t *testing.T) {
 		t.Fatalf("restore job = %+v", job)
 	}
 }
+
+// An archived service still holds its name, so a restore into the default
+// name says that and how to pick another, not just "already exists".
+func TestRestoreIntoAnArchivedServicesNameSaysSo(t *testing.T) {
+	h := newHarness(t)
+	db := h.templateDB("db", apitypes.TemplatePostgres)
+	snap := "dddd4444dddd4444"
+	h.rt.OnJob(func(node.JobSpec) (node.JobResult, error) {
+		return node.JobResult{Output: resticOutput(snap, 100, snap)}, nil
+	})
+	h.runBackup(db)
+	res, err := h.c.RestoreBackup(h.ctx, testSystem, db, apitypes.RestoreBackupRequest{Snapshot: snap})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.waitRun(db, res.Restore.ID)
+	if _, err := h.c.ArchiveService(h.ctx, testSystem, ServiceRef{"shop", "production", "db-restored"}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = h.c.RestoreBackup(h.ctx, testSystem, db, apitypes.RestoreBackupRequest{Snapshot: snap})
+	if CodeOf(err) != apitypes.CodeConflict || !strings.Contains(err.Error(), "is archived") || !strings.Contains(err.Error(), "--as <name>") {
+		t.Fatalf("restore into an archived service's name: %v", err)
+	}
+}

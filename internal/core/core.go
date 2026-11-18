@@ -130,6 +130,8 @@ type Core struct {
 	bus        *bus
 	// renameMu keeps committed renames and their live events in order.
 	renameMu sync.Mutex
+	// setupMu makes ensureDataAccess one at a time.
+	setupMu sync.Mutex
 	// localID is the control plane's own server. Its name is read with
 	// localName (a rename changes it), anything else from the store.
 	localID  int64

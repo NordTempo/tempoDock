@@ -83,7 +83,7 @@ func TestWireRoundTrip(t *testing.T) {
 		func(d node.DialRequest) dialRequest { return dialRequest{ContainerID: d.ContainerID, Port: d.Port} },
 		func(w dialRequest) node.DialRequest {
 			return node.DialRequest{ContainerID: w.ContainerID, Port: w.Port}
-		})
+		}, "Forwarded") // which budget the control plane counts it against, not sent
 
 	// BuildRequest's io fields stream separately; the rest is the args.
 	build := node.BuildRequest{

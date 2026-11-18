@@ -7,12 +7,16 @@ import (
 	"net"
 	"testing"
 	"time"
+
+	"github.com/NordTempo/tempoDock/internal/node"
 )
 
-// A forwarded connection that arrives while the server is at its cap of
-// open connections is closed, and the listener goes on accepting: the
-// ones after it are served once a slot is free.
-func TestForwardOverTheDialLimit(t *testing.T) {
+// Forwarded connections have a budget of their own: a server whose dials
+// are all taken (the data panel's) still accepts them. One that arrives
+// while the server is at its cap of forwarded connections is closed, and
+// the listener goes on accepting: the ones after it are served once a
+// slot is free.
+func TestForwardOverItsLimit(t *testing.T) {
 	h := newHarness(t)
 	h.rt.DialTo(newTCPServer(t, serveEcho).addr)
 	ct := h.startService("db-1")
@@ -40,6 +44,25 @@ func TestForwardOverTheDialLimit(t *testing.T) {
 	}()
 	for range maxDials {
 		held = append(held, h.dial(context.Background(), ct.ID))
+	}
+	first, err := net.Dial("tcp", h.rt.ForwardAddr(20000))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = first.Close() }()
+	select {
+	case c := <-accepted:
+		held = append([]net.Conn{c}, held...)
+	case <-time.After(forwardClaimTimeout):
+		t.Fatal("a server with every dial taken accepted no forwarded connection")
+	}
+	// The rest of the budget goes to connections forwarded to this server.
+	for range maxForwards - 1 {
+		c, err := h.client.Dial(context.Background(), node.DialRequest{ContainerID: ct.ID, Port: 5432, Forwarded: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		held = append([]net.Conn{c}, held...)
 	}
 	over, err := net.Dial("tcp", h.rt.ForwardAddr(20000))
 	if err != nil {

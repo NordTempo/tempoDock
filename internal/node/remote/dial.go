@@ -34,6 +34,17 @@ const (
 	// maxDials caps open dial calls per server. They are long-lived and
 	// share the link's HTTP/2 stream limit (250) with every other call.
 	maxDials = 64
+	// maxForwards caps a server's open forwarded connections (ADR 0063),
+	// on a budget of their own: those it accepts for services that moved
+	// away, and those dialed to its containers for another server's. A
+	// proxy keeps idle keep-alive connections to every forwarded port
+	// (Caddy: up to 32 per port, for two minutes), so visitors' traffic
+	// doesn't compete with the data panel's dials for maxDials, nor the
+	// other way round. One costs each end about 100 KB while open (two
+	// copy buffers and the HTTP/2 stream). With maxDials and
+	// maxRegistryConns it leaves 74 of the link's 250 streams to every
+	// other call.
+	maxForwards = 96
 	// dialTimeout bounds connecting on the node, on top of the caller's ctx.
 	dialTimeout = 10 * time.Second
 	// streamWindow is the node's HTTP/2 receive window per call (the
@@ -43,6 +54,8 @@ const (
 
 var errTooManyDials = fmt.Errorf("too many open connections to containers on this server (limit %d)", maxDials)
 
+var errTooManyForwards = fmt.Errorf("too many open forwarded connections on this server (limit %d)", maxForwards)
+
 // Dial implements node.Containers. ctx bounds connecting only; closing the
 // returned conn ends the call.
 func (c *Client) Dial(ctx context.Context, req node.DialRequest) (net.Conn, error) {
@@ -50,14 +63,20 @@ func (c *Client) Dial(ctx context.Context, req node.DialRequest) (net.Conn, erro
 	if err != nil {
 		return nil, err
 	}
-	if s.dials.Add(1) > maxDials {
-		s.dials.Add(-1)
-		return nil, fmt.Errorf("server %s: %w", s.name(), errTooManyDials)
+	// A forwarded connection counts against the forwards' budget, any
+	// other against the dials': which counter only, nothing on the wire.
+	count, limit, tooMany := &s.dials, int32(maxDials), errTooManyDials
+	if req.Forwarded {
+		count, limit, tooMany = &s.forwards, maxForwards, errTooManyForwards
+	}
+	if count.Add(1) > limit {
+		count.Add(-1)
+		return nil, fmt.Errorf("server %s: %w", s.name(), tooMany)
 	}
 	remote := fmt.Sprintf("%s/%s:%d", s.name(), shortID(req.ContainerID), req.Port)
-	lc, err := openConn(ctx, s, opDial, dialRequest{ContainerID: req.ContainerID, Port: req.Port}, remote, func() { s.dials.Add(-1) })
+	lc, err := openConn(ctx, s, opDial, dialRequest{ContainerID: req.ContainerID, Port: req.Port}, remote, func() { count.Add(-1) })
 	if err != nil {
-		s.dials.Add(-1)
+		count.Add(-1)
 		return nil, err
 	}
 	return lc, nil

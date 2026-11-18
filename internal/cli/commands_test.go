@@ -352,6 +352,25 @@ func TestDeployFailureExitCodes(t *testing.T) {
 	}
 }
 
+// An image reference that isn't one is a usage error (exit 2) that says
+// what one looks like, and no release is made for it.
+func TestDeployRefusesInvalidImage(t *testing.T) {
+	setup(t)
+	srv := newTestServer(t)
+	t.Setenv(clientconfig.EnvURL, srv.url)
+	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeDeploy])
+	exec(t, "project", "create", "shop")
+	ok[apitypes.Release](t, "deploy", "-p", "shop", "-e", "production", "-s", "web", "--image", "web:1")
+	code, _, stderr := exec(t, "deploy", "-p", "shop", "-e", "production", "-s", "web", "--image", "bad image!!")
+	if code != int(output.ExitUsage) || !strings.Contains(stderr, "not a valid image reference") || !strings.Contains(stderr, "nginx:1.27") {
+		t.Fatalf("invalid image: exit %d\n%s", code, stderr)
+	}
+	ref := core.ServiceRef{Project: "shop", Environment: "production", Service: "web"}
+	if rels, err := srv.core.ListReleases(context.Background(), sys, ref, 5); err != nil || len(rels) != 1 {
+		t.Fatalf("releases after the refused deploy: %v %+v", err, rels)
+	}
+}
+
 // --json-file keeps a deploy's progress on stderr and writes its result
 // to the file, a failed one followed by the error; a path it can't write
 // stops the command before anything is deployed.

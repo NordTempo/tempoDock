@@ -259,6 +259,9 @@ func (r *restore) finish(ctx context.Context, err error) {
 		return // shutting down: the next start marks it failed
 	}
 	c.keepBackupLog(ctx, r.from.svc.ID, r.row.ID, r.log)
+	if err == nil {
+		_ = c.ensureDataAccess(ctx, r.to) // not left to afterActive's retry: `dock db query` works once this says done
+	}
 	// The row is written last, as in runBackup.
 	fin := store.FinishBackupParams{Status: string(apitypes.BackupSucceeded), SnapshotID: r.snapshot, FinishedAt: ptr(now()), ID: r.row.ID}
 	if err != nil {
