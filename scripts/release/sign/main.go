@@ -5,7 +5,8 @@
 //
 // RELEASE_SIGNING_KEY holds one or more Ed25519 private keys as PKCS#8
 // PEM blocks (openssl genpkey -algorithm ed25519); during a key rotation
-// it holds both. It writes DIR/SHA256SUMS.sig with a line per key, then
+// it holds both. It writes DIR/SHA256SUMS.sig with a line per key (and
+// the same signatures for ssh-keygen in DIR/SHA256SUMS.sshsig), then
 // checks the result the way dock does, against the keys built into this
 // checkout's internal/update: a signing key dock doesn't trust fails here,
 // before anything is published. Nothing about the keys is printed but
@@ -59,14 +60,18 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	var sig strings.Builder
+	var sig, sshSig strings.Builder
 	for _, k := range keys {
 		sig.WriteString(update.Sign(k, sums))
+		sshSig.WriteString(signSSH(k, sums))
 	}
 	if signed, err := update.VerifySums(version, sums, []byte(sig.String())); err != nil || !signed {
 		return fmt.Errorf("the signature doesn't verify with the keys in internal/update and TRUSTED_KEYS (is the signing key one of them?): %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, update.SigAsset), []byte(sig.String()), 0o644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, sshSigAsset), []byte(sshSig.String()), 0o644); err != nil {
 		return err
 	}
 	for _, k := range keys {

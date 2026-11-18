@@ -21,8 +21,8 @@
 #   DOCK_INSTALL_DIR  where `dock` goes (default: /usr/local/bin as root, else ~/.local/bin)
 #   DOCK_REQUIRE_SIGNATURE  "1" installs nothing without a signature checked
 #                     here: no release from before signing, and none when the
-#                     check can't run (it needs OpenSSL 3; macOS ships LibreSSL,
-#                     so `brew install openssl@3` and put it first in PATH)
+#                     check can't run. It needs OpenSSL 3 or, as on a stock Mac
+#                     (LibreSSL), ssh-keygen 8.1 or later
 set -eu
 
 repo=NordTempo/tempoDock
@@ -70,6 +70,27 @@ signature_required() {
     exit 0 }'
 }
 
+# ssh_verify_sums DIR checks DIR/SHA256SUMS against DIR/SHA256SUMS.sshsig
+# with ssh-keygen: the release's signatures in OpenSSH's format, a line per
+# key ("<key id> <signature, base64>"), made for the namespace dock-release.
+ssh_verify_sums() {
+  echo "$release_keys" | while read -r id key; do
+    line="$(grep "^$id " "$1/SHA256SUMS.sshsig")" || continue
+    {
+      echo '-----BEGIN SSH SIGNATURE-----'
+      printf '%s\n' "${line#* }" | fold -w 70
+      echo '-----END SSH SIGNATURE-----'
+    } > "$1/sig.ssh"
+    # The key as OpenSSH writes it: the type and the 32 bytes, each with its length.
+    sshkey="$({ printf '\000\000\000\013ssh-ed25519\000\000\000\040'; printf '%s' "$key" | openssl base64 -d -A; } | openssl base64 -A)" || continue
+    printf 'dock-release namespaces="dock-release" ssh-ed25519 %s\n' "$sshkey" > "$1/allowed_signers"
+    if ssh-keygen -Y verify -f "$1/allowed_signers" -I dock-release -n dock-release -s "$1/sig.ssh" < "$1/SHA256SUMS" >/dev/null 2>&1; then
+      echo ok
+      break
+    fi
+  done | grep -q ok
+}
+
 # verify_sums DIR VERSION checks DIR/SHA256SUMS against DIR/SHA256SUMS.sig
 # (empty when the release has none) with openssl, as dock does. A release
 # from before signing passes on its SHA256SUMS alone only when the person
@@ -84,7 +105,12 @@ verify_sums() {
   fi
   grep -q "  dock-install-$2.tar.gz\$" "$1/SHA256SUMS" || die "SHA256SUMS belongs to another release than $2"
   if ! openssl pkeyutl -help 2>&1 | grep -q -- -rawin; then
-    [ "${DOCK_REQUIRE_SIGNATURE:-}" != 1 ] || die "can't check the release's signature: it needs OpenSSL 3 (openssl pkeyutl -rawin)"
+    # A stock Mac: LibreSSL can't check Ed25519, its ssh-keygen can.
+    if [ -s "$1/SHA256SUMS.sshsig" ] && ssh-keygen -\? 2>&1 | grep -q -- '-Y verify'; then
+      ssh_verify_sums "$1" || die "release $2's SHA256SUMS isn't signed by a Dock release key; don't install it: it may have been tampered with"
+      return 0
+    fi
+    [ "${DOCK_REQUIRE_SIGNATURE:-}" != 1 ] || die "can't check the release's signature: it needs OpenSSL 3 (openssl pkeyutl -rawin), or ssh-keygen 8.1 or later and a release with SHA256SUMS.sshsig"
     warn "can't check the release's signature without OpenSSL 3; checked against its SHA256SUMS only. To check where it was built: gh attestation verify <file> --repo $repo"
     return 0
   fi
@@ -165,6 +191,8 @@ case $rc in
   22) : > "$tmp/SHA256SUMS.sig" ;;
   *) die "could not download SHA256SUMS.sig of release $version from $repo" ;;
 esac
+# The same signatures for ssh-keygen; releases before it was added have none.
+github -o "$tmp/SHA256SUMS.sshsig" "$base/SHA256SUMS.sshsig" 2>/dev/null || : > "$tmp/SHA256SUMS.sshsig"
 verify_sums "$tmp" "$version"
 
 grep "  $asset\$" "$tmp/SHA256SUMS" > "$tmp/sum" || die "SHA256SUMS has no entry for $asset"
