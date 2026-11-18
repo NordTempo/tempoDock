@@ -13,8 +13,6 @@ import (
 
 // UICSP is the web UI's Content-Security-Policy. The Vite builds have no
 // inline scripts; inline styles are allowed for React style attributes.
-// An API docs page (Huma's) sets its own policy, since it loads a CDN
-// script.
 const UICSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; " +
 	"font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 

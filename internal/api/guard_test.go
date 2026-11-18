@@ -119,3 +119,19 @@ func TestSecurityHeaders(t *testing.T) {
 		t.Fatalf("create token: %d %q %s", resp.StatusCode, resp.Header.Get("Cache-Control"), body)
 	}
 }
+
+// The daemon serves the OpenAPI spec but no docs page for it: that page
+// would load its script from another site.
+func TestNoDocsPage(t *testing.T) {
+	f := newFixture(t)
+	for path, want := range map[string]int{"/api/v1/docs": http.StatusNotFound, "/api/v1/openapi.json": http.StatusOK} {
+		resp, err := http.Get(f.srv.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != want {
+			t.Errorf("GET %s: %d, want %d", path, resp.StatusCode, want)
+		}
+	}
+}
