@@ -1,6 +1,8 @@
 package core
 
 import (
+	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -147,5 +149,28 @@ func TestRestoreCopyThatFailsToFillNeverStarts(t *testing.T) {
 	// The failed copy is archived under another name, so the name is free.
 	if _, err := h.c.GetService(h.ctx, testSystem, ServiceRef{app.Project, app.Environment, "app-old"}); CodeOf(err) != apitypes.CodeNotFound {
 		t.Errorf("the failed copy still holds its name: %v", err)
+	}
+}
+
+// A copy that is filled but can't start is archived under another name,
+// so the error's hint must name that one: the name it was asked for no
+// longer exists.
+func TestRestoreCopyThatFailsToStartNamesTheArchivedCopy(t *testing.T) {
+	h := newHarness(t)
+	const snap = "abab7777abab"
+	app := h.copySource(snap, func(node.JobSpec) *node.JobResult { return nil })
+	h.rt.FailStart(errors.New("exited with code 1"))
+	var res apitypes.RestoreResult
+	h.untilFree(func() (err error) {
+		res, err = h.c.RestoreBackup(h.ctx, testSystem, app, apitypes.RestoreBackupRequest{Snapshot: snap, As: "app-old"})
+		return err
+	})
+	done := h.waitRun(app, res.Restore.ID)
+	kept := fmt.Sprintf("app-old-failed-%d", res.Restore.ID)
+	if done.Status != apitypes.BackupFailed || done.RestoredTo != kept || !strings.Contains(done.Error, "`dock releases -s "+kept+"`") {
+		t.Fatalf("restore = %+v, want a hint naming %s", done, kept)
+	}
+	if rels, err := h.c.ListReleases(h.ctx, testSystem, ServiceRef{app.Project, app.Environment, kept}, 0); err != nil || len(rels) != 1 {
+		t.Errorf("the archived copy's releases = %+v, %v", rels, err)
 	}
 }

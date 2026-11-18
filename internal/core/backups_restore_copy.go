@@ -88,7 +88,9 @@ func (c *Core) restoreVolumeCopy(ctx context.Context, a Actor, ss svcScope, req 
 		rel, err := c.startRelease(ctx, a, to, releaseSpec{source: apitypes.SourcePromote, promote: step, done: func(ok bool) {
 			var err error
 			if !ok {
-				err = fmt.Errorf("%s failed to start with the backup's data; see its release (`dock releases -s %s`)", name, name)
+				// Whoever reads this finds the copy archived under another
+				// name (finishVolumeCopy), so the hint names that one.
+				err = fmt.Errorf("%s failed to start with the backup's data; see its release (`dock releases -s %s`)", name, failedTargetName(name, restoreInto{id: row.ID}))
 			}
 			c.finishVolumeCopy(c.ctx, ss, to, row, log, err)
 		}})
