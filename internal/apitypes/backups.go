@@ -89,7 +89,8 @@ type BackupRun struct {
 // BackupLog is what a backup or restore run's job printed: its last 16
 // KB (MaxRunOutputBytes), with the repository's and database's secrets
 // masked. Empty when nothing was kept (the job never ran, or the run is
-// older than the service's newest logs).
+// older than the service's newest logs); a run that succeeded says so
+// instead.
 type BackupLog struct {
 	ID     int64  `json:"id"`
 	Output string `json:"output"`

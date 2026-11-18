@@ -92,3 +92,29 @@ func TestBackupRestorableHere(t *testing.T) {
 		t.Fatalf("restoring from another repository: %v", err)
 	}
 }
+
+// A restore that succeeds prints nothing, so no log is kept: its log
+// says it succeeded instead of reading as a job that never ran.
+func TestBackupLogOfASilentRestoreSaysItSucceeded(t *testing.T) {
+	h := newHarness(t)
+	db := h.templateDB("db", apitypes.TemplatePostgres)
+	snap := "dddd4444dddd4444"
+	h.rt.OnJob(func(spec node.JobSpec) (node.JobResult, error) {
+		if strings.Contains(spec.Name, "_restore") {
+			return node.JobResult{}, nil // pg_restore is silent
+		}
+		return node.JobResult{Output: resticOutput(snap, 100, snap)}, nil
+	})
+	h.runBackup(db)
+	res, err := h.c.RestoreBackup(h.ctx, testSystem, db, apitypes.RestoreBackupRequest{Snapshot: snap})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done := h.waitRun(db, res.Restore.ID); done.Status != apitypes.BackupSucceeded {
+		t.Fatalf("restore = %+v", done)
+	}
+	log, err := h.c.BackupLog(h.ctx, testSystem, db, res.Restore.ID)
+	if err != nil || !strings.Contains(log.Output, "The restore succeeded") {
+		t.Fatalf("log = %q, %v; want it to say the restore succeeded", log.Output, err)
+	}
+}

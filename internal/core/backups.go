@@ -496,6 +496,8 @@ func repoWords(repository string) string {
 // BackupLog returns what a backup or restore run of a service printed
 // (apitypes.BackupLog). Like a one-off command's output it can hold what
 // a database printed, so it takes the scope running one does: deploy.
+// A run that succeeded and kept no log says so: a restore that works
+// prints nothing (pg_restore is silent), which is not a job that never ran.
 func (c *Core) BackupLog(ctx context.Context, a Actor, ref ServiceRef, id int64) (apitypes.BackupLog, error) {
 	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeDeploy, "reading a backup's log")
 	if err != nil {
@@ -511,6 +513,9 @@ func (c *Core) BackupLog(ctx context.Context, a Actor, ref ServiceRef, id int64)
 	out, err := c.store.GetBackupLog(ctx, store.GetBackupLogParams{BackupID: id, ServiceID: ss.svc.ID})
 	if err != nil && !store.IsNotFound(err) {
 		return apitypes.BackupLog{}, err
+	}
+	if out == "" && row.Status == string(apitypes.BackupSucceeded) {
+		out = fmt.Sprintf("The %s succeeded and kept no log: its job printed nothing, or it is older than the service's newest %d runs.\n", row.Operation, backupLogRuns)
 	}
 	return apitypes.BackupLog{ID: id, Output: out}, nil
 }
