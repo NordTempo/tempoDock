@@ -219,6 +219,6 @@ WHERE backup_checks.kind = 'repository' AND backup_checks.repository = +sqlc.arg
 UPDATE backup_checks SET status = 'failed', error = ?, finished_at = ? WHERE status = 'running';
 
 -- name: SetBackupVerify :exec
--- Turns the weekly checks and drills on or off; the settings row exists
--- (CreateBackupPassword) before anyone can switch them.
+-- Turns the weekly checks and drills on or off. The settings row exists:
+-- the caller opens the repository first (repoOf creates it).
 UPDATE backup_settings SET verify = ?, updated_at = ?, updated_by = ? WHERE id = 1;

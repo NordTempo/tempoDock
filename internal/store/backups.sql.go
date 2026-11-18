@@ -1004,8 +1004,8 @@ type SetBackupVerifyParams struct {
 	UpdatedBy string
 }
 
-// Turns the weekly checks and drills on or off; the settings row exists
-// (CreateBackupPassword) before anyone can switch them.
+// Turns the weekly checks and drills on or off. The settings row exists:
+// the caller opens the repository first (repoOf creates it).
 func (q *Queries) SetBackupVerify(ctx context.Context, arg SetBackupVerifyParams) error {
 	_, err := q.db.ExecContext(ctx, setBackupVerify, arg.Verify, arg.UpdatedAt, arg.UpdatedBy)
 	return err
