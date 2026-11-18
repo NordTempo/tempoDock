@@ -566,6 +566,9 @@ type releaseSpec struct {
 	// done, if set, is called when the release finished (ok: it went
 	// active), from the deploy goroutine.
 	done func(ok bool)
+	// pitrOff marks the restart that turns a database's point-in-time
+	// restore off: its failure settles the turn-off (pitrRestartFailed).
+	pitrOff bool
 }
 
 // takesStaged reports whether the release takes its service's own staged

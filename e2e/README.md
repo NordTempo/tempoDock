@@ -12,7 +12,7 @@ the CLI and real traffic through the proxy.
 | `traces.sh`, `metrics.sh` | OTLP traces and metrics, on their own servers |
 | `analytics-*.sh` | Dock Analytics with a headless browser, on their own containers |
 | `drain.sh` | `dock server drain` of a node under load: Postgres, Redis, a volume and stateless apps move with no failed request and every acknowledged write kept |
-| `pitr.sh` | point-in-time restore with the slot's S3 store: restores to a time between writes, across a replaced container, of a stopped database, across off and on, in place; the archiver under write load and idle |
+| `pitr.sh` | point-in-time restore with the slot's S3 store: restores to a time between writes, across a replaced container, of a stopped database, to latest, across off and on (the window as two ranges), in place; the archiver under write load and idle |
 | `upgrade/run.sh` | one published release updated to another, with data checks |
 | `sso.sh` | single sign-on through a real Keycloak over HTTPS (its own CA, in the slot): the oidc kind and the keycloak preset, invites, refusals, step-ups, logout |
 | `recover.sh` | a lost server ([ADR 0098](../docs/decisions/0098-recovering-a-lost-server.md)): backups in a MinIO bucket, the control plane removed with everything on it, `install.sh --restore-from-bucket` on a fresh one, `dock admin recover --yes`, then the database's rows, the app and the old token are checked. Removes the slot's control plane: run it last or in a slot of its own (`e2e/vm/up.sh 0`) |

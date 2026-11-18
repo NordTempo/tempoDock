@@ -189,11 +189,16 @@ type RestoreBackupRequest struct {
 	// ToTime restores the database as it was at that moment, from its
 	// point-in-time archive (ADR 0093), instead of a snapshot.
 	ToTime *time.Time `json:"to_time,omitempty"`
+	// ToLatest restores the database to the newest moment its archive
+	// holds, instead of ToTime: up to a minute behind a running database,
+	// the last commit of a stopped one. The restore's to_time says which
+	// moment that was.
+	ToLatest bool `json:"to_latest,omitempty"`
 	// As names the new service; empty is <service>-restored for a
 	// template database. A volume backup restores into a copy of the
 	// service only when As is given.
 	As string `json:"as,omitempty"`
-	// InPlace restores ToTime into the database itself, or a volume
+	// InPlace restores ToTime or ToLatest into the database itself, or a volume
 	// backup into the service's own volumes: it stops, a safety snapshot
 	// keeps what it holds, and it starts on the restored data. Not with
 	// As.
@@ -208,8 +213,14 @@ type PITR struct {
 	// Unavailable says why it can't be turned on, and what to do; empty
 	// when it can.
 	Unavailable string `json:"unavailable,omitempty"`
-	// From and Through are the restorable window: any time between them
-	// restores. Nil while nothing does yet.
+	// Ranges are the stretches of time that restore, oldest first: any
+	// time inside one does. More than one after archiving stopped and
+	// started again (turned off and on, an in-place restore): a time
+	// between two is refused.
+	Ranges []PITRRange `json:"ranges"`
+	// From and Through are the outer bounds of Ranges, for clients that
+	// read one window: the oldest base backup and the end of the newest
+	// range. Nil while nothing restores yet.
 	From    *time.Time `json:"from,omitempty"`
 	Through *time.Time `json:"through,omitempty"`
 	// BaseBackups counts the base backups the window rests on.
@@ -223,6 +234,13 @@ type PITR struct {
 	Deploys []PITRDeploy `json:"deploys"`
 	// Archiver is how archiving does, while it is on.
 	Archiver *PITRArchiver `json:"archiver,omitempty"`
+}
+
+// PITRRange is one stretch of time a database restores to, both ends
+// included.
+type PITRRange struct {
+	From    time.Time `json:"from"`
+	Through time.Time `json:"through"`
 }
 
 // PITRDeploy is a release of a service using the database that went live.

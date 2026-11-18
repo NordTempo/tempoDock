@@ -238,19 +238,36 @@ func printPITR(g *globals, p *apitypes.PITR) {
 		} else {
 			g.io.Detail("Point-in-time restore is off. Turn it on with `dock backup pitr on` to restore any moment of the last days.")
 		}
+		if len(p.Ranges) > 0 {
+			g.io.Detail("What was archived still restores until it ages out: " + restorableText(p) + ".")
+		}
 		return
 	}
-	window := "nothing yet: the first base backup is on its way"
-	if p.From != nil {
-		window = "from " + p.From.UTC().Format(time.RFC3339)
-		if p.Through != nil {
-			window += " to " + p.Through.UTC().Format(time.RFC3339)
-		}
-	}
-	_ = g.io.Fields("point in time", fmt.Sprintf("on, %d days", p.Days), "restorable", window)
+	_ = g.io.Fields("point in time", fmt.Sprintf("on, %d days", p.Days), "restorable", restorableText(p))
 	if a := p.Archiver; a != nil && !a.Healthy {
 		g.io.Warnf("Archiving is behind: %s", a.Problem)
 	}
+}
+
+// restorableText is a database's restorable window: each range that
+// restores, oldest first (more than one after archiving stopped and
+// started again). A server from before ranges gives one window.
+func restorableText(p *apitypes.PITR) string {
+	at := func(t time.Time) string { return t.UTC().Format(time.RFC3339) }
+	switch {
+	case len(p.Ranges) > 0:
+		parts := make([]string, len(p.Ranges))
+		for i, r := range p.Ranges {
+			parts[i] = "from " + at(r.From) + " to " + at(r.Through)
+		}
+		return strings.Join(parts, ", and ")
+	case p.From == nil:
+		return "nothing yet: the first base backup is on its way"
+	case p.Through == nil || p.Ranges != nil:
+		// A base backup, and no word on how far its archive reaches.
+		return "from " + at(*p.From)
+	}
+	return "from " + at(*p.From) + " to " + at(*p.Through)
 }
 
 func sizeText(r apitypes.BackupRun) string {
@@ -399,9 +416,11 @@ new one checks out, point references at it (e.g. ${{postgres-restored.DATABASE_U
 
 With point-in-time restore on (dock backup pitr on), --to-time restores a
 Postgres database as it was at that moment instead, with the credentials it
-had. --in-place restores the moment into the database itself: it stops, a
-safety snapshot keeps what it holds now (restore that one to undo), and it
-starts on the restored data.
+had. --to-time latest restores the newest moment archived: up to a minute
+behind a running database, the last commit of a stopped one. dock backup
+list shows the times that restore. --in-place restores the moment into the
+database itself: it stops, a safety snapshot keeps what it holds now
+(restore that one to undo), and it starts on the restored data.
 
 A service that isn't a template database restores a backup of its volumes
 with --snapshot and --in-place, the same way: it stops, a safety snapshot
@@ -415,6 +434,7 @@ the first runs. Nothing stops; it is the way to look at old data.`,
 		Example: `  dock backup restore postgres --snapshot 4cf53263 --as postgres-old
   dock backup restore postgres --to-time 2026-11-17T14:01Z
   dock backup restore postgres --to-time 2026-11-17T15:01+01:00 --in-place
+  dock backup restore postgres --to-time latest --as postgres-now
   dock backup restore uploads --snapshot 9d2c11f0 --in-place
   dock backup restore uploads --snapshot 9d2c11f0 --as uploads-old`,
 		Args:              cobra.MaximumNArgs(1),
@@ -430,7 +450,10 @@ the first runs. Nothing stops; it is the way to look at old data.`,
 			case inPlace && as != "":
 				return usageError("--as names a new service, and an in-place restore keeps the service", "Leave out --as or --in-place.")
 			}
-			if toTime != "" {
+			switch {
+			case strings.EqualFold(toTime, "latest"):
+				req.ToLatest = true
+			case toTime != "":
 				at, err := parseWhen("to-time", toTime)
 				if err != nil {
 					return err
@@ -443,7 +466,10 @@ the first runs. Nothing stops; it is the way to look at old data.`,
 			}
 			if inPlace && !yes {
 				q := fmt.Sprintf("Restore backup %s of %s in place? It stops and its volumes are replaced; a safety snapshot keeps what they hold now.", snapshot, t)
-				if req.ToTime != nil {
+				switch {
+				case req.ToLatest:
+					q = fmt.Sprintf("Restore %s in place to the latest moment archived? It stops and its data is replaced; a safety snapshot keeps what it holds now.", t)
+				case req.ToTime != nil:
 					q = fmt.Sprintf("Restore %s in place to %s? It stops and its data is replaced; a safety snapshot keeps what it holds now.", t, req.ToTime.Format(time.RFC3339))
 				}
 				if err := g.io.Confirm(q, "yes"); err != nil {
@@ -455,8 +481,9 @@ the first runs. Nothing stops; it is the way to look at old data.`,
 				return deployInProgress(err, t)
 			}
 			what := "snapshot " + snapshotID(res.Restore.Snapshot)
-			if req.ToTime != nil {
-				what = t.Service + " as of " + req.ToTime.Format(time.RFC3339)
+			// The server's word on the time: latest is resolved there.
+			if at := res.Restore.ToTime; at != nil {
+				what = t.Service + " as of " + at.UTC().Format(time.RFC3339)
 			}
 			if !detach {
 				g.io.Progressf("Restoring %s into %s...", what, res.Service.Name)
@@ -484,7 +511,7 @@ the first runs. Nothing stops; it is the way to look at old data.`,
 	}
 	f.add(cmd, needService)
 	cmd.Flags().StringVar(&snapshot, "snapshot", "", "snapshot ID, or its first 8 or more characters")
-	cmd.Flags().StringVar(&toTime, "to-time", "", "restore the database as it was at this time (point-in-time restore): 2026-11-17T14:01Z, UTC unless it has an offset")
+	cmd.Flags().StringVar(&toTime, "to-time", "", "restore the database as it was at this time (point-in-time restore): 2026-11-17T14:01Z, UTC unless it has an offset; or latest, the newest moment archived")
 	cmd.Flags().StringVar(&as, "as", "", "name of the new service (default <service>-restored; a copy of a service that isn't a template database needs one)")
 	cmd.Flags().BoolVar(&inPlace, "in-place", false, "restore into the service itself, after a safety snapshot: a --to-time, or a volume backup")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")

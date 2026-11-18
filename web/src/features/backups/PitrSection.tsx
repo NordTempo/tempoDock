@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { useIsOperator } from "../../data/queries";
 import type { BackupRun, ServiceRef } from "../../data/types";
 import {
@@ -21,6 +22,7 @@ import {
   newestBase,
   type PITR,
   type stripMarks,
+  type Window,
 } from "./pitr";
 
 /**
@@ -87,7 +89,7 @@ export function PitrSection({
   pitr: PITR;
   runs: BackupRun[];
   marks: ReturnType<typeof stripMarks>;
-  window?: { from: number; through: number };
+  window?: Window;
   /** Why restoring waits, when it does. */
   why?: string;
   onRestore: (at?: number) => void;
@@ -154,8 +156,13 @@ export function PitrSection({
           {w ? (
             <>
               Any moment from{" "}
-              <span className="font-mono">{moment(w.from, now)}</span> to{" "}
-              <span className="font-mono">{moment(w.through, now)}</span>
+              {w.ranges.map((r, i) => (
+                <Fragment key={r.from}>
+                  {i > 0 && " or "}
+                  <span className="font-mono">{moment(r.from, now)}</span> to{" "}
+                  <span className="font-mono">{moment(r.through, now)}</span>
+                </Fragment>
+              ))}
             </>
           ) : (
             "Point in time"

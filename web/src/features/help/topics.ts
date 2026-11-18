@@ -451,6 +451,10 @@ export const topics: Record<TopicId, Topic> = {
         at: { s: "backups" },
       },
       {
+        what: "Restore it to the newest moment archived",
+        cli: "dock backup restore -s {service} -e {env} --to-time latest",
+      },
+      {
         what: "Turn on point-in-time restore (operators)",
         cli: "dock backup pitr on -s {service} -e {env} --days 7",
       },

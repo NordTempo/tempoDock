@@ -48,9 +48,16 @@ type pitrState struct {
 	// first holds the databases whose first base backup of a generation
 	// is being taken, so two releases going active take one.
 	first map[int64]bool
-	// leaving holds the databases turned off whose archiver still runs,
-	// until their restart without archiving is live (archiverAfterOff).
+	// leaving holds the databases being turned off: their next container
+	// starts without archiving, while their row says on and their archiver
+	// runs until the restart is live or failed (pitrOffDone,
+	// pitrRestartFailed).
 	leaving map[int64]bool
+	// ended is where each archive generation nothing writes to any more
+	// ends, by database: read from the bucket once, since it can't change
+	// (pitrRanges). One entry per ended generation that still has base
+	// backups, of databases with a point-in-time row.
+	ended map[int64]map[string]time.Time
 	// archivers holds one lock per database for starting and removing
 	// its archiver (holdArchiver).
 	archivers map[int64]*sync.Mutex
@@ -116,8 +123,7 @@ func (c *Core) setPITROn(serviceID int64, on bool) {
 	}
 }
 
-// setLeaving marks, or unmarks, a database whose archiver goes once its
-// restart without archiving is live.
+// setLeaving marks, or unmarks, a database that is being turned off.
 func (c *Core) setLeaving(serviceID int64, leaving bool) {
 	c.pitr.mu.Lock()
 	defer c.pitr.mu.Unlock()
@@ -131,23 +137,74 @@ func (c *Core) setLeaving(serviceID int64, leaving bool) {
 	}
 }
 
-// archiverAfterOff removes the archiver of a database that was turned
-// off, now that its restart without archiving is live: until then the
-// old container still archives, and at shutdown Postgres hands over its
-// last segment, which holds the commits of the last minute. A no-op for
-// any other database, and when it was turned on again since.
-func (c *Core) archiverAfterOff(ctx context.Context, ss svcScope) {
+// isLeaving reports whether a database is being turned off: asked to,
+// and its restart without archiving neither live nor failed yet.
+func (c *Core) isLeaving(serviceID int64) bool {
 	c.pitr.mu.Lock()
-	leaving := c.pitr.leaving[ss.svc.ID]
-	delete(c.pitr.leaving, ss.svc.ID)
-	c.pitr.mu.Unlock()
-	if !leaving {
+	defer c.pitr.mu.Unlock()
+	return c.pitr.leaving[serviceID]
+}
+
+// takeLeaving unmarks a database that is being turned off and reports
+// whether it was marked, so one caller settles each turn-off.
+func (c *Core) takeLeaving(serviceID int64) bool {
+	c.pitr.mu.Lock()
+	defer c.pitr.mu.Unlock()
+	leaving := c.pitr.leaving[serviceID]
+	delete(c.pitr.leaving, serviceID)
+	return leaving
+}
+
+// pitrOffDone finishes turning a database off, now that nothing archives
+// any more: its restart without archiving is live, or its old container
+// stopped and the restart failed, or nothing had to restart. Until then
+// the old container still archives, and at shutdown Postgres hands over
+// its last segment, which holds the commits of the last minute. Only now
+// the row says off and the archiver goes (ADR 0093). A no-op for any
+// other database, and when it was turned on again since.
+func (c *Core) pitrOffDone(ctx context.Context, ss svcScope) {
+	if !c.takeLeaving(ss.svc.ID) {
 		return
 	}
-	if row, err := c.store.GetPITR(ctx, ss.svc.ID); err != nil || row.Enabled {
-		return
+	c.recordPITROff(ctx, ss)
+}
+
+// recordPITROff stores a database's point-in-time restore as off, removes
+// its archiver and closes its archiving alert.
+func (c *Core) recordPITROff(ctx context.Context, ss svcScope) {
+	if row, err := c.store.GetPITR(ctx, ss.svc.ID); err == nil && row.Enabled {
+		if err := c.store.UpsertPITR(ctx, store.UpsertPITRParams{
+			ServiceID: row.ServiceID, Enabled: false, Days: row.Days, Generation: row.Generation, ServerID: row.ServerID,
+			UpdatedBy: row.UpdatedBy, UpdatedAt: now(),
+		}); err != nil {
+			c.log.Warn("turn off point-in-time restore", "service", ss.String(), "err", err)
+		}
 	}
 	c.removeArchiver(ctx, ss)
+	c.signalAlert(ctx, alertSignal{Key: pitrAlertKey(ss), Resolve: true})
+}
+
+// pitrRestartFailed settles a turn-off whose restart release failed
+// (ADR 0093), before the failed deploy brings the old release back. With
+// the old container stopped, the turn-off stands: Postgres handed over
+// its last segment as it stopped, and whatever starts next starts without
+// archiving. With the old container still running (the release failed
+// before stopping it, or couldn't stop it), it still archives, and
+// removing its archiver would leave Postgres keeping every WAL file on
+// the database's disk: point-in-time restore stays on, unbroken, and the
+// audit log says the turn-off failed.
+func (c *Core) pitrRestartFailed(ctx context.Context, ss svcScope, rel store.Release, oldStopped bool) {
+	if oldStopped {
+		c.pitrOffDone(ctx, ss)
+		return
+	}
+	if !c.takeLeaving(ss.svc.ID) {
+		return
+	}
+	c.setPITROn(ss.svc.ID, true)
+	c.audit(ctx, System, "backup.pitr", &ss.project, &ss.env, ss.String(), fmt.Sprintf(
+		"point-in-time restore of %s stays on: release %d, the restart that turns it off, failed before %s stopped, so it still archives; turn it off again once what failed the release is fixed",
+		ss.svc.Name, rel.Number, ss.svc.Name))
 }
 
 // archiverName is the archiver container of a database.
@@ -375,9 +432,11 @@ func (c *Core) removeArchiver(ctx context.Context, ss svcScope) {
 // changes its window (ADR 0093). Operators, like schedules: it costs
 // storage. Turning it on or off restarts the database once (a restart
 // release with or without the archive settings); on, it starts the
-// archiver first and takes a base backup once the database runs. Off
-// when it is off already restarts nothing, and changes nothing for a
-// database that never had it.
+// archiver first and takes a base backup once the database runs. Off is
+// stored, and the archiver removed, once nothing archives any more
+// (pitrOffDone); a restart that fails with the old container still
+// running leaves it on (pitrRestartFailed). Off when it is off already
+// restarts nothing, and changes nothing for a database that never had it.
 func (c *Core) SetPITR(ctx context.Context, a Actor, ref ServiceRef, req apitypes.SetPITRRequest) (apitypes.ServiceBackups, error) {
 	if err := a.requirePlatform(BackupsManage, "changing point-in-time restore"); err != nil {
 		return apitypes.ServiceBackups{}, err
@@ -404,6 +463,10 @@ func (c *Core) SetPITR(ctx context.Context, a Actor, ref ServiceRef, req apitype
 	if !exists {
 		cur = store.Pitr{ServiceID: ss.svc.ID, Days: pitrDefaultDays}
 	}
+	// A turn-off under way reads as off: its row says on until its
+	// restart is live.
+	leaving := c.isLeaving(ss.svc.ID)
+	cur.Enabled = cur.Enabled && !leaving
 	next := cur
 	if req.Enabled != nil {
 		next.Enabled = *req.Enabled
@@ -439,38 +502,43 @@ func (c *Core) SetPITR(ctx context.Context, a Actor, ref ServiceRef, req apitype
 		if err := c.ensureArchiver(ctx, ss, next); err != nil {
 			return apitypes.ServiceBackups{}, err
 		}
-		if row, err := c.store.GetPITR(ctx, ss.svc.ID); err == nil {
-			next.ServerID = row.ServerID
-		}
+		// It runs there now. Not read back from the row: the first time
+		// there is none yet, and a row without its archiver's server
+		// leaves that archiver behind when it is turned off.
+		next.ServerID = &ss.env.ServerID
 	}
 	if err := c.store.UpsertPITR(ctx, store.UpsertPITRParams{
-		ServiceID: ss.svc.ID, Enabled: next.Enabled, Days: next.Days, Generation: next.Generation, ServerID: next.ServerID,
+		// Off is stored by pitrOffDone, once nothing archives any more:
+		// until then the row says on, so a restart that fails, or a daemon
+		// restart, finds the database archiving with its archiver.
+		ServiceID: ss.svc.ID, Enabled: next.Enabled || turnOff || leaving, Days: next.Days, Generation: next.Generation, ServerID: next.ServerID,
 		UpdatedBy: next.UpdatedBy, UpdatedAt: next.UpdatedAt,
 	}); err != nil {
 		return apitypes.ServiceBackups{}, err
 	}
-	c.setPITROn(ss.svc.ID, next.Enabled)
 	summary := fmt.Sprintf("kept %d days of point-in-time restore", next.Days)
 	switch {
 	case turnOn:
 		summary = fmt.Sprintf("turned on point-in-time restore, %d days", next.Days)
 	case turnOff:
 		summary = "turned off point-in-time restore; its window ages out"
-		c.signalAlert(ctx, alertSignal{Key: pitrAlertKey(ss), Resolve: true})
 	}
 	if turnOn || turnOff {
 		// Off, the archiver outlives the old container, which archives its
 		// last segment as it shuts down: it goes when the restart is live
-		// (archiverAfterOff), or now when nothing restarts. A restart that
-		// fails leaves it until the next release or daemon start (loadPITR).
+		// or the old container stopped (pitrOffDone, pitrRestartFailed),
+		// or now when nothing restarts.
+		c.setPITROn(ss.svc.ID, next.Enabled)
 		c.setLeaving(ss.svc.ID, turnOff)
-		restarting, err := c.restartForPITR(ctx, a, ss)
+		restarting, err := c.restartForPITR(ctx, a, ss, turnOff)
 		if err != nil {
-			c.setLeaving(ss.svc.ID, false)
+			if turnOff && c.takeLeaving(ss.svc.ID) {
+				c.setPITROn(ss.svc.ID, true) // nothing restarts: it archives on
+			}
 			return apitypes.ServiceBackups{}, err
 		}
 		if turnOff && !restarting {
-			c.archiverAfterOff(ctx, ss)
+			c.pitrOffDone(ctx, ss)
 		}
 	}
 	c.audit(ctx, a, "backup.pitr", &ss.project, &ss.env, ss.String(), summary)
@@ -478,10 +546,11 @@ func (c *Core) SetPITR(ctx context.Context, a Actor, ref ServiceRef, req apitype
 }
 
 // restartForPITR starts a restart release of a database, so its new
-// container starts with or without the archive settings (addArchiving).
-// restarting is false for a stopped or sleeping one, which has no
-// container to replace.
-func (c *Core) restartForPITR(ctx context.Context, a Actor, ss svcScope) (restarting bool, err error) {
+// container starts with or without the archive settings (addArchiving);
+// off marks the release as the one that turns archiving off, for its
+// failure (pitrRestartFailed). restarting is false for a stopped or
+// sleeping one, which has no container to replace.
+func (c *Core) restartForPITR(ctx context.Context, a Actor, ss svcScope, off bool) (restarting bool, err error) {
 	active, err := c.restartable(ctx, ss)
 	if err != nil {
 		return false, err
@@ -489,7 +558,7 @@ func (c *Core) restartForPITR(ctx context.Context, a Actor, ss svcScope) (restar
 	if ss.svc.StoppedAt != nil || ss.env.AsleepAt != nil {
 		return false, nil // its next start makes the container anew
 	}
-	if _, err := c.startRelease(ctx, a, ss, releaseSpec{source: apitypes.SourceRestart, from: &active}); err != nil {
+	if _, err := c.startRelease(ctx, a, ss, releaseSpec{source: apitypes.SourceRestart, from: &active, pitrOff: off}); err != nil {
 		return false, fmt.Errorf("restart %s with the new archive settings: %w", ss.svc.Name, err)
 	}
 	return true, nil
@@ -497,10 +566,16 @@ func (c *Core) restartForPITR(ctx context.Context, a Actor, ss svcScope) (restar
 
 // pitrAfterActive keeps a database's archiver running where its release
 // went active, and takes the first base backup of a generation once the
-// database archives. Called when any release of it goes active.
-func (c *Core) pitrAfterActive(ctx context.Context, ss svcScope) {
+// database archives. Called when any release of it goes active; off is
+// set for the restart that turns archiving off, which finishes the
+// turn-off (only that one: what follows an earlier release going active
+// may get here after the turn-off was asked, with the old container
+// still archiving).
+func (c *Core) pitrAfterActive(ctx context.Context, ss svcScope, off bool) {
 	if !c.pitrOn(ss.svc.ID) {
-		c.archiverAfterOff(ctx, ss)
+		if off {
+			c.pitrOffDone(ctx, ss)
+		}
 		return
 	}
 	row, on, err := c.keepArchiver(ctx, ss)
@@ -554,7 +629,7 @@ func (c *Core) pitrAfterMove(ctx context.Context) {
 			continue
 		}
 		c.pitrNewGeneration(ctx, ss)
-		c.pitrAfterActive(ctx, ss)
+		c.pitrAfterActive(ctx, ss, false)
 	}
 }
 
@@ -595,21 +670,15 @@ func (c *Core) loadPITR(ctx context.Context) error {
 // pitrArchived turns point-in-time restore off for a database that was
 // archived or is going away, and removes its archiver.
 func (c *Core) pitrArchived(ctx context.Context, ss svcScope) {
-	if !c.pitrOn(ss.svc.ID) {
+	c.pitr.mu.Lock()
+	delete(c.pitr.ended, ss.svc.ID)
+	c.pitr.mu.Unlock()
+	leaving := c.takeLeaving(ss.svc.ID)
+	if !c.pitrOn(ss.svc.ID) && !leaving {
 		return
 	}
 	c.setPITROn(ss.svc.ID, false)
-	if row, err := c.store.GetPITR(ctx, ss.svc.ID); err == nil {
-		row.Enabled = false
-		if err := c.store.UpsertPITR(ctx, store.UpsertPITRParams{
-			ServiceID: row.ServiceID, Enabled: false, Days: row.Days, Generation: row.Generation, ServerID: row.ServerID,
-			UpdatedBy: "system", UpdatedAt: now(),
-		}); err != nil {
-			c.log.Warn("turn off point-in-time restore", "service", ss.String(), "err", err)
-		}
-	}
-	c.removeArchiver(ctx, ss)
-	c.signalAlert(ctx, alertSignal{Key: pitrAlertKey(ss), Resolve: true})
+	c.recordPITROff(ctx, ss)
 }
 
 // archiverStatus asks a database's archiver how archiving does, through
@@ -653,7 +722,9 @@ func (c *Core) pitrInfo(ctx context.Context, ss svcScope, set store.BackupSettin
 	row, err := c.store.GetPITR(ctx, ss.svc.ID)
 	switch {
 	case err == nil:
-		out.Enabled, out.Days = row.Enabled, int(row.Days)
+		// Being turned off reads as off, though the row says on until the
+		// restart is live (pitrOffDone).
+		out.Enabled, out.Days = row.Enabled && !c.isLeaving(ss.svc.ID), int(row.Days)
 	case !store.IsNotFound(err):
 		return nil, err
 	}
@@ -664,16 +735,12 @@ func (c *Core) pitrInfo(ctx context.Context, ss svcScope, set store.BackupSettin
 	if err != nil {
 		return nil, err
 	}
-	var last *store.Backup
-	for i, b := range bases {
-		if b.WalStart == "" || b.ConsistentAt == nil || b.Repository != set.Repository {
-			continue // copied by a move without its WAL
-		}
-		last = &bases[i]
-		out.BaseBackups++
-		if out.From == nil {
-			out.From = b.ConsistentAt
-		}
+	gens := pitrGenerations(bases, set.Repository)
+	for _, g := range gens {
+		out.BaseBackups += g.bases
+	}
+	if len(gens) > 0 {
+		out.From = gens[0].first.ConsistentAt
 	}
 	out.WALBytes = row.WalBytes // zero without a row
 	out.UsedBy, out.Deploys = []string{}, []apitypes.PITRDeploy{}
@@ -682,37 +749,124 @@ func (c *Core) pitrInfo(ctx context.Context, ss svcScope, set store.BackupSettin
 			return nil, err
 		}
 	}
-	if !out.Enabled {
-		// Turned off, what was archived still restores until it ages out.
-		out.Through = c.archivedThrough(ctx, ss, last)
-		return out, nil
-	}
-	// A stopped database keeps its archiver, which still knows where the
-	// archive ends: the window shows, and a restore to a time in it works.
-	st, err := c.archiverStatus(ctx, ss)
-	if err != nil && ss.svc.StoppedAt != nil {
-		out.Through = c.archivedThrough(ctx, ss, last)
-		return out, nil
-	}
-	if err != nil {
-		out.Archiver = &apitypes.PITRArchiver{Problem: err.Error()}
-		return out, nil
-	}
-	out.Archiver = &apitypes.PITRArchiver{
-		Healthy: st.Healthy, Problem: st.Problem, Waiting: st.Waiting, WaitingBytes: st.WaitingBytes, OldestWaiting: st.OldestWaiting,
-		DiskBytes: st.DiskBytes, DiskFree: st.DiskFree, LastError: st.LastError, LastErrorAt: st.LastErrorAt,
-	}
-	if out.From != nil && st.Through != nil && st.Through.After(*out.From) {
-		out.Through = st.Through
+	var live *walarchive.Status
+	live, out.Archiver = c.archiverLive(ctx, ss, out.Enabled)
+	out.Ranges = c.pitrRanges(ctx, ss, row, gens, live)
+	if n := len(out.Ranges); n > 0 {
+		out.Through = &out.Ranges[n-1].Through
 	}
 	return out, nil
 }
 
-// archivedThrough is where the archive of a database's newest base
-// backup ends, read from the bucket: for a database with no archiver to
-// ask (point-in-time restore turned off, or stopped and its server
-// restarted since). One listing of the generation, only when its Backups
-// page asks in that state; nil when there is nothing or it can't be read.
+// archiverLive asks a database's archiver how archiving does, for the
+// page (archiver) and for where the generation being written ends (live,
+// for pitrRanges). Both are nil when the bucket has to say instead:
+// turned off (enabled false), where what was archived still restores
+// until it ages out, or stopped with its archiver gone (its server
+// restarted). An archiver that doesn't answer while the database runs is
+// a problem on the page and a zero status: no end to show.
+func (c *Core) archiverLive(ctx context.Context, ss svcScope, enabled bool) (live *walarchive.Status, archiver *apitypes.PITRArchiver) {
+	if !enabled {
+		return nil, nil
+	}
+	st, err := c.archiverStatus(ctx, ss)
+	switch {
+	case err == nil:
+		return &st, &apitypes.PITRArchiver{
+			Healthy: st.Healthy, Problem: st.Problem, Waiting: st.Waiting, WaitingBytes: st.WaitingBytes, OldestWaiting: st.OldestWaiting,
+			DiskBytes: st.DiskBytes, DiskFree: st.DiskFree, LastError: st.LastError, LastErrorAt: st.LastErrorAt,
+		}
+	case ss.svc.StoppedAt != nil:
+		return nil, nil
+	}
+	return &walarchive.Status{}, &apitypes.PITRArchiver{Problem: err.Error()}
+}
+
+// pitrGeneration is one archive generation of a database with base
+// backups to restore from: one unbroken history (ADR 0093).
+type pitrGeneration struct {
+	name string
+	// first and last are its oldest and newest base backups, and bases
+	// how many it has.
+	first, last store.Backup
+	bases       int
+}
+
+// pitrGenerations groups a database's base backups (ListPITRBases, in
+// the order they became consistent) by generation, oldest first, leaving
+// out those a backup move copied without their WAL.
+func pitrGenerations(bases []store.Backup, repository string) []pitrGeneration {
+	var out []pitrGeneration
+	for _, b := range bases {
+		if b.WalStart == "" || b.ConsistentAt == nil || b.Repository != repository {
+			continue
+		}
+		if n := len(out); n > 0 && out[n-1].name == b.WalGeneration {
+			out[n-1].last = b
+			out[n-1].bases++
+			continue
+		}
+		out = append(out, pitrGeneration{name: b.WalGeneration, first: b, last: b, bases: 1})
+	}
+	return out
+}
+
+// pitrRanges are the stretches of time a database restores to, oldest
+// first: one per generation, from its first base backup to where its
+// archive ends. Between two lies a time nothing was archived: it was off,
+// or its data was replaced by an in-place restore.
+//
+// A generation nothing writes to any more (not the row's, or the row is
+// off and its archiver gone) ends where it did when it was first read:
+// its end comes from the bucket once per daemon run, one listing, then
+// from pitr.ended. The one being written ends where its archiver says
+// (live; a zero status when it couldn't be asked), or with live nil where
+// the bucket says, as before. So a database whose archiving never stopped
+// costs no listing, and one with a gap costs one per ended generation,
+// once.
+func (c *Core) pitrRanges(ctx context.Context, ss svcScope, row store.Pitr, gens []pitrGeneration, live *walarchive.Status) []apitypes.PITRRange {
+	out := []apitypes.PITRRange{} // never nil: the API says a list
+	ended := map[string]time.Time{}
+	c.pitr.mu.Lock()
+	known := c.pitr.ended[ss.svc.ID]
+	c.pitr.mu.Unlock()
+	for _, g := range gens {
+		var through *time.Time
+		switch t, ok := known[g.name]; {
+		case ok:
+			through, ended[g.name] = &t, t
+		case g.name != row.Generation || (!row.Enabled && row.ServerID == nil):
+			if through = c.archivedThrough(ctx, ss, &g.last); through != nil {
+				ended[g.name] = *through
+			}
+		case live != nil:
+			through = live.Through
+		default:
+			through = c.archivedThrough(ctx, ss, &g.last)
+		}
+		if through != nil && through.After(*g.first.ConsistentAt) {
+			out = append(out, apitypes.PITRRange{From: g.first.ConsistentAt.UTC(), Through: through.UTC()})
+		}
+	}
+	// Replaced, not added to: generations whose base backups aged out go.
+	c.pitr.mu.Lock()
+	if c.pitr.ended == nil {
+		c.pitr.ended = map[int64]map[string]time.Time{}
+	}
+	if len(ended) == 0 {
+		delete(c.pitr.ended, ss.svc.ID)
+	} else {
+		c.pitr.ended[ss.svc.ID] = ended
+	}
+	c.pitr.mu.Unlock()
+	return out
+}
+
+// archivedThrough is where the archive of a generation's newest base
+// backup ends, read from the bucket: for a generation with no archiver
+// to ask (an ended one, point-in-time restore turned off, or stopped and
+// its server restarted since). One listing of the generation (pitrRanges
+// says when); nil when there is nothing or it can't be read.
 func (c *Core) archivedThrough(ctx context.Context, ss svcScope, base *store.Backup) *time.Time {
 	if base == nil {
 		return nil
@@ -831,8 +985,8 @@ func (c *Core) onArchiverEvent(ctx context.Context, serverID int64, ev node.Cont
 	if err != nil || ss.env.ServerID != serverID {
 		return
 	}
-	if !c.pitrOn(id) {
-		return
+	if !c.pitrOn(id) && !c.isLeaving(id) {
+		return // while it is being turned off it still archives
 	}
 	switch ev.Health {
 	case node.HealthHealthy:
