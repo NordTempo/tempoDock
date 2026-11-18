@@ -193,7 +193,17 @@ func runNode(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Runtime: rt,
 		// Facts don't change while the node runs: Docker restarting
 		// restarts this unit too (Requires=docker.service).
-		Facts:       func(context.Context) (remote.Facts, error) { return facts, nil },
+		// The firewall is the exception, read at every hello: it can be
+		// applied or removed while the node runs.
+		Facts: func(context.Context) (remote.Facts, error) {
+			f := facts
+			if check := firewallCheck(); check != nil {
+				if ok, err := check(); err == nil {
+					f.FirewallApplied = &ok
+				}
+			}
+			return f, nil
+		},
 		UpdaterUnit: update.PathUnit,
 		Logger:      log,
 	}

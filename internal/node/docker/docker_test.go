@@ -442,3 +442,29 @@ func TestJobOptionsOwner(t *testing.T) {
 		t.Error("a runtime without a data dir labels its jobs with an empty owner")
 	}
 }
+
+// No job lands on Docker's default bridge, which the app firewall doesn't
+// cover: one without a network has none, one with a network joins only it.
+func TestJobOptionsNetwork(t *testing.T) {
+	spec := node.JobSpec{Name: "dock_snapshot_delete_1", Image: "alpine", Script: "true"}
+	opts := jobOptions(spec, nil, "")
+	if opts.HostConfig.NetworkMode != "none" || opts.NetworkingConfig != nil {
+		t.Errorf("a job without a network: mode %q, networks %+v; want none", opts.HostConfig.NetworkMode, opts.NetworkingConfig)
+	}
+	spec.Network = "dock_p1_e1"
+	opts = jobOptions(spec, nil, "")
+	if opts.NetworkingConfig == nil || len(opts.NetworkingConfig.EndpointsConfig) != 1 || opts.NetworkingConfig.EndpointsConfig["dock_p1_e1"] == nil {
+		t.Errorf("a job on dock_p1_e1 joins %+v", opts.NetworkingConfig)
+	}
+}
+
+// Containers get the default limit on processes unless the config sets
+// another or turns it off.
+func TestPidsLimit(t *testing.T) {
+	for set, want := range map[int64]int64{0: DefaultPidsLimit, 512: 512, -1: 0} {
+		got := (&Runtime{PidsLimit: set}).pidsLimit()
+		if (want == 0) != (got == nil) || (got != nil && *got != want) {
+			t.Errorf("PidsLimit %d: got %v, want %d (0 is none)", set, got, want)
+		}
+	}
+}

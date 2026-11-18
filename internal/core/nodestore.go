@@ -272,6 +272,7 @@ func (c *Core) NodeStatus(s remote.State) {
 		}
 		if err == nil {
 			c.wantWildcard(srv)
+			c.firewallReported(ctx, srv.ID, srv.Name, "dock-node", s.Hello.FirewallApplied)
 		}
 	default:
 		err = c.store.SetServerDisconnected(ctx, store.SetServerDisconnectedParams{Now: &t, Reason: "connection lost", ID: s.ServerID})

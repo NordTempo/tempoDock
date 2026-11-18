@@ -854,10 +854,15 @@ func (c *Core) runResticJob(ctx context.Context, serverID int64, rt node.Runtime
 		}
 		spec.Mounts = append(spec.Mounts, node.Mount{Volume: vol, Path: backup.LocalPath})
 	}
-	if spec.Network != "" {
-		if err := rt.EnsureNetwork(ctx, spec.Network, node.Labels{ControlPlane: c.install, Project: spec.Labels.Project, Environment: spec.Labels.Environment}); err != nil {
-			return "", c.nodeErr(serverID, err)
-		}
+	// restic reaches the storage from a managed network, which the app
+	// firewall covers: the service's environment's, or the install's own
+	// for a job of no environment (a job without a network has none).
+	netLabels := node.Labels{ControlPlane: c.install, Project: spec.Labels.Project, Environment: spec.Labels.Environment}
+	if spec.Network == "" {
+		spec.Network, netLabels = c.jobsNetwork(), node.Labels{ControlPlane: c.install}
+	}
+	if err := rt.EnsureNetwork(ctx, spec.Network, netLabels); err != nil {
+		return "", c.nodeErr(serverID, err)
 	}
 	if err := c.ensureImage(ctx, serverID, rt, spec.Image); err != nil {
 		return "", err
@@ -889,6 +894,16 @@ func (c *Core) runResticJob(ctx context.Context, serverID int64, rt node.Runtime
 		c.connectionWorks(ctx, storage)
 	}
 	return res.Output, nil
+}
+
+// jobsNetwork is the network of the install's storage jobs that belong to
+// no environment (the control plane's backup, moving backups to other
+// storage): a managed network like an environment's, so the app firewall
+// covers it. It is named after the install, so control planes sharing a
+// Docker host keep their own.
+func (c *Core) jobsNetwork() string {
+	sum := sha256.Sum256([]byte(c.install))
+	return "dock_jobs_" + hex.EncodeToString(sum[:4])
 }
 
 // localRepoVolume is the volume of a server's local repository. It is

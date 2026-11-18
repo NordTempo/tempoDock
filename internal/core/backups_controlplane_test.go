@@ -78,7 +78,7 @@ func TestControlPlaneBackup(t *testing.T) {
 		t.Fatalf("done = %+v", done)
 	}
 	if spec.Image != h.opts.Config.Backup.ResticImage || spec.Env["DOCK_TAG"] != backup.ControlPlaneTag ||
-		!strings.Contains(spec.Script, "--stdin-filename "+backup.ControlPlaneFile) || spec.Network != "" {
+		!strings.Contains(spec.Script, "--stdin-filename "+backup.ControlPlaneFile) || !strings.HasPrefix(spec.Network, "dock_jobs_") {
 		t.Errorf("job = %+v", spec)
 	}
 	names := map[string]bool{}
