@@ -190,7 +190,9 @@ either:
   without stopping anything, restore a backup into a copy instead
   (`--as NAME`): a new service with the same settings, variables and
   volumes and no domains, filled from the backup before it starts on the
-  image the service runs. Archive the copy when you are done.
+  image the service runs. The copy runs with the same variables as the
+  original, so one that sends mail or calls other systems does that
+  too. Archive the copy when you are done.
 
 From the CLI:
 

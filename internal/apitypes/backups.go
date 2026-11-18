@@ -189,7 +189,9 @@ type RestoreBackupRequest struct {
 	// ToTime restores the database as it was at that moment, from its
 	// point-in-time archive (ADR 0093), instead of a snapshot.
 	ToTime *time.Time `json:"to_time,omitempty"`
-	// As names the new service; empty is <service>-restored.
+	// As names the new service; empty is <service>-restored for a
+	// template database. A volume backup restores into a copy of the
+	// service only when As is given.
 	As string `json:"as,omitempty"`
 	// InPlace restores ToTime into the database itself, or a volume
 	// backup into the service's own volumes: it stops, a safety snapshot

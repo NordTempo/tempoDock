@@ -8,7 +8,6 @@ import (
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/backup"
 	"github.com/NordTempo/tempoDock/internal/node"
-	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 // copySource is a running service with a volume, a variable of its own
@@ -133,20 +132,20 @@ func TestRestoreCopyThatFailsToFillNeverStarts(t *testing.T) {
 	app := h.copySource(snap, func(node.JobSpec) *node.JobResult {
 		return &node.JobResult{ExitCode: 1, Output: "dock: the backup holds the volume cache, which the service no longer has"}
 	})
-	old := ServiceRef{app.Project, app.Environment, "app-old"}
 	var res apitypes.RestoreResult
 	h.untilFree(func() (err error) {
 		res, err = h.c.RestoreBackup(h.ctx, testSystem, app, apitypes.RestoreBackupRequest{Snapshot: snap, As: "app-old"})
 		return err
 	})
 	done := h.waitRun(app, res.Restore.ID)
-	if done.Status != apitypes.BackupFailed || done.RestoredTo != "app-old" || !strings.Contains(done.Error, "no longer has") || !strings.Contains(done.Error, "never started") {
+	if done.Status != apitypes.BackupFailed || !strings.HasPrefix(done.RestoredTo, "app-old-failed-") || !strings.Contains(done.Error, "no longer has") || !strings.Contains(done.Error, "never started") {
 		t.Fatalf("restore = %+v", done)
 	}
 	if got := h.rt.Running(); !slices.Equal(got, []string{h.ctr(app, 1)}) {
 		t.Errorf("running = %v", got)
 	}
-	if rels, err := h.c.store.ListReleases(h.ctx, store.ListReleasesParams{ServiceID: h.serviceID(old), Limit: 5}); err != nil || len(rels) != 0 {
-		t.Errorf("the copy's releases = %+v, %v", rels, err)
+	// The failed copy is archived under another name, so the name is free.
+	if _, err := h.c.GetService(h.ctx, testSystem, ServiceRef{app.Project, app.Environment, "app-old"}); CodeOf(err) != apitypes.CodeNotFound {
+		t.Errorf("the failed copy still holds its name: %v", err)
 	}
 }

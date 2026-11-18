@@ -751,7 +751,8 @@ function PointCells({
  * point, what happens to the service and its data, and what undoes it.
  * Nothing changes until Restore in place; what the API refuses (a deploy
  * or another restore is running) shows here. The restore then runs as a
- * row of the list.
+ * row of the list. A backup also restores into a copy of the service
+ * under another name, which touches nothing (ADR 0095).
  */
 function RestoreInPlace({
   serviceRef: ref,
@@ -768,6 +769,8 @@ function RestoreInPlace({
   const backup = useRestoreBackup();
   const snapshot = useRestoreSnapshot();
   const pending = backup.isPending || snapshot.isPending;
+  const [copy, setCopy] = useState(`${ref.service}-restored`);
+  const copyOf = p.kind === "backup" ? p.run.snapshot : undefined;
   const taken = `${day(p.at)} ${clock(p.at)}`;
   const flags = `-s ${ref.service} -e ${ref.environment}`;
   const cli =
@@ -817,6 +820,36 @@ function RestoreInPlace({
         <dd>
           A safety snapshot of what they hold now. Restoring it undoes this.
         </dd>
+        {copyOf && (
+          <>
+            <dt>Or a copy</dt>
+            <dd className="flex flex-wrap items-center gap-2">
+              <span>
+                A new service with the backup's data. {ref.service} keeps
+                running.
+              </span>
+              <input
+                aria-label="Name of the copy"
+                maxLength={32}
+                value={copy}
+                onChange={(e) => setCopy(e.target.value)}
+                className="field w-48 py-[3px] font-mono text-fg"
+              />
+              <Button
+                small
+                disabled={pending || !copy.trim()}
+                onClick={() =>
+                  backup.mutate(
+                    { ref, snapshot: copyOf, as: copy.trim() },
+                    { onSuccess: onClose },
+                  )
+                }
+              >
+                Restore into a copy
+              </Button>
+            </dd>
+          </>
+        )}
       </dl>
       <div className="flex flex-wrap items-center justify-end gap-2">
         <code className="mr-auto font-mono text-2xs text-faint">{cli}</code>

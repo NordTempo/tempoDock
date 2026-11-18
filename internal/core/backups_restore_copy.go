@@ -90,7 +90,7 @@ func (c *Core) restoreVolumeCopy(ctx context.Context, a Actor, ss svcScope, req 
 		}})
 		if err != nil {
 			c.finishVolumeCopy(ctx, ss, to, row, log,
-				fmt.Errorf("%s holds the backup's data, but couldn't be deployed: %w. Deploy it once that's fixed", name, err))
+				fmt.Errorf("%s holds the backup's data, but couldn't be deployed: %w", name, err))
 			return
 		}
 		c.audit(ctx, a, "release.deploy", &to.project, &to.env, to.String(),
@@ -197,6 +197,8 @@ func (c *Core) copyVolumeService(ctx context.Context, ss svcScope, name string) 
 
 // finishVolumeCopy records the outcome of a volume backup's restore into
 // the copy to, once. The claim on the source ends first, as in runBackup.
+// A failed one archives the copy under another name and raises an alert
+// (restoreTargetFailed), as every restore into a new service does.
 func (c *Core) finishVolumeCopy(ctx context.Context, ss, to svcScope, row store.Backup, log string, err error) {
 	c.releaseService(ss.svc.ID)
 	if ctx.Err() != nil {
@@ -207,9 +209,11 @@ func (c *Core) finishVolumeCopy(ctx context.Context, ss, to svcScope, row store.
 	fin := store.FinishBackupParams{Status: string(apitypes.BackupSucceeded), SnapshotID: row.SnapshotID, FinishedAt: ptr(now()), ID: row.ID}
 	if err != nil {
 		fin.Status, fin.Error = string(apitypes.BackupFailed), err.Error()
+		kept := c.restoreTargetFailed(ctx, ss, to.svc.ID, restoreInto{id: row.ID}, err)
 		c.audit(ctx, System, "backup.restore_failed", &ss.project, &ss.env, ss.String(),
-			fmt.Sprintf("restore of backup %s into %s failed: %v; %s is kept for a look, archive it when done", short, to.svc.Name, err, to.svc.Name))
+			fmt.Sprintf("restore of backup %s into %s failed: %v; it is archived as %s for a look, and its name is free to restore again", short, to.svc.Name, err, kept))
 	} else {
+		c.restoreSucceeded(ctx, ss)
 		c.audit(ctx, System, "backup.restored", &ss.project, &ss.env, ss.String(),
 			fmt.Sprintf("restored backup %s into %s, a copy of %s without its domains; archive it when done", short, to.svc.Name, ss.svc.Name))
 	}
