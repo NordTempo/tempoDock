@@ -242,13 +242,21 @@ func (c *conn) setTimeout(ctx context.Context, d time.Duration) error {
 	return nil
 }
 
+// callTimeout bounds one statement whose context has no deadline; tests
+// shorten it.
+var callTimeout = data.CallTimeout
+
 // watch bounds a call on c by ctx: the connection's deadline is ctx's
-// plus queryGrace, and a context that ends kills the running statement
+// plus queryGrace (callTimeout from now without one, so a server that
+// stops answering never holds the connection for good), and a context
+// that ends kills the running statement
 // from a second connection (KILL QUERY, which a user may send for its own
 // connections) and marks c broken. Call the returned stop when done.
 func (c *conn) watch(ctx context.Context) (stop func()) {
 	if d, ok := ctx.Deadline(); ok {
 		_ = c.NetConn().SetDeadline(d.Add(queryGrace))
+	} else {
+		_ = c.NetConn().SetDeadline(time.Now().Add(callTimeout))
 	}
 	after := context.AfterFunc(ctx, func() {
 		kctx, cancel := context.WithTimeout(context.Background(), killTimeout)

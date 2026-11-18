@@ -35,6 +35,13 @@ const (
 	// (until ctx ends).
 	MaxConnsPerKey = 2
 	MaxConns       = 8
+	// CallTimeout is the most one call may wait on the server when its
+	// context has no deadline of its own (queries have one): past it the
+	// connection is cut and its place in the cache freed, so a server
+	// that stops answering can't hold a database's connections for good.
+	// It is above every statement timeout the engines set, which end an
+	// answering server's statements long before.
+	CallTimeout = 2 * time.Minute
 	// SchemaTTL is how long an introspection result is reused.
 	SchemaTTL = 60 * time.Second
 	// SchemaReread is how old a cached introspection must be before a

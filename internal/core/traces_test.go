@@ -235,8 +235,11 @@ func TestTracedAppsGetTheVariables(t *testing.T) {
 	spec, _ = h.rt.Spec(h.ctr(ref, rel.Number))
 	for k, want := range map[string]string{
 		"OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "http/protobuf",
-		"OTEL_SERVICE_NAME":                  "storefront",
-		"OTEL_RESOURCE_ATTRIBUTES":           "service.namespace=shop,deployment.environment.name=production,service.version=r2",
+		// Set to their defaults, so an image's own ENV for them (which a
+		// container's variables come before) doesn't decide.
+		"OTEL_TRACES_EXPORTER": "otlp", "OTEL_SDK_DISABLED": "false",
+		"OTEL_SERVICE_NAME":        "storefront",
+		"OTEL_RESOURCE_ATTRIBUTES": "service.namespace=shop,deployment.environment.name=production,service.version=r2",
 		// The token is in the endpoints' paths, never in a header an SDK
 		// would merge into an exporter configured in code.
 		"OTEL_EXPORTER_OTLP_TRACES_HEADERS": "", "OTEL_EXPORTER_OTLP_LOGS_HEADERS": "",
@@ -281,6 +284,11 @@ func TestTracedAppsGetTheVariables(t *testing.T) {
 	for k := range spec.Env {
 		if strings.HasPrefix(k, "OTEL_EXPORTER_OTLP_") && k != "OTEL_EXPORTER_OTLP_ENDPOINT" {
 			t.Errorf("exporting elsewhere, the container got %s", k)
+		}
+	}
+	for _, k := range []string{"OTEL_TRACES_EXPORTER", "OTEL_SDK_DISABLED"} {
+		if v, set := spec.Env[k]; set {
+			t.Errorf("exporting elsewhere, the container got %s=%s", k, v)
 		}
 	}
 	if l, err := h.c.ListTraces(h.ctx, testSystem, ServiceRef{"shop", "production", "web"}, TraceFilter{}); err != nil || l.ExportsElsewhere != "OTEL_EXPORTER_OTLP_ENDPOINT" {

@@ -103,6 +103,7 @@ sending where it did, and `dock traces` says so.
 |---|---|
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | `http://dock-otlp:80/t/dtr1.../v1/traces`: the server's own Caddy, which passes exports to its trace ingest, with the release's own token in the path (it can only send spans, and no SDK sends a path to another backend the way it merges headers) |
 | `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` | `http/protobuf` (Dock takes OTLP over HTTP, protobuf or JSON, not gRPC) |
+| `OTEL_TRACES_EXPORTER`, `OTEL_SDK_DISABLED` | `otlp` and `false`, an SDK's defaults: a container's variables come before its image's (a Dockerfile's `ENV`), so an image's value for either doesn't turn tracing off. To send traces elsewhere or turn them off, set the variable on the service |
 | `OTEL_SERVICE_NAME` | Service name |
 | `OTEL_RESOURCE_ATTRIBUTES` | `service.namespace=<project>,deployment.environment.name=<environment>,service.version=r<release>` |
 | `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, `OTEL_EXPORTER_OTLP_METRICS_PROTOCOL` | Dock's endpoint, which keeps the app's metrics (a service's runtime, library and own metrics, up to 2,000 series a day); not set when the service sets any `OTEL_EXPORTER_OTLP_*` variable or `OTEL_METRICS_EXPORTER` |

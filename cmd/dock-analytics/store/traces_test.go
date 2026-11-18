@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"encoding/base64"
+	"math/rand/v2"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -326,5 +328,94 @@ func TestErrorTrace(t *testing.T) {
 	}
 	if got, _ := s.ErrorTrace(ctx, analytics.ErrorTraceQuery{Org: 1, Services: []int64{10}, Fingerprint: "nope", From: q.From, To: q.To}); !got.Trace.IsZero() {
 		t.Errorf("an unknown fingerprint found %+v", got)
+	}
+}
+
+// heavySpans are n spans of org 20's service in trace 9 starting at
+// start, each with about 15 KB of attributes and events that don't
+// compress, numbered from first.
+func heavySpans(rng *rand.Rand, n, first int, start time.Time) []analytics.Span {
+	noise := func(size int) string {
+		b := make([]byte, size*3/4)
+		for i := range b {
+			b[i] = byte(rng.Uint32())
+		}
+		return base64.RawStdEncoding.EncodeToString(b)
+	}
+	spans := make([]analytics.Span, n)
+	for i := range spans {
+		spans[i] = analytics.Span{Org: 20, Project: 21, Env: 22, Service: 23, Release: 24, Trace: tid(9),
+			ID: analytics.SpanID(first + i), Start: start.UnixMicro(), Duration: 1000, Name: "s",
+			Attrs: []byte(`{"a":"` + noise(4000) + `"}`), Events: []byte(`[{"name":"e","attrs":{"m":"` + noise(11000) + `"}}]`)}
+	}
+	return spans
+}
+
+// With only today's spans to take from, the size cap refuses the spans of
+// the org that holds the most, and another org's earlier days stay.
+func TestTraceSizeCapHoldsTodayToo(t *testing.T) {
+	s, _ := openTraces(t)
+	ctx := context.Background()
+	lim := analytics.TraceLimits{MaxBytes: 8 << 20}
+	writeSpans(t, s, 1, lim, mkSpan(1, 1, 0, 10, -24*time.Hour, time.Millisecond))
+
+	rng := rand.New(rand.NewPCG(1, 2))
+	const total, batch = 3000, 30
+	written := 0
+	for i := 0; i < total; i += batch {
+		written += writeSpans(t, s, uint64(2+i/batch), lim, heavySpans(rng, batch, i+1, traceNow.Add(-time.Minute))...).Written
+	}
+	if written == 0 || written == total {
+		t.Errorf("%d of %d spans written, want the ones past the size refused", written, total)
+	}
+	if err := s.Checkpoint(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if used, err := s.tracesUsed(ctx); err != nil || used > lim.MaxBytes*5/4 {
+		t.Errorf("the database uses %d MB under a size of %d MB (%v)", used>>20, lim.MaxBytes>>20, err)
+	}
+	if got, err := s.Trace(ctx, analytics.TraceQuery{Org: 1, Trace: tid(1)}); err != nil || len(got.Spans) != 1 {
+		t.Errorf("the other org's trace of yesterday: %d spans (%v), days %v", len(got.Spans), err, s.allDays())
+	}
+	// The org that holds little is written as before.
+	if res := writeSpans(t, s, 1000, lim, mkSpan(2, 2, 0, 10, 0, time.Millisecond)); res.Written != 1 {
+		t.Errorf("the other org's span today: %+v", res)
+	}
+}
+
+// Past the size, an org that holds most of the spans gives up its own
+// oldest day: the other orgs' spans of that day stay.
+func TestTraceSizeCapTakesFromTheLargestOrgFirst(t *testing.T) {
+	s, _ := openTraces(t)
+	ctx := context.Background()
+	lim := analytics.TraceLimits{MaxBytes: 8 << 20}
+	rng := rand.New(rand.NewPCG(1, 2))
+	yesterday := traceNow.Add(-24 * time.Hour)
+
+	s.now = func() time.Time { return yesterday }
+	writeSpans(t, s, 1, lim, mkSpan(1, 1, 0, 10, -24*time.Hour, time.Millisecond))
+	pos := uint64(1)
+	for i := 0; i < 360; i += 30 { // about 5 MB
+		pos++
+		if res := writeSpans(t, s, pos, lim, heavySpans(rng, 30, i+1, yesterday)...); res.Written != 30 {
+			t.Fatalf("yesterday's spans: %+v", res)
+		}
+	}
+	s.now = func() time.Time { return traceNow }
+	for i := 0; i < 360; i += 30 {
+		pos++
+		if res := writeSpans(t, s, pos, lim, heavySpans(rng, 30, 1000+i, traceNow)...); res.Written != 30 {
+			t.Fatalf("today's spans: %+v", res)
+		}
+	}
+	if got, err := s.Trace(ctx, analytics.TraceQuery{Org: 1, Trace: tid(1)}); err != nil || len(got.Spans) != 1 {
+		t.Errorf("the other org's trace of yesterday: %d spans (%v), days %v", len(got.Spans), err, s.allDays())
+	}
+	got, err := s.Trace(ctx, analytics.TraceQuery{Org: 20, Trace: tid(9)})
+	if err != nil || len(got.Spans) != 360 {
+		t.Errorf("the largest org keeps %d spans (%v), want today's 360", len(got.Spans), err)
+	}
+	if used, err := s.tracesUsed(ctx); err != nil || used > lim.MaxBytes {
+		t.Errorf("the database uses %d MB under a size of %d MB (%v)", used>>20, lim.MaxBytes>>20, err)
 	}
 }

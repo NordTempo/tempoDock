@@ -1,11 +1,13 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/analytics"
@@ -16,10 +18,12 @@ import (
 // Reading traces: a service's list, and one trace, through the service
 // the caller reads it from. Reading needs read in the service's
 // environment, like logs. A trace may cross services: spans of services
-// outside the caller's token's project or environment are hidden, and
+// outside the caller's token's project or environment, or in an
+// environment whose logs the caller may not read, are hidden, and
 // for a reader who can't reveal secret values, each span's name,
 // attributes and events are masked with its release's values, as logs
-// are (the ingest already masked sensitive attribute names).
+// are (the ingest already masked sensitive attribute names). A span
+// whose release is gone, its values with it, has all its text masked.
 
 // TraceFilter picks a service's traces.
 type TraceFilter struct {
@@ -112,7 +116,7 @@ func (c *Core) ListTraces(ctx context.Context, a Actor, ref ServiceRef, f TraceF
 		}
 	}
 	for _, t := range res.Traces {
-		red := masks[t.Release]
+		red := masks.of(ss.svc.ID, t.Release)
 		out.Traces = append(out.Traces, apitypes.TraceSummary{
 			Trace: t.Trace.String(), Span: t.Span.String(), Release: rels[t.Release].Number,
 			Start: time.UnixMicro(t.Start), DurationMS: ms(t.Duration), Name: red.mask(t.Name), Kind: spanKind(t.Kind),
@@ -179,12 +183,23 @@ func (c *Core) GetTrace(ctx context.Context, a Actor, ref ServiceRef, id string,
 	if err != nil {
 		return apitypes.Trace{}, err
 	}
+	// Traces are logs: a span shows only where the reader holds
+	// logs.read, not everywhere they see (ADR 0080).
+	kinds, err := c.envKinds(ctx, a)
+	if err != nil {
+		return apitypes.Trace{}, err
+	}
 	start, end := res.Spans[0].Start, res.Spans[0].Start
 	for _, sp := range res.Spans {
 		start, end = min(start, sp.Start), max(end, sp.Start+sp.Duration)
 	}
 	out := apitypes.Trace{Trace: id, Start: time.UnixMicro(start), DurationMS: ms(end - start), Spans: make([]apitypes.TraceSpan, 0, len(res.Spans)), Truncated: res.Truncated}
+	decode := maxTraceDecode
 	for _, sp := range res.Spans {
+		// A caller that left isn't decoded and masked for.
+		if err := ctx.Err(); err != nil {
+			return apitypes.Trace{}, err
+		}
 		ts := apitypes.TraceSpan{
 			Span: sp.ID.String(), OffsetMS: ms(sp.Start - start), DurationMS: ms(sp.Duration),
 			Kind: spanKind(sp.Kind), Status: spanStatus(sp.Status), Kept: kept(sp.Kept),
@@ -192,26 +207,55 @@ func (c *Core) GetTrace(ctx context.Context, a Actor, ref ServiceRef, id string,
 		if sp.Parent != 0 {
 			ts.Parent = sp.Parent.String()
 		}
-		if !a.seesEnv(sp.Project, sp.Env) {
+		if !a.seesEnv(sp.Project, sp.Env) || !a.holdsAt(PermLogsRead, sp.Project, sp.Env, kinds[sp.Env]) {
 			ts.Hidden = true
 			out.Spans = append(out.Spans, ts)
 			continue
 		}
-		red := masks[sp.Release]
+		red := masks.of(sp.Service, sp.Release)
 		n := names[sp.Service]
 		ts.Project, ts.Environment, ts.Service, ts.Release = n.Project, n.Environment, n.Name, rels[sp.Release].Number
 		ts.Name, ts.Method, ts.Route, ts.HTTPStatus = red.mask(sp.Name), sp.Method, red.mask(sp.Route), sp.HTTPStatus
-		ts.Attrs = red.attrs(sp.Attrs)
-		ts.Events = red.events(sp.Events)
+		// Past maxTraceDecode a span comes without its attributes and
+		// events, and the trace says it isn't whole.
+		if n := decodedSize(sp.Attrs) + decodedSize(sp.Events); n <= decode {
+			decode -= n
+			ts.Attrs = red.attrs(sp.Attrs)
+			ts.Events = red.events(sp.Events)
+		} else {
+			out.Truncated = true
+		}
 		out.Spans = append(out.Spans, ts)
 	}
 	return out, nil
 }
 
 // maxTraceReads is how many traces are read at once: a trace is up to
-// 2,000 spans, about 33 MB decoded at the ingest's caps, so the daemon
+// 2,000 spans, about 33 MB as stored at the ingest's caps, so the daemon
 // holds at most a few.
 const maxTraceReads = 4
+
+// maxTraceDecode is how much one read decodes of a trace's attributes
+// and events, by what they take decoded (decodedSize). This, not the
+// span count, bounds what a read holds: a trace of the most text the
+// store returns (33 MB) fits whole, one of small nested values, which
+// take many times their JSON decoded, doesn't.
+const maxTraceDecode = 48 << 20
+
+// decodedSize estimates, from above, the memory raw JSON takes decoded
+// into maps, lists and strings: its bytes, about 96 a map or list and
+// 32 a value in one. It counts the JSON's punctuation, without decoding
+// or allocating; punctuation inside strings only makes it larger.
+func decodedSize(raw []byte) int {
+	return len(raw) + 96*(bytes.Count(raw, []byte{'{'})+bytes.Count(raw, []byte{'['})) + 32*bytes.Count(raw, []byte{','})
+}
+
+// maxTraceMaskWork is how much one read searches for secret values:
+// bytes searched times the values searched for (spend). A service has
+// tens of values and a trace up to 33 MB of text, a quarter of this at
+// 30 values; a read that runs out masks what is left whole instead of
+// searching it, so its cost is about a second of CPU at worst.
+const maxTraceMaskWork int64 = 4 << 30
 
 // traceReadSlot waits up to 10 s for one of maxTraceReads slots and
 // returns its release, or that Dock is busy.
@@ -273,15 +317,54 @@ func (c *Core) releasesByID(ctx context.Context, ids []int64) (map[int64]store.R
 // traceMask masks a release's secret values in what a trace shows; nil
 // masks nothing. Values are masked once decoded, so a secret with a quote
 // or a backslash, which JSON escapes, is masked too.
-type traceMask struct{ r *redactor }
+type traceMask struct {
+	r *redactor
+	// work is what is left of the read's maxTraceMaskWork, shared by
+	// the read's masks.
+	work *int64
+	// all masks every string whole: for a release whose values are gone.
+	all bool
+}
+
+// traceMaskSet is a read's masks by release (traceMasks).
+type traceMaskSet struct {
+	by map[int64]traceMask
+	// reveal and inEnv are traceMasks'.
+	reveal bool
+	inEnv  func(serviceID int64) bool
+}
+
+// of is the mask for a span of a service's release. A release that is
+// gone (deleted with its service or project, while the trace store
+// still keeps its spans) has no values left to mask with, so all its
+// span's text is masked for a reader who would get it masked.
+func (s traceMaskSet) of(serviceID, releaseID int64) traceMask {
+	if m, ok := s.by[releaseID]; ok {
+		return m
+	}
+	if s.reveal && s.inEnv(serviceID) {
+		return traceMask{}
+	}
+	return traceMask{all: true}
+}
+
+// newTraceMask is a mask of r's values with a read's work of its own.
+func newTraceMask(r *redactor) traceMask {
+	if r == nil {
+		return traceMask{}
+	}
+	work := maxTraceMaskWork
+	return traceMask{r: r, work: &work}
+}
 
 // traceMasks are the masks of the releases in rels for a, each opened
 // once a request: a release's values are decrypted once, not per span.
 // A reader who may reveal secret values in ss's environment gets none for
 // the services there (inEnv); another environment's stay masked.
-func (c *Core) traceMasks(a Actor, ss svcScope, rels map[int64]store.Release, inEnv func(serviceID int64) bool) (map[int64]traceMask, error) {
+func (c *Core) traceMasks(a Actor, ss svcScope, rels map[int64]store.Release, inEnv func(serviceID int64) bool) (traceMaskSet, error) {
 	reveal := a.revealsIn(ss.envScope)
 	out := make(map[int64]traceMask, len(rels))
+	work := maxTraceMaskWork
 	for id, rel := range rels {
 		if reveal && inEnv(rel.ServiceID) {
 			out[id] = traceMask{}
@@ -289,25 +372,56 @@ func (c *Core) traceMasks(a Actor, ss svcScope, rels map[int64]store.Release, in
 		}
 		r, err := c.releaseRedactor(rel)
 		if err != nil {
-			return nil, err
+			return traceMaskSet{}, err
 		}
-		out[id] = traceMask{r}
+		out[id] = traceMask{r: r, work: &work}
 	}
-	return out, nil
+	return traceMaskSet{by: out, reveal: reveal, inEnv: inEnv}, nil
 }
 
-// mask masks s.
+// spend takes a search of n bytes from the read's work, reporting
+// whether there was that much left. A search costs its bytes, and 16
+// more for what looking for a value in the shortest string costs, for
+// each value.
+func (m traceMask) spend(n int) bool {
+	*m.work -= int64(n+16) * int64(len(m.r.secrets))
+	return *m.work >= 0
+}
+
+// mask masks s. Every search is paid for from the read's work (spend):
+// once that is gone, a string is masked whole, so a read's cost is
+// bounded whatever the values and the text are.
 func (m traceMask) mask(s string) string {
-	if m.r == nil {
+	if m.all && s != "" {
+		return secretMask
+	}
+	if m.r == nil || s == "" {
 		return s
 	}
-	out, _ := m.r.line(s)
-	return out
+	if !m.spend(len(s)) {
+		return secretMask
+	}
+	if !slices.ContainsFunc(m.r.secrets, func(v string) bool { return strings.Contains(s, v) }) {
+		return s
+	}
+	src, pos, out := []byte(s), 0, make([]byte, 0, len(s))
+	for {
+		if !m.spend(len(src) - pos) {
+			return secretMask
+		}
+		at, n := m.r.next(src[pos:])
+		if at < 0 {
+			break
+		}
+		out = append(append(out, src[pos:pos+at]...), secretMask...)
+		pos += at + n
+	}
+	return string(append(out, src[pos:]...))
 }
 
 // value masks the strings in a decoded JSON value, in place.
 func (m traceMask) value(v any) any {
-	if m.r == nil {
+	if m.r == nil && !m.all {
 		return v
 	}
 	switch v := v.(type) {

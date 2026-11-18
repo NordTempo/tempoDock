@@ -23,8 +23,13 @@ import (
 // to Dock's endpoint, and Dock sets only what the service hasn't: one
 // that sends traces elsewhere itself (exportsElsewhere) gets nothing, and
 // metrics and logs are left alone once the service configures OTLP at
-// all. The variables change with tracing only for containers started
-// after it: the next deploy or restart of each service.
+// all. A container's variables come before its image's own (a
+// Dockerfile's ENV), which Dock doesn't read: so that an image's can't
+// turn off or redirect what Dock set up, Dock also sets the traces
+// exporter and the SDK switch to their defaults. A service that wants its
+// own says so in its variables. The variables change with tracing only
+// for containers started after it: the next deploy or restart of each
+// service.
 
 // exportsElsewhere is the variable a service set that sends its traces
 // somewhere else, or turns them off, and "" when Dock may trace it.
@@ -70,7 +75,11 @@ func (c *Core) addTracing(spec *node.ContainerSpec, ss svcScope, rel store.Relea
 	set := map[string]string{
 		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": base + traces.TracesPath,
 		"OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "http/protobuf",
-		"OTEL_SERVICE_NAME":                  ss.svc.Name,
+		// The defaults, said out loud: the service set neither
+		// (exportsElsewhere), and its image's ENV isn't its choice here.
+		"OTEL_TRACES_EXPORTER": "otlp",
+		"OTEL_SDK_DISABLED":    "false",
+		"OTEL_SERVICE_NAME":    ss.svc.Name,
 		"OTEL_RESOURCE_ATTRIBUTES": "service.namespace=" + url.QueryEscape(ss.project.Name) +
 			",deployment.environment.name=" + url.QueryEscape(ss.env.Name) + ",service.version=r" + strconv.FormatInt(rel.Number, 10),
 	}

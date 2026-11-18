@@ -139,6 +139,13 @@ func (c *Core) SetVariables(ctx context.Context, a Actor, ref EnvRef, req apityp
 	return c.changeResult(ctx, a, es, req.Apply)
 }
 
+// addsOrgRefs reports whether the actor may add a reference to an
+// organization variable to a value: they edit variables across the whole
+// organization (orgRefsAllowed says why).
+func (a Actor) addsOrgRefs() bool {
+	return a.covers(permsOf(PermVariablesWrite), 0, 0, uint8(allKinds))
+}
+
 // orgRefsAllowed refuses a value that adds a reference to an organization
 // variable (${{org.KEY}}) unless the caller edits variables across the
 // whole organization. An organization variable is the same secret in
@@ -157,7 +164,7 @@ func (c *Core) orgRefsAllowed(ctx context.Context, q *store.Queries, a Actor, en
 		return keys
 	}
 	asked := orgRefs(value)
-	if len(asked) == 0 || a.covers(permsOf(PermVariablesWrite), 0, 0, uint8(allKinds)) {
+	if len(asked) == 0 || a.addsOrgRefs() {
 		return nil
 	}
 	var has []string

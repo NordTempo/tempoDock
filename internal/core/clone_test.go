@@ -277,6 +277,58 @@ func TestClonePlacement(t *testing.T) {
 	}
 }
 
+// A clone copies its source's references, and a reference to an
+// organization variable hands that secret to the clone's services. Only
+// someone who edits variables across the whole organization gets one in
+// their clone, as when setting it by hand: for others the variable is
+// left out and the result names it.
+func TestCloneKeepsOrgReferencesForTheWholeOrg(t *testing.T) {
+	h := newHarness(t)
+	h.enforce()
+	h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	if _, err := h.c.SetOrgVariable(h.ctx, testSystem, "STRIPE_KEY", "sk_live_x"); err != nil {
+		t.Fatal(err)
+	}
+	prod := EnvRef{"shop", "production"}
+	h.set(prod, "web", map[string]string{"PAY": "${{org.STRIPE_KEY}}", "SELF": "${{web.PORT}}"}, true)
+	admin := h.user("ada@example.com", apitypes.ScopeAdmin)
+	if _, err := h.c.CreateRole(h.ctx, admin, apitypes.RoleRequest{Name: "Cloner", Permissions: []string{"environments.create"}}); err != nil {
+		t.Fatal(err)
+	}
+	// Sees production and makes environments; deploys and edits
+	// variables everywhere else.
+	dev := grantedPerson(h, admin, "dev@example.com",
+		apitypes.GrantRequest{Role: "deploy:view"},
+		apitypes.GrantRequest{Role: "Cloner"},
+		apitypes.GrantRequest{Role: "deploy:edit", Kinds: []string{"other"}},
+		apitypes.GrantRequest{Role: "variables:edit", Kinds: []string{"other"}})
+	keys := func(a Actor, name string) map[string]bool {
+		t.Helper()
+		res, err := h.c.CloneEnvironment(h.ctx, a, prod, apitypes.CloneEnvironmentRequest{Name: name, Kind: apitypes.KindNonProduction})
+		if err != nil {
+			t.Fatal(err)
+		}
+		vars, err := h.c.ListVariables(h.ctx, testSystem, EnvRef{"shop", name}, "web", false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]bool{}
+		for _, v := range vars {
+			out[v.Key] = true
+		}
+		if skipped := slices.Contains(res.Skipped, apitypes.VariableRef{Service: "web", Key: "PAY"}); skipped == out["PAY"] {
+			t.Errorf("%s: PAY copied %v and named as skipped %v", name, out["PAY"], skipped)
+		}
+		return out
+	}
+	if got := keys(dev, "staging"); got["PAY"] || !got["SELF"] {
+		t.Errorf("a clone by someone who edits variables only in part of the organization has %v, want SELF without PAY", got)
+	}
+	if got := keys(admin, "staging-2"); !got["PAY"] || !got["SELF"] {
+		t.Errorf("a clone by an admin has %v, want PAY and SELF", got)
+	}
+}
+
 // With deploy, a clone promotes the images serving in its source: by
 // digest, on the clone's own server, with the clone's variables, and each
 // release takes its service's staged volume live.

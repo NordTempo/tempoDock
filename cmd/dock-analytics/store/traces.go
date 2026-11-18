@@ -54,8 +54,13 @@ type Traces struct {
 	orgSpans map[int64]int64
 	// keepFrom is the first day spans are taken for (the last prune's).
 	keepFrom time.Time
-	// writes counts writes since the last size check.
-	writes int
+	// writes counts writes since the last size check, and unchecked the
+	// bytes of spans (spanBytes) written since.
+	writes    int
+	unchecked int64
+	// full are the orgs whose spans are refused until a size check finds
+	// the database within its size again (enforceTraceSize).
+	full map[int64]bool
 
 	// daysMu guards days and mdays: the spans and metric points day
 	// tables there are, which queries read without waiting for a write.
@@ -138,8 +143,13 @@ const maxTraceAge = 30 * 24 * time.Hour
 
 // sizeCheckEvery is how many writes go between two checks of the traces
 // database's size against TraceLimits.MaxBytes (and a new day's first
-// write checks too).
-const sizeCheckEvery = 100
+// write checks too). Spans worth a sizeCheckShare of MaxBytes are checked
+// at once, so what is written between two checks is small next to the
+// size whatever the spans weigh.
+const (
+	sizeCheckEvery = 100
+	sizeCheckShare = 16
+)
 
 // usageKey names a service's usage row.
 type usageKey struct{ org, service int64 }
@@ -343,7 +353,7 @@ func (s *Traces) WriteSpans(ctx context.Context, source string, position uint64,
 			u = &usageRow{}
 		}
 		day := utcDay(time.UnixMicro(sp.Start))
-		if sp.Trace.IsZero() || sp.Duration < 0 || day.Before(keepFrom) || day.After(lastDay) {
+		if sp.Trace.IsZero() || sp.Duration < 0 || day.Before(keepFrom) || day.After(lastDay) || t.full[sp.Org] {
 			d.rejected++
 			continue
 		}
@@ -455,6 +465,7 @@ func (s *Traces) WriteSpans(ctx context.Context, source string, position uint64,
 		u.spans += d.spans
 		u.errors += d.errors
 		u.bytes += d.bytes
+		t.unchecked += d.bytes
 		u.rejected += d.rejected
 		res.Written += int(d.spans)
 		res.Rejected += int(d.rejected)
@@ -470,8 +481,8 @@ func (s *Traces) WriteSpans(ctx context.Context, source string, position uint64,
 		t.daysMu.Unlock()
 	}
 	t.writes++
-	if lim.MaxBytes > 0 && (t.writes >= sizeCheckEvery || len(newDays) > 0) {
-		t.writes = 0
+	if lim.MaxBytes > 0 && (t.writes >= sizeCheckEvery || len(newDays) > 0 || t.unchecked >= lim.MaxBytes/sizeCheckShare) {
+		t.writes, t.unchecked = 0, 0
 		if err := s.enforceTraceSize(ctx, lim.MaxBytes, today); err != nil {
 			return res, fmt.Errorf("keep the traces database within its size: %w", err)
 		}
@@ -931,11 +942,23 @@ func (s *Traces) dropDay(ctx context.Context, day time.Time) error {
 	return nil
 }
 
-// enforceTraceSize drops the oldest days of spans and metric points
-// (rolled up into hours), never today's, while the traces database uses
-// more than maxBytes. A checkpoint before each measure moves new rows out
-// of the write-ahead log into blocks and frees a dropped day's.
+// enforceTraceSize keeps the traces database within maxBytes, and no org
+// pays for another's spans. While it uses more:
+//
+//   - an org that holds more than half of the spans kept (by the usage
+//     table's bytes), with other orgs in the store, loses its own oldest
+//     day of spans, and the other orgs keep theirs;
+//   - otherwise the oldest day of spans and metric points (rolled up into
+//     hours) goes, for every org;
+//   - never today's: with nothing older to take, the orgs that hold an
+//     equal share of the size or more have their spans refused
+//     (Traces.full) until a later check finds the database within its
+//     size, so today is bounded too.
+//
+// A checkpoint before each measure moves new rows out of the write-ahead
+// log into blocks and frees what was dropped. Call with mu held.
 func (s *Traces) enforceTraceSize(ctx context.Context, maxBytes int64, today time.Time) error {
+	s.full = nil
 	for {
 		if _, err := s.db.ExecContext(ctx, "CHECKPOINT"); err != nil {
 			return err
@@ -944,22 +967,105 @@ func (s *Traces) enforceTraceSize(ctx context.Context, maxBytes int64, today tim
 		if err != nil || used <= maxBytes {
 			return err
 		}
-		days := append(s.allDays(), s.metricDays()...)
-		if len(days) == 0 {
-			return nil
-		}
-		oldest := slices.MinFunc(days, func(a, b time.Time) int { return a.Compare(b) })
-		if !oldest.Before(today) {
-			return nil // only today is left: the caps hold it
-		}
-		if err := s.dropDay(ctx, oldest); err != nil {
+		days := s.allDays()
+		orgs, total, err := s.orgUsage(ctx, slices.MinFunc(append(days, today), time.Time.Compare))
+		if err != nil {
 			return err
 		}
-		if err := s.dropMetricDay(ctx, oldest); err != nil {
-			return err
+		if len(orgs) > 1 && orgs[0].bytes > total/2 {
+			if orgs[0].oldest.Before(today) {
+				if err := s.dropOrgDay(ctx, orgs[0].org, orgs[0].oldest); err != nil {
+					return err
+				}
+				continue
+			}
+		} else if days = append(days, s.metricDays()...); len(days) > 0 {
+			if oldest := slices.MinFunc(days, time.Time.Compare); oldest.Before(today) {
+				if err := s.dropDay(ctx, oldest); err != nil {
+					return err
+				}
+				if err := s.dropMetricDay(ctx, oldest); err != nil {
+					return err
+				}
+				s.keepFrom = later(s.keepFrom, oldest.Add(24*time.Hour))
+				continue
+			}
 		}
-		s.keepFrom = later(s.keepFrom, oldest.Add(24*time.Hour))
+		// Nothing older to take: an org's part of the size is its part of
+		// the bytes kept.
+		s.full = map[int64]bool{}
+		for _, o := range orgs {
+			if float64(used)*float64(o.bytes)/float64(total) >= float64(maxBytes)/float64(len(orgs)) {
+				s.full[o.org] = true
+			}
+		}
+		return nil
 	}
+}
+
+// orgUse is the bytes of spans an org holds and the oldest day it has
+// any for, by the usage table.
+type orgUse struct {
+	org, bytes int64
+	oldest     time.Time
+}
+
+// orgUsage is what each org holds in the usage table's days from since
+// on, the largest first, and their total: one query over a row a service
+// a day.
+func (s *Traces) orgUsage(ctx context.Context, since time.Time) ([]orgUse, int64, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT org_id, sum(bytes)::BIGINT AS held, min(day)::TIMESTAMP
+FROM usage WHERE day >= $1 AND bytes > 0 GROUP BY org_id ORDER BY held DESC, org_id`, since)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	var orgs []orgUse
+	var total int64
+	for rows.Next() {
+		var org uint32
+		var o orgUse
+		if err := rows.Scan(&org, &o.bytes, &o.oldest); err != nil {
+			return nil, 0, err
+		}
+		o.org, o.oldest = int64(org), utcDay(o.oldest)
+		orgs = append(orgs, o)
+		total += o.bytes
+	}
+	return orgs, total, rows.Err()
+}
+
+// dropOrgDay takes org's spans of day out of the store, and their bytes
+// off its usage, so the next measure counts what it has left. The day's
+// table is written again without them and the old one dropped, in one
+// transaction: a DELETE leaves the rows' blocks in use until DuckDB
+// rewrites their row group, and a dropped table's are free at the next
+// checkpoint. What is copied is the other orgs' spans of the day, less
+// than what goes.
+func (s *Traces) dropOrgDay(ctx context.Context, org int64, day time.Time) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if s.hasDay(day) {
+		table, rest := dayTable(day), "rest_"+dayTable(day)
+		for _, q := range []string{
+			fmt.Sprintf(dayTableSchema, rest),
+			fmt.Sprintf("INSERT INTO %s SELECT * FROM %s WHERE org_id <> %d", rest, table, uint32(org)),
+			"DROP TABLE " + table,
+			fmt.Sprintf("ALTER TABLE %s RENAME TO %s", rest, table),
+		} {
+			if _, err := tx.ExecContext(ctx, q); err != nil {
+				return fmt.Errorf("drop an org's spans of %s: %w", day.Format(time.DateOnly), err)
+			}
+		}
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE usage SET bytes = 0 WHERE day = $1 AND org_id = $2", day, uint32(org)); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // tracesUsed is the bytes of blocks the traces database uses: its file

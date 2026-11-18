@@ -296,6 +296,9 @@ func errorFrame(err error) apitypes.DataQueryFrame {
 	if tooLarge(err) {
 		qe.Message = tooLargeText
 	}
+	if errors.Is(err, data.ErrReadBudget) {
+		qe.Message = tooMuchText
+	}
 	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok {
 		qe = &apitypes.DataQueryError{
 			Message:  pgErr.Message,
