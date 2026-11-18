@@ -158,8 +158,7 @@ func rawKey(key string, isHex bool) (string, error) {
 // c.Masked, keys matching a sensitive pattern come as the pattern, and
 // under a match they are left out as the scan reads them, before they
 // count towards the limit: a page and its cursor are then the same
-// whether such a key matches or not, so matches can't spell its name out
-// (session:a*, session:ab*, ...).
+// whether such a key matches or not.
 func (e *Engine) ScanKeys(ctx context.Context, t data.Target, c data.Call, req apitypes.DataKeysRequest) (apitypes.DataKeyPage, error) {
 	limit := req.Limit
 	if limit == 0 {
