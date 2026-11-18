@@ -2,6 +2,7 @@ package resp
 
 import (
 	"errors"
+	"io"
 	"net"
 	"strings"
 	"testing"
@@ -72,6 +73,39 @@ func FuzzRead(f *testing.F) {
 		c.MaxBulk = 64
 		_, _ = c.read(0)
 	})
+}
+
+// A pipeline's replies are held together, so the cap is on all of them:
+// 100 replies of 1 MiB, each well within one reply's cap, fail the
+// pipeline; a few of them are read.
+func TestPipelineBudget(t *testing.T) {
+	pipeline := func(n int) (*Conn, []Value, error) {
+		a, b := net.Pipe()
+		t.Cleanup(func() { _ = a.Close() })
+		go func() { _, _ = io.Copy(io.Discard, b) }()
+		go func() {
+			defer func() { _ = b.Close() }()
+			big := []byte("$1048576\r\n" + strings.Repeat("x", 1<<20) + "\r\n")
+			for range n {
+				if _, err := b.Write(big); err != nil {
+					return
+				}
+			}
+		}()
+		c := New(a)
+		cmds := make([][]string, n)
+		for i := range cmds {
+			cmds[i] = []string{"GET", "k"}
+		}
+		replies, err := c.Pipeline(cmds...)
+		return c, replies, err
+	}
+	if c, _, err := pipeline(100); !errors.Is(err, ErrBadConn) || !c.Broken() {
+		t.Fatalf("100 MiB of replies: got %v, want ErrBadConn", err)
+	}
+	if c, replies, err := pipeline(3); err != nil || len(replies) != 3 || c.Broken() || c.Pending() != 0 {
+		t.Fatalf("3 MiB of replies: %d replies, %v", len(replies), err)
+	}
 }
 
 // A whole reply is capped, not only each array: 64 arrays of 200 000

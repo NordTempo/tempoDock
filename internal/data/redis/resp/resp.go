@@ -162,6 +162,12 @@ func (c *Conn) Receive() (Value, error) {
 		return Value{}, ErrBadConn
 	}
 	c.values, c.bytes = maxReplyValues, maxReplyBytes
+	return c.receive()
+}
+
+// receive reads the next reply within what is left of c.values and
+// c.bytes.
+func (c *Conn) receive() (Value, error) {
 	v, err := c.read(0)
 	if err != nil {
 		return Value{}, c.fail(err)
@@ -179,7 +185,10 @@ func (c *Conn) Do(args ...string) (Value, error) {
 	return c.Receive()
 }
 
-// Pipeline sends commands at once and reads their replies, in order.
+// Pipeline sends commands at once and reads their replies, in order. The
+// replies are held together, so together they stay within the bounds of
+// one reply (maxReplyValues, maxReplyBytes): past them the pipeline fails
+// and the connection is broken.
 func (c *Conn) Pipeline(cmds ...[]string) ([]Value, error) {
 	for _, cmd := range cmds {
 		c.Send(cmd...)
@@ -188,8 +197,9 @@ func (c *Conn) Pipeline(cmds ...[]string) ([]Value, error) {
 		return nil, err
 	}
 	out := make([]Value, len(cmds))
+	c.values, c.bytes = maxReplyValues, maxReplyBytes
 	for i := range out {
-		v, err := c.Receive()
+		v, err := c.receive()
 		if err != nil {
 			return nil, err
 		}
