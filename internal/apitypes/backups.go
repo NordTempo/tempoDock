@@ -79,11 +79,15 @@ type BackupRun struct {
 	// the earliest time it restores to.
 	ConsistentAt *time.Time `json:"consistent_at,omitempty"`
 	// ToTime is the time a restore to a time restored to.
-	ToTime     *time.Time `json:"to_time,omitempty"`
-	Error      string     `json:"error,omitempty"`
-	CreatedBy  string     `json:"created_by"`
-	StartedAt  time.Time  `json:"started_at"`
-	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	ToTime *time.Time `json:"to_time,omitempty"`
+	// SafetySnapshot is the volume snapshot an in-place restore that
+	// succeeded took of the data it replaced, while that snapshot exists:
+	// restoring it undoes the restore.
+	SafetySnapshot int64      `json:"safety_snapshot,omitempty"`
+	Error          string     `json:"error,omitempty"`
+	CreatedBy      string     `json:"created_by"`
+	StartedAt      time.Time  `json:"started_at"`
+	FinishedAt     *time.Time `json:"finished_at,omitempty"`
 }
 
 // BackupLog is what a backup or restore run's job printed: its last 16
@@ -120,9 +124,15 @@ type ServiceBackups struct {
 	// RestoresInPlace says backups restore into the service's own volumes
 	// (in_place), after a safety snapshot: services that aren't template
 	// databases (ADR 0095).
-	RestoresInPlace bool           `json:"restores_in_place"`
-	OffBox          bool           `json:"off_box"`
-	Schedule        BackupSchedule `json:"schedule"`
+	RestoresInPlace bool `json:"restores_in_place"`
+	// Volumes are the service's volumes now, by name, when backups
+	// restore in place: the ones such a restore replaces. A backup's own
+	// list isn't recorded; the restore fills the volumes the backup
+	// holds, leaves one added since, and refuses when one it holds is
+	// gone.
+	Volumes  []string       `json:"volumes,omitempty"`
+	OffBox   bool           `json:"off_box"`
+	Schedule BackupSchedule `json:"schedule"`
 	// PITR is point-in-time restore, for Postgres template databases.
 	PITR *PITR `json:"pitr,omitempty"`
 	// Check is the latest check of the repository this service's backups

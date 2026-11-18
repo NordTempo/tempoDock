@@ -360,6 +360,16 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                   }
                   onClose={close}
                   why={why}
+                  volumes={
+                    p.kind === "snapshot" ? p.snapshot.volumes : backups.volumes
+                  }
+                  undo={
+                    // Linked while the snapshot is still in the list.
+                    p.kind === "backup" &&
+                    snaps.snapshots.some((s) => s.id === p.run.safety_snapshot)
+                      ? p.run.safety_snapshot
+                      : undefined
+                  }
                   onLog={
                     canDeploy &&
                     (p.kind === "backup"
@@ -556,7 +566,8 @@ const columns = 10;
  * restore of one), its trigger, size, where and its note or error, with
  * its actions in fixed slots at the right edge. Failed and removed points
  * are muted: they can't be restored. An empty one says so in its size.
- * While `asking`, the in-place restore's question sits under the row.
+ * While `asking`, the in-place restore's question sits under the row. An
+ * in-place restore that went well links the snapshot that undoes it.
  */
 function PointRow({
   serviceRef: ref,
@@ -567,6 +578,8 @@ function PointRow({
   asking,
   onClose,
   why,
+  volumes,
+  undo,
   onLog,
   onRetry,
   onDelete,
@@ -584,6 +597,10 @@ function PointRow({
   onClose: () => void;
   /** Why Restore waits, when it does. */
   why?: string;
+  /** The volumes an in-place restore of the point replaces. */
+  volumes?: string[] | null;
+  /** The safety snapshot of an in-place restore, in the list below. */
+  undo?: number;
   onLog?: () => void;
   onRetry?: () => void;
   onDelete?: () => void;
@@ -598,6 +615,7 @@ function PointRow({
         restored={restored}
         latest={latest}
         asking={asking}
+        undo={undo}
       >
         {/* One cell per action, so each sits at the same x on every row. */}
         <td className="pr-1.5 text-right">
@@ -646,6 +664,7 @@ function PointRow({
             <RestoreInPlace
               serviceRef={ref}
               point={p}
+              volumes={volumes ?? []}
               why={why}
               onClose={onClose}
             />
@@ -663,6 +682,7 @@ function PointCells({
   restored,
   latest,
   asking,
+  undo,
   children,
 }: {
   point: RestorePoint;
@@ -671,6 +691,8 @@ function PointCells({
   restored: boolean;
   latest: boolean;
   asking: boolean;
+  /** The safety snapshot that undoes this restore: its row is linked. */
+  undo?: number;
   children: ReactNode;
 }) {
   return (
@@ -737,6 +759,23 @@ function PointCells({
           <span className={p.state === "failed" ? "text-fail" : ""}>
             {p.detail}
           </span>
+        ) : undo ? (
+          <span className="text-mut">
+            replaced data kept in{" "}
+            <a
+              href={`#snapshot-${undo}`}
+              className="text-info underline underline-offset-2"
+              title="Restoring it undoes this restore"
+              onClick={(e) => {
+                e.preventDefault();
+                document
+                  .getElementById(`snapshot-${undo}`)
+                  ?.scrollIntoView({ block: "center" });
+              }}
+            >
+              snapshot {undo}
+            </a>
+          </span>
         ) : (
           none
         )}
@@ -748,7 +787,8 @@ function PointCells({
 
 /**
  * The question before an in-place restore, under the point's row: which
- * point, what happens to the service and its data, and what undoes it.
+ * point, what happens to the service and its data (the volumes it
+ * replaces, by name), and what undoes it.
  * Nothing changes until Restore in place; what the API refuses (a deploy
  * or another restore is running) shows here. The restore then runs as a
  * row of the list. A backup also restores into a copy of the service
@@ -757,11 +797,17 @@ function PointCells({
 function RestoreInPlace({
   serviceRef: ref,
   point: p,
+  volumes,
   why,
   onClose,
 }: {
   serviceRef: ServiceRef;
   point: RestorePoint;
+  /**
+   * The volumes replaced: the ones a snapshot holds, or for a backup the
+   * service's volumes now (a backup doesn't list its own).
+   */
+  volumes: string[];
   /** Why it can't start now, when it can't. */
   why?: string;
   onClose: () => void;
@@ -813,8 +859,20 @@ function RestoreInPlace({
         <dd>{ref.service} is down until the restore ends.</dd>
         <dt className="text-warn">Replaced</dt>
         <dd>
-          The volumes in the {p.kind} are emptied and filled from it. Changes
-          since {taken} are lost.
+          {volumes.length === 0 ? (
+            `The volumes in the ${p.kind} are emptied and filled from it.`
+          ) : (
+            <>
+              {volumes.length === 1 ? "Volume " : "Volumes "}
+              <span className="font-mono text-fg">{volumes.join(", ")}</span>
+              {volumes.length === 1 ? " is" : " are"} emptied and filled from
+              the {p.kind}.
+            </>
+          )}{" "}
+          Changes since {taken} are lost.
+          {p.kind === "backup" &&
+            volumes.length > 1 &&
+            " A volume added after the backup was taken is left as it is."}
         </dd>
         <dt className="text-ok">Kept</dt>
         <dd>

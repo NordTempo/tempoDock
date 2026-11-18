@@ -1992,6 +1992,10 @@
           "restored_to": {
             "type": "string"
           },
+          "safety_snapshot": {
+            "format": "int64",
+            "type": "integer"
+          },
           "service": {
             "type": "string"
           },
@@ -15287,6 +15291,15 @@
           },
           "service": {
             "type": "string"
+          },
+          "volumes": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "warning": {
             "type": "string"

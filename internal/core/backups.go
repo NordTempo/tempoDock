@@ -441,7 +441,7 @@ func (c *Core) ServiceBackups(ctx context.Context, a Actor, ref ServiceRef) (api
 }
 
 func (c *Core) serviceBackups(ctx context.Context, ss svcScope) (apitypes.ServiceBackups, error) {
-	kind, _, err := c.backupKindOf(ctx, ss)
+	kind, vols, err := c.backupKindOf(ctx, ss)
 	if err != nil {
 		return apitypes.ServiceBackups{}, err
 	}
@@ -455,6 +455,9 @@ func (c *Core) serviceBackups(ctx context.Context, ss svcScope) (apitypes.Servic
 	}
 	if kind == apitypes.BackupVolume {
 		out.Warning = volumeBackupWarning
+		for _, v := range vols {
+			out.Volumes = append(out.Volumes, v.Name)
+		}
 	}
 	if out.Schedule, err = c.scheduleOf(ctx, ss, set); err != nil {
 		return out, err
@@ -480,8 +483,13 @@ func (c *Core) serviceBackups(ctx context.Context, ss svcScope) (apitypes.Servic
 			names[s.ID] = s.Name
 		}
 	}
+	safety, err := c.safetySnapshots(ctx, ss, rows)
+	if err != nil {
+		return out, err
+	}
 	for _, r := range rows {
 		run := toBackupRun(r, ss.svc.Name, names)
+		run.SafetySnapshot = safety[r.ID]
 		if r.Operation == "backup" && r.Status == string(apitypes.BackupSucceeded) && !r.Pruned && r.SnapshotID != "" {
 			run.NotRestorable = notRestorableHere(r.Repository, set.Repository)
 		}

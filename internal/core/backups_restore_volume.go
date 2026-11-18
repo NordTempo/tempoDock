@@ -3,7 +3,9 @@ package core
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/backup"
@@ -86,7 +88,7 @@ func (c *Core) restoreVolumeBackup(ctx context.Context, a Actor, ss svcScope, re
 	}
 	short := from.SnapshotID[:8]
 	// The safety snapshot is recorded now, so its claim covers the restore.
-	safety, safetyVols, err := c.startSnapshot(ctx, a, ss, apitypes.SnapshotBeforeRestore, "before restoring backup "+short, 0)
+	safety, safetyVols, err := c.startSnapshot(ctx, a, ss, apitypes.SnapshotBeforeRestore, backupSafetyNote(from.SnapshotID), 0)
 	if err != nil {
 		return apitypes.RestoreResult{}, err
 	}
@@ -135,6 +137,68 @@ func (c *Core) restoreVolumeBackup(ctx context.Context, a Actor, ss svcScope, re
 	})
 	out, err := c.toService(ctx, a, ss, apitypes.PendingChanges{})
 	return apitypes.RestoreResult{Service: out, Restore: toBackupRun(row, ss.svc.Name, map[int64]string{ss.svc.ID: ss.svc.Name})}, err
+}
+
+// backupSafetyNote is the note of the safety snapshot an in-place restore
+// of a volume backup takes first. safetySnapshots finds it by this.
+func backupSafetyNote(snapshot string) string {
+	return "before restoring backup " + shortSnapshot(snapshot)
+}
+
+// safetyNote is the note of the safety snapshot the in-place restore row
+// took first: a volume backup's (backupSafetyNote) or a restore to a
+// time's (restoreToTimeInPlace writes that one).
+func safetyNote(row store.Backup) string {
+	if row.RestoreToTime != nil {
+		return "before restoring to " + row.RestoreToTime.UTC().Format(time.RFC3339)
+	}
+	return backupSafetyNote(row.SnapshotID)
+}
+
+// safetySnapshots finds the safety snapshot of each in-place restore
+// that succeeded among rows, a service's runs newest first, by the
+// restore's ID. A backups row doesn't record it, so it is found: the
+// newest snapshot taken before a restore that carries the restore's note
+// (safetyNote) and started after the run before it and not after the
+// restore itself. The claim on the service keeps every other run out of
+// that window, so it is this restore's and never an earlier one's of the
+// same backup. One indexed query, and none when the list holds no such
+// restore; a snapshot that retention or a person removed is left out.
+func (c *Core) safetySnapshots(ctx context.Context, ss svcScope, rows []store.Backup) (map[int64]int64, error) {
+	inPlace := func(r store.Backup) bool {
+		return r.Operation == "restore" && r.Status == string(apitypes.BackupSucceeded) && r.RestoredTo != nil && *r.RestoredTo == r.ServiceID
+	}
+	if !slices.ContainsFunc(rows, inPlace) {
+		return nil, nil
+	}
+	snaps, err := c.store.ListSafetySnapshots(ctx, store.ListSafetySnapshotsParams{ServiceID: ss.svc.ID, Limit: snapshotListLimit})
+	if err != nil {
+		return nil, err
+	}
+	out := map[int64]int64{}
+	for i, r := range rows {
+		if !inPlace(r) {
+			continue
+		}
+		var after time.Time // the run before it, when the list reaches that far
+		if i+1 < len(rows) {
+			after = rows[i+1].StartedAt
+		}
+		note := safetyNote(r)
+		for _, s := range snaps { // newest first
+			if s.StartedAt.After(r.StartedAt) {
+				continue
+			}
+			if s.StartedAt.Before(after) {
+				break
+			}
+			if s.Note == note {
+				out[r.ID] = s.ID
+				break
+			}
+		}
+	}
+	return out, nil
 }
 
 // fillFromBackup runs the job that fills ss's volumes from the volume
