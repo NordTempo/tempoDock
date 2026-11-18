@@ -412,6 +412,9 @@ func (c *Core) SuspendOrg(ctx context.Context, a Actor, slug string, suspend boo
 		if o, err = c.store.SuspendOrg(ctx, params); err != nil {
 			return apitypes.OperatorOrg{}, err
 		}
+		// Suspended, everyone there may only read: runs and tunnels are
+		// asked again, streams open again as their actors are now.
+		c.accessChanged(accessChange{orgID: o.ID, everyone: true})
 		c.auditBoth(ctx, a, o, action, summary)
 	}
 	return c.operatorOrgView(ctx, a, o.Slug)
@@ -530,6 +533,7 @@ func (c *Core) OperatorDeleteOrg(ctx context.Context, a Actor, slug, confirm str
 	if err != nil {
 		return err
 	}
+	c.accessChanged(accessChange{orgID: o.ID, everyone: true})
 	c.auditBoth(ctx, a, o, "org.delete", fmt.Sprintf("the platform's operator deleted the organization: its %d projects are archived and kept for their history", len(projects)))
 	return nil
 }

@@ -685,7 +685,8 @@ func (c *Core) takeOver(ctx context.Context, p store.SsoProvider, who ssoPerson,
 	if err != nil {
 		return store.User{}, err
 	}
-	var factors, logins, tokens int64
+	var factors, logins int64
+	var tokens []int64
 	took := false
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		// Proven once: a concurrent sign-in that got here first took it.
@@ -716,6 +717,7 @@ func (c *Core) takeOver(ctx context.Context, p store.SsoProvider, who ssoPerson,
 		return store.User{}, err
 	}
 	c.accessChanged(accessChange{userID: u.ID})
+	c.tokensEnded(tokens)
 	if !took {
 		return c.ssoUser(ctx, p, who)
 	}
@@ -723,7 +725,7 @@ func (c *Core) takeOver(ctx context.Context, p store.SsoProvider, who ssoPerson,
 	c.endOrphanedRequests(ctx)
 	c.audit(ctx, userActor(u), "user.sso_takeover", nil, nil, u.Email, fmt.Sprintf(
 		"gave %s to the owner of its email, who signed in through %s (%s): the account was made from an invite and its email never proven, so its sessions ended, its password was replaced, %d second factors and its recovery codes were removed and %d tokens revoked%s",
-		u.Email, p.Label, p.Name, factors, tokens, revokedNote(logins)))
+		u.Email, p.Label, p.Name, factors, len(tokens), revokedNote(logins)))
 	return u, nil
 }
 
@@ -731,20 +733,29 @@ func (c *Core) takeOver(ctx context.Context, p store.SsoProvider, who ssoPerson,
 // proven may have left on it, in q's transaction, when its email's owner
 // takes it (a single sign-on, takeOver; a reset link, which reached the
 // mailbox): its second factors and recovery codes, and the tokens made
-// from it. It returns how many factors and tokens. Sessions and `dock
-// login` tokens are the caller's to end (endUserAccess).
-func dropSetUp(ctx context.Context, q *store.Queries, userID int64) (factors, tokens int64, err error) {
+// from it. It returns how many factors and which tokens: once the
+// transaction is committed, the caller ends what those tokens hold open
+// (tokensEnded). Sessions and `dock login` tokens are the caller's to
+// end (endUserAccess).
+func dropSetUp(ctx context.Context, q *store.Queries, userID int64) (factors int64, tokens []int64, err error) {
 	if factors, err = q.DeleteUserFactors(ctx, userID); err != nil {
-		return 0, 0, err
+		return 0, nil, err
 	}
 	if err := q.DeleteRecoveryCodes(ctx, userID); err != nil {
-		return 0, 0, err
+		return 0, nil, err
 	}
 	if err := q.ClearFactorFailures(ctx, userID); err != nil {
-		return 0, 0, err
+		return 0, nil, err
 	}
 	tokens, err = q.RevokeUserTokens(ctx, store.RevokeUserTokensParams{Now: ptr(now()), UserID: &userID})
 	return factors, tokens, err
+}
+
+// tokensEnded ends what the revoked tokens hold open.
+func (c *Core) tokensEnded(ids []int64) {
+	for _, id := range ids {
+		c.accessChanged(accessChange{tokenID: id})
+	}
 }
 
 // ssoNewUser creates the account of a person p vouched for, with an
