@@ -16,7 +16,8 @@ import (
 // Reading traces: a service's list, and one trace, through the service
 // the caller reads it from. Reading needs read in the service's
 // environment, like logs. A trace may cross services: spans of services
-// outside the caller's token's project or environment are hidden, and
+// outside the caller's token's project or environment, or in an
+// environment whose logs the caller may not read, are hidden, and
 // for a reader who can't reveal secret values, each span's name,
 // attributes and events are masked with its release's values, as logs
 // are (the ingest already masked sensitive attribute names).
@@ -179,6 +180,12 @@ func (c *Core) GetTrace(ctx context.Context, a Actor, ref ServiceRef, id string,
 	if err != nil {
 		return apitypes.Trace{}, err
 	}
+	// Traces are logs: a span shows only where the reader holds
+	// logs.read, not everywhere they see (ADR 0080).
+	kinds, err := c.envKinds(ctx, a)
+	if err != nil {
+		return apitypes.Trace{}, err
+	}
 	start, end := res.Spans[0].Start, res.Spans[0].Start
 	for _, sp := range res.Spans {
 		start, end = min(start, sp.Start), max(end, sp.Start+sp.Duration)
@@ -192,7 +199,7 @@ func (c *Core) GetTrace(ctx context.Context, a Actor, ref ServiceRef, id string,
 		if sp.Parent != 0 {
 			ts.Parent = sp.Parent.String()
 		}
-		if !a.seesEnv(sp.Project, sp.Env) {
+		if !a.seesEnv(sp.Project, sp.Env) || !a.holdsAt(PermLogsRead, sp.Project, sp.Env, kinds[sp.Env]) {
 			ts.Hidden = true
 			out.Spans = append(out.Spans, ts)
 			continue
