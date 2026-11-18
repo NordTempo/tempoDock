@@ -26,6 +26,13 @@ const drillMaxBytes = 2 << 30
 // drillSuffix is appended to a database's name for its drill service.
 const drillSuffix = "-drill"
 
+// drillEventWait is how long a drill waits for the audit event of a
+// restore whose claim is released but whose row still says running: the
+// event follows the release at once, so this only ends a wait for one
+// that failed to be written. One timer, only while a drill is in that
+// window (docs/performance.md).
+const drillEventWait = 2 * time.Minute
+
 // drillPass runs every restore drill that is due (verifyDue), one at a
 // time, and returns when the next one is due (zero: none). force runs
 // every database's drill now. The backup scheduler's pass calls it after
@@ -285,11 +292,23 @@ func (c *Core) drillResult(ctx context.Context, from, to svcScope, restoreID int
 		return "", fmt.Errorf("read restore %d: %w", restoreID, err)
 	}
 	if run.Status == string(apitypes.BackupRunning) {
+		// The event is written right after the claim's release; the
+		// deadline only keeps a drill (and the scheduler's pass behind
+		// it) from waiting for good on one that was never written.
+		wait := time.NewTimer(drillEventWait)
+		defer wait.Stop()
 		select {
 		case ev := <-ended.ch:
 			run.Status = string(apitypes.BackupSucceeded)
 			if ev.Audit.Action == "backup.restore_failed" {
 				run.Status, run.Error = string(apitypes.BackupFailed), ev.Audit.Summary
+			}
+		case <-wait.C:
+			if run, err = c.store.GetBackup(ctx, restoreID); err != nil {
+				return "", fmt.Errorf("read restore %d: %w", restoreID, err)
+			}
+			if run.Status == string(apitypes.BackupRunning) {
+				return "", fmt.Errorf("restore %d never reported how it ended; see `dock backup list` and run the drill again", restoreID)
 			}
 		case <-ctx.Done():
 			return "", ctx.Err()

@@ -977,7 +977,7 @@ func alertProjectID(a store.Alert) int64 {
 func (c *Core) resolveServiceAlerts(ctx context.Context, serviceID int64, hostnames []string) {
 	now := time.Now()
 	svc := alertServiceKey(serviceID, "", "", "")
-	for _, kind := range []string{"deploy:", "backup:", "crash:", "health:", vulnAlertKey} {
+	for _, kind := range []string{"deploy:", "backup:", "backup-drill:", "crash:", "health:", vulnAlertKey} {
 		c.resolveAlert(ctx, kind+svc, now)
 	}
 	for _, h := range hostnames {
