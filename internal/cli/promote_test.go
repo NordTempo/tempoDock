@@ -102,6 +102,19 @@ func TestPromoteStoppedIsADeployFailure(t *testing.T) {
 	}
 }
 
+// That promote never creates services is only said when a service is
+// missing in the target.
+func TestNothingPromotedHint(t *testing.T) {
+	res := apitypes.PromoteResult{To: "production", Skipped: []apitypes.SkippedService{{Service: "web", Reason: apitypes.SkipDeployInProgress}}}
+	if hint := nothingPromotedHint(res); strings.Contains(hint, "never creates") {
+		t.Errorf("deploy in progress: hint = %q", hint)
+	}
+	res.Skipped = append(res.Skipped, apitypes.SkippedService{Service: "worker", Reason: apitypes.SkipMissingInTarget})
+	if hint := nothingPromotedHint(res); !strings.Contains(hint, "dock service create") {
+		t.Errorf("missing in target: hint = %q", hint)
+	}
+}
+
 // `dock rollback` without a number skips releases that run what is live:
 // after a restart, the release before it is the one restarted.
 func TestRollbackSkipsCopiesOfTheLiveRelease(t *testing.T) {
