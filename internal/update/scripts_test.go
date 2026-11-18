@@ -15,7 +15,7 @@ import (
 
 // The scripts that turn a version into a URL or a file name. Each carries
 // the same release_version function.
-var versionScripts = []string{"../../deploy/install.sh", "../../scripts/release/install-cli.sh", "../../contrib/github-action/deploy.sh"}
+var versionScripts = []string{"../../deploy/install.sh", "../../scripts/release/install-cli.sh", "../../contrib/github-action/deploy.sh", bootstrapServer}
 
 // shellFunc cuts the function name out of the script at path: a subshell
 // body, from "name() (" to the closing parenthesis on its own line.

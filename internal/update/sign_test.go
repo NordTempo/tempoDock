@@ -133,8 +133,8 @@ func TestActionInstallerIsInstallCLI(t *testing.T) {
 	}
 }
 
-// The install scripts check signatures with the same keys and the same
-// first signed release as dock.
+// The install scripts, and the site's script that runs them, check
+// signatures with the same keys and the same first signed release as dock.
 func TestScriptsShareKeys(t *testing.T) {
 	var want []string
 	for _, k := range releaseKeys {
@@ -146,17 +146,25 @@ func TestScriptsShareKeys(t *testing.T) {
 	}
 	keysRe := regexp.MustCompile(`(?m)^(?:release_keys|RELEASE_KEYS)='([^']*)'$`)
 	firstRe := regexp.MustCompile(`(?m)^(?:first_signed|FIRST_SIGNED)=(\S+)$`)
-	for _, path := range []string{"../../deploy/install.sh", "../../scripts/release/install-cli.sh"} {
+	for _, path := range []string{"../../deploy/install.sh", "../../scripts/release/install-cli.sh", bootstrapServer} {
 		b, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
 		keys, first := keysRe.FindSubmatch(b), firstRe.FindSubmatch(b)
-		if keys == nil || first == nil {
-			t.Fatalf("%s: no release keys or first signed release", path)
+		if keys == nil {
+			t.Fatalf("%s: no release keys", path)
 		}
 		if got := strings.Split(string(keys[1]), "\n"); !slices.Equal(got, want) {
 			t.Errorf("%s: keys %q, want %q (internal/update/sign.go)", path, got, want)
+		}
+		// The site's script has a minimum release instead, never an
+		// unsigned one (TestBootstrapsAreOneScript).
+		if path == bootstrapServer {
+			continue
+		}
+		if first == nil {
+			t.Fatalf("%s: no first signed release", path)
 		}
 		if string(first[1]) != FirstSignedRelease {
 			t.Errorf("%s: first signed release %s, want %s", path, first[1], FirstSignedRelease)

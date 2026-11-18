@@ -5,9 +5,10 @@ export const site = {
 } as const;
 
 /**
- * The one-line installs. The Caddyfile redirects both paths to the
- * latest release's scripts, which check what they download against the
- * release's signed SHA256SUMS.
+ * The one-line installs. Both paths serve a small script (public/install.sh,
+ * public/cli.sh) that runs the latest release's install script once it
+ * matches the release's signed SHA256SUMS; that script checks what it
+ * downloads the same way.
  */
 export const install = {
   server: "curl -fsSL https://dock.nordtempo.com/install.sh | sudo bash",
