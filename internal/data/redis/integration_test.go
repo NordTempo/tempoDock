@@ -234,15 +234,32 @@ func TestKeyspaceAndScan(t *testing.T) {
 		if len(hashes) != 2 || !hashes["user:1"] || !hashes["big:hash"] {
 			t.Errorf("hashes: %v", hashes)
 		}
-		// Masked callers see sensitive keys by pattern.
+		// Masked callers see sensitive keys by pattern, and not at all
+		// under a match.
+		maskedCall := data.Call{Masked: true, SensitiveKeys: []string{"session:*"}}
 		masked := map[string]bool{}
-		req = apitypes.DataKeysRequest{Match: "session:*", Limit: 500}
-		p, err := e.ScanKeys(ctx, tg, data.Call{Masked: true, SensitiveKeys: []string{"session:*"}}, req)
-		for _, k := range p.Keys {
-			masked[k.Key] = k.Masked
+		req = apitypes.DataKeysRequest{Limit: 500}
+		for {
+			p, err := e.ScanKeys(ctx, tg, maskedCall, req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, k := range p.Keys {
+				if k.Masked || strings.HasPrefix(k.Key, "session:") {
+					masked[k.Key] = k.Masked
+				}
+			}
+			if p.Next == "" {
+				break
+			}
+			req.After = p.Next
 		}
-		if err != nil || len(masked) != 1 || !masked["session:*"] {
-			t.Errorf("masked scan: %+v %v", p, err)
+		if len(masked) != 1 || !masked["session:*"] {
+			t.Errorf("masked scan: %v", masked)
+		}
+		p, err := e.ScanKeys(ctx, tg, maskedCall, apitypes.DataKeysRequest{Match: "session:*", Limit: 500})
+		if err != nil || len(p.Keys) != 0 {
+			t.Errorf("masked scan under a match: %+v %v", p, err)
 		}
 		first, _ := e.ScanKeys(ctx, tg, data.Call{}, apitypes.DataKeysRequest{Limit: 10})
 		if _, err := e.ScanKeys(ctx, tg, data.Call{}, apitypes.DataKeysRequest{Match: "x*", After: first.Next}); !errors.Is(err, data.ErrInvalid) {
