@@ -2,7 +2,8 @@ import { useIsOperator } from "../../data/queries";
 import type { ServiceBackups, ServiceRef } from "../../data/types";
 import { CliHint } from "../../ui/CliHint";
 import { ago, clock } from "../../ui/format";
-import { ErrorText, StateText } from "../../ui/kit";
+import { ErrorText, Glyph } from "../../ui/kit";
+import { toneText } from "../../ui/status";
 import { checkedParts, type Words } from "./checked";
 import { useRunDrill } from "./data";
 
@@ -36,8 +37,18 @@ export function CheckedLine({
   return (
     <p className="flex flex-wrap items-baseline gap-x-5 gap-y-1 border-y border-line py-2">
       {parts.map(({ key, hint, ...state }) => (
-        <span key={key}>
-          <StateText state={state} />
+        // Plain coloured text, not the kit's state chip: errors run long
+        // and must wrap.
+        <span
+          key={key}
+          className={`min-w-0 break-words ${toneText[state.tone]}`}
+        >
+          {state.glyph && (
+            <>
+              <Glyph char={state.glyph} />{" "}
+            </>
+          )}
+          {state.label}
           {hint && (
             <>
               {" "}

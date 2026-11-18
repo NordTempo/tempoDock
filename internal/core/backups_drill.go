@@ -315,8 +315,7 @@ func (c *Core) drillResult(ctx context.Context, from, to svcScope, restoreID int
 		}
 	}
 	if run.Status != string(apitypes.BackupSucceeded) {
-		return "", fmt.Errorf("restore %d %s: %s (its log: dock backup log %d %s)", run.ID, run.Status,
-			cmp.Or(run.Error, "no error was recorded"), run.ID, svcFlags(from.project.Name, from.env.Name, from.svc.Name))
+		return "", fmt.Errorf("restoring the snapshot %s: %s", run.Status, cmp.Or(run.Error, "no error was recorded"))
 	}
 	found, err := c.drillQuery(ctx, from, to)
 	if err != nil {
@@ -409,9 +408,9 @@ func (c *Core) removeLeftDrill(ctx context.Context, ss svcScope, name string) er
 // container still carrying its labels and its volumes are removed on its
 // server, and then every row of it is deleted (drillDeletes), so the
 // next drill can take the name and nothing of it blocks deleting the
-// project. restoreID is the restore that filled it, which stays on the
-// source's Backups tab without its target. The server must be online; a
-// failure leaves the service for the next drill of the same database.
+// project. restoreID is the restore run that filled it, which goes with
+// it. The server must be online; a failure leaves the service for the
+// next drill of the same database.
 func (c *Core) removeDrillService(ctx context.Context, ds svcScope, restoreID int64) error {
 	var done []archivedService
 	err := c.store.Tx(ctx, func(q *store.Queries) error {
@@ -529,8 +528,16 @@ func (c *Core) deleteDrillRows(ctx context.Context, ds svcScope, restoreID int64
 		return fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, `UPDATE backups SET restored_to = NULL WHERE id = +?1 AND restored_to = +?2`, restoreID, ds.svc.ID); err != nil {
-		return fmt.Errorf("unlink the drill's restore: %w", err)
+	// The drill's restore run goes with its service: the drill's own row
+	// says how it went, and a restore run without a target would read as
+	// one made in place.
+	for _, q := range []string{
+		`DELETE FROM backup_logs WHERE backup_id = +?1 AND +?2 IN (SELECT restored_to FROM backups WHERE id = +?1)`,
+		`DELETE FROM backups WHERE id = +?1 AND restored_to = +?2`,
+	} {
+		if _, err := tx.ExecContext(ctx, q, restoreID, ds.svc.ID); err != nil {
+			return fmt.Errorf("delete the drill's restore run: %w", err)
+		}
 	}
 	for _, d := range drillDeletes {
 		if _, err := tx.ExecContext(ctx, "DELETE FROM "+d.table+" WHERE "+d.where, ds.svc.ID); err != nil {

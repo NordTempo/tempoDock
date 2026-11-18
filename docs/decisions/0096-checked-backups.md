@@ -64,8 +64,8 @@ Both are on by default; one install-level switch turns them off
   disk and minutes of CPU on a shared server); `dock backup drill` runs
   it by hand.
 - The drill service is an ordinary restored service while it lives: it
-  shows in the environment for those seconds, and its restore is a
-  restore run on the source's Backups tab. Nothing references it, it
+  shows in the environment for those seconds. Its restore run is
+  deleted with it: the drill's own row says how it went. Nothing references it, it
   gets no domain, and it is never backed up (it is gone before the next
   pass). A drill service left behind by a crash is deleted by the next
   drill of the same database.
