@@ -98,12 +98,34 @@ func (e *Engine) acquire(ctx context.Context, t data.Target, role data.Role) (*c
 	if err != nil {
 		return nil, loginError(ctx, err, data.ErrNotSetUp)
 	}
+	e.bound(ctx, cn.Conn)
 	return cn, nil
 }
 
-// release returns cn to the cache, or closes it when it is broken or not
-// idle (open transaction, closed by the server).
-func (e *Engine) release(cn *conn) { e.conns.Release(cn) }
+// bound gives pg's socket a deadline for the call that is about to use
+// it: e.callTimeout from now, or a little past ctx's deadline when that
+// is later (the context ends the call first, with a cancel request). A
+// context without a deadline (every path but queries) would otherwise
+// wait on a server that stopped answering for good, holding one of the
+// database's few connections each time. Every connection the engine
+// hands out goes through here: acquire and ownerConn.
+func (e *Engine) bound(ctx context.Context, pg *pgx.Conn) {
+	deadline := time.Now().Add(e.callTimeout)
+	if d, ok := ctx.Deadline(); ok && d.After(deadline) {
+		deadline = d.Add(2 * cancelGrace)
+	}
+	_ = pg.PgConn().Conn().SetDeadline(deadline)
+}
+
+// release returns cn to the cache without its call's deadline (bound),
+// or closes it when it is broken or not idle (open transaction, closed
+// by the server).
+func (e *Engine) release(cn *conn) {
+	if !cn.Conn.IsClosed() {
+		_ = cn.Conn.PgConn().Conn().SetDeadline(time.Time{})
+	}
+	e.conns.Release(cn)
+}
 
 // readItsShare reports whether pg has read maxAnswerBytes since it
 // opened (connect meters every connection).
