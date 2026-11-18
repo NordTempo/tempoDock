@@ -52,6 +52,22 @@ func (q *Queries) AlertServiceOrg(ctx context.Context, id int64) (int64, error) 
 	return org_id, err
 }
 
+const clearAlert = `-- name: ClearAlert :exec
+UPDATE alerts SET cleared_at = ?1 WHERE id = +?2 AND resolved_at IS NULL
+`
+
+type ClearAlertParams struct {
+	At *time.Time
+	ID int64
+}
+
+// The condition of an alert that settles before it resolves cleared at
+// `at` (ADR 0097); the statistics tick resolves it once it stayed clear.
+func (q *Queries) ClearAlert(ctx context.Context, arg ClearAlertParams) error {
+	_, err := q.db.ExecContext(ctx, clearAlert, arg.At, arg.ID)
+	return err
+}
+
 const createAlertChannel = `-- name: CreateAlertChannel :one
 INSERT INTO alert_channels (org_id, name, kind, target, config, min_severity, renotify_minutes, created_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -131,8 +147,17 @@ func (q *Queries) DeleteAlertNotices(ctx context.Context, alertID int64) error {
 	return err
 }
 
+const deleteHeartbeat = `-- name: DeleteHeartbeat :exec
+DELETE FROM heartbeat WHERE id = 1
+`
+
+func (q *Queries) DeleteHeartbeat(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deleteHeartbeat)
+	return err
+}
+
 const getAlert = `-- name: GetAlert :one
-SELECT id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target, org_id, muted_by FROM alerts WHERE id = +?
+SELECT id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target, org_id, muted_by, count, cleared_at FROM alerts WHERE id = +?
 `
 
 func (q *Queries) GetAlert(ctx context.Context, id int64) (Alert, error) {
@@ -158,6 +183,8 @@ func (q *Queries) GetAlert(ctx context.Context, id int64) (Alert, error) {
 		&i.Target,
 		&i.OrgID,
 		&i.MutedBy,
+		&i.Count,
+		&i.ClearedAt,
 	)
 	return i, err
 }
@@ -213,6 +240,26 @@ func (q *Queries) GetAlertChannelByID(ctx context.Context, id int64) (AlertChann
 		&i.LastError,
 		&i.LastErrorAt,
 		&i.Failures,
+	)
+	return i, err
+}
+
+const getHeartbeat = `-- name: GetHeartbeat :one
+SELECT id, url, target, minutes, updated_by, updated_at FROM heartbeat WHERE id = 1
+`
+
+// The outside heartbeat (ADR 0097); no row while none is set. Read on
+// start and after a change, then kept in memory.
+func (q *Queries) GetHeartbeat(ctx context.Context) (Heartbeat, error) {
+	row := q.db.QueryRowContext(ctx, getHeartbeat)
+	var i Heartbeat
+	err := row.Scan(
+		&i.ID,
+		&i.Url,
+		&i.Target,
+		&i.Minutes,
+		&i.UpdatedBy,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -309,7 +356,7 @@ func (q *Queries) ListAlertChannels(ctx context.Context, org int64) ([]AlertChan
 }
 
 const listAlerts = `-- name: ListAlerts :many
-SELECT id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target, org_id, muted_by FROM alerts
+SELECT id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target, org_id, muted_by, count, cleared_at FROM alerts
 WHERE coalesce(org_id, 0) = +CAST(?1 AS INTEGER) AND id < +?2
 ORDER BY id DESC LIMIT +?3
 `
@@ -351,6 +398,8 @@ func (q *Queries) ListAlerts(ctx context.Context, arg ListAlertsParams) ([]Alert
 			&i.Target,
 			&i.OrgID,
 			&i.MutedBy,
+			&i.Count,
+			&i.ClearedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -572,7 +621,7 @@ func (q *Queries) ListNoticedChannels(ctx context.Context, alertID int64) ([]Ale
 }
 
 const listOpenAlerts = `-- name: ListOpenAlerts :many
-SELECT id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target, org_id, muted_by FROM alerts WHERE resolved_at IS NULL ORDER BY id DESC
+SELECT id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target, org_id, muted_by, count, cleared_at FROM alerts WHERE resolved_at IS NULL ORDER BY id DESC
 `
 
 // Read once when the daemon starts; the alert engine keeps them in memory.
@@ -605,6 +654,8 @@ func (q *Queries) ListOpenAlerts(ctx context.Context) ([]Alert, error) {
 			&i.Target,
 			&i.OrgID,
 			&i.MutedBy,
+			&i.Count,
+			&i.ClearedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -622,7 +673,7 @@ func (q *Queries) ListOpenAlerts(ctx context.Context) ([]Alert, error) {
 const openAlert = `-- name: OpenAlert :one
 INSERT INTO alerts (key, kind, severity, title, message, project, environment, service, server, opened_at, updated_at, project_id, service_id, command, target, org_id, muted_by)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target, org_id, muted_by
+RETURNING id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target, org_id, muted_by, count, cleared_at
 `
 
 type OpenAlertParams struct {
@@ -686,6 +737,8 @@ func (q *Queries) OpenAlert(ctx context.Context, arg OpenAlertParams) (Alert, er
 		&i.Target,
 		&i.OrgID,
 		&i.MutedBy,
+		&i.Count,
+		&i.ClearedAt,
 	)
 	return i, err
 }
@@ -707,7 +760,7 @@ UPDATE alerts SET project = ?1,
     title = replace(title, ?2 || '/' || environment || '/' || service, ?1 || '/' || environment || '/' || service),
     command = replace(command, '-p ' || ?2 || ' ', '-p ' || ?1 || ' ')
 WHERE project_id = +?3 AND resolved_at IS NULL
-RETURNING id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target, org_id, muted_by
+RETURNING id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target, org_id, muted_by, count, cleared_at
 `
 
 type RenameProjectAlertsParams struct {
@@ -746,6 +799,8 @@ func (q *Queries) RenameProjectAlerts(ctx context.Context, arg RenameProjectAler
 			&i.Target,
 			&i.OrgID,
 			&i.MutedBy,
+			&i.Count,
+			&i.ClearedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -818,6 +873,31 @@ func (q *Queries) SetAlertChannelSent(ctx context.Context, arg SetAlertChannelSe
 	return err
 }
 
+const setHeartbeat = `-- name: SetHeartbeat :exec
+INSERT INTO heartbeat (id, url, target, minutes, updated_by, updated_at) VALUES (1, ?, ?, ?, ?, ?)
+ON CONFLICT (id) DO UPDATE SET url = excluded.url, target = excluded.target, minutes = excluded.minutes,
+    updated_by = excluded.updated_by, updated_at = excluded.updated_at
+`
+
+type SetHeartbeatParams struct {
+	Url       []byte
+	Target    string
+	Minutes   int64
+	UpdatedBy string
+	UpdatedAt time.Time
+}
+
+func (q *Queries) SetHeartbeat(ctx context.Context, arg SetHeartbeatParams) error {
+	_, err := q.db.ExecContext(ctx, setHeartbeat,
+		arg.Url,
+		arg.Target,
+		arg.Minutes,
+		arg.UpdatedBy,
+		arg.UpdatedAt,
+	)
+	return err
+}
+
 const unmuteAlert = `-- name: UnmuteAlert :exec
 UPDATE alerts SET muted_by = NULL WHERE id = +?
 `
@@ -829,7 +909,7 @@ func (q *Queries) UnmuteAlert(ctx context.Context, id int64) error {
 }
 
 const updateAlert = `-- name: UpdateAlert :exec
-UPDATE alerts SET severity = ?, title = ?, message = ?, project = ?, command = ?, target = ?, updated_at = ? WHERE id = +?
+UPDATE alerts SET severity = ?, title = ?, message = ?, project = ?, command = ?, target = ?, count = ?, cleared_at = NULL, updated_at = ? WHERE id = +?
 `
 
 type UpdateAlertParams struct {
@@ -839,10 +919,13 @@ type UpdateAlertParams struct {
 	Project   string
 	Command   string
 	Target    string
+	Count     int64
 	UpdatedAt time.Time
 	ID        int64
 }
 
+// The condition holds (again): what the alert says now and how many
+// times it occurred; it is no longer cleared (ADR 0097).
 func (q *Queries) UpdateAlert(ctx context.Context, arg UpdateAlertParams) error {
 	_, err := q.db.ExecContext(ctx, updateAlert,
 		arg.Severity,
@@ -851,6 +934,7 @@ func (q *Queries) UpdateAlert(ctx context.Context, arg UpdateAlertParams) error 
 		arg.Project,
 		arg.Command,
 		arg.Target,
+		arg.Count,
 		arg.UpdatedAt,
 		arg.ID,
 	)
