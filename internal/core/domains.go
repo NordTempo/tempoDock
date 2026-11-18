@@ -270,6 +270,8 @@ func (c *Core) checkOwnHost(host string) error {
 
 // addDomain adds host to a service; zone, when set, is the Cloudflare
 // zone Dock routes it through the server's tunnel from (ADR 0036). A
+// chosen name the platform keeps under the base domain is refused
+// (reservedHostErr). A
 // claim that needs no proof (needsProof) is verified at once, and other
 // orgs' unverified claims on host lose; any other waits for its TXT
 // record (proveDomain).
@@ -280,6 +282,11 @@ func (c *Core) addDomain(ctx context.Context, a Actor, ss svcScope, host, redire
 	ing, err := c.envIngress(ctx, ss.envScope)
 	if err != nil {
 		return apitypes.DomainChange{}, err
+	}
+	if !generated {
+		if err := reservedHostErr(a, host, ing.baseDomain, strings.TrimPrefix(c.cfg.BaseDomain, "*.")); err != nil {
+			return apitypes.DomainChange{}, err
+		}
 	}
 	params := store.CreateDomainParams{Hostname: host, ServiceID: ss.svc.ID, Generated: generated, RedirectTo: redirect}
 	if needsProof(a, host, generated, zone, ing) {
