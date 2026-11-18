@@ -145,12 +145,19 @@ func backupSafetyNote(snapshot string) string {
 	return "before restoring backup " + shortSnapshot(snapshot)
 }
 
+// timeSafetyNote is the note of the safety snapshot an in-place restore
+// to a time takes first (restoreToTimeInPlace). safetySnapshots finds it
+// by this.
+func timeSafetyNote(at time.Time) string {
+	return "before restoring to " + at.UTC().Format(time.RFC3339)
+}
+
 // safetyNote is the note of the safety snapshot the in-place restore row
 // took first: a volume backup's (backupSafetyNote) or a restore to a
-// time's (restoreToTimeInPlace writes that one).
+// time's (timeSafetyNote).
 func safetyNote(row store.Backup) string {
 	if row.RestoreToTime != nil {
-		return "before restoring to " + row.RestoreToTime.UTC().Format(time.RFC3339)
+		return timeSafetyNote(*row.RestoreToTime)
 	}
 	return backupSafetyNote(row.SnapshotID)
 }
