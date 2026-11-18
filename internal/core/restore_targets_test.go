@@ -1,9 +1,11 @@
 package core
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -155,4 +157,43 @@ func TestFailedSnapshotRestoreFreesItsName(t *testing.T) {
 		t.Fatalf("the next restore = %+v", r)
 	}
 	eventually(t, "the restore alert to close", func() bool { return len(restoreAlerts(h)) == 0 })
+}
+
+// A restart during a restore into a new service ends it like any failed
+// one, at the next start: the target is archived under its other name, so
+// the name is free, and an alert opens on the service restored from.
+func TestRestartArchivesACutRestoresTarget(t *testing.T) {
+	h := newHarness(t)
+	db := h.templateDB("db", apitypes.TemplatePostgres)
+	snap := "cccc3333cccc3333"
+	loading, hold := make(chan struct{}), make(chan struct{})
+	h.rt.OnJob(func(spec node.JobSpec) (node.JobResult, error) {
+		if strings.Contains(spec.Name, "_restore") {
+			close(loading)
+			<-hold
+			return node.JobResult{}, context.Canceled
+		}
+		return node.JobResult{Output: resticOutput(snap, 100, snap)}, nil
+	})
+	h.runBackup(db)
+	res := h.restoreBackup(db, snap)
+	<-loading
+	// Stopping waits for the job, which ends once the daemon stopped.
+	go func() { time.Sleep(20 * time.Millisecond); close(hold) }()
+	h.restart()
+	if done := h.waitRun(db, res.Restore.ID); done.Status != apitypes.BackupFailed || !strings.Contains(done.Error, "restarted") {
+		t.Fatalf("restore = %+v, want failed by the restart", done)
+	}
+	kept := ServiceRef{db.Project, db.Environment, "db-restored-failed-" + itoa(res.Restore.ID)}
+	eventually(t, "the cut-short restore's target to be archived", func() bool {
+		ss, err := h.c.loadService(h.ctx, 1, kept)
+		return err == nil && ss.svc.ArchivedAt != nil
+	})
+	if _, err := h.c.loadService(h.ctx, 1, ServiceRef{db.Project, db.Environment, "db-restored"}); CodeOf(err) != apitypes.CodeNotFound {
+		t.Errorf("the target's name is still taken: %v", err)
+	}
+	eventually(t, "the restore alert to open", func() bool { return len(restoreAlerts(h)) == 1 })
+	if open := restoreAlerts(h); !strings.Contains(open[0].Message, kept.Service) || !strings.Contains(open[0].Message, "restarted") || open[0].Service != "db" {
+		t.Errorf("restore alert = %+v, want one on db naming %s and the restart", open[0], kept.Service)
+	}
 }

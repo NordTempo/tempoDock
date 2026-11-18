@@ -1007,6 +1007,10 @@ func (c *Core) failInterruptedSnapshots(ctx context.Context) error {
 		if ss, err := c.scopeOf(ctx, r.ServiceID); err == nil {
 			c.audit(ctx, System, "snapshot.restore_failed", &ss.project, &ss.env, ss.String(), msg)
 		}
+		if !r.InPlace {
+			// Its target is archived once the daemon has started.
+			c.restoreCut(r.ServiceID, r.ToServiceID, restoreInto{id: r.ID, snapshot: true})
+		}
 	}
 	return nil
 }

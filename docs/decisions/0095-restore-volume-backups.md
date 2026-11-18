@@ -83,9 +83,11 @@ safety snapshot, before the service first starts.
 - A restart during an in-place restore fails it with what to do: restore
   in place again, or restore the safety snapshot.
 
-Left open: a restore into a new service that a restart interrupts is
-marked failed and refused as a switch target, but its target keeps its
-name and no alert is raised.
+- A restart during a restore into a new service ends it like any failed
+  one (built, 2026-11-19): recovery reads the running ones with one
+  query before it marks them failed, and once the daemon has started
+  (alerts loaded, routes applied) each target is archived as
+  `<name>-failed-<id>` and the alert opens. Nothing polls.
 
 ## Consequences
 
