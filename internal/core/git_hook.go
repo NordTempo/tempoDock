@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/httpkit"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -34,6 +35,9 @@ type GitDelivery struct {
 	// and X-Hub-Signature-256 headers.
 	Event, ID, Signature string
 	Body                 []byte
+	// Client is the address the request came from, which deliveries with
+	// a wrong signature are counted by.
+	Client string
 }
 
 // pushPayload is the part of GitHub's push event push-to-deploy reads.
@@ -132,6 +136,11 @@ func (c *Core) webhookConnection(ctx context.Context, hookID string) (store.GitC
 // message for GitHub's delivery log. Errors: not_found (no such webhook),
 // rate_limited, unauthorized (bad or missing signature), validation.
 //
+// The signature is checked first and the webhook's allowance spent only
+// by deliveries that pass, so a signed delivery is never refused for
+// unsigned ones sent to the same address. Those have their own allowance
+// (badSignature).
+//
 // The webhook's own secret is its authority: the release it starts acts
 // as "github:<pusher>" with deploy scope on that one service. The App's
 // deliveries go to gitAppWebhook.
@@ -143,17 +152,17 @@ func (c *Core) GitWebhook(ctx context.Context, d GitDelivery) (string, error) {
 	if app != nil {
 		return c.gitAppWebhook(ctx, *app, d)
 	}
-	// Hook IDs are unguessable, so only someone who has the URL can spend
-	// this; the bound keeps a leaked URL from costing more.
-	if !c.git.limit.Allow(conn.HookID, time.Now()) {
-		return "", errf(apitypes.CodeRateLimited, "too many deliveries for this webhook; try again in a minute")
-	}
 	secret, err := c.box.Open(conn.Secret, gitSecretAAD(conn.ServiceID))
 	if err != nil {
 		return "", fmt.Errorf("open webhook secret: %w", err)
 	}
 	if !validSignature(secret, d.Body, d.Signature) {
-		return "", errf(apitypes.CodeUnauthorized, "signature missing or wrong; set the webhook's secret to the one `dock git connect` printed (or rotate it with --rotate-secret)")
+		return "", c.badSignature(d, "signature missing or wrong; set the webhook's secret to the one `dock git connect` printed (or rotate it with --rotate-secret)")
+	}
+	// Only the secret's holder spends this: the bound keeps a sender
+	// gone wrong (or a stolen secret) from queueing work without end.
+	if !c.git.limit.Allow(conn.HookID, time.Now()) {
+		return "", errf(apitypes.CodeRateLimited, "too many deliveries for this webhook; try again in a minute")
 	}
 	switch d.Event {
 	case "ping":
@@ -174,6 +183,19 @@ func (c *Core) GitWebhook(ctx context.Context, d GitDelivery) (string, error) {
 		return "", invalid("push payload is not JSON: %v; set the webhook's content type to application/json", err)
 	}
 	return c.queuePush(ctx, conn, p)
+}
+
+// badSignature is the answer to a delivery whose signature is missing or
+// wrong: unauthorized with msg, which says how to fix the secret, and
+// rate_limited once the client has sent more of them to this webhook
+// than a misconfigured sender would (ten, then one every six seconds).
+// Counted per webhook and client, apart from the allowance of signed
+// deliveries, which these never touch.
+func (c *Core) badSignature(d GitDelivery, msg string) error {
+	if !c.git.badLimit.Allow(d.HookID+"|"+httpkit.ClientKey(d.Client), time.Now()) {
+		return errf(apitypes.CodeRateLimited, "too many deliveries with a missing or wrong signature; fix the webhook's secret and try again in a minute")
+	}
+	return errf(apitypes.CodeUnauthorized, "%s", msg)
 }
 
 // gitDelivery records a signature-checked delivery by its ID and by a
@@ -207,15 +229,15 @@ func (c *Core) gitDelivery(ctx context.Context, d GitDelivery) (string, error) {
 // directory; an uninstalled App's installation is unassigned. The App's
 // webhook secret is the authority, as a connection's is for its own hook.
 func (c *Core) gitAppWebhook(ctx context.Context, app store.GithubApp, d GitDelivery) (string, error) {
-	if !c.git.appLimit.Allow(app.HookID, time.Now()) {
-		return "", errf(apitypes.CodeRateLimited, "too many deliveries for the GitHub App; try again in a minute")
-	}
 	secret, err := c.box.Open(app.WebhookSecret, appWebhookSecretAAD)
 	if err != nil {
 		return "", fmt.Errorf("open the GitHub App's webhook secret: %w", err)
 	}
 	if !validSignature(secret, d.Body, d.Signature) {
-		return "", errf(apitypes.CodeUnauthorized, "signature missing or wrong; the GitHub App's webhook secret must be the one Dock registered it with")
+		return "", c.badSignature(d, "signature missing or wrong; the GitHub App's webhook secret must be the one Dock registered it with")
+	}
+	if !c.git.appLimit.Allow(app.HookID, time.Now()) {
+		return "", errf(apitypes.CodeRateLimited, "too many deliveries for the GitHub App; try again in a minute")
 	}
 	switch d.Event {
 	case "ping":

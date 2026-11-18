@@ -48,9 +48,13 @@ type gitState struct {
 	mu      sync.Mutex
 	workers map[int64]*gitWorker // by service ID, while one runs
 	// limit throttles webhook deliveries per hook; appLimit the App's,
-	// which carry every App connection's pushes.
+	// which carry every App connection's pushes. Both count only
+	// deliveries whose signature checked out, so ones with a wrong
+	// signature never use up the sender's allowance. badLimit counts
+	// those, per hook and client (badSignature).
 	limit    *httpkit.Limiter
 	appLimit *httpkit.Limiter
+	badLimit *httpkit.Limiter
 	github   githubClient
 	app      githubAppState
 	// statusMu guards statusTail: per service, the last commit status
@@ -79,6 +83,7 @@ func newGitState(api string) gitState {
 		// either a flood or a stolen URL.
 		limit:    httpkit.NewLimiter(30, 2*time.Second),
 		appLimit: httpkit.NewLimiter(120, 500*time.Millisecond),
+		badLimit: httpkit.NewLimiter(10, 6*time.Second),
 		github:   newGitHubClient(api),
 		app:      newGitHubAppState(),
 	}
