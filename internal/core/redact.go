@@ -1,12 +1,11 @@
 package core
 
 import (
-	"bytes"
-	"cmp"
 	"fmt"
 	"io"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/store"
@@ -120,16 +119,25 @@ func (c *Core) releaseRedactor(rel store.Release) (*redactor, error) {
 }
 
 // redactor masks a fixed set of secret values in log text. A nil
-// redactor masks nothing. Each value is searched for with the standard
-// library's vectorized Index: a service has tens of variables at most, and
-// a line without secrets costs one scan per value and no allocations.
+// redactor masks nothing. The values are found with one automaton
+// (matcher), built once: a byte of text costs the same whether a service
+// has ten values or ten thousand, and a line without secrets costs one
+// pass and no allocations. Of the values found in a text, the first
+// from the left is masked, the longest of those that start there, then
+// the first after it, and so on.
 type redactor struct {
-	// secrets are the values, longest first so that of two starting at
-	// the same place the longer is masked; raw is the same as bytes.
-	secrets []string
-	raw     [][]byte
+	// values is how many values there are.
+	values int
 	// longest is the length of the longest value.
 	longest int
+	// starts is the matcher of the values reversed: reading a text
+	// backwards with it gives, for each place, the longest value that
+	// starts there (findBackwards), which reading forwards can't in one
+	// pass.
+	starts *matcher
+	// prefixes is the matcher of the values as they are, for a live
+	// writer: what tail of the text so far may be a value's start.
+	prefixes func() *matcher
 }
 
 // newRedactor masks the values of env, a release's resolved environment.
@@ -151,22 +159,38 @@ func newRedactor(env map[string]string) *redactor {
 	if len(secrets) == 0 {
 		return nil
 	}
-	slices.SortFunc(secrets, func(a, b string) int { return cmp.Or(len(b)-len(a), strings.Compare(a, b)) })
+	slices.Sort(secrets)
 	secrets = slices.Compact(secrets)
-	r := &redactor{secrets: secrets, raw: make([][]byte, len(secrets)), longest: len(secrets[0])}
-	for i, s := range secrets {
-		r.raw[i] = []byte(s)
+	r := &redactor{values: len(secrets)}
+	// The values reversed, as pieces of one string.
+	var all []byte
+	for _, s := range secrets {
+		r.longest = max(r.longest, len(s))
+		all = append(all, s...)
+		slices.Reverse(all[len(all)-len(s):])
 	}
+	reversed, rest := make([]string, len(secrets)), string(all)
+	for i, s := range secrets {
+		reversed[i], rest = rest[:len(s)], rest[len(s):]
+	}
+	r.starts = newMatcher(reversed)
+	// Only `dock run` writes live, so most redactors never build this.
+	r.prefixes = sync.OnceValue(func() *matcher { return newMatcher(secrets) })
 	return r
 }
 
 // line masks a log line, reporting whether it had a secret. A line
 // without one is returned as it is, without allocating.
 func (r *redactor) line(s string) (string, bool) {
-	if r == nil || !slices.ContainsFunc(r.secrets, func(v string) bool { return strings.Contains(s, v) }) {
+	if r == nil {
 		return s, false
 	}
-	out, _ := r.appendMasked(make([]byte, 0, len(s)), []byte(s), true)
+	var few [4]found
+	at := findBackwards(r.starts, s, few[:0])
+	if len(at) == 0 {
+		return s, false
+	}
+	out, _ := maskFound(make([]byte, 0, len(s)), s, len(s), at)
 	return string(out), true
 }
 
@@ -181,41 +205,36 @@ func (r *redactor) appendMasked(dst, src []byte, final bool) ([]byte, int) {
 	if !final {
 		hold = max(0, len(src)-(r.longest-1))
 	}
-	return r.appendMaskedTo(dst, src, hold)
+	var at []found
+	return r.appendMaskedTo(dst, src, hold, &at)
 }
 
 // appendMaskedTo is appendMasked stopping at hold: secrets that start
 // before it are masked whole, and src[hold:] (past the last of those) is
-// left for later.
-func (r *redactor) appendMaskedTo(dst, src []byte, hold int) ([]byte, int) {
+// left for later. at is the caller's scratch space, kept between calls.
+func (r *redactor) appendMaskedTo(dst, src []byte, hold int, at *[]found) ([]byte, int) {
+	*at = findBackwards(r.starts, src, (*at)[:0])
+	return maskFound(dst, src, hold, *at)
+}
+
+// maskFound appends src to dst up to hold, with the values found in it
+// (at, as findBackwards leaves them: last first) masked: each one that
+// starts before hold and not inside the one masked before it. It returns
+// how much of src it used: hold, or more when a value runs past it.
+func maskFound[T string | []byte](dst []byte, src T, hold int, at []found) ([]byte, int) {
 	pos := 0
-	for {
-		at, n := r.next(src[pos:])
-		if at < 0 || pos+at >= hold {
+	for _, f := range slices.Backward(at) {
+		if f.at < pos {
+			continue
+		}
+		if f.at >= hold {
 			break
 		}
-		dst = append(append(dst, src[pos:pos+at]...), secretMask...)
-		pos += at + n
+		dst = append(append(dst, src[pos:f.at]...), secretMask...)
+		pos = f.at + f.n
 	}
 	end := max(pos, hold)
 	return append(dst, src[pos:end]...), end
-}
-
-// next finds the first secret in s: its index (-1 if none) and length.
-// Once one is found, later (shorter) values are only looked for where
-// they would start before it.
-func (r *redactor) next(s []byte) (at, n int) {
-	at = -1
-	for _, v := range r.raw {
-		window := s
-		if at >= 0 {
-			window = s[:min(len(s), at-1+len(v))]
-		}
-		if i := bytes.Index(window, v); i >= 0 && (at < 0 || i < at) {
-			at, n = i, len(v)
-		}
-	}
-	return at, n
 }
 
 // redactChunk is how much a redacting reader reads at a time.
@@ -230,7 +249,9 @@ func (r *redactor) reader(rc io.ReadCloser) io.ReadCloser {
 	}
 	// Masking never grows text, so out fits in a buffer the size of in.
 	size := redactChunk + r.longest
-	return &redactReader{src: rc, red: r, in: make([]byte, 0, size), out: make([]byte, 0, size)}
+	rr := &redactReader{src: rc, red: r, in: make([]byte, 0, size), out: make([]byte, 0, size)}
+	rr.at = rr.few[:0]
+	return rr
 }
 
 // redactReader is redactor.reader's ReadCloser.
@@ -240,7 +261,9 @@ type redactReader struct {
 	in  []byte // read from src, not masked yet
 	out []byte // masked, out[off:] not returned yet
 	off int
-	err error // src's error (io.EOF at the end), once it returned one
+	err error     // src's error (io.EOF at the end), once it returned one
+	at  []found   // appendMaskedTo's scratch space
+	few [16]found // at's first space: a read with a few secrets allocates nothing
 }
 
 // Read implements io.Reader.
@@ -253,7 +276,11 @@ func (rr *redactReader) Read(p []byte) (int, error) {
 		rr.in = rr.in[:len(rr.in)+n]
 		rr.err = err
 		var used int
-		rr.out, used = rr.red.appendMasked(rr.out[:0], rr.in, err != nil)
+		hold := len(rr.in)
+		if err == nil {
+			hold = max(0, hold-(rr.red.longest-1))
+		}
+		rr.out, used = rr.red.appendMaskedTo(rr.out[:0], rr.in, hold, &rr.at)
 		rr.off = 0
 		rr.in = rr.in[:copy(rr.in, rr.in[used:])]
 	}
@@ -284,6 +311,7 @@ type redactWriter struct {
 	red     *redactor
 	pending []byte // written, not masked yet: a tail a secret may start in
 	out     []byte
+	at      []found // appendMaskedTo's scratch space
 }
 
 // Write implements io.Writer: it masks what can't be part of a secret
@@ -292,7 +320,7 @@ func (rw *redactWriter) Write(p []byte) (int, error) {
 	rw.pending = append(rw.pending, p...)
 	hold := len(rw.pending) - rw.red.secretPrefixAt(rw.pending)
 	var used int
-	rw.out, used = rw.red.appendMaskedTo(rw.out[:0], rw.pending, hold)
+	rw.out, used = rw.red.appendMaskedTo(rw.out[:0], rw.pending, hold, &rw.at)
 	rw.pending = rw.pending[:copy(rw.pending, rw.pending[used:])]
 	if len(rw.out) > 0 {
 		if _, err := rw.dst.Write(rw.out); err != nil {
@@ -307,25 +335,17 @@ func (rw *redactWriter) flush() error {
 	if len(rw.pending) == 0 {
 		return nil
 	}
-	out, _ := rw.red.appendMasked(rw.out[:0], rw.pending, true)
+	out, _ := rw.red.appendMaskedTo(rw.out[:0], rw.pending, len(rw.pending), &rw.at)
 	rw.pending = rw.pending[:0]
 	_, err := rw.dst.Write(out)
 	return err
 }
 
 // secretPrefixAt is the length of the longest tail of b that is the start
-// (not all) of a secret: what a live writer must hold back.
+// (not all) of a secret: what a live writer must hold back. Such a tail
+// is shorter than the longest secret, so only that much of b is read.
 func (r *redactor) secretPrefixAt(b []byte) int {
-	n := 0
-	for _, v := range r.raw {
-		for k := min(len(b), len(v)-1); k > n; k-- {
-			if bytes.HasSuffix(b, v[:k]) {
-				n = k
-				break
-			}
-		}
-	}
-	return n
+	return r.prefixes().tail(b[max(0, len(b)-(r.longest-1)):])
 }
 
 // publishBuildLog publishes a build log line: once when it shows no
