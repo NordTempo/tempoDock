@@ -186,7 +186,11 @@ either:
   volumes hold, the volumes in the backup are emptied and filled, and it
   starts again. If that fails the safety snapshot is put back; restoring
   it later undoes the restore. A volume added after the backup is left as
-  it is; one removed since must be added back first.
+  it is; one removed since must be added back first. To look at old data
+  without stopping anything, restore a backup into a copy instead
+  (`--as NAME`): a new service with the same settings, variables and
+  volumes and no domains, filled from the backup before it starts on the
+  image the service runs. Archive the copy when you are done.
 
 From the CLI:
 
@@ -194,6 +198,7 @@ From the CLI:
 dock backup restore -s db --snapshot 4cf53263          # into db-restored
 dock volume snapshot restore 12 -s db                  # the same, from a snapshot
 dock backup restore -s uploads --snapshot 9d2c11f0 --in-place   # a service's volumes, in place
+dock backup restore -s uploads --snapshot 9d2c11f0 --as uploads-old   # or into a copy, nothing stops
 dock service switch-references db --to db-restored --dry-run   # who would redeploy
 dock service switch-references db --to db-restored     # use it
 dock service switch-references db-restored --to db     # switch back

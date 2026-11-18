@@ -29,8 +29,9 @@ with their own tool (pg_dump, Redis snapshots), other volumes file by file.
 Until they are moved to a bucket (dock backup move) backups stay on each
 server, not off-box. A database restores into a new service, and the live
 one is never touched; any other service's volumes restore in place, after a
-safety snapshot. Once a week the repositories are checked and every template
-database is restored once as a drill (dock backup check, dock backup drill).`,
+safety snapshot, or into a copy of the service (--as). Once a week the
+repositories are checked and every template database is restored once as a
+drill (dock backup check, dock backup drill).`,
 	})
 	cmd.AddCommand(newBackupListCmd(g), newBackupLogCmd(g), newBackupRunCmd(g), newBackupRestoreCmd(g),
 		newBackupScheduleCmd(g), newBackupPITRCmd(g), newBackupStatusCmd(g), newBackupConfigureCmd(g), newBackupMoveCmd(g),
@@ -405,11 +406,17 @@ starts on the restored data.
 A service that isn't a template database restores a backup of its volumes
 with --snapshot and --in-place, the same way: it stops, a safety snapshot
 keeps what its volumes hold, the volumes in the backup are replaced, and it
-starts again. A volume added since the backup is left as it is.`,
+starts again. A volume added since the backup is left as it is.
+
+With --as NAME instead of --in-place, the backup goes into a copy: a new
+service with the settings, variables and volumes of the first and no
+domains, its volumes filled from the backup before it starts on the image
+the first runs. Nothing stops; it is the way to look at old data.`,
 		Example: `  dock backup restore postgres --snapshot 4cf53263 --as postgres-old
   dock backup restore postgres --to-time 2026-11-17T14:01Z
   dock backup restore postgres --to-time 2026-11-17T15:01+01:00 --in-place
-  dock backup restore uploads --snapshot 9d2c11f0 --in-place`,
+  dock backup restore uploads --snapshot 9d2c11f0 --in-place
+  dock backup restore uploads --snapshot 9d2c11f0 --as uploads-old`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeServiceArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -463,9 +470,12 @@ starts again. A volume added since the backup is left as it is.`,
 				} else {
 					g.io.Successf("Restored %s into %s", what, res.Service.Name)
 				}
-				if inPlace {
+				switch {
+				case inPlace:
 					g.io.Detail("A safety snapshot holds the data it replaced; `dock volume snapshot list " + t.flags() + "` shows it.")
-				} else {
+				case res.Restore.Kind == apitypes.BackupVolume:
+					g.io.Detail(fmt.Sprintf("%s is untouched. %s is a copy of it with the backup's data and no domains; archive it when you are done.", t.Service, res.Service.Name))
+				default:
 					g.io.Detail(fmt.Sprintf("%s is untouched. Check %s, then point references at it.", t.Service, res.Service.Name))
 				}
 				return nil
@@ -475,7 +485,7 @@ starts again. A volume added since the backup is left as it is.`,
 	f.add(cmd, needService)
 	cmd.Flags().StringVar(&snapshot, "snapshot", "", "snapshot ID, or its first 8 or more characters")
 	cmd.Flags().StringVar(&toTime, "to-time", "", "restore the database as it was at this time (point-in-time restore): 2026-11-17T14:01Z, UTC unless it has an offset")
-	cmd.Flags().StringVar(&as, "as", "", "name of the new service (default <service>-restored)")
+	cmd.Flags().StringVar(&as, "as", "", "name of the new service (default <service>-restored; a copy of a service that isn't a template database needs one)")
 	cmd.Flags().BoolVar(&inPlace, "in-place", false, "restore into the service itself, after a safety snapshot: a --to-time, or a volume backup")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
 	cmd.Flags().BoolVar(&detach, "detach", false, "return once the restore started")

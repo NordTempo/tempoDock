@@ -2,8 +2,8 @@
 
 Status: accepted (top 5 of the 2026-11-18 product review, approved by
 Saile). Built: the in-place restore (core, API, CLI, Backups tab), manual
-backup retention, Postgres roles in backups, restore targets. Not built
-yet: a volume backup into a copy.
+backup retention, Postgres roles in backups, restore targets, a volume
+backup into a copy.
 
 ## Context
 
@@ -32,15 +32,20 @@ Backups tab.
   emptied, then filled. A volume added after the backup is left alone and
   the log says so. A volume the backup holds that the service no longer
   has stops the restore before anything is touched.
-- In place must be asked for (`--in-place`); without it the answer says
-  that this is the only way such a service restores, as snapshot restores
-  do. The CLI asks for confirmation.
+- In place must be asked for (`--in-place`); without it or `--as` the
+  answer names both ways. The CLI asks for confirmation.
 - **In place stays a person's action.** No MCP tool restores a volume
   backup, as none restores a snapshot in place.
-- **Into a copy** (`--as NAME`, not built yet): a new service cloned from
+- **Into a copy** (`--as NAME`): a new service cloned from
   the source (its settings and variables, no domains), its volumes filled
   from the backup before its first deploy. It is the way to look at old
-  data without stopping anything, and never what a recovery uses.
+  data without stopping anything, and never what a recovery uses. The
+  copy runs the image of the source's active release, deployed as a
+  promotion of it: nothing is built, and a source without an active
+  release is refused. Its own variables are copied, literal values too
+  (same environment, same readers); references are kept as they are, one
+  to the source itself too. A failed fill leaves the copy unstarted, for
+  a look.
 - The restore is a row in the service's backup list, `restore` with the
   service itself as its target, with its log.
 

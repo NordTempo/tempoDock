@@ -48,7 +48,8 @@ func backupRestore(snapshot string) volumeRestore {
 }
 
 // restoreVolumeBackup restores a volume backup of ss, a service that
-// isn't a template database, in place (ADR 0095): the service stops, a
+// isn't a template database (ADR 0095). With req.As it goes into a copy,
+// a new service (restoreVolumeCopy). Otherwise in place: the service stops, a
 // safety snapshot keeps what its volumes hold (restoring that one undoes
 // this), the job fills the volumes the backup holds, and the active
 // release starts again. A failed fill puts the safety snapshot back. It
@@ -58,8 +59,11 @@ func (c *Core) restoreVolumeBackup(ctx context.Context, a Actor, ss svcScope, re
 	if req.ToTime != nil {
 		return apitypes.RestoreResult{}, invalid("only a Postgres database with point-in-time restore restores to a time; restore one of %s's backups (`dock backup restore --snapshot ID --in-place`)", ss)
 	}
+	if !req.InPlace && req.As != "" {
+		return c.restoreVolumeCopy(ctx, a, ss, req)
+	}
 	if !req.InPlace {
-		return apitypes.RestoreResult{}, invalid("%s isn't a template database, so its backups restore in place only: its volumes are replaced, after a snapshot of what they hold now. Restore with --in-place (in_place: true)", ss)
+		return apitypes.RestoreResult{}, invalid("%s isn't a template database, so say how its backup restores: --in-place (in_place: true) replaces its volumes, after a snapshot of what they hold now, or --as NAME for a copy (as: a new service with the backup's data, next to this one)", ss)
 	}
 	if req.As != "" {
 		return apitypes.RestoreResult{}, invalid("an in-place restore keeps the service; leave out the new service's name")

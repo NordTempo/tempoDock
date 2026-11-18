@@ -169,26 +169,9 @@ func (c *Core) cloneInto(ctx context.Context, q *store.Queries, src, dst envScop
 			continue
 		}
 		left.staged += boolCount(s.PendingSettings != nil)
-		ns, err := q.CreateService(ctx, store.CreateServiceParams{
-			EnvironmentID: dst.env.ID, Name: s.Name, Image: s.Image, Port: s.Port,
-			HealthCheckPath: s.HealthCheckPath, HealthCheckTimeoutSeconds: s.HealthCheckTimeoutSeconds,
-			StartCommand: s.StartCommand, DockerfilePath: s.DockerfilePath, BuildCommand: s.BuildCommand,
-			MemoryMb: s.MemoryMb, Cpus: s.Cpus,
-			HealthCheckIntervalSeconds: s.HealthCheckIntervalSeconds, HealthCheckProbeTimeoutSeconds: s.HealthCheckProbeTimeoutSeconds,
-			HealthCheckRetries: s.HealthCheckRetries, HealthCheckStartPeriodSeconds: s.HealthCheckStartPeriodSeconds,
-			PreDeployCommand: s.PreDeployCommand, PreDeployTimeoutSeconds: s.PreDeployTimeoutSeconds,
-			PreDeploySnapshot: s.PreDeploySnapshot,
-		})
+		ns, err := copyService(ctx, q, dst, s, s.Name)
 		if err != nil {
 			return left, err
-		}
-		if s.Template != "" || s.Database != "" || s.DatabaseUrlVariable != "" {
-			if err := q.SetServiceCopiedSettings(ctx, store.SetServiceCopiedSettingsParams{
-				Template: s.Template, Database: s.Database, DatabaseUrlVariable: s.DatabaseUrlVariable, ID: ns.ID,
-			}); err != nil {
-				return left, err
-			}
-			ns.Template, ns.Database, ns.DatabaseUrlVariable = s.Template, s.Database, s.DatabaseUrlVariable
 		}
 		cl := clone{svc: ns}
 		if t, ok := templateOf(ns); ok {
@@ -263,6 +246,35 @@ func (c *Core) cloneInto(ctx context.Context, q *store.Queries, src, dst envScop
 		}
 	}
 	return left, nil
+}
+
+// copyService creates, in q's transaction, a service called name in dst
+// with s's live settings, template and data panel settings: no volumes,
+// variables, domains or git connection (cloneInto, and a volume backup
+// restored into a copy).
+func copyService(ctx context.Context, q *store.Queries, dst envScope, s store.Service, name string) (store.Service, error) {
+	ns, err := q.CreateService(ctx, store.CreateServiceParams{
+		EnvironmentID: dst.env.ID, Name: name, Image: s.Image, Port: s.Port,
+		HealthCheckPath: s.HealthCheckPath, HealthCheckTimeoutSeconds: s.HealthCheckTimeoutSeconds,
+		StartCommand: s.StartCommand, DockerfilePath: s.DockerfilePath, BuildCommand: s.BuildCommand,
+		MemoryMb: s.MemoryMb, Cpus: s.Cpus,
+		HealthCheckIntervalSeconds: s.HealthCheckIntervalSeconds, HealthCheckProbeTimeoutSeconds: s.HealthCheckProbeTimeoutSeconds,
+		HealthCheckRetries: s.HealthCheckRetries, HealthCheckStartPeriodSeconds: s.HealthCheckStartPeriodSeconds,
+		PreDeployCommand: s.PreDeployCommand, PreDeployTimeoutSeconds: s.PreDeployTimeoutSeconds,
+		PreDeploySnapshot: s.PreDeploySnapshot,
+	})
+	if err != nil {
+		return ns, err
+	}
+	if s.Template != "" || s.Database != "" || s.DatabaseUrlVariable != "" {
+		if err := q.SetServiceCopiedSettings(ctx, store.SetServiceCopiedSettingsParams{
+			Template: s.Template, Database: s.Database, DatabaseUrlVariable: s.DatabaseUrlVariable, ID: ns.ID,
+		}); err != nil {
+			return ns, err
+		}
+		ns.Template, ns.Database, ns.DatabaseUrlVariable = s.Template, s.Database, s.DatabaseUrlVariable
+	}
+	return ns, nil
 }
 
 // cloneHow says how a clone set a variable.
