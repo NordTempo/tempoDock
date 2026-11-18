@@ -1,6 +1,10 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import { lazy, Suspense, useEffect, useState } from "react";
-import { useBackupSchedule, useRunBackup } from "../../data/mutations";
+import { lazy, type ReactNode, Suspense, useEffect, useState } from "react";
+import {
+  useBackupSchedule,
+  useRestoreBackup,
+  useRunBackup,
+} from "../../data/mutations";
 import {
   useBackups,
   useCanDeploy,
@@ -25,13 +29,19 @@ import type { State } from "../../ui/status";
 import { Saved } from "../create/form";
 import { backupWhat, hourLabel } from "./backups";
 import { CheckedLine } from "./CheckedLine";
-import { useDeleteSnapshot, useSnapshots, useTakeSnapshot } from "./data";
+import {
+  useDeleteSnapshot,
+  useRestoreSnapshot,
+  useSnapshots,
+  useTakeSnapshot,
+} from "./data";
 import type { PitrMode } from "./PitrDialog";
 import { PitrRow, PitrSection } from "./PitrSection";
 import { stripMarks, windowOf } from "./pitr";
 import {
   isBaseRun,
   isEmpty,
+  isRestoreRun,
   type PointState,
   pointName,
   type RestorePoint,
@@ -62,6 +72,8 @@ type Group = {
   points: RestorePoint[];
   /** The newest point of the kind that restores something. */
   latest?: string;
+  /** The newest backup or snapshot, whatever its state: Retry is its. */
+  newest?: string;
 };
 
 /** What the dumps group is called, by the kind of backup. */
@@ -77,7 +89,10 @@ const backupTitle: Record<ServiceBackups["kind"], string> = {
  * snapshots are made, then one table with a group per kind, newest first,
  * one point marked latest: the newest usable dump, else snapshot (never a
  * failed or empty one; two "latest" read as a choice), and failed runs
- * secondary. One Restore per point opens one dialog;
+ * secondary. A restore of a backup is a row of its group too. One Restore
+ * per point: a template database's opens one dialog (into a new service),
+ * any other service's asks under the point's row and restores in place
+ * (ADR 0095);
  * the latest restores into new services offer Use. A Postgres database
  * also has point in time (ADR 0093): its settings row, and its window
  * over the table, whose "Restore to a time…" then leads instead.
@@ -120,8 +135,14 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       : undefined;
   const restorable = (p: RestorePoint) =>
     p.state === "ready" &&
+    !isRestoreRun(p) &&
     (p.kind === "snapshot" ||
-      (backups.restorable && !p.run.not_restorable && !isBaseRun(p.run)));
+      ((backups.restorable || backups.restores_in_place) &&
+        !p.run.not_restorable &&
+        !isBaseRun(p.run)));
+  // In place is asked under the point's row; a new service has its dialog.
+  const inPlace = (p: RestorePoint) =>
+    p.kind === "backup" ? !backups.restorable : !intoNew;
   // Point in time, for Postgres: drawn from the data at this render.
   const pitr = backups.pitr;
   const now = Date.now();
@@ -134,6 +155,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       title: kind === "backup" ? backupTitle[backups.kind] : "Volume snapshots",
       points: of,
       latest: of.find((p) => restorable(p) && !isEmpty(p))?.key,
+      newest: of.find((p) => !isRestoreRun(p))?.key,
     };
   });
   // The one latest point, and the Restore to lead with: the latest dump,
@@ -292,6 +314,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
             <tr>
               <th>Taken</th>
               <th>Restore point</th>
+              <th>Trigger</th>
               <th>Size</th>
               <th>Where</th>
               <th className="w-full">Detail</th>
@@ -305,7 +328,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
               <tr>
                 <th
                   scope="rowgroup"
-                  colSpan={9}
+                  colSpan={columns}
                   className="pt-4 text-left font-semibold text-fg"
                 >
                   {g.title}
@@ -313,7 +336,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
               </tr>
               {g.points.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="text-mut">
+                  <td colSpan={columns} className="text-mut">
                     None yet
                   </td>
                 </tr>
@@ -321,6 +344,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
               {g.points.map((p) => (
                 <PointRow
                   key={p.key}
+                  serviceRef={ref}
                   point={p}
                   latest={p.key === latest}
                   lead={p.key === lead}
@@ -329,6 +353,12 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                       ? () => setOpen({ what: "restore", point: p })
                       : undefined
                   }
+                  asking={
+                    open?.what === "restore" &&
+                    open.point.key === p.key &&
+                    inPlace(p)
+                  }
+                  onClose={close}
                   why={why}
                   onLog={
                     canDeploy &&
@@ -340,7 +370,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                   }
                   onRetry={
                     // On the newest point of a kind only, when it failed.
-                    p.state === "failed" && p === g.points[0] && !why
+                    p.state === "failed" && p.key === g.newest && !why
                       ? () =>
                           p.kind === "backup"
                             ? run.mutate(ref)
@@ -359,11 +389,10 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         </table>
       </Panel>
       <Suspense fallback={null}>
-        {open?.what === "restore" && (
+        {open?.what === "restore" && !inPlace(open.point) && (
           <RestoreDialog
             serviceRef={ref}
             point={open.point}
-            intoNew={intoNew}
             onClose={close}
             onStarted={close}
           />
@@ -513,31 +542,46 @@ const pointStates: Record<PointState, State> = {
   removed: { tone: "mut", label: "removed" },
 };
 
+/** A restore that went well: a point that is ready has no state to say. */
+const restoreDone: State = { tone: "ok", glyph: "●", label: "done" };
+
 /** An empty cell's hyphen, so a missing value reads as missing. */
 const none = <span className="text-faint">-</span>;
 
+/** The table's columns: six of text, then one per action. */
+const columns = 10;
+
 /**
- * One restore point: when, what (kind, id, trigger), size, where and its
- * note or error, with its actions in fixed slots at the right edge. Failed
- * and removed points are muted: they can't be restored. An empty one says
- * so in its size.
+ * One row of the list: when, what (a backup or snapshot by id, or a
+ * restore of one), its trigger, size, where and its note or error, with
+ * its actions in fixed slots at the right edge. Failed and removed points
+ * are muted: they can't be restored. An empty one says so in its size.
+ * While `asking`, the in-place restore's question sits under the row.
  */
 function PointRow({
+  serviceRef: ref,
   point: p,
   latest,
   lead,
   restore,
+  asking,
+  onClose,
   why,
   onLog,
   onRetry,
   onDelete,
 }: {
+  serviceRef: ServiceRef;
   point: RestorePoint;
   latest: boolean;
   /** The Restore to lead with: its button is the primary one. */
   lead: boolean;
-  /** Opens the restore dialog; unset where the point can't be restored. */
+  /** Asks about the restore; unset where the point can't be restored. */
   restore?: () => void;
+  /** The in-place question is open under this row. */
+  asking: boolean;
+  /** Closes that question. */
+  onClose: () => void;
   /** Why Restore waits, when it does. */
   why?: string;
   onLog?: () => void;
@@ -545,28 +589,128 @@ function PointRow({
   onDelete?: () => void;
 }) {
   const good = p.state === "ready";
+  const restored = isRestoreRun(p);
+  return (
+    <>
+      <PointCells
+        point={p}
+        good={good}
+        restored={restored}
+        latest={latest}
+        asking={asking}
+      >
+        {/* One cell per action, so each sits at the same x on every row. */}
+        <td className="pr-1.5 text-right">
+          {onLog && (
+            <Button small onClick={onLog}>
+              View log
+            </Button>
+          )}
+        </td>
+        <td className="pr-1.5 text-right">
+          {onRetry && (
+            <Button small onClick={onRetry}>
+              Retry
+            </Button>
+          )}
+        </td>
+        <td className="pr-1.5 text-right">
+          {onDelete && (
+            <Button small danger onClick={onDelete}>
+              Delete
+            </Button>
+          )}
+        </td>
+        <td className="text-right">
+          {restore &&
+            (asking ? (
+              <Button small onClick={onClose}>
+                Close
+              </Button>
+            ) : (
+              <Button
+                small
+                primary={lead && !why}
+                disabled={!!why}
+                reason={why}
+                onClick={restore}
+              >
+                Restore
+              </Button>
+            ))}
+        </td>
+      </PointCells>
+      {asking && (
+        <tr>
+          <td colSpan={columns} className="bg-panel whitespace-normal">
+            <RestoreInPlace
+              serviceRef={ref}
+              point={p}
+              why={why}
+              onClose={onClose}
+            />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+/** A row's text cells, then its action cells (`children`). */
+function PointCells({
+  point: p,
+  good,
+  restored,
+  latest,
+  asking,
+  children,
+}: {
+  point: RestorePoint;
+  good: boolean;
+  /** A restore of a backup, not a point. */
+  restored: boolean;
+  latest: boolean;
+  asking: boolean;
+  children: ReactNode;
+}) {
   return (
     <tr
       id={
         p.kind === "backup" ? `backup-${p.run.id}` : `snapshot-${p.snapshot.id}`
       }
-      className={`scroll-mt-24 ${good ? "" : "text-mut"}`}
+      className={`scroll-mt-24 ${good ? "" : "text-mut"} ${asking ? "bg-panel [&>td]:border-b-transparent" : ""}`}
     >
       <td className="whitespace-nowrap" title={`${day(p.at)} ${clock(p.at)}`}>
         {ago(p.at)}
         {latest && <span className="text-ok"> latest</span>}
       </td>
-      <td className="whitespace-nowrap">
-        {p.state !== "ready" && (
+      {/* A restore's name is long and it has no size or place: it wraps. */}
+      <td
+        className={
+          restored ? "min-w-[200px] whitespace-normal" : "whitespace-nowrap"
+        }
+      >
+        {(restored || !good) && (
           <>
-            <StateText state={pointStates[p.state]} />{" "}
+            <StateText
+              state={restored && good ? restoreDone : pointStates[p.state]}
+            />{" "}
           </>
         )}
         <span className={good ? "text-fg" : ""}>{pointName(p)}</span>
-        <span className="text-mut">
-          {" "}
-          · {p.trigger}
-          {p.by !== "system" && ` by ${actorLabel(p.by)}`}
+      </td>
+      <td className="whitespace-nowrap text-mut">
+        {/* Manual backups stand out: they are kept apart from the daily ones. */}
+        <span
+          className={
+            good && p.kind === "backup" && p.trigger === "manual"
+              ? "text-info"
+              : ""
+          }
+        >
+          {[p.trigger, p.by !== "system" && `by ${actorLabel(p.by)}`]
+            .filter(Boolean)
+            .join(" ") || none}
         </span>
       </td>
       <td className="font-mono">
@@ -585,9 +729,10 @@ function PointRow({
         className="whitespace-nowrap"
         title={p.server ? `Kept on server ${p.server}` : undefined}
       >
-        {p.where}
+        {p.where || none}
       </td>
-      <td className="max-w-[420px] whitespace-normal">
+      {/* A floor, so long names beside it never squeeze an error to a word a line. */}
+      <td className="max-w-[420px] min-w-[180px] whitespace-normal">
         {p.detail ? (
           <span className={p.state === "failed" ? "text-fail" : ""}>
             {p.detail}
@@ -596,42 +741,100 @@ function PointRow({
           none
         )}
       </td>
-      {/* One cell per action, so each sits at the same x on every row. */}
-      <td className="pr-1.5 text-right">
-        {onLog && (
-          <Button small onClick={onLog}>
-            View log
-          </Button>
-        )}
-      </td>
-      <td className="pr-1.5 text-right">
-        {onRetry && (
-          <Button small onClick={onRetry}>
-            Retry
-          </Button>
-        )}
-      </td>
-      <td className="pr-1.5 text-right">
-        {onDelete && (
-          <Button small danger onClick={onDelete}>
-            Delete
-          </Button>
-        )}
-      </td>
-      <td className="text-right">
-        {restore && (
-          <Button
-            small
-            primary={lead && !why}
-            disabled={!!why}
-            reason={why}
-            onClick={restore}
-          >
-            Restore
-          </Button>
-        )}
-      </td>
+      {children}
     </tr>
+  );
+}
+
+/**
+ * The question before an in-place restore, under the point's row: which
+ * point, what happens to the service and its data, and what undoes it.
+ * Nothing changes until Restore in place; what the API refuses (a deploy
+ * or another restore is running) shows here. The restore then runs as a
+ * row of the list.
+ */
+function RestoreInPlace({
+  serviceRef: ref,
+  point: p,
+  why,
+  onClose,
+}: {
+  serviceRef: ServiceRef;
+  point: RestorePoint;
+  /** Why it can't start now, when it can't. */
+  why?: string;
+  onClose: () => void;
+}) {
+  const backup = useRestoreBackup();
+  const snapshot = useRestoreSnapshot();
+  const pending = backup.isPending || snapshot.isPending;
+  const taken = `${day(p.at)} ${clock(p.at)}`;
+  const flags = `-s ${ref.service} -e ${ref.environment}`;
+  const cli =
+    p.kind === "backup"
+      ? `dock backup restore ${ref.service} --snapshot ${p.run.snapshot?.slice(0, 8)} --in-place -e ${ref.environment}`
+      : `dock volume snapshot restore ${p.snapshot.id} ${flags} --in-place`;
+  const start = () => {
+    const done = { onSuccess: onClose };
+    if (p.kind === "snapshot") {
+      snapshot.mutate({ ref, id: p.snapshot.id, in_place: true }, done);
+    } else if (p.run.snapshot) {
+      backup.mutate({ ref, snapshot: p.run.snapshot, in_place: true }, done);
+    }
+  };
+  return (
+    <form
+      aria-label={`Restore ${ref.service} from ${pointName(p)}`}
+      className="flex flex-col gap-2 py-1.5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!pending && !why) start();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onClose();
+      }}
+    >
+      <p className="text-sec">
+        <span className="text-fg">{pointName(p)}</span> · {taken} · {ago(p.at)}{" "}
+        · {isEmpty(p) ? "empty" : size(p.size)}
+        {p.trigger && ` · ${p.trigger}`}
+      </p>
+      {isEmpty(p) && (
+        <p className="text-warn">
+          This {p.kind} holds no data (0 B): {ref.service} would be left empty.
+          Pick a point with a size instead.
+        </p>
+      )}
+      <dl className="grid grid-cols-[76px_minmax(0,1fr)] gap-y-1 text-sec">
+        <dt className="text-warn">Stops</dt>
+        <dd>{ref.service} is down until the restore ends.</dd>
+        <dt className="text-warn">Replaced</dt>
+        <dd>
+          The volumes in the {p.kind} are emptied and filled from it. Changes
+          since {taken} are lost.
+        </dd>
+        <dt className="text-ok">Kept</dt>
+        <dd>
+          A safety snapshot of what they hold now. Restoring it undoes this.
+        </dd>
+      </dl>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <code className="mr-auto font-mono text-2xs text-faint">{cli}</code>
+        <ErrorText error={backup.error ?? snapshot.error} />
+        <Button small onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          small
+          primary
+          type="submit"
+          disabled={pending || !!why}
+          reason={why}
+        >
+          Restore in place
+        </Button>
+      </div>
+    </form>
   );
 }
 
