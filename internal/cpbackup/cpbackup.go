@@ -123,7 +123,7 @@ type Source struct {
 // database are kept, an operator's upload can't be fetched again.
 var skipData = map[string]bool{
 	DBFile: true, DBFile + "-wal": true, DBFile + "-shm": true, DBFile + "-journal": true,
-	"uploads": true, "railpack": true, "builds/work": true, MovedFile: true, "update": true, "probe": true,
+	"uploads": true, "railpack": true, "builds/work": true, MovedFile: true, RecoveryFile: true, "update": true, "probe": true,
 	remote.NodeKeyFile: true, remote.NodeKeyFile + ".next": true, remote.StateFile: true,
 }
 
@@ -337,6 +337,44 @@ func ReadConfig(r io.Reader) (Manifest, []byte, error) {
 	}
 	b, err := io.ReadAll(io.LimitReader(tr, 1<<20))
 	return m, b, err
+}
+
+// Verify reads an archive from start to end without unpacking it and
+// returns its manifest: `dock admin fetch-backup` runs it on what came out
+// of the backup repository before calling it a file. An archive cut short
+// fails, and so does one without what Restore needs (the database and the
+// secrets key).
+func Verify(ctx context.Context, r io.Reader) (Manifest, error) {
+	tr, m, err := openArchive(r)
+	if err != nil {
+		return m, err
+	}
+	var haveDB, haveKey bool
+	for {
+		if err := ctx.Err(); err != nil {
+			return m, err
+		}
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return m, fmt.Errorf("read the backup: %w", err)
+		}
+		switch hdr.Name {
+		case dataPrefix + DBFile:
+			haveDB = true
+		case dataPrefix + SecretKeyFile:
+			haveKey = true
+		}
+		if _, err := io.Copy(io.Discard, tr); err != nil {
+			return m, fmt.Errorf("read %s in the backup: %w", hdr.Name, err)
+		}
+	}
+	if !haveDB || !haveKey {
+		return m, errors.New("the backup has no database or no secrets key; it is incomplete")
+	}
+	return m, nil
 }
 
 // Target is where Restore unpacks an archive.

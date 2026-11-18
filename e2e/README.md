@@ -15,6 +15,7 @@ the CLI and real traffic through the proxy.
 | `pitr.sh` | point-in-time restore with the slot's S3 store: restores to a time between writes, across a replaced container, of a stopped database, across off and on, in place; the archiver under write load and idle |
 | `upgrade/run.sh` | one published release updated to another, with data checks |
 | `sso.sh` | single sign-on through a real Keycloak over HTTPS (its own CA, in the slot): the oidc kind and the keycloak preset, invites, refusals, step-ups, logout |
+| `recover.sh` | a lost server ([ADR 0098](../docs/decisions/0098-recovering-a-lost-server.md)): backups in a MinIO bucket, the control plane removed with everything on it, `install.sh --restore-from-bucket` on a fresh one, `dock admin recover --yes`, then the database's rows, the app and the old token are checked. Removes the slot's control plane: run it last or in a slot of its own (`e2e/vm/up.sh 0`) |
 | `fresh-install.sh` | the README's install on bare Debian 12/13 and Ubuntu 22.04/24.04: piped install with Docker, CLI login, a template, re-run, uninstall |
 | `nightly.sh` | all of the above that fits one cycle, every night (below) |
 | `repeat.sh` | one scenario N times, a line per run, for failures too rare for one run |
@@ -39,8 +40,9 @@ Two slots never touch each other's servers, so give each its own subnet:
 | `e2e2` | `10.250.250.0/24` | interactive work (bug hunts, release walks) |
 | `e2e-nightly` | `10.250.251.0/24` | `nightly.sh` only |
 | `e2e-nightly-fresh` | `10.250.252.0/24` | `nightly.sh`'s `fresh-install.sh` |
+| `e2e-nightly-recover` | `10.250.253.0/24` | `nightly.sh`'s `recover.sh` |
 | `e2e-fresh` | `10.250.255.0/24` | `fresh-install.sh` by hand (`E2E_FRESH_SLOT`, `E2E_FRESH_SUBNET`) |
-| `e2e-rw`, `e2e-rw-*` | `10.250.241.0/24` to `10.250.249.0/24` | real-world tests by hand (drains, SSO, alert channels, Cloudflare, GitHub Apps): `e2e-rw` has .241, `e2e-rw-sso` .242, `e2e-rw-slack` .243 |
+| `e2e-rw`, `e2e-rw-*` | `10.250.241.0/24` to `10.250.249.0/24` | real-world tests by hand (drains, SSO, alert channels, Cloudflare, GitHub Apps): `e2e-rw` has .241, `e2e-rw-sso` .242, `e2e-rw-slack` .243, `e2e-rw-recover` .247 |
 
 A new scenario names containers through `$SLOT` and addresses through
 `$SUBNET_PREFIX` (both from `lib.sh`), never `e2e2-*` or `10.250.250.*`,
@@ -78,7 +80,8 @@ GitHub's runners):
    server: one failed request fails the night;
 4. runs each scenario of `SUITE` in `nightly.sh` in its own process and
    log, with a 45 minute cap each, no retries, then `fresh-install.sh`
-   on bare servers of its own (slot `e2e-nightly-fresh`);
+   on bare servers of its own (slot `e2e-nightly-fresh`) and `recover.sh`
+   on a control plane of its own (slot `e2e-nightly-recover`);
 5. removes the servers.
 
 It holds `/tmp/dock-heavy.lock` from the build to the last scenario

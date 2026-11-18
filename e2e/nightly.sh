@@ -13,7 +13,8 @@
 #   3. updates them to that build with `dock update apply` while a hammer
 #      sends requests to an app on each server: zero may fail;
 #   4. runs the e2e scenarios (SUITE below), each on its own, without retries,
-#      then e2e/fresh-install.sh on bare servers of its own;
+#      then e2e/fresh-install.sh on bare servers of its own and e2e/recover.sh
+#      (a lost server, ADR 0098) on a control plane of its own;
 #   5. tears the servers down.
 #
 # A failure opens (or comments on) one GitHub issue labelled `nightly` and
@@ -148,7 +149,25 @@ inner() {
 	# own (slot e2e-nightly-fresh), piped as the README says.
 	step fresh-install env E2E_RELEASE_DIR="$RUN_DIR/release/$nv" DOCK_TRUSTED_KEYS="$(nightly_pub)" \
 		E2E_FRESH_SLOT=e2e-nightly-fresh E2E_FRESH_SUBNET=10.250.252.0/24 timeout 45m e2e/fresh-install.sh
+	# A lost server recovered from its bucket (ADR 0098), in a slot of its
+	# own: the drill removes its control plane.
+	step recover recover_drill "$RUN_DIR/release/$nv/dock-linux-amd64"
 }
+
+# recover_drill BINARY runs e2e/recover.sh on a control plane of its own
+# (slot e2e-nightly-recover) installed from BINARY, and removes the slot.
+recover_drill() (
+	export E2E_SLOT=e2e-nightly-recover E2E_SUBNET=10.250.253.0/24 DOCK_BINARY=$1 DOCK_BIN=$1
+	e2e/vm/down.sh
+	e2e/vm/up.sh 0 || { e2e/vm/down.sh; exit 1; }
+	# shellcheck disable=SC1090
+	source "/tmp/$E2E_SLOT/env"
+	timeout -k 30 "$SCENARIO_TIMEOUT" e2e/recover.sh </dev/null
+	rc=$?
+	((rc == 0)) || docker exec "$E2E_SLOT-cp" journalctl -u dock --no-pager >"$RUN_DIR/recover.$E2E_SLOT-cp.journal" 2>&1
+	e2e/vm/down.sh
+	exit $rc
+)
 
 # step NAME CMD... runs CMD with its output in NAME.log and a row in results.tsv.
 step() {

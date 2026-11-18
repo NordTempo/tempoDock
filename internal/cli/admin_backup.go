@@ -242,7 +242,7 @@ func fixDBOwner(db string) {
 // runs on a fresh server (ADR 0021).
 func newAdminRestoreCmd() *cobra.Command {
 	configPath := config.DefaultPath
-	var printConfig, oldServerNode bool
+	var printConfig, oldServerNode, recovery bool
 	cmd := &cobra.Command{
 		Use:   "restore <archive>",
 		Short: "Restore the control plane from `dock admin backup` onto this server (root)",
@@ -261,6 +261,11 @@ the old server are expected here now (redeploy them; restore databases from
 their backups). With --old-server-becomes-node the old server keeps its apps
 and joins this control plane as a node under its name: run
 ` + "`dock server add <name>`" + ` and install.sh --node there.
+
+--recovery is for a server that replaces a lost one (install.sh
+--restore-from-bucket): the control plane starts in recovery mode, where
+scheduled backups wait, so an empty volume is never backed up over a good
+one. ` + "`dock admin recover`" + ` shows what will be restored and ends the mode.
 
 --print-config prints the archive's config.toml and nothing else.`,
 		Args: cobra.ExactArgs(1),
@@ -282,12 +287,16 @@ and joins this control plane as a node under its name: run
 			if err != nil {
 				return err
 			}
-			return adminRestore(cmd.Context(), cmd.ErrOrStderr(), in, cfg, oldServerNode)
+			if recovery && oldServerNode {
+				return usageError("--recovery is for a server that replaces a lost one", "Leave out --old-server-becomes-node, or --recovery when the old server still runs its apps.")
+			}
+			return adminRestore(cmd.Context(), cmd.ErrOrStderr(), in, cfg, oldServerNode, recovery)
 		},
 	}
 	cmd.Flags().StringVar(&configPath, "config", configPath, "path to this server's daemon config file")
 	cmd.Flags().BoolVar(&printConfig, "print-config", false, "print the archive's config.toml and exit")
 	cmd.Flags().BoolVar(&oldServerNode, "old-server-becomes-node", false, "the old server keeps its apps and joins as a node")
+	cmd.Flags().BoolVar(&recovery, "recovery", false, "the old server is lost: start in recovery mode (dock admin recover)")
 	return cmd
 }
 
@@ -306,8 +315,9 @@ func openArchiveArg(stdin io.Reader, name string) (io.Reader, func(), error) {
 
 // adminRestore unpacks an archive into cfg's data dir (and registry
 // storage), prepares the database for this server and, as root, gives the
-// files to the users the daemon and the registry run as.
-func adminRestore(ctx context.Context, stderr io.Writer, in io.Reader, cfg config.Config, oldServerNode bool) error {
+// files to the users the daemon and the registry run as. With recovery
+// the control plane starts in recovery mode (ADR 0098).
+func adminRestore(ctx context.Context, stderr io.Writer, in io.Reader, cfg config.Config, oldServerNode, recovery bool) error {
 	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
 		return err
 	}
@@ -339,6 +349,11 @@ func adminRestore(ctx context.Context, stderr io.Writer, in io.Reader, cfg confi
 	if err != nil {
 		return err
 	}
+	if recovery {
+		if err := cpbackup.MarkRecovering(cfg.DataDir, from); err != nil {
+			return fmt.Errorf("the control plane is restored, but entering recovery mode failed: %w", err)
+		}
+	}
 	if os.Geteuid() == 0 {
 		if err := chownTree(cfg.DataDir, "dock"); err != nil {
 			return err
@@ -355,6 +370,9 @@ func adminRestore(ctx context.Context, stderr io.Writer, in io.Reader, cfg confi
 	}
 	if m.Registry && t.RegistryDir == "" {
 		_, _ = fmt.Fprintln(stderr, "The archive has the registry's storage, but this server runs no registry ([registry] enabled); it was left out.")
+	}
+	if recovery {
+		_, _ = fmt.Fprintln(stderr, "Recovery mode: the apps and their volumes are not back yet, and scheduled backups wait. Once dock runs: sudo dock admin recover")
 	}
 	if old != "" {
 		_, _ = fmt.Fprintf(stderr, "Server %s keeps its apps and waits to join as a node: run `dock server add %s --non-production` (it keeps the kinds it had), then install.sh --node with the token on it.\n", old, old)

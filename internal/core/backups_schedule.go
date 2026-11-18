@@ -148,8 +148,12 @@ func (c *Core) scheduleBackups() {
 // backup that is due, the services' and then the control plane's own
 // (ADR 0021), then the weekly repository checks and restore drills that
 // are due (ADR 0096), and returns when the next of any of them is due
-// (zero: none scheduled).
+// (zero: none scheduled). In recovery mode (ADR 0098) it does nothing:
+// ending the mode kicks the scheduler.
 func (c *Core) backupPass(ctx context.Context) (time.Time, error) {
+	if c.Recovering() {
+		return time.Time{}, nil
+	}
 	c.pruneExpiredSnapshots(ctx) // ADR 0047: rides on this pass, at least daily
 	next, err := c.serviceBackupPass(ctx)
 	if err != nil {
