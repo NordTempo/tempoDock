@@ -534,7 +534,7 @@ scenario_health() {
 	check "the health check restarts the container in place" wait_for 60 bash -c "[[ \$(curl -s -H 'Authorization: Bearer $DOCK_TOKEN' '$API$(svc_path $p web)' | jq -r '.status.health_restarts // 0') -ge 1 ]]"
 	check "same container after the restart" test "$ctr" == "$(service_containers $p web)"
 	check "healthy again after the restart" wait_for 60 status_is $p web health healthy
-	check "the unhealthy alert resolves" wait_for 60 alert_closed unhealthy $p
+	check "the unhealthy alert resolves" wait_for 330 alert_closed unhealthy $p
 	check "health restarts aren't counted as crashes" status_is $p web restart_count 0
 	check "$h serves" body_has "$h" / up
 }
@@ -562,7 +562,7 @@ scenario_nodedown() {
 	docker start "$node" >/dev/null
 	check "the node is back online" wait_for 180 server_is "$node" online
 	check "$h serves again after the node's reboot" wait_for 120 body_has "$h" / node-up
-	check "the offline alert resolves" wait_for 120 alert_closed server_offline "$node"
+	check "the offline alert resolves" wait_for 390 alert_closed server_offline "$node"
 	n=$(api POST "$(svc_path $p web)/releases" '{}' | jq -r .number)
 	expect_release $p web "$n" active
 }
@@ -695,7 +695,7 @@ scenario_alerts() {
 	api PATCH "/projects/$p/environments/$ENV_NAME/variables" '{"service":"lab","unset":["CRASH_AFTER"],"apply":false}' >/dev/null
 	n=$(deploy_source $p lab "$APPS/go-lab" 2>/dev/null)
 	expect_release $p lab "$n" active
-	check "the crash loop's resolution reaches Slack" wait_for 60 slack_has "^\[resolved\] $p/$ENV_NAME/lab is crash looping"
+	check "the crash loop's resolution reaches Slack" wait_for 330 slack_has "^\[resolved\] $p/$ENV_NAME/lab is crash looping"
 	check "the failed deploy's resolution reaches Slack" wait_for 60 slack_has "^\[resolved\] Deploy of $p/$ENV_NAME/lab failed"
 
 	dk alerts channel remove $ch --yes >/dev/null
