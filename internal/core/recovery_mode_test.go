@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -9,6 +11,7 @@ import (
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/backup"
 	"github.com/NordTempo/tempoDock/internal/cpbackup"
 	"github.com/NordTempo/tempoDock/internal/node"
 )
@@ -44,6 +47,17 @@ func (h *harness) recover(lose bool) string {
 	return rec.Token
 }
 
+// listed is how the repository lists ref's newest snapshot to a recovery
+// (backup.NewestScript).
+func (h *harness) listed(ref ServiceRef, snapshot string, at time.Time) string {
+	h.t.Helper()
+	ss, err := h.c.serviceFor(h.ctx, testSystem, ref, apitypes.ScopeRead, "testing")
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return fmt.Sprintf("\"time\":%q\n\"tags\":[%q]\n\"id\":%q\n", at.Format(time.RFC3339), backup.Tag(ss.svc.ID), snapshot)
+}
+
 // The plan of a recovery names each stateful service's newest backup in
 // the bucket and what has none; while the mode lasts the scheduler runs
 // nothing, and ending it removes the file.
@@ -52,10 +66,16 @@ func TestRecoveryPlanAndMode(t *testing.T) {
 	h.offBoxBackups()
 	db := h.templateDB("db", apitypes.TemplatePostgres)
 	h.volumeService("files")
-	const snap = "aaaa1111aaaa"
+	// The bucket holds a backup taken after the control plane's own: the
+	// restored database doesn't know it, the plan does.
+	const recorded, snap = "aaaa1111aaaa", "dddd4444dddd"
+	listing := backup.NewestMarker + "\n" + h.listed(db, snap, time.Now())
 	h.rt.OnJob(func(spec node.JobSpec) (node.JobResult, error) {
-		if strings.Contains(spec.Name, "_backup") {
-			return node.JobResult{Output: resticOutput(snap, 4096, snap)}, nil
+		switch {
+		case strings.Contains(spec.Name, "_backup"):
+			return node.JobResult{Output: resticOutput(recorded, 4096, recorded)}, nil
+		case strings.Contains(spec.Name, "recovery_list"):
+			return node.JobResult{Output: listing}, nil
 		}
 		return node.JobResult{}, nil
 	})
@@ -143,6 +163,7 @@ func TestRecoveryRun(t *testing.T) {
 	web := h.service("web", apitypes.CreateServiceRequest{Port: 8080})
 	h.deploy(web, "app:1")
 	files := h.volumeService("files")
+	listing := backup.NewestMarker + "\n" + h.listed(db, "aaaa1111aaaa", time.Now()) + h.listed(files, "aaaa1111aaaa", time.Now())
 	var steps []string
 	var mu sync.Mutex
 	step := func(s string) {
@@ -154,6 +175,8 @@ func TestRecoveryRun(t *testing.T) {
 		switch {
 		case strings.Contains(spec.Name, "_backup"):
 			return node.JobResult{Output: resticOutput("aaaa1111aaaa", 4096, "aaaa1111aaaa")}, nil
+		case strings.Contains(spec.Name, "recovery_list"):
+			return node.JobResult{Output: listing}, nil
 		case strings.Contains(spec.Name, "_restore"):
 			step("load " + spec.Env["PGHOST"])
 		}
@@ -217,6 +240,75 @@ func TestRecoveryRun(t *testing.T) {
 		if r.Outcome != apitypes.RecoveryRunning {
 			t.Errorf("second run: %s %s (%s)", r.Service, r.Outcome, r.Detail)
 		}
+	}
+	h.opts.Recovery = nil
+}
+
+// A service whose volumes can't be filled is not started on empty ones,
+// and one that was never backed up starts empty and the report says so.
+func TestRecoveryRunFailedFillAndNoBackup(t *testing.T) {
+	h := newHarness(t)
+	h.offBoxBackups()
+	files := h.volumeService("files")
+	listing := backup.NewestMarker + "\n" + h.listed(files, "cccc3333cccc", time.Now())
+	h.rt.OnJob(func(spec node.JobSpec) (node.JobResult, error) {
+		switch {
+		case strings.Contains(spec.Name, "_backup"):
+			return node.JobResult{Output: resticOutput("cccc3333cccc", 4096, "cccc3333cccc")}, nil
+		case strings.Contains(spec.Name, "recovery_list"):
+			return node.JobResult{Output: listing}, nil
+		}
+		return node.JobResult{}, nil
+	})
+	if run := h.runBackup(files); run.Status != apitypes.BackupSucceeded {
+		t.Fatalf("backup = %+v", run)
+	}
+	uploads := h.service("uploads", apitypes.CreateServiceRequest{Port: 8080})
+	if _, err := h.c.AddVolume(h.ctx, testSystem, uploads, apitypes.AddVolumeRequest{Name: "data", MountPath: "/data"}); err != nil {
+		t.Fatal(err)
+	}
+	h.deploy(uploads, "app:1")
+	h.recover(true)
+	old := recoverVolumes
+	t.Cleanup(func() { recoverVolumes = old })
+	recoverVolumes = func(*Core, context.Context, svcScope, string, int64) (string, error) {
+		return "restic: wrong password", errors.New("the bucket refused the keys")
+	}
+	if err := h.c.StartRecovery(h.ctx, testSystem); err != nil {
+		t.Fatal(err)
+	}
+	var rep apitypes.RecoveryReport
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(2 * time.Millisecond) {
+		var err error
+		if rep, err = h.c.RecoveryReport(h.ctx, testSystem); err != nil {
+			t.Fatal(err)
+		}
+		if !rep.Running {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("recovery still running: %+v", rep)
+		}
+	}
+	got := map[string]apitypes.RecoveryResult{}
+	for _, r := range rep.Results {
+		got[r.Service] = r
+	}
+	if r := got["files"]; r.Outcome != apitypes.RecoveryFailed || !strings.Contains(r.Detail, "the bucket refused the keys") {
+		t.Errorf("files = %+v", r)
+	}
+	if r := got["uploads"]; r.Outcome != apitypes.RecoveryEmpty {
+		t.Errorf("uploads = %+v", r)
+	}
+	if running := h.rt.Running(); len(running) != 1 {
+		t.Errorf("running = %v, want only the service without a backup", running)
+	}
+	runs, err := h.c.ServiceBackups(h.ctx, testSystem, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if last := runs.Runs[0]; last.Operation != "restore" || last.Status != apitypes.BackupFailed {
+		t.Errorf("the failed restore is not in the backup list: %+v", last)
 	}
 	h.opts.Recovery = nil
 }
