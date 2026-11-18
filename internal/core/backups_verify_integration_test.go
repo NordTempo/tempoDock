@@ -16,7 +16,7 @@ import (
 // a table is backed up to the local restic repository; the repository
 // check reads it back with restic, and the restore drill restores the
 // snapshot into a throwaway service, counts its tables through the Data
-// panel and leaves nothing behind.
+// panel and leaves nothing behind; then the same drill for Redis and MySQL.
 func TestIntegrationCheckedBackups(t *testing.T) {
 	t.Parallel()
 	var install string
@@ -77,41 +77,56 @@ func TestIntegrationCheckedBackups(t *testing.T) {
 		t.Fatalf("drill: %+v", drill)
 	}
 	// Redis restores differently (its volume is filled before it starts)
-	// and answers a key count.
-	cache := ServiceRef{project, "production", "cache"}
-	if _, err := c.CreateService(ctx, testSystem, cache.Env(), apitypes.CreateServiceRequest{Name: cache.Service, Template: apitypes.TemplateRedis}); err != nil {
-		t.Fatal(err)
-	}
-	if r := waitRelease(t, c, cache, 1); r.Status != apitypes.ReleaseActive {
-		t.Fatalf("cache: %s %s", r.Status, r.Error)
-	}
-	execIn(t, c, cache, "redis-cli", "-a", liveVar(t, c, cache, "REDIS_PASSWORD"), "--no-auth-warning", "SET", "greeting", "hello")
-	if run, err = c.RunBackup(ctx, testSystem, cache); err != nil {
-		t.Fatal(err)
-	}
-	if done := waitBackupRun(t, c, cache, run.ID); done.Status != apitypes.BackupSucceeded {
-		t.Fatalf("cache backup: %+v", done)
-	}
-	if _, err := c.RunBackupDrill(ctx, testSystem, cache); err != nil {
-		t.Fatal(err)
-	}
-	for deadline := time.Now().Add(5 * time.Minute); ; time.Sleep(200 * time.Millisecond) {
-		b, err := c.ServiceBackups(ctx, testSystem, cache)
-		if err != nil {
+	// and answers a key count; MySQL restores as root into a new server.
+	for _, tc := range []struct {
+		name   string
+		tpl    apitypes.Template
+		write  func(ServiceRef)
+		detail string
+	}{
+		{"cache", apitypes.TemplateRedis, func(ref ServiceRef) {
+			execIn(t, c, ref, "redis-cli", "-a", liveVar(t, c, ref, "REDIS_PASSWORD"), "--no-auth-warning", "SET", "greeting", "hello")
+		}, "1 key in "},
+		{"my", apitypes.TemplateMySQL, func(ref ServiceRef) {
+			execIn(t, c, ref, "mysql", "-uroot", "-p"+liveVar(t, c, ref, "MYSQL_ROOT_PASSWORD"), "app", "-e",
+				"CREATE TABLE notes (id int PRIMARY KEY); CREATE TABLE tags (id int PRIMARY KEY); INSERT INTO notes VALUES (1)")
+		}, "2 tables in "},
+	} {
+		ref := ServiceRef{project, "production", tc.name}
+		if _, err := c.CreateService(ctx, testSystem, ref.Env(), apitypes.CreateServiceRequest{Name: ref.Service, Template: tc.tpl}); err != nil {
 			t.Fatal(err)
 		}
-		if d := b.Drill; d != nil && d.Status != apitypes.BackupRunning {
-			if d.Status != apitypes.BackupSucceeded || !strings.HasPrefix(d.Detail, "1 key in ") {
-				t.Fatalf("cache drill: %+v", d)
-			}
-			break
+		if r := waitRelease(t, c, ref, 1); r.Status != apitypes.ReleaseActive {
+			t.Fatalf("%s: %s %s", tc.name, r.Status, r.Error)
 		}
-		if time.Now().After(deadline) {
-			t.Fatal("the cache's drill still running")
+		tc.write(ref)
+		if run, err = c.RunBackup(ctx, testSystem, ref); err != nil {
+			t.Fatal(err)
+		}
+		if done := waitBackupRun(t, c, ref, run.ID); done.Status != apitypes.BackupSucceeded {
+			t.Fatalf("%s backup: %+v", tc.name, done)
+		}
+		if _, err := c.RunBackupDrill(ctx, testSystem, ref); err != nil {
+			t.Fatal(err)
+		}
+		for deadline := time.Now().Add(5 * time.Minute); ; time.Sleep(200 * time.Millisecond) {
+			b, err := c.ServiceBackups(ctx, testSystem, ref)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if d := b.Drill; d != nil && d.Status != apitypes.BackupRunning {
+				if d.Status != apitypes.BackupSucceeded || !strings.HasPrefix(d.Detail, tc.detail) {
+					t.Fatalf("%s drill: %+v", tc.name, d)
+				}
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("the drill of %s still running", tc.name)
+			}
 		}
 	}
 	svcs, err := c.ListServices(ctx, testSystem, db.Env())
-	if err != nil || len(svcs) != 2 {
+	if err != nil || len(svcs) != 3 {
 		t.Fatalf("services after the drill: %+v, %v", svcs, err)
 	}
 }
