@@ -110,6 +110,13 @@ func (c *Core) restoreTargetFailed(ctx context.Context, from svcScope, toID int6
 		c.log.Error("load a failed restore's target", "service", toID, "err", err)
 		return ""
 	}
+	// A restore drill's throwaway service is the drill's (ADR 0096): it
+	// removes it for good and raises its own alert.
+	if !r.snapshot && to.svc.Name == from.svc.Name+drillSuffix {
+		if run, err := c.store.GetDrillRestore(ctx, store.GetDrillRestoreParams{ServiceID: from.svc.ID, RestoredTo: &toID}); err == nil && run.CreatedBy == System.Name {
+			return to.svc.Name
+		}
+	}
 	was, name := to.svc.Name, failedTargetName(to.svc.Name, r)
 	var done []archivedService
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
