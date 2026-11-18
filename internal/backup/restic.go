@@ -46,6 +46,72 @@ const (
 	MySQLFile    = "/mysql.sql"
 )
 
+// A Postgres snapshot's one file holds the server's roles ahead of the
+// dump, since restic stores one stream per snapshot and a dump that names
+// a role (a policy TO tenant) only restores where the role exists:
+//
+//	DOCKPG1 <length of the roles SQL, 12 digits>\n   (PostgresHeaderLen bytes)
+//	<pg_dumpall --roles-only --no-role-passwords>
+//	<pg_dump -Fc>
+//
+// A stream without the header is a snapshot from before roles were saved:
+// pg_dump's output alone, which starts with PGDMP.
+const (
+	// PostgresMagic starts the header of a Postgres snapshot's stream.
+	PostgresMagic = "DOCKPG1"
+	// PostgresHeaderLen is the header's length in bytes, its newline
+	// included: `tail -c +22` of the stream is the roles and the dump.
+	PostgresHeaderLen = len(PostgresMagic) + 1 + len(pgLenZeros) + 1
+	// pgLenZeros is as many zeros as the header's length has digits:
+	// 1<digits> - 1<zeros> reads the length as decimal in a shell,
+	// whatever its leading zeros.
+	pgLenZeros = "000000000000"
+	// pgLenPattern matches the header's digits in a shell case.
+	pgLenPattern = "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]"
+	// pgRolesFile holds the roles SQL in a backup or restore job; small,
+	// unlike the dump, which only ever streams.
+	pgRolesFile = "/tmp/dock-roles.sql"
+	// pgHeadFile holds the first PostgresHeaderLen bytes of the stream in
+	// a restore job.
+	pgHeadFile = "/tmp/dock-pg-head"
+)
+
+// pgRoles dumps the server's roles, without passwords, into pgRolesFile
+// before a backup, so the header can say how long they are. A failure
+// fails the job (set -e) before anything is saved.
+const pgRoles = `pg_dumpall --roles-only --no-role-passwords -l "$PGDATABASE" > ` + pgRolesFile + `
+`
+
+// pgStream is the command restic backs up the output of: the header, the
+// roles, then pg_dump, which streams. It runs under sh -c in single
+// quotes, so it holds none; each step failing fails it, and the backup.
+const pgStream = `printf "` + PostgresMagic + ` %012d\n" "$(wc -c < ` + pgRolesFile + `)" && cat ` + pgRolesFile + ` && exec pg_dump -Fc`
+
+// pgUnpack restores a Postgres snapshot's stream from its stdin, in one
+// pass. dd with bs=1 takes the header and the roles byte for byte and
+// leaves the rest in the pipe for pg_restore, which head doesn't promise
+// (busybox's reads ahead). With the header, the roles SQL runs through
+// psql without ON_ERROR_STOP, so a role that exists already (the new
+// service's owner) is skipped and the missing ones are created, without
+// passwords. The job connects as the template's owner, POSTGRES_USER of
+// the official image: a superuser, which creating roles needs. Without
+// the header the bytes read are put back in front of the stream, and it
+// restores as it always did.
+const pgUnpack = `{
+  dd bs=1 count=21 of=` + pgHeadFile + ` 2>/dev/null
+  H="$(tr -cd 'A-Z0-9 ' < ` + pgHeadFile + `)"
+  case "$H" in
+  "` + PostgresMagic + ` "` + pgLenPattern + `)
+    N="${H#` + PostgresMagic + ` }"
+    dd bs=1 count="$((1$N - 1` + pgLenZeros + `))" of=` + pgRolesFile + ` 2>/dev/null
+    psql -X -q -d "$PGDATABASE" -f ` + pgRolesFile + ` 2>&1 >/dev/null | { grep -v "already exists" || true; } >&2
+    pg_restore --no-owner --no-acl --exit-on-error -d "$PGDATABASE" ;;
+  *)
+    { cat ` + pgHeadFile + `; cat; } | pg_restore --no-owner --no-acl --exit-on-error -d "$PGDATABASE" ;;
+  esac
+}
+`
+
 // mysqlTools picks the client and dump tools of a MySQL or MariaDB image
 // (MariaDB's are mariadb and mariadb-dump) and how they reach the server;
 // the password is MYSQL_PWD, which both read.
@@ -172,8 +238,16 @@ type Retention struct {
 	Daily, Weekly, Monthly int
 }
 
-// Tag is the restic tag of a service's snapshots.
+// Tag is the restic tag of a service's scheduled snapshots.
 func Tag(serviceID int64) string { return "dock-s" + strconv.FormatInt(serviceID, 10) }
+
+// ManualTag is the restic tag of the snapshots of a service's manual
+// backups, which have their own retention (KeepManual, ADR 0095): with
+// Tag the daily rule would remove an earlier backup of the same day.
+func ManualTag(serviceID int64) string { return Tag(serviceID) + "-manual" }
+
+// KeepManual is how many manual backups of a service are kept.
+const KeepManual = 5
 
 // Source is what one backup reads.
 type Source struct {
@@ -237,20 +311,31 @@ const initRepo = `[ "$rc" = 0 ] || $R init >/dev/null
 `
 
 // retention prunes the service's snapshots and lists what is left, after
-// SnapshotsMarker. Failing to prune doesn't fail the backup: the snapshot
-// is already written.
+// SnapshotsMarker: the scheduled ones (DOCK_TAG) by the daily, weekly and
+// monthly rule, and a service's manual ones (DOCK_MANUAL_TAG, when set)
+// down to the last KeepManual. Failing to prune doesn't fail the backup:
+// the snapshot is already written.
 const retention = `if ! $R forget --quiet --retry-lock ` + RetryLock + ` --tag "$DOCK_TAG" --group-by tags --keep-daily "$DOCK_KEEP_DAILY" --keep-weekly "$DOCK_KEEP_WEEKLY" --keep-monthly "$DOCK_KEEP_MONTHLY" --prune >/dev/null; then
   echo "dock: retention (forget --prune) failed; older snapshots are kept" >&2
 fi
+if [ -n "${DOCK_MANUAL_TAG:-}" ]; then
+  if ! $R forget --quiet --retry-lock ` + RetryLock + ` --tag "$DOCK_MANUAL_TAG" --group-by tags --keep-last ` + keepManual + ` --prune >/dev/null; then
+    echo "dock: retention of manual backups (forget --prune) failed; older ones are kept" >&2
+  fi
+fi
 echo ` + SnapshotsMarker + `
-$R snapshots --json --retry-lock ` + RetryLock + ` --tag "$DOCK_TAG" || true
+$R snapshots --json --retry-lock ` + RetryLock + ` --tag "$DOCK_TAG" ${DOCK_MANUAL_TAG:+--tag "$DOCK_MANUAL_TAG"} || true
 `
+
+// keepManual is KeepManual for the script, spelt out to stay a constant.
+const keepManual = "5"
 
 // SnapshotsMarker precedes the snapshot list in a backup's output.
 const SnapshotsMarker = "dock-snapshots:"
 
-// backupFlags are the flags of every backup.
-const backupFlags = `--json --quiet --retry-lock ` + RetryLock + ` --host ` + Host + ` --tag "$DOCK_TAG"`
+// backupFlags are the flags of every backup. A manual backup of a service
+// is tagged DOCK_SNAPSHOT_TAG (ManualTag) instead of DOCK_TAG.
+const backupFlags = `--json --quiet --retry-lock ` + RetryLock + ` --host ` + Host + ` --tag "${DOCK_SNAPSHOT_TAG:-$DOCK_TAG}"`
 
 // BackupScript is the job script for src: dump with the database's own
 // tool (or read the mounted volumes), stream into restic, apply retention.
@@ -260,8 +345,10 @@ func BackupScript(kind apitypes.BackupKind) (string, error) {
 	var run string
 	switch kind {
 	case apitypes.BackupPostgres:
-		// --stdin-from-command fails the backup when pg_dump fails.
-		run = `$R backup ` + backupFlags + ` --stdin-filename ` + strings.TrimPrefix(PostgresFile, "/") + ` --stdin-from-command -- pg_dump -Fc
+		// --stdin-from-command fails the backup when its command fails:
+		// pgStream exits non-zero if the roles or pg_dump do.
+		run = pgRoles + `$R backup ` + backupFlags + ` --stdin-filename ` + strings.TrimPrefix(PostgresFile, "/") + ` --stdin-from-command -- sh -c '` + pgStream + `' sh
+rm -f ` + pgRolesFile + `
 `
 	case apitypes.BackupRedis:
 		// redis-cli --rdb fetches a consistent snapshot over the
@@ -318,11 +405,16 @@ func ControlPlaneEnv(repo Repo, ret Retention) map[string]string {
 }
 
 // BackupEnv is the job environment for backing up src into repo with
-// retention ret. A caller sets DOCK_FORGET on it for base backups to
+// retention ret; manual tags the snapshot as a manual backup's
+// (ManualTag). A caller sets DOCK_FORGET on it for base backups to
 // remove along (BaseEnv).
-func BackupEnv(src Source, repo Repo, ret Retention) map[string]string {
+func BackupEnv(src Source, repo Repo, ret Retention, manual bool) map[string]string {
 	env := repo.Env()
 	env["DOCK_TAG"] = Tag(src.ServiceID)
+	env["DOCK_MANUAL_TAG"] = ManualTag(src.ServiceID)
+	if manual {
+		env["DOCK_SNAPSHOT_TAG"] = ManualTag(src.ServiceID)
+	}
 	env["DOCK_KEEP_DAILY"] = strconv.Itoa(ret.Daily)
 	env["DOCK_KEEP_WEEKLY"] = strconv.Itoa(ret.Weekly)
 	env["DOCK_KEEP_MONTHLY"] = strconv.Itoa(ret.Monthly)
@@ -357,8 +449,7 @@ func RestoreScript(kind apitypes.BackupKind, dataDir string) (string, error) {
 	dump := `$R dump --retry-lock ` + RetryLock + ` "$DOCK_SNAPSHOT" `
 	switch kind {
 	case apitypes.BackupPostgres:
-		return prelude + dump + PostgresFile + ` | pg_restore --no-owner --no-acl --exit-on-error -d "$PGDATABASE"
-`, nil
+		return prelude + dump + PostgresFile + ` | ` + pgUnpack, nil
 	case apitypes.BackupMySQL:
 		return prelude + mysqlTools + dump + MySQLFile + ` | $CLIENT $AT
 `, nil
@@ -371,6 +462,30 @@ printf 'file appendonly.aof.1.base.rdb seq 1 type b\n' > ` + dir + `/appendonly.
 	}
 	return "", fmt.Errorf("%s backups can't be restored into a new service", kind)
 }
+
+// VolumeRestoreScript is the job script that restores a volume backup
+// (DOCK_SNAPSHOT) into a service's volumes, mounted under VolumesPath by
+// name as for the backup (ADR 0095). It restores exactly the volumes the
+// backup holds: each is emptied, then filled. A volume the backup holds
+// that isn't mounted stops it before anything is touched; a mounted one
+// the backup doesn't hold (added since) is left as it is, and the log
+// says so. A backup of VolumesPath's "." holds each volume as a folder
+// at its root. It runs in the restic image.
+const VolumeRestoreScript = prelude + `names="$($R ls --retry-lock ` + RetryLock + ` "$DOCK_SNAPSHOT" / | sed -n 's|^/\([^/]*\)$|\1|p' | tr '\n' ' ')"
+[ -n "$names" ] || { echo "dock: the backup holds no volumes, so nothing was restored" >&2; exit 1; }
+for v in $names; do
+  [ -d "` + VolumesPath + `/$v" ] || { echo "dock: the backup holds the volume $v, which the service no longer has; add a volume named $v back and restore again. Nothing was changed." >&2; exit 1; }
+done
+for d in ` + VolumesPath + `/*/; do
+  v="$(basename "$d")"
+  case " $names " in *" $v "*) ;; *) echo "dock: the volume $v isn't in the backup (added since) and is left as it is" ;; esac
+done
+for v in $names; do
+  find "` + VolumesPath + `/$v" -mindepth 1 -delete
+done
+$R restore --retry-lock ` + RetryLock + ` "$DOCK_SNAPSHOT" --target ` + VolumesPath + `
+echo "dock: restored $names"
+`
 
 // RestoreEnv is the job environment for restoring snapshot from repo into
 // target (the new service; postgres only, redis writes its volume).

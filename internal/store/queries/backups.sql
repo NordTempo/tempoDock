@@ -94,6 +94,14 @@ ORDER BY id;
 -- name: PruneBackup :exec
 UPDATE backups SET pruned = 1 WHERE id = +?;
 
+-- name: FailRunningInPlaceRestores :execrows
+-- In-place restores a restart cut short (a volume backup's, or to a
+-- time): the service is its own target. Run before FailRunningBackups,
+-- with what to do about the data. Once at start-up: a scan of the running
+-- rows.
+UPDATE backups SET status = 'failed', error = ?, finished_at = ?
+WHERE status = 'running' AND operation = 'restore' AND restored_to = service_id;
+
 -- name: FailRunningBackups :execrows
 -- Runs a restart cut short.
 UPDATE backups SET status = 'failed', error = ?, finished_at = ? WHERE status = 'running';
@@ -275,4 +283,12 @@ WHERE backup_checks.kind = 'drill' AND backup_checks.service_id = +sqlc.arg(serv
 -- named like a drill's is known to be one (created_by is the system's).
 SELECT * FROM backups
 WHERE service_id = +sqlc.arg(service_id) AND operation = 'restore' AND restored_to = +sqlc.arg(restored_to)
+ORDER BY id DESC LIMIT 1;
+
+-- name: GetRestoreInto :one
+-- The newest restore of a backup or to a time that made the service (its
+-- new service; an in-place restore's target is its own service and
+-- doesn't count).
+SELECT * FROM backups
+WHERE restored_to = +? AND operation = 'restore' AND service_id != restored_to
 ORDER BY id DESC LIMIT 1;

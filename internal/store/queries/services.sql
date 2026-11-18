@@ -26,6 +26,11 @@ UPDATE services SET
 WHERE id = +?
 RETURNING *;
 
+-- name: RenameService :exec
+-- Renames a service nothing references (a failed restore's target, to
+-- free its name): references and the network alias follow the name.
+UPDATE services SET name = ? WHERE id = +?;
+
 -- name: ArchiveService :exec
 UPDATE services SET archived_at = ? WHERE id = +?;
 

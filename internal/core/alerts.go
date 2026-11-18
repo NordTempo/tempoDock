@@ -978,13 +978,13 @@ func alertProjectID(a store.Alert) int64 {
 }
 
 // resolveServiceAlerts closes every alert an archived service can hold:
-// its deploy, backup, crash and health alerts and those of its domains
+// its deploy, backup, restore, crash and health alerts and those of its domains
 // (hostnames), and drops its health check state. finishArchive calls it,
 // so the alerts close at once instead of at the next reconcileAlerts.
 func (c *Core) resolveServiceAlerts(ctx context.Context, serviceID int64, hostnames []string) {
 	now := time.Now()
 	svc := alertServiceKey(serviceID, "", "", "")
-	for _, kind := range []string{"deploy:", "backup:", "backup-drill:", "crash:", "health:", vulnAlertKey} {
+	for _, kind := range []string{"deploy:", "backup:", "backup-drill:", "restore:", "crash:", "health:", vulnAlertKey} {
 		c.resolveAlert(ctx, kind+svc, now)
 	}
 	for _, h := range hostnames {

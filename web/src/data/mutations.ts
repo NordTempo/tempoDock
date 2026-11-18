@@ -292,7 +292,8 @@ export const useBackupSchedule = () =>
   );
 
 /**
- * Restores a snapshot into a new service, or a Postgres database as it
+ * Restores a snapshot into a new service, a volume backup into the
+ * service itself (`in_place`, ADR 0095), or a Postgres database as it
  * was at `to_time` (ADR 0093) into a new service or in place. Resolves
  * with the service at once; the restore finishes in the background.
  */

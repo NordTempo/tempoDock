@@ -233,6 +233,28 @@ func (q *Queries) FailRunningBackups(ctx context.Context, arg FailRunningBackups
 	return result.RowsAffected()
 }
 
+const failRunningInPlaceRestores = `-- name: FailRunningInPlaceRestores :execrows
+UPDATE backups SET status = 'failed', error = ?, finished_at = ?
+WHERE status = 'running' AND operation = 'restore' AND restored_to = service_id
+`
+
+type FailRunningInPlaceRestoresParams struct {
+	Error      string
+	FinishedAt *time.Time
+}
+
+// In-place restores a restart cut short (a volume backup's, or to a
+// time): the service is its own target. Run before FailRunningBackups,
+// with what to do about the data. Once at start-up: a scan of the running
+// rows.
+func (q *Queries) FailRunningInPlaceRestores(ctx context.Context, arg FailRunningInPlaceRestoresParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, failRunningInPlaceRestores, arg.Error, arg.FinishedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const finishBackup = `-- name: FinishBackup :exec
 UPDATE backups SET status = ?, snapshot_id = ?, size_bytes = ?, error = ?, finished_at = ? WHERE id = +?
 `
@@ -506,6 +528,43 @@ func (q *Queries) GetLatestDrill(ctx context.Context, serviceID *int64) (BackupC
 		&i.Detail,
 		&i.StartedAt,
 		&i.FinishedAt,
+	)
+	return i, err
+}
+
+const getRestoreInto = `-- name: GetRestoreInto :one
+SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups
+WHERE restored_to = +? AND operation = 'restore' AND service_id != restored_to
+ORDER BY id DESC LIMIT 1
+`
+
+// The newest restore of a backup or to a time that made the service (its
+// new service; an in-place restore's target is its own service and
+// doesn't count).
+func (q *Queries) GetRestoreInto(ctx context.Context, restoredTo *int64) (Backup, error) {
+	row := q.db.QueryRowContext(ctx, getRestoreInto, restoredTo)
+	var i Backup
+	err := row.Scan(
+		&i.ID,
+		&i.ServiceID,
+		&i.Operation,
+		&i.Kind,
+		&i.Trigger,
+		&i.Status,
+		&i.Repository,
+		&i.SnapshotID,
+		&i.SizeBytes,
+		&i.Pruned,
+		&i.RestoredTo,
+		&i.Error,
+		&i.CreatedBy,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.WalGeneration,
+		&i.WalStart,
+		&i.WalSegmentBytes,
+		&i.ConsistentAt,
+		&i.RestoreToTime,
 	)
 	return i, err
 }

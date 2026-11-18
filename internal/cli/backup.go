@@ -27,9 +27,11 @@ func newBackupCmd(g *globals) *cobra.Command {
 		Long: `Every service with a volume is backed up daily with restic: template databases
 with their own tool (pg_dump, Redis snapshots), other volumes file by file.
 Until they are moved to a bucket (dock backup move) backups stay on each
-server, not off-box. Restores create a new service; the live one is never
-touched. Once a week the repositories are checked and every template database
-is restored once as a drill (dock backup check, dock backup drill).`,
+server, not off-box. A database restores into a new service, and the live
+one is never touched; any other service's volumes restore in place, after a
+safety snapshot, or into a copy of the service (--as). Once a week the
+repositories are checked and every template database is restored once as a
+drill (dock backup check, dock backup drill).`,
 	})
 	cmd.AddCommand(newBackupListCmd(g), newBackupLogCmd(g), newBackupRunCmd(g), newBackupRestoreCmd(g),
 		newBackupScheduleCmd(g), newBackupPITRCmd(g), newBackupStatusCmd(g), newBackupConfigureCmd(g), newBackupMoveCmd(g),
@@ -214,6 +216,8 @@ func runNote(r apitypes.BackupRun) string {
 		return r.Error
 	case r.ToTime != nil && r.RestoredTo != "":
 		return "to " + r.ToTime.UTC().Format(time.RFC3339) + " into " + r.RestoredTo
+	case r.RestoredTo != "" && r.RestoredTo == r.Service && r.Kind == apitypes.BackupVolume:
+		return "in place"
 	case r.RestoredTo != "":
 		return "into " + r.RestoredTo
 	case r.ConsistentAt != nil:
@@ -388,7 +392,7 @@ func newBackupRestoreCmd(g *globals) *cobra.Command {
 	var detach, inPlace, yes bool
 	cmd := &cobra.Command{
 		Use:   "restore [service] --snapshot ID | --to-time TIME",
-		Short: "Restore a backup, or a moment, into a new service",
+		Short: "Restore a backup or a moment",
 		Long: `Restore a template database's snapshot into a NEW service from the same
 template, with new credentials. The live service is never touched: when the
 new one checks out, point references at it (e.g. ${{postgres-restored.DATABASE_URL}}).
@@ -397,10 +401,22 @@ With point-in-time restore on (dock backup pitr on), --to-time restores a
 Postgres database as it was at that moment instead, with the credentials it
 had. --in-place restores the moment into the database itself: it stops, a
 safety snapshot keeps what it holds now (restore that one to undo), and it
-starts on the restored data.`,
+starts on the restored data.
+
+A service that isn't a template database restores a backup of its volumes
+with --snapshot and --in-place, the same way: it stops, a safety snapshot
+keeps what its volumes hold, the volumes in the backup are replaced, and it
+starts again. A volume added since the backup is left as it is.
+
+With --as NAME instead of --in-place, the backup goes into a copy: a new
+service with the settings, variables and volumes of the first and no
+domains, its volumes filled from the backup before it starts on the image
+the first runs. Nothing stops; it is the way to look at old data.`,
 		Example: `  dock backup restore postgres --snapshot 4cf53263 --as postgres-old
   dock backup restore postgres --to-time 2026-11-17T14:01Z
-  dock backup restore postgres --to-time 2026-11-17T15:01+01:00 --in-place`,
+  dock backup restore postgres --to-time 2026-11-17T15:01+01:00 --in-place
+  dock backup restore uploads --snapshot 9d2c11f0 --in-place
+  dock backup restore uploads --snapshot 9d2c11f0 --as uploads-old`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeServiceArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -411,8 +427,6 @@ starts on the restored data.`,
 				return usageError("--snapshot or --to-time is required", "Pick a snapshot from `dock backup list`, or a time in its restorable window.")
 			case snapshot != "" && toTime != "":
 				return usageError("pass --snapshot or --to-time, not both", "")
-			case inPlace && toTime == "":
-				return usageError("--in-place restores a time; a backup restores into a new service", "Add --to-time, or leave out --in-place.")
 			case inPlace && as != "":
 				return usageError("--as names a new service, and an in-place restore keeps the service", "Leave out --as or --in-place.")
 			}
@@ -428,7 +442,10 @@ starts on the restored data.`,
 				return err
 			}
 			if inPlace && !yes {
-				q := fmt.Sprintf("Restore %s in place to %s? It stops and its data is replaced; a safety snapshot keeps what it holds now.", t, req.ToTime.Format(time.RFC3339))
+				q := fmt.Sprintf("Restore backup %s of %s in place? It stops and its volumes are replaced; a safety snapshot keeps what they hold now.", snapshot, t)
+				if req.ToTime != nil {
+					q = fmt.Sprintf("Restore %s in place to %s? It stops and its data is replaced; a safety snapshot keeps what it holds now.", t, req.ToTime.Format(time.RFC3339))
+				}
 				if err := g.io.Confirm(q, "yes"); err != nil {
 					return err
 				}
@@ -453,9 +470,12 @@ starts on the restored data.`,
 				} else {
 					g.io.Successf("Restored %s into %s", what, res.Service.Name)
 				}
-				if inPlace {
+				switch {
+				case inPlace:
 					g.io.Detail("A safety snapshot holds the data it replaced; `dock volume snapshot list " + t.flags() + "` shows it.")
-				} else {
+				case res.Restore.Kind == apitypes.BackupVolume:
+					g.io.Detail(fmt.Sprintf("%s is untouched. %s is a copy of it with the backup's data and no domains; archive it when you are done.", t.Service, res.Service.Name))
+				default:
 					g.io.Detail(fmt.Sprintf("%s is untouched. Check %s, then point references at it.", t.Service, res.Service.Name))
 				}
 				return nil
@@ -465,8 +485,8 @@ starts on the restored data.`,
 	f.add(cmd, needService)
 	cmd.Flags().StringVar(&snapshot, "snapshot", "", "snapshot ID, or its first 8 or more characters")
 	cmd.Flags().StringVar(&toTime, "to-time", "", "restore the database as it was at this time (point-in-time restore): 2026-11-17T14:01Z, UTC unless it has an offset")
-	cmd.Flags().StringVar(&as, "as", "", "name of the new service (default <service>-restored)")
-	cmd.Flags().BoolVar(&inPlace, "in-place", false, "restore --to-time into the database itself, after a safety snapshot")
+	cmd.Flags().StringVar(&as, "as", "", "name of the new service (default <service>-restored; a copy of a service that isn't a template database needs one)")
+	cmd.Flags().BoolVar(&inPlace, "in-place", false, "restore into the service itself, after a safety snapshot: a --to-time, or a volume backup")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
 	cmd.Flags().BoolVar(&detach, "detach", false, "return once the restore started")
 	return cmd

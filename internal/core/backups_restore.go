@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/backup"
@@ -12,12 +11,15 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// RestoreBackup restores a template database's snapshot into a NEW
+// RestoreBackup restores a backup. A service that isn't a template
+// database restores its volume backup in place (ADR 0095,
+// restoreVolumeBackup). A template database's snapshot restores into a NEW
 // service from the same template (ADR 0011, 0019): new credentials, the
 // snapshot's data, nothing referencing it yet. With req.ToTime it
 // restores a Postgres database as it was then instead (ADR 0093,
-// restoreToTime), into a new service or, with req.InPlace, itself. The live service is never
-// touched; switch references to the new one when it checks out. The
+// restoreToTime), into a new service or, with req.InPlace, itself. Into a
+// new service the live one is never touched; switch references to the
+// new one when it checks out. The
 // answer comes at once with the new service; the restore finishes in the
 // background (a restore row on the source service, and audit events).
 func (c *Core) RestoreBackup(ctx context.Context, a Actor, ref ServiceRef, req apitypes.RestoreBackupRequest) (apitypes.RestoreResult, error) {
@@ -30,7 +32,7 @@ func (c *Core) RestoreBackup(ctx context.Context, a Actor, ref ServiceRef, req a
 	}
 	t, ok := templateOf(ss.svc)
 	if !ok {
-		return apitypes.RestoreResult{}, invalid("only template databases restore into a new service; restore %s's volume backups by hand with restic (see docs/guide/databases.md)", ss)
+		return c.restoreVolumeBackup(ctx, a, ss, req)
 	}
 	if req.ToTime != nil {
 		return c.restoreToTime(ctx, a, ss, t, req)
@@ -38,29 +40,9 @@ func (c *Core) RestoreBackup(ctx context.Context, a Actor, ref ServiceRef, req a
 	if req.InPlace {
 		return apitypes.RestoreResult{}, invalid("a backup restores into a new service; only a restore to a time (to_time) goes in place")
 	}
-	snap := strings.TrimSpace(req.Snapshot)
-	if len(snap) < 8 {
-		return apitypes.RestoreResult{}, invalid("give the snapshot ID or at least its first 8 characters; `dock backup list` shows them")
-	}
-	from, err := c.store.GetBackupBySnapshot(ctx, store.GetBackupBySnapshotParams{ServiceID: ss.svc.ID, Prefix: snap})
-	if store.IsNotFound(err) {
-		return apitypes.RestoreResult{}, notFound("%s has no backup with snapshot %s", ss, snap)
-	}
+	from, err := c.backupToRestore(ctx, ss, req.Snapshot)
 	if err != nil {
 		return apitypes.RestoreResult{}, err
-	}
-	if from.Pruned {
-		return apitypes.RestoreResult{}, invalid("snapshot %s was removed by retention; pick a newer one", snap)
-	}
-	if from.Kind == string(apitypes.BackupPITR) {
-		return apitypes.RestoreResult{}, invalid("snapshot %s is a base backup of point-in-time restore; restore a time instead (`dock backup restore --to-time`)", snap)
-	}
-	set, err := c.backupSettings(ctx)
-	if err != nil {
-		return apitypes.RestoreResult{}, err
-	}
-	if why := notRestorableHere(from.Repository, set.Repository); why != "" {
-		return apitypes.RestoreResult{}, invalid("backup %s can't be restored here: %s", from.SnapshotID[:min(8, len(from.SnapshotID))], why)
 	}
 	name := req.As
 	if name == "" {
@@ -248,7 +230,9 @@ func (r *restore) run(ctx context.Context, to svcScope, target backup.Source, mo
 	return err
 }
 
-// finish records a restore's outcome once.
+// finish records a restore's outcome once. A failed one archives its
+// target under another name and raises an alert (restoreTargetFailed)
+// before the row says so; a successful one closes that alert.
 func (r *restore) finish(ctx context.Context, err error) {
 	c := r.c
 	c.releaseService(r.from.svc.ID) // before the row says finished, as in runBackup
@@ -266,9 +250,11 @@ func (r *restore) finish(ctx context.Context, err error) {
 	fin := store.FinishBackupParams{Status: string(apitypes.BackupSucceeded), SnapshotID: r.snapshot, FinishedAt: ptr(now()), ID: r.row.ID}
 	if err != nil {
 		fin.Status, fin.Error = string(apitypes.BackupFailed), err.Error()
+		kept := c.restoreTargetFailed(ctx, r.from, r.to.svc.ID, restoreInto{id: r.row.ID}, err)
 		c.audit(ctx, System, "backup.restore_failed", &r.from.project, &r.from.env, r.from.String(),
-			fmt.Sprintf("restore into %s failed: %v; %s is kept for a look, archive it when done", r.to.svc.Name, err, r.to.svc.Name))
+			fmt.Sprintf("restore into %s failed: %v; it is archived as %s for a look, and its name is free to restore again", r.to.svc.Name, err, kept))
 	} else {
+		c.restoreSucceeded(ctx, r.from)
 		c.audit(ctx, System, "backup.restored", &r.from.project, &r.from.env, r.from.String(),
 			fmt.Sprintf("restored snapshot %s into %s; point references at ${{%s.%s}} when it checks out", r.snapshot[:8], r.to.svc.Name, r.to.svc.Name, r.t.exports[0]))
 	}
