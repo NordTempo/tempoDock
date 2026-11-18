@@ -110,6 +110,7 @@ line means a later record added to it without changing what it decided.
 | [0094](0094-deploying-from-github-actions.md) | Deploying from GitHub Actions: an official composite action with the server's CLI, signature checked, `--json-file` for logs with results; GitHub OIDC trust for org agents designed | accepted; OIDC not built |
 | [0095](0095-restore-volume-backups.md) | Volume backups restore from Dock, in place after a safety snapshot; manual backups keep their own last 5; Postgres roles in backups; restore targets unusable until loaded | accepted; in-place restore and manual retention built, the rest in progress |
 | [0096](0096-checked-backups.md) | Checked backups: a weekly `restic check` reading 1 GB of each repository and a restore drill of every template database into a throwaway service, on the backup scheduler's pass; the result on the Backups tab, an alert on failure | accepted |
+| [0098](0098-recovering-a-lost-server.md) | Recovering a lost server: `install.sh --restore-from-bucket` fetches the control plane from the bucket, recovery mode holds backups back, `dock admin recover` plans and restores volumes before services start | accepted; the run and the drill not built |
 
 ## Template
 

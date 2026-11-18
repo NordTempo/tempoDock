@@ -1,9 +1,11 @@
 package api
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/pprof"
+	"strings"
 
 	"github.com/NordTempo/tempoDock/internal/core"
 	"github.com/NordTempo/tempoDock/internal/update"
@@ -17,6 +19,10 @@ const RegistryTokenPath = "/internal/registry/token"
 // WakePath is where Caddy asks the wake check of an asleep environment's
 // routes (node.Route.Wake) on the internal listener.
 const WakePath = "/internal/caddy/wake"
+
+// RecoverPath is where `dock admin recover` reaches a control plane in
+// recovery mode on the internal listener (ADR 0098).
+const RecoverPath = "/internal/recover/"
 
 // Internal returns the handler for loopback-only endpoints, served on
 // config.InternalListen and never on the API listener:
@@ -33,6 +39,10 @@ const WakePath = "/internal/caddy/wake"
 //	                                  registryToken is not nil.
 //	POST /internal/update             The updater wrote its result (ADR 0028):
 //	                                  read and audit it.
+//	GET /internal/recover/plan        What `dock admin recover` would restore
+//	POST /internal/recover/done       and the end of recovery mode (ADR 0098).
+//	                                  Only in recovery mode, and only with
+//	                                  the recovery file's token as bearer.
 //	GET /debug/pprof/...              Go runtime profiles (net/http/pprof), e.g.
 //	                                  curl 127.0.0.1:7071/debug/pprof/heap,
 //	                                  only with pprof = true in the config.
@@ -59,6 +69,42 @@ func Internal(c *core.Core, log *slog.Logger, registryToken, accessCheck, wakeCh
 	// file that only dock and root can write.
 	mux.HandleFunc("POST "+update.NotifyPath, func(w http.ResponseWriter, r *http.Request) {
 		c.UpdateFinished(r.Context())
+		w.WriteHeader(http.StatusNoContent)
+	})
+	// The listener is open to every process on the machine, so the caller
+	// proves it can read the data dir: root or the dock user.
+	recovering := func(w http.ResponseWriter, r *http.Request) (core.Actor, bool) {
+		token, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		a, ok := c.RecoveryActor(token)
+		if !ok {
+			http.Error(w, "not in recovery mode, or not the recovery file's token", http.StatusForbidden)
+		}
+		return a, ok
+	}
+	mux.HandleFunc("GET "+RecoverPath+"plan", func(w http.ResponseWriter, r *http.Request) {
+		a, ok := recovering(w, r)
+		if !ok {
+			return
+		}
+		plan, err := c.RecoveryPlan(r.Context(), a)
+		if err != nil {
+			log.Error("recovery plan", "err", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(plan)
+	})
+	mux.HandleFunc("POST "+RecoverPath+"done", func(w http.ResponseWriter, r *http.Request) {
+		a, ok := recovering(w, r)
+		if !ok {
+			return
+		}
+		if err := c.EndRecovery(r.Context(), a); err != nil {
+			log.Error("end recovery", "err", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		w.WriteHeader(http.StatusNoContent)
 	})
 	if pprofOn {

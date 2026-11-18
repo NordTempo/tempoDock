@@ -195,6 +195,8 @@ else (no terminal is a no). `--uninstall` and `--purge`: see
 [Uninstalling](#uninstalling). `--node` installs a [node](#add-a-server) instead of a control plane.
 `--restore ARCHIVE` (with `--old-server-becomes-node`) installs a control
 plane from a backup: see [Moving the control plane](#moving-the-control-plane).
+`--restore-from-bucket` fetches that backup from the backup bucket first,
+for a server that is lost: see [The server is gone](#the-server-is-gone).
 The rest are environment variables. `PUBLIC_IP`, `LISTEN`, `BASE_DOMAIN` and
 `DISABLE_TLS` are only used when `/etc/dock/config.toml` doesn't exist yet;
 the others also change an existing config, touching only their own keys.
@@ -1038,19 +1040,84 @@ Not in it:
 - The Cloudflare Tunnel token: in `/etc/dock/cloudflared.env` and the
   Cloudflare dashboard.
 
-To get the latest control plane backup out of the repository, for example
-after losing the server (the S3 keys and the repository password in the
-environment; `read -rs RESTIC_PASSWORD` keeps them out of shell history):
+To get the latest control plane backup out of an S3 repository as a file,
+on any machine with Docker and the `dock` server binary:
 
 ```sh
-docker run --rm -e RESTIC_REPOSITORY -e RESTIC_PASSWORD -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
+sudo dock admin fetch-backup -o /root/dock.tar
+```
+
+It asks for the bucket, its keys and the repository password (or reads
+them from `DOCK_RESTORE_*`, see [The server is gone](#the-server-is-gone)),
+finds the newest control plane snapshot, streams it to the file and checks
+it from start to end before giving it its name. Restore it as in
+[Moving the control plane](#moving-the-control-plane).
+
+From a local repository, on the server holding it, run restic by hand
+(`docker volume ls --filter name=dock_backups_` finds the volume;
+`read -rs RESTIC_PASSWORD` keeps the password out of shell history):
+
+```sh
+docker run --rm -v dock_backups_<id>:/repo -e RESTIC_REPOSITORY=/repo -e RESTIC_PASSWORD \
   restic/restic:0.18.1 dump --tag dock-control-plane latest /dock-control-plane.tar > dock.tar
 chmod 600 dock.tar
 ```
 
-From a local repository, on the server holding it: `-v dock_backups_<id>:/repo -e
-RESTIC_REPOSITORY=/repo` instead (`docker volume ls --filter name=dock_backups_`).
-Restore it as in [Moving the control plane](#moving-the-control-plane).
+## The server is gone
+
+The only server is lost: disk, provider or account. Everything comes back
+from the backup bucket onto a fresh server, in two commands
+([ADR 0098](../decisions/0098-recovering-a-lost-server.md)). It works when
+backups went to an S3 repository; a local repository was lost with the
+server.
+
+What you need, kept outside the platform:
+
+- The bucket: its endpoint, name and folder, and keys that can read it.
+- The backup repository's password.
+
+**1. Bring the control plane back.** On the new server, as root:
+
+```sh
+curl -fsSL https://dock.nordtempo.com/install.sh | sudo bash -s -- --restore-from-bucket
+```
+
+It installs Docker and Dock, asks for the bucket and the password, fetches
+the newest control plane backup (`dock admin fetch-backup`) and installs
+from it as `--restore` does: same identity, users, tokens, secrets and
+history. To run it without questions, set these (with `sudo`, pass them
+through with `--preserve-env=`):
+
+| Variable | Meaning |
+|---|---|
+| `DOCK_RESTORE_S3_ENDPOINT` | The store's URL, like `https://fsn1.your-objectstorage.com` |
+| `DOCK_RESTORE_S3_BUCKET` | The bucket |
+| `DOCK_RESTORE_S3_PATH` | The folder in the bucket; may be empty |
+| `DOCK_RESTORE_REPOSITORY` | Instead of those three: the whole restic URL, `s3:https://<endpoint>/<bucket>/<folder>` |
+| `DOCK_RESTORE_S3_ACCESS_KEY_ID`, `DOCK_RESTORE_S3_SECRET_ACCESS_KEY` | The bucket's keys |
+| `DOCK_RESTORE_S3_REGION` | Its region, if the store wants one |
+| `DOCK_RESTORE_S3_PATH_STYLE` | `0` puts the bucket in the host name. Default `1`: in the path |
+| `DOCK_RESTORE_PASSWORD` | The backup repository's password |
+
+Add `PUBLIC_IP`, `BASE_DOMAIN`, `NODE_LISTEN` or `CLOUDFLARE_TUNNEL_TOKEN`
+as for a new install. The fetched archive stays in
+`/root/dock-recovered-<time>.tar`. It holds every secret of the platform:
+delete it once the install works.
+
+**2. Bring the apps back.** The control plane is running, but in recovery
+mode: no service starts yet, because their volumes are empty.
+
+```sh
+sudo dock admin recover
+```
+
+It shows a plan: each stateful service with its newest backup and how old
+it is. Once you agree, volumes are restored first and services start
+after, so a database never comes up empty. No backups are taken while
+recovery mode is on, so an empty volume is never backed up over a good
+one; `sudo dock admin recover --done` ends it. Then point DNS at the new
+server ([the new server replaces the old one](#the-new-server-replaces-the-old-one))
+and check `dock backup status`.
 
 ## Moving the control plane
 
@@ -1150,8 +1217,9 @@ Tailscale address with the old port, if the old control plane took any.
 
 As above, with these differences:
 
-- Step 2 only if the old server still runs; otherwise take the latest
-  control plane backup from the repository ([Backups](#backups)). Never
+- Step 2 only if the old server still runs; otherwise see
+  [The server is gone](#the-server-is-gone), which fetches the latest
+  control plane backup from the bucket and restores the volumes too. Never
   start the old server's dock again: wipe it, or run `sudo dock admin
   backup --move` on it first thing.
 - Step 4 without `--old-server-becomes-node` (and `NODE_LISTEN` only if

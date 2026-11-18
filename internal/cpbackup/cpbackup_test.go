@@ -277,6 +277,38 @@ func TestRestoreRefuses(t *testing.T) {
 	}
 }
 
+// Verify passes a whole archive and fails one cut short or without the
+// database, without unpacking anything.
+func TestVerify(t *testing.T) {
+	cp := newControlPlane(t)
+	good := cp.archive(t, false)
+	m, err := Verify(context.Background(), bytes.NewReader(good))
+	if err != nil || m.LinkKey != cp.linkKey {
+		t.Fatalf("a good archive: %+v, %v", m, err)
+	}
+	if _, err := Verify(context.Background(), bytes.NewReader(good[:len(good)/2])); err == nil {
+		t.Error("an archive cut short verified")
+	}
+	var noDB bytes.Buffer
+	tw := tar.NewWriter(&noDB)
+	tr := tar.NewReader(bytes.NewReader(good))
+	for {
+		hdr, err := tr.Next()
+		if err != nil {
+			break
+		}
+		if hdr.Name == dataPrefix+DBFile {
+			continue
+		}
+		_ = tw.WriteHeader(hdr)
+		_, _ = io.Copy(tw, tr)
+	}
+	_ = tw.Close()
+	if _, err := Verify(context.Background(), &noDB); err == nil || !strings.Contains(err.Error(), "no database") {
+		t.Errorf("an archive without the database: %v", err)
+	}
+}
+
 // A data dir is locked by one holder at a time, and a moved control plane
 // says so.
 func TestLockAndMoved(t *testing.T) {

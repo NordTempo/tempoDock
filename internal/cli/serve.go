@@ -114,7 +114,15 @@ func serve(ctx context.Context, cfg config.Config, configPath string) error {
 	if err != nil {
 		return err
 	}
-	opts := core.Options{Config: cfg, Store: st, Secrets: box, Runtime: rt, Logger: log, ConfigPath: configPath, FirewallApplied: firewallCheck()}
+	// Restored from the bucket and not recovered yet (ADR 0098).
+	recovery, err := cpbackup.ReadRecovery(cfg.DataDir)
+	if err != nil {
+		return err
+	}
+	if recovery != nil {
+		log.Warn("recovery mode: scheduled backups are held back until `dock admin recover --done`", "since", recovery.At)
+	}
+	opts := core.Options{Config: cfg, Store: st, Secrets: box, Runtime: rt, Logger: log, ConfigPath: configPath, FirewallApplied: firewallCheck(), Recovery: recovery}
 	var signer *registry.Signer
 	var reg *registry.Platform
 	// The gateway reports to core, which starts after it.

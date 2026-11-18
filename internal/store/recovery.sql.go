@@ -7,6 +7,7 @@ package store
 
 import (
 	"context"
+	"time"
 )
 
 const addEnsureRunning = `-- name: AddEnsureRunning :exec
@@ -48,6 +49,89 @@ func (q *Queries) ListEnsureRunning(ctx context.Context, serverID int64) ([]int6
 			return nil, err
 		}
 		items = append(items, service_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRecoveryServices = `-- name: ListRecoveryServices :many
+SELECT services.id, services.name, services.template, environments.name AS environment,
+       projects.name AS project, orgs.slug AS org,
+       backups.id AS backup_id, backups.kind AS backup_kind, backups.snapshot_id,
+       backups.size_bytes, backups.finished_at,
+       CAST(EXISTS (SELECT 1 FROM backups any_repo WHERE any_repo.service_id = services.id
+              AND any_repo.operation = 'backup' AND any_repo.status = 'succeeded') AS BOOLEAN) AS ever_backed_up
+FROM services
+JOIN environments ON environments.id = services.environment_id
+JOIN projects ON projects.id = environments.project_id
+JOIN orgs ON orgs.id = projects.org_id
+LEFT JOIN backups ON backups.id = (
+    SELECT max(b.id) FROM backups b
+    WHERE b.service_id = services.id AND b.operation = 'backup' AND b.status = 'succeeded'
+      AND b.pruned = 0 AND b.kind != 'pitr' AND b.repository = +?1)
+WHERE environments.server_id = +?2
+  AND services.archived_at IS NULL AND projects.archived_at IS NULL
+  AND EXISTS (SELECT 1 FROM volumes WHERE volumes.service_id = services.id AND volumes.pending = 0)
+  AND NOT EXISTS (SELECT 1 FROM previews WHERE previews.environment_id = services.environment_id)
+ORDER BY orgs.slug, projects.name, environments.name, services.name
+`
+
+type ListRecoveryServicesParams struct {
+	Repository string
+	ServerID   int64
+}
+
+type ListRecoveryServicesRow struct {
+	ID           int64
+	Name         string
+	Template     string
+	Environment  string
+	Project      string
+	Org          string
+	BackupID     *int64
+	BackupKind   *string
+	SnapshotID   *string
+	SizeBytes    *int64
+	FinishedAt   *time.Time
+	EverBackedUp bool
+}
+
+// A server's live stateful services (an applied volume, not archived, in
+// a live project, not a preview's), each with its newest succeeded backup
+// in one repository that retention hasn't removed, if it has one: the
+// recovery plan (ADR 0098). Base backups for point-in-time restore are
+// left out; a recovery loads the dump.
+func (q *Queries) ListRecoveryServices(ctx context.Context, arg ListRecoveryServicesParams) ([]ListRecoveryServicesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listRecoveryServices, arg.Repository, arg.ServerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRecoveryServicesRow
+	for rows.Next() {
+		var i ListRecoveryServicesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Template,
+			&i.Environment,
+			&i.Project,
+			&i.Org,
+			&i.BackupID,
+			&i.BackupKind,
+			&i.SnapshotID,
+			&i.SizeBytes,
+			&i.FinishedAt,
+			&i.EverBackedUp,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
