@@ -321,13 +321,45 @@ func (c *Core) Login(ctx context.Context, email, password, clientIP string) (Log
 	return c.signIn(ctx, u, signInVia{}, clientIP)
 }
 
-// checkPassword returns the user if password is theirs. At most a few
-// checks run at once, and unknown emails cost as much as wrong passwords.
-func (c *Core) checkPassword(ctx context.Context, email, password string) (store.User, error) {
+// maxBcryptWaiting is how many callers may wait for a bcrypt slot. The
+// slots clear about 40 a second (two at once, ~50 ms each), so the last
+// in a full line waits under two seconds: a person hardly notices, and a
+// client's request timeout is far off. A longer line would only hold a
+// goroutine and a request's memory for each caller, for an answer that
+// comes after they gave up.
+const maxBcryptWaiting = 64
+
+var errBcryptBusy = errf(apitypes.CodeRateLimited, "too many passwords are being checked right now; try again in a few seconds")
+
+// bcryptSlot takes one of the slots bcrypt work runs in (bcryptSem),
+// waiting for one behind at most maxBcryptWaiting others: past that it
+// returns errBcryptBusy at once, and ctx's error if ctx ends first. With
+// a nil error the caller frees the slot when done: <-c.bcryptSem.
+func (c *Core) bcryptSlot(ctx context.Context) error {
 	select {
 	case c.bcryptSem <- struct{}{}:
+		return nil
+	default:
+	}
+	if c.bcryptWaiting.Add(1) > maxBcryptWaiting {
+		c.bcryptWaiting.Add(-1)
+		return errBcryptBusy
+	}
+	defer c.bcryptWaiting.Add(-1)
+	select {
+	case c.bcryptSem <- struct{}{}:
+		return nil
 	case <-ctx.Done():
-		return store.User{}, ctx.Err()
+		return ctx.Err()
+	}
+}
+
+// checkPassword returns the user if password is theirs. At most a few
+// checks run at once (bcryptSlot), and unknown emails cost as much as
+// wrong passwords.
+func (c *Core) checkPassword(ctx context.Context, email, password string) (store.User, error) {
+	if err := c.bcryptSlot(ctx); err != nil {
+		return store.User{}, err
 	}
 	defer func() { <-c.bcryptSem }()
 	u, err := c.store.GetUserByEmail(ctx, email)

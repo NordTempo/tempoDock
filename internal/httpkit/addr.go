@@ -45,9 +45,10 @@ func IsInternalAddr(ip netip.Addr) bool {
 }
 
 // ClientKey is what per-client limits count a client IP as: an IPv4
-// address (IPv4-mapped IPv6 too) as itself, an IPv6 address as its /64,
-// which one subscriber usually holds whole and can pick any address in.
-// A value that isn't an IP is its own key.
+// address (IPv4-mapped IPv6 too) as itself, an IPv6 address as its /48:
+// the site prefix one subscriber is commonly assigned (a /56 or a /64 is
+// a part of one), and can pick any address in. A value that isn't an IP
+// is its own key.
 func ClientKey(ip string) string {
 	a, err := netip.ParseAddr(ip)
 	if err != nil {
@@ -56,7 +57,7 @@ func ClientKey(ip string) string {
 	if a = a.Unmap(); a.Is4() {
 		return a.String()
 	}
-	p, err := a.WithZone("").Prefix(64)
+	p, err := a.WithZone("").Prefix(48)
 	if err != nil {
 		return ip
 	}

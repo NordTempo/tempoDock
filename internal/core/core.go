@@ -187,9 +187,12 @@ type Core struct {
 
 	// loginLimit throttles password attempts per client IP, per (email,
 	// IP) and, more loosely, per email (httpkit.LoginLimiter); bcryptSem
-	// caps concurrent password checks (each is ~50ms of CPU).
-	loginLimit *httpkit.LoginLimiter
-	bcryptSem  chan struct{}
+	// caps concurrent password checks (each is ~50ms of CPU) and
+	// bcryptWaiting counts the callers waiting for one of its slots
+	// (bcryptSlot).
+	loginLimit    *httpkit.LoginLimiter
+	bcryptSem     chan struct{}
+	bcryptWaiting atomic.Int32
 	// passwordCost is the bcrypt cost of new password hashes
 	// (Options.PasswordCost).
 	passwordCost int

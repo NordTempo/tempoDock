@@ -21,9 +21,11 @@ import (
 //
 // Anyone may start a passkey sign-in or a single sign-on, so those
 // (userID 0) are held at most maxClientCeremonies per client
-// (httpkit.ClientKey: an IPv4 address or an IPv6 /64), and a full store
-// makes room by dropping the oldest of them: a flood from a few
-// addresses replaces its own, never locks everyone out.
+// (httpkit.ClientKey: an IPv4 address or an IPv6 /48), and a full store
+// makes room by dropping one of them: the caller's own oldest, else the
+// oldest of the client holding the most. A flood from a few clients
+// replaces its own, never locks everyone out nor pushes out a sign-in
+// someone else has in flight.
 
 const (
 	ceremonyTTL = 5 * time.Minute
@@ -80,9 +82,10 @@ var errTooManyCeremonies = errf(apitypes.CodeRateLimited, "too many sign-ins in 
 // put stores cer and returns its ID. One pass over the store (at most
 // maxCeremonies) drops the expired ones and what cer replaces: its user's
 // live ceremony of the same purpose, or its client's oldest
-// unauthenticated one past maxClientCeremonies. A full store drops its
-// oldest unauthenticated ceremony, and refuses only when people signed in
-// part way fill it.
+// unauthenticated one past maxClientCeremonies. A full store drops the
+// oldest unauthenticated ceremony of cer's own client, or with none of
+// those of the busiest client (busiestOldest), and refuses only when
+// people signed in part way fill it.
 func (cs *ceremonies) put(cer *ceremony) (string, error) {
 	t := now()
 	cer.started, cer.expires = t, t.Add(ceremonyTTL)
@@ -95,21 +98,16 @@ func (cs *ceremonies) put(cer *ceremony) (string, error) {
 	}
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
-	var oldest, oldestOwn string // unauthenticated: anyone's, cer's client's
+	var oldestOwn string // cer's client's oldest unauthenticated one
 	own := 0
 	for id, x := range cs.m {
 		switch {
 		case t.After(x.expires), !anon && x.userID == cer.userID && x.purpose == cer.purpose:
 			delete(cs.m, id)
-		case x.userID == 0:
-			if oldest == "" || x.started.Before(cs.m[oldest].started) {
-				oldest = id
-			}
-			if anon && x.client == cer.client {
-				own++
-				if oldestOwn == "" || x.started.Before(cs.m[oldestOwn].started) {
-					oldestOwn = id
-				}
+		case x.userID == 0 && anon && x.client == cer.client:
+			own++
+			if oldestOwn == "" || x.started.Before(cs.m[oldestOwn].started) {
+				oldestOwn = id
 			}
 		}
 	}
@@ -117,14 +115,43 @@ func (cs *ceremonies) put(cer *ceremony) (string, error) {
 	case own >= maxClientCeremonies:
 		delete(cs.m, oldestOwn)
 	case len(cs.m) < maxCeremonies:
-	case oldest != "":
-		delete(cs.m, oldest)
+	case oldestOwn != "":
+		delete(cs.m, oldestOwn)
 	default:
-		return "", errTooManyCeremonies
+		drop := cs.busiestOldest()
+		if drop == "" {
+			return "", errTooManyCeremonies
+		}
+		delete(cs.m, drop)
 	}
 	id, _ := newSecret("")
 	cs.m[id] = cer
 	return id, nil
+}
+
+// busiestOldest returns the oldest unauthenticated ceremony of the client
+// holding the most of them, "" when none is held: what a full store
+// drops for a caller with none of its own, so a client holding one is
+// the last to lose it. Two passes over the store (at most maxCeremonies),
+// run only when it is full. cs.mu is held.
+func (cs *ceremonies) busiestOldest() string {
+	held := map[string]int{}
+	for _, x := range cs.m {
+		if x.userID == 0 {
+			held[x.client]++
+		}
+	}
+	var drop string
+	for id, x := range cs.m {
+		if x.userID != 0 {
+			continue
+		}
+		if d := cs.m[drop]; d == nil || held[x.client] > held[d.client] ||
+			held[x.client] == held[d.client] && x.started.Before(d.started) {
+			drop = id
+		}
+	}
+	return drop
 }
 
 // take removes and returns ceremony id if it is live and for purpose,
