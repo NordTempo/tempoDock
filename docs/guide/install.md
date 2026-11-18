@@ -1105,18 +1105,46 @@ as for a new install. The fetched archive stays in
 delete it once the install works.
 
 **2. Bring the apps back.** The control plane is running, but in recovery
-mode: no service starts yet, because their volumes are empty.
+mode: no app runs yet, and nothing should start on an empty volume.
 
 ```sh
 sudo dock admin recover
 ```
 
-It shows a plan: each stateful service with its newest backup and how old
-it is. Once you agree, volumes are restored first and services start
-after, so a database never comes up empty. No backups are taken while
-recovery mode is on, so an empty volume is never backed up over a good
-one; `sudo dock admin recover --done` ends it. Then point DNS at the new
-server ([the new server replaces the old one](#the-new-server-replaces-the-old-one))
+It shows a plan and asks before it changes anything: each stateful
+service of this server with its newest backup in the bucket and how old
+it is, and what has none.
+
+```
+SERVICE                   KIND      PLAN       BACKUP    TAKEN   SIZE
+acme/shop/production/db   postgres  restore    4cf53263  5h ago  2.1 MB
+acme/shop/production/api  volume    restore    91be07aa  5h ago  340 MB
+acme/blog/production/db   postgres  no backup
+```
+
+Once you agree, services come back one at a time, databases first. A
+service's volumes are filled before it starts, and a database loads its
+dump before anything that uses it starts, so nothing comes up on empty
+data that has a backup. Each service starts from its last release. A
+service that was never backed up starts on empty volumes, and the report
+at the end says so, next to what was restored and what failed.
+
+| | |
+|---|---|
+| `sudo dock admin recover --yes` | Don't ask; end recovery mode when nothing failed |
+| `sudo dock admin recover --report` | The latest run's report again |
+| `sudo dock admin recover --json` | The plan alone, for scripts |
+| `sudo dock admin recover --done` | End recovery mode |
+
+If something failed, fix what the report names and run it again: what
+already runs is left alone. A service whose image was only in the lost
+server's registry needs a new deploy; images
+[in a bucket](#images-in-object-storage) come back on their own.
+
+No scheduled backup runs while recovery mode is on, so an empty volume
+is never backed up over a good one. End it once the apps check out, then
+point DNS at the new server
+([the new server replaces the old one](#the-new-server-replaces-the-old-one))
 and check `dock backup status`.
 
 ## Moving the control plane

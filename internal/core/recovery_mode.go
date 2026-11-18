@@ -16,8 +16,9 @@ import (
 // bucket onto a server whose apps and volumes are not back yet
 // (install.sh --restore-from-bucket). While it lasts the backup
 // scheduler runs nothing, so an empty volume is never backed up over a
-// good one and retention removes nothing the recovery needs, and missing
-// containers are not reported as drift. `dock admin recover` reads the
+// good one and retention removes nothing the recovery needs; scheduled
+// jobs wait too, as they would run on volumes that are not back; and
+// missing containers are not reported as drift. `dock admin recover` reads the
 // plan and ends the mode through the loopback listener, proving itself
 // with the token in the data dir's recovery file.
 
@@ -123,8 +124,8 @@ func (c *Core) newestSnapshots(ctx context.Context, set store.BackupSetting) (ma
 	return newest, nil
 }
 
-// EndRecovery takes the control plane out of recovery mode: the backup
-// scheduler runs again and drift is reported again.
+// EndRecovery takes the control plane out of recovery mode: scheduled
+// backups and jobs run again and drift is reported again.
 func (c *Core) EndRecovery(ctx context.Context, a Actor) error {
 	if err := a.requirePlatform(BackupsManage, "ending a recovery"); err != nil {
 		return err
@@ -138,5 +139,6 @@ func (c *Core) EndRecovery(ctx context.Context, a Actor) error {
 	c.recovery.Store(nil)
 	c.audit(ctx, a.platform(), "control_plane.recovery_ended", nil, nil, "control plane", "ended recovery mode; scheduled backups run again")
 	c.kickBackups()
+	c.kickJobs()
 	return nil
 }

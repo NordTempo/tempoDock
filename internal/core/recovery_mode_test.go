@@ -116,6 +116,9 @@ func TestRecoveryPlanAndMode(t *testing.T) {
 	if next, err := h.c.backupPass(h.ctx); err != nil || !next.IsZero() || len(h.rt.Jobs()) != jobs {
 		t.Fatalf("the scheduler ran in recovery mode: next %v, err %v", next, err)
 	}
+	if next, err := h.c.jobPass(h.ctx); err != nil || !next.IsZero() {
+		t.Fatalf("scheduled jobs ran in recovery mode: next %v, err %v", next, err)
+	}
 
 	if err := h.c.EndRecovery(h.ctx, a); err != nil {
 		t.Fatal(err)
