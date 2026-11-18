@@ -348,7 +348,7 @@ func (c *Core) drillQuery(ctx context.Context, from, to svcScope) (string, error
 		for _, db := range s.Keyspace {
 			keys += db.Keys
 		}
-		return counted(keys, "key"), nil
+		return drillCount(keys, "key"), nil
 	}
 	n := userTables(s)
 	if n == 0 {
@@ -359,7 +359,7 @@ func (c *Core) drillQuery(ctx context.Context, from, to svcScope) (string, error
 			return "", fmt.Errorf("the restored copy has no tables, but %s has %d: the snapshot doesn't hold its data", from.svc.Name, userTables(live))
 		}
 	}
-	return counted(n, "table"), nil
+	return drillCount(n, "table"), nil
 }
 
 // userTables counts a schema's tables, without its views.
@@ -373,8 +373,8 @@ func userTables(s apitypes.DataSchema) int64 {
 	return n
 }
 
-// counted is "1 table" or "1,204 tables".
-func counted(n int64, word string) string {
+// drillCount is "1 table" or "1,204 tables".
+func drillCount(n int64, word string) string {
 	if n != 1 {
 		word += "s"
 	}
