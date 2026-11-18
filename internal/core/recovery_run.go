@@ -162,6 +162,8 @@ func (c *Core) recoveryServices(ctx context.Context) ([]svcScope, error) {
 // volumes), then a release copying its active one. It waits for the
 // release, so the next service starts against a running database.
 func (c *Core) recoverService(ctx context.Context, a Actor, ss svcScope, org string, planned *apitypes.RecoveryService, repository string) apitypes.RecoveryResult {
+	// What it does to a service is audited in the service's organization.
+	a = a.InOrg(ss.project.OrgID)
 	res := apitypes.RecoveryResult{Org: org, Project: ss.project.Name, Environment: ss.env.Name, Service: ss.svc.Name}
 	fail := func(format string, args ...any) apitypes.RecoveryResult {
 		res.Outcome, res.Detail = apitypes.RecoveryFailed, fmt.Sprintf(format, args...)
