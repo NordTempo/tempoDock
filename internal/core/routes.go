@@ -91,7 +91,7 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 	for _, h := range hosts {
 		siteOf[h.Hostname] = h.SiteID
 	}
-	traced, err := c.edgeTraced(ctx, rows, held, override)
+	traced, err := c.edgeTraced(ctx, rows, override)
 	if err != nil {
 		return err
 	}
