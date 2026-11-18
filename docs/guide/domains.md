@@ -321,4 +321,7 @@ protocol 31 keeps a certificate per hostname until it is upgraded.
 - Adding the first domain to a running service whose port isn't published
   yet starts a `config` release that publishes it (returned as `release`).
 - `dock domain remove shop.example.com` stops routing it immediately.
+  Hostnames of the service that redirect to it stay, and the command
+  warns about each: remove them too, or they send visitors to a
+  hostname that no longer serves.
 - The service receives `DOCK_PUBLIC_DOMAIN` on its next release.
