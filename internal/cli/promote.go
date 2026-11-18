@@ -30,8 +30,8 @@ the ones that already run that image there, are skipped and listed: an
 unchanged service (a database, say) is never restarted.
 
 Follows progress like deploy unless --detach. Exit 6 when a release fails,
-exit 4 when nothing could be promoted (every service skipped for another
-reason than running the image already; the result, with --json too, still
+exit 4 when nothing could be promoted (every service skipped, none of them
+because it runs the image already; the result, with --json too, still
 lists them). Needs deploy on <to>.`,
 		Example: `  dock promote staging production
   dock promote staging production -s web -s worker`,
@@ -82,9 +82,9 @@ lists them). Needs deploy on <to>.`,
 // finishPromote prints what a promotion did: each release, then the
 // skipped services. The first failed release makes it a deploy_failed
 // error; the releases after it failed without starting. Nothing promoted
-// at all is a not_found error, after the result, unless every service was
+// at all is a not_found error, after the result, unless a service was
 // skipped because it runs the image already: that is a promotion with
-// nothing to do.
+// nothing left to do.
 func (g *globals) finishPromote(ctx context.Context, s *session, res apitypes.PromoteResult) error {
 	err := g.io.Print(res, func() error {
 		for _, p := range res.Promoted {
@@ -110,8 +110,10 @@ func (g *globals) finishPromote(ctx context.Context, s *session, res apitypes.Pr
 	if err != nil {
 		return err
 	}
-	if len(res.Promoted) == 0 && len(res.Skipped) > 0 && !slices.ContainsFunc(res.Skipped, func(sk apitypes.SkippedService) bool { return sk.Reason != apitypes.SkipSameImage }) {
-		return nil // nothing to do: every service runs the image already
+	if len(res.Promoted) == 0 && slices.ContainsFunc(res.Skipped, func(sk apitypes.SkippedService) bool { return sk.Reason == apitypes.SkipSameImage }) {
+		// Nothing to do: what could be promoted runs the image already.
+		// The other skips were listed, as after a promotion that started.
+		return promoteStopped(res.Skipped)
 	}
 	if len(res.Promoted) == 0 {
 		return &output.Error{

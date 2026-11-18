@@ -49,6 +49,12 @@ func TestPromote(t *testing.T) {
 		t.Fatalf("same image again: exit %d\n%s%s", code, stdout, stderr)
 	}
 
+	// A service that can't be promoted next to it doesn't turn that into
+	// "nothing was promoted".
+	if code, stdout, stderr = exec(t, "promote", "staging", "production", "-p", "shop"); code != 0 || !strings.Contains(stderr, "worker skipped") {
+		t.Fatalf("same image and a skip: exit %d\n%s%s", code, stdout, stderr)
+	}
+
 	stage := func(image string) {
 		t.Helper()
 		if code, _, stderr := exec(t, "deploy", "-p", "shop", "-e", "staging", "-s", "web", "--image", image); code != 0 {
