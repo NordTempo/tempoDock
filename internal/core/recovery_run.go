@@ -97,8 +97,8 @@ func (c *Core) StartRecovery(ctx context.Context, a Actor) error {
 			return
 		}
 		c.audit(ctx, System, "control_plane.recovered", nil, nil, "control plane",
-			fmt.Sprintf("recovery: %d restored, %d started, %d on empty volumes, %d already running, %d skipped, %d failed",
-				counts[apitypes.RecoveryRestored], counts[apitypes.RecoveryStarted], counts[apitypes.RecoveryEmpty],
+			fmt.Sprintf("recovery: %d restored, %d started, %d on empty volumes, %d being built again, %d already running, %d skipped, %d failed",
+				counts[apitypes.RecoveryRestored], counts[apitypes.RecoveryStarted], counts[apitypes.RecoveryEmpty], counts[apitypes.RecoveryRebuilding],
 				counts[apitypes.RecoveryRunning], counts[apitypes.RecoverySkipped], counts[apitypes.RecoveryFailed]))
 	})
 	return nil
@@ -254,6 +254,14 @@ func (c *Core) recoverService(ctx context.Context, a Actor, ss svcScope, org str
 		return fail("dock stopped during the recovery; run it again")
 	}
 	if !ok {
+		if queued := c.rebuildLost(ctx, ss, active, rel); queued != "" {
+			// Its volumes, if it has any, were filled before the start.
+			if r != nil {
+				c.finishRecoveryRestore(ctx, r, nil)
+			}
+			res.Outcome, res.Detail = apitypes.RecoveryRebuilding, queued
+			return res
+		}
 		err := fmt.Errorf("release %d failed to start; `dock releases` shows why (an image that went with the server's registry needs a new deploy)", rel.Number)
 		if r != nil {
 			c.finishRecoveryRestore(ctx, r, err)
@@ -278,6 +286,26 @@ func (c *Core) recoverService(ctx context.Context, a Actor, ss svcScope, org str
 	c.finishRecoveryRestore(ctx, r, nil)
 	res.Outcome, res.Detail = apitypes.RecoveryRestored, ""
 	return res
+}
+
+// rebuildLost queues a build of active's commit from ss's GitHub source,
+// after release rel, its copy, failed to start: on a server that replaced
+// a lost one that is most often an image that was only in the lost
+// server's registry. It returns what the report says, or "" when the
+// service has no GitHub source or the commit couldn't be queued.
+func (c *Core) rebuildLost(ctx context.Context, ss svcScope, active, rel store.Release) string {
+	conn, err := c.store.GetGitConnectionByService(ctx, ss.svc.ID)
+	if err != nil {
+		return ""
+	}
+	ref := ServiceRef{ss.project.Name, ss.env.Name, ss.svc.Name}
+	got, err := c.GitDeploy(ctx, System.InOrg(ss.project.OrgID), ref, apitypes.GitDeployRequest{Ref: active.CommitSha})
+	if err != nil {
+		c.log.Warn("recovery: queue a rebuild", "service", ss.String(), "err", err)
+		return ""
+	}
+	return fmt.Sprintf("release %d failed to start (an image that was only in the lost server's registry is gone), so commit %s of %s is being built again; `dock releases` shows it",
+		rel.Number, shortSHA(got.Commit.SHA), conn.Repo)
 }
 
 // finishRecoveryRestore records the outcome of a recovery's restore of

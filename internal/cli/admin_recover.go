@@ -259,7 +259,7 @@ func watchRecovery(ctx context.Context, w io.Writer, url, token string) (apitype
 // printRecoveryResult prints one service of a recovery's report.
 func printRecoveryResult(w io.Writer, r apitypes.RecoveryResult) {
 	name := strings.Join([]string{r.Org, r.Project, r.Environment, r.Service}, "/")
-	line := fmt.Sprintf("%-9s %s", r.Outcome, name)
+	line := fmt.Sprintf("%-10s %s", r.Outcome, name)
 	if r.Outcome == apitypes.RecoveryRestored {
 		line += fmt.Sprintf(": backup %s, taken %s", r.Snapshot[:min(8, len(r.Snapshot))], agoPtr(r.BackedUpAt))
 	}
@@ -276,7 +276,7 @@ func printRecoverySummary(w io.Writer, rep apitypes.RecoveryReport) int {
 	for _, r := range rep.Results {
 		n[r.Outcome]++
 	}
-	_, _ = fmt.Fprintf(w, "\n%d restored from a backup, %d started (no volumes), %d started on empty volumes, %d already running, %d skipped, %d failed.\n",
-		n[apitypes.RecoveryRestored], n[apitypes.RecoveryStarted], n[apitypes.RecoveryEmpty], n[apitypes.RecoveryRunning], n[apitypes.RecoverySkipped], n[apitypes.RecoveryFailed])
+	_, _ = fmt.Fprintf(w, "\n%d restored from a backup, %d started (no volumes), %d started on empty volumes, %d being built again, %d already running, %d skipped, %d failed.\n",
+		n[apitypes.RecoveryRestored], n[apitypes.RecoveryStarted], n[apitypes.RecoveryEmpty], n[apitypes.RecoveryRebuilding], n[apitypes.RecoveryRunning], n[apitypes.RecoverySkipped], n[apitypes.RecoveryFailed])
 	return n[apitypes.RecoveryFailed]
 }

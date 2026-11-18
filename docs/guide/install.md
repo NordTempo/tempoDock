@@ -1137,8 +1137,10 @@ at the end says so, next to what was restored and what failed.
 | `sudo dock admin recover --done` | End recovery mode |
 
 If something failed, fix what the report names and run it again: what
-already runs is left alone. A service whose image was only in the lost
-server's registry needs a new deploy; images
+already runs is left alone. An image that was only in the lost server's
+registry is gone: a service with a GitHub source is built again from the
+commit it ran (the report says `rebuilding`), one deployed with `dock
+deploy` needs a new deploy. Images
 [in a bucket](#images-in-object-storage) come back on their own.
 
 No scheduled backup runs while recovery mode is on, so an empty volume

@@ -56,6 +56,10 @@ const (
 	RecoveryEmpty RecoveryOutcome = "empty"
 	// RecoveryStarted: a service without volumes; it runs.
 	RecoveryStarted RecoveryOutcome = "started"
+	// RecoveryRebuilding: its release didn't start (its image went with
+	// the lost server's registry), so its commit is being built again
+	// from its GitHub source; any data it has was restored first.
+	RecoveryRebuilding RecoveryOutcome = "rebuilding"
 	// RecoveryRunning: it ran already and was left alone.
 	RecoveryRunning RecoveryOutcome = "running"
 	// RecoverySkipped: nothing to start (stopped on purpose, asleep).

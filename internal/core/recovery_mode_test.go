@@ -315,3 +315,43 @@ func TestRecoveryRunFailedFillAndNoBackup(t *testing.T) {
 	}
 	h.opts.Recovery = nil
 }
+
+// A service whose image went with the lost server's registry is built
+// again from the commit it ran, when it has a GitHub source.
+func TestRecoveryRebuildsFromGitHub(t *testing.T) {
+	h, _ := gitHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	h.connect(web, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main"})
+	if _, err := h.c.GitDeploy(h.ctx, testSystem, web, apitypes.GitDeployRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	h.gitSettled(web)
+	h.wait(web, 1)
+	h.recover(true)
+	// The registry went with the server: the image is nowhere.
+	actives, err := h.store.ListActiveReleases(h.ctx)
+	if err != nil || len(actives) != 1 {
+		t.Fatalf("active releases: %+v, %v", actives, err)
+	}
+	if err := h.rt.RemoveImage(h.ctx, actives[0].ImageRef); err != nil {
+		t.Fatal(err)
+	}
+	h.rt.FailPull(errors.New("manifest unknown"))
+	if err := h.c.StartRecovery(h.ctx, testSystem); err != nil {
+		t.Fatal(err)
+	}
+	var rep apitypes.RecoveryReport
+	eventually(t, "the recovery to finish", func() bool {
+		var err error
+		rep, err = h.c.RecoveryReport(h.ctx, testSystem)
+		return err == nil && !rep.Running
+	})
+	if len(rep.Results) != 1 || rep.Results[0].Outcome != apitypes.RecoveryRebuilding || !strings.Contains(rep.Results[0].Detail, "acme/shop") {
+		t.Fatalf("report = %+v", rep.Results)
+	}
+	eventually(t, "the rebuild to go live", func() bool {
+		rels, err := h.c.ListReleases(h.ctx, testSystem, web, 10)
+		return err == nil && len(rels) == 3 && rels[0].Status == apitypes.ReleaseActive && rels[0].Commit != nil && rels[0].Commit.SHA == shaC
+	})
+	h.opts.Recovery = nil
+}

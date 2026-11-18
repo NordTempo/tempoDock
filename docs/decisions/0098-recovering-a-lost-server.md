@@ -8,8 +8,7 @@ Built: fetching the control plane's backup from the bucket, `install.sh
 --restore-from-bucket`, recovery mode, and `dock admin recover` with its
 plan, run and report. Not built yet: the fill of a plain volume backup
 (one call to 0095's `fillFromBackup` once that is on main; until then
-such a service fails in the report and says so), rebuilding a release
-whose image went with the server's registry.
+such a service fails in the report and says so).
 
 ## Context
 
@@ -38,7 +37,7 @@ second needs one.
 | Running it | After the plan is shown and agreed to (`--yes` skips the question; without a terminal and without `--yes` nothing runs). The daemon brings back every service of its own server that has an active release, one at a time (a small server never runs two restores at once), environment by environment: template databases, then services with volumes, then the rest. A plain service's volumes and Redis's are filled before the service starts. Postgres and MySQL start alone on an empty volume, with the credentials the restored variables hold, and load their dump before the next service starts; it is the same service, so no reference switches. Each service starts as a new release copying its active one, through the usual health-checked path, and the run waits for it |
 | What a run leaves alone | A service with a container already (so a second run only handles what is left), one stopped on purpose, one in an asleep environment. A stateful service with nothing to restore starts on empty volumes and the report says so |
 | The report | Per service: restored (with the backup and its age), started, started on empty volumes, already running, skipped, failed with the reason. The CLI prints it as it goes and `--report` shows the latest again. It is kept in memory: each restore is also a row in the service's backup list with its log, and the audit log has the run's start and its counts |
-| A failed start | The release shows why. An image that was only in the lost server's registry needs a new deploy; images in a bucket ([0084](0084-registry-storage-gateway.md)) come back with the restored database |
+| A failed start | Most often an image that was only in the lost server's registry; images in a bucket ([0084](0084-registry-storage-gateway.md)) come back with the restored database. A service with a GitHub source gets its active release's commit queued to be built again, after its volumes were filled, and the report says "rebuilding". One deployed from an upload or from a registry that no longer has the image fails in the report and needs a new deploy: the control plane's backup holds no source |
 | Ending | `dock admin recover --done` removes the file: the scheduler starts again and drift is reported again. With `--yes` a run that restored everything ends the mode itself |
 | The drill | `e2e/recover.sh`, in `e2e/nightly.sh`: a slot with a MinIO bucket, an app with a volume and a Postgres, backups, the control plane's state and the volumes removed, the two commands, then the data is checked |
 
