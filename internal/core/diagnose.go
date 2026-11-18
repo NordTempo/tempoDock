@@ -104,6 +104,7 @@ var diagRules = []diagRule{
 	{"pull_failed", rulePullFailed},
 	{"pre_deploy_failed", rulePreDeployFailed},
 	{"oom_killed", ruleOOMKilled},
+	{"process_limit", ruleProcessLimit},
 	{"missing_binary", ruleMissingBinary},
 	{"wrong_arch", ruleWrongArch},
 	{"missing_variable", ruleMissingVariable},
@@ -343,6 +344,50 @@ func ruleOOMKilled(in *diagInput) diagVerdict {
 			summary: fmt.Sprintf("Killed (exit code 137), most likely for using more than its %d MB memory limit", limit)}
 	}
 	return diagVerdict{why: "no OOM kill"}
+}
+
+// processLimitWords are what programs print when the kernel refuses them
+// a new process or thread (EAGAIN from fork, clone or pthread_create):
+// shells, the JVM, Go's runtime, Python, Ruby and libuv. Seen on real
+// servers with containers at their pids limit.
+var processLimitWords = []string{
+	"fork: Resource temporarily unavailable",
+	"fork: retry: Resource temporarily unavailable",
+	"can't fork",
+	"Cannot fork",
+	"pthread_create failed",
+	"unable to create native thread",
+	"failed to create new OS thread",
+	"newosproc",
+	"can't start new thread",
+	"can't create Thread",
+	"uv_thread_create",
+}
+
+// ruleProcessLimit matches a container whose output says it couldn't
+// start a process or thread: it is at the server's limit of processes per
+// container ([defaults] pids_limit, 4096 unless set), which the exit code
+// alone never says. Its platform fact is the failed exit: an app that
+// logs a refused thread and carries on is not diagnosed by that line.
+// After oom_killed: a container out of memory fails to fork too.
+func ruleProcessLimit(in *diagInput) diagVerdict {
+	if !in.started() {
+		return diagVerdict{skip: true}
+	}
+	if in.exitCode() <= 0 {
+		return diagVerdict{why: "it didn't exit with an error"}
+	}
+	// Every phrase holds "ork", "hread" or "newosproc": three searches
+	// rule a line out, not eleven.
+	idx := matchLines(in.container, func(l string) bool {
+		return (strings.Contains(l, "ork") || strings.Contains(l, "hread") || strings.Contains(l, "newosproc")) && anyOf(l, processLimitWords)
+	})
+	if len(idx) == 0 {
+		return diagVerdict{why: "no refused fork or thread in the output"}
+	}
+	return diagVerdict{matched: true, why: "the output says a process or thread couldn't start", lines: idx,
+		summary: "Couldn't start a new process or thread: most likely at the server's limit of processes per container (4096 unless set)",
+		detail:  lineAt(in.container, idx) + ". If it needs more, raise `[defaults] pids_limit` in the server's config, restart the daemon there, then `dock restart " + in.flags() + "`"}
 }
 
 // notFoundLine matches a shell's or the container runtime's word that a
