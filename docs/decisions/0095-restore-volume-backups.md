@@ -83,9 +83,23 @@ safety snapshot, before the service first starts.
 - A restart during an in-place restore fails it with what to do: restore
   in place again, or restore the safety snapshot.
 
-Left open: a restore into a new service that a restart interrupts is
-marked failed and refused as a switch target, but its target keeps its
-name and no alert is raised.
+- A restart during a restore into a new service ends it like any failed
+  one (built, 2026-11-19): recovery reads the running ones with one
+  query before it marks them failed, and once the daemon has started
+  (alerts loaded, routes applied) each target is archived as
+  `<name>-failed-<id>` and the alert opens. Nothing polls.
+- The backup list says what an in-place restore touches (built,
+  2026-11-19). `volumes` names the service's volumes now: a backup's row
+  doesn't record which volumes it holds, and asking restic per list
+  request is not worth a job, so the confirm names the volumes the
+  restore would replace (one added since the backup is left, as above).
+  A succeeded in-place restore's run carries `safety_snapshot`, the
+  snapshot taken before it. The backups table has no column for it, so
+  it is found: the newest `before_restore` snapshot with the restore's
+  note, started after the run before the restore and not after the
+  restore. The claim on the service keeps other runs out of that window.
+  One indexed query, only when the list holds such a restore; a snapshot
+  that was removed is not linked.
 
 ## Consequences
 

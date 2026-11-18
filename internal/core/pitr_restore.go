@@ -294,7 +294,7 @@ func (c *Core) recoverJob(ctx context.Context, to svcScope, t dbTemplate, plan p
 // database is another history than the one archived so far.
 func (c *Core) restoreToTimeInPlace(ctx context.Context, a Actor, ss svcScope, t dbTemplate, plan pitrPlan, keep map[string]string) (apitypes.RestoreResult, error) {
 	at := plan.target.UTC().Format(time.RFC3339)
-	safety, safetyVols, err := c.startSnapshot(ctx, a, ss, apitypes.SnapshotBeforeRestore, "before restoring to "+at, 0)
+	safety, safetyVols, err := c.startSnapshot(ctx, a, ss, apitypes.SnapshotBeforeRestore, timeSafetyNote(plan.target), 0)
 	if err != nil {
 		return apitypes.RestoreResult{}, err
 	}

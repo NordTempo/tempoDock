@@ -12,6 +12,7 @@ the CLI and real traffic through the proxy.
 | `traces.sh`, `metrics.sh` | OTLP traces and metrics, on their own servers |
 | `analytics-*.sh` | Dock Analytics with a headless browser, on their own containers |
 | `drain.sh` | `dock server drain` of a node under load: Postgres, Redis, a volume and stateless apps move with no failed request and every acknowledged write kept |
+| `restore.sh` | a volume backup of a service that isn't a template database: restored in place (the file is back, the safety snapshot is named and undoes it) and into a copy (`--as`) |
 | `pitr.sh` | point-in-time restore with the slot's S3 store: restores to a time between writes, across a replaced container, of a stopped database, to latest, across off and on (the window as two ranges), in place; the archiver under write load and idle |
 | `upgrade/run.sh` | one published release updated to another, with data checks |
 | `sso.sh` | single sign-on through a real Keycloak over HTTPS (its own CA, in the slot): the oidc kind and the keycloak preset, invites, refusals, step-ups, logout |

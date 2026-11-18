@@ -315,6 +315,49 @@ func (q *Queries) ListRunningSnapshotRestores(ctx context.Context) ([]VolumeSnap
 	return items, nil
 }
 
+const listSafetySnapshots = `-- name: ListSafetySnapshots :many
+SELECT id, note, started_at FROM volume_snapshots
+WHERE service_id = +? AND trigger = 'before_restore' AND status = 'ready'
+ORDER BY id DESC LIMIT +?
+`
+
+type ListSafetySnapshotsParams struct {
+	ServiceID int64
+	Limit     int64
+}
+
+type ListSafetySnapshotsRow struct {
+	ID        int64
+	Note      string
+	StartedAt time.Time
+}
+
+// The snapshots a service's in-place restores took first and that are
+// still there, newest first: the backup list matches them to its restore
+// runs (safetySnapshots). Walks volume_snapshots_service.
+func (q *Queries) ListSafetySnapshots(ctx context.Context, arg ListSafetySnapshotsParams) ([]ListSafetySnapshotsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSafetySnapshots, arg.ServiceID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSafetySnapshotsRow
+	for rows.Next() {
+		var i ListSafetySnapshotsRow
+		if err := rows.Scan(&i.ID, &i.Note, &i.StartedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listServiceSnapshotRestores = `-- name: ListServiceSnapshotRestores :many
 SELECT id, snapshot_id, service_id, to_service_id, in_place, safety_id, status, error, created_by, started_at, finished_at FROM volume_snapshot_restores WHERE service_id = +? ORDER BY id DESC LIMIT +?
 `

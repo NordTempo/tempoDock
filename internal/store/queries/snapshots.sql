@@ -13,6 +13,14 @@ SELECT * FROM volume_snapshots WHERE id = +?;
 -- A service's snapshots, newest first.
 SELECT * FROM volume_snapshots WHERE service_id = +? ORDER BY id DESC LIMIT +?;
 
+-- name: ListSafetySnapshots :many
+-- The snapshots a service's in-place restores took first and that are
+-- still there, newest first: the backup list matches them to its restore
+-- runs (safetySnapshots). Walks volume_snapshots_service.
+SELECT id, note, started_at FROM volume_snapshots
+WHERE service_id = +? AND trigger = 'before_restore' AND status = 'ready'
+ORDER BY id DESC LIMIT +?;
+
 -- name: ListExpiredSnapshots :many
 -- Finished snapshots taken before a time, oldest first, for retention.
 -- Ordered by started_at so it seeks volume_snapshots_started instead of

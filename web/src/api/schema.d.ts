@@ -7494,6 +7494,8 @@ export interface components {
             pruned?: boolean;
             repository: string;
             restored_to?: string;
+            /** Format: int64 */
+            safety_snapshot?: number;
             service: string;
             /** Format: int64 */
             size_bytes: number;
@@ -11357,6 +11359,7 @@ export interface components {
             runs: components["schemas"]["BackupRun"][] | null;
             schedule: components["schemas"]["BackupSchedule"];
             service: string;
+            volumes?: string[] | null;
             warning?: string;
         };
         ServiceExport: {

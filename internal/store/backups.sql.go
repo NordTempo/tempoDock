@@ -1042,6 +1042,59 @@ func (q *Queries) ListRepositorySnapshots(ctx context.Context, repository string
 	return items, nil
 }
 
+const listRunningRestoresInto = `-- name: ListRunningRestoresInto :many
+SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups
+WHERE status = 'running' AND operation = 'restore' AND restored_to IS NOT NULL AND restored_to <> service_id
+`
+
+// Restores into a new service still marked running. Read once at
+// start-up, before FailRunningBackups fails them: a restart cut them
+// short, and their targets are archived like any failed restore's
+// (finishCutRestores). A scan of the running rows, as the two below.
+func (q *Queries) ListRunningRestoresInto(ctx context.Context) ([]Backup, error) {
+	rows, err := q.db.QueryContext(ctx, listRunningRestoresInto)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Backup
+	for rows.Next() {
+		var i Backup
+		if err := rows.Scan(
+			&i.ID,
+			&i.ServiceID,
+			&i.Operation,
+			&i.Kind,
+			&i.Trigger,
+			&i.Status,
+			&i.Repository,
+			&i.SnapshotID,
+			&i.SizeBytes,
+			&i.Pruned,
+			&i.RestoredTo,
+			&i.Error,
+			&i.CreatedBy,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.WalGeneration,
+			&i.WalStart,
+			&i.WalSegmentBytes,
+			&i.ConsistentAt,
+			&i.RestoreToTime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listServiceBackups = `-- name: ListServiceBackups :many
 SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups WHERE service_id = +? ORDER BY id DESC LIMIT +?
 `

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -143,6 +144,63 @@ func (c *Core) restoreTargetFailed(ctx context.Context, from svcScope, toID int6
 	s := restoreFailed(from, r, was, name, cause.Error())
 	c.signalAlert(ctx, s)
 	return name
+}
+
+// cutRestore is a restore into a new service that the last daemon left
+// running: from is the service restored from, to its target.
+type cutRestore struct {
+	from, to int64
+	r        restoreInto
+}
+
+// restoreCut remembers a restore into a new service that a restart cut
+// short. Start's recovery calls it as it marks the restore's row failed;
+// finishCutRestores does the rest.
+func (c *Core) restoreCut(from, to int64, r restoreInto) {
+	c.backups.mu.Lock()
+	c.backups.cut = append(c.backups.cut, cutRestore{from: from, to: to, r: r})
+	c.backups.mu.Unlock()
+}
+
+// finishCutRestores ends the restores into a new service that a daemon
+// restart cut short as any failed one ends (restoreTargetFailed): the
+// target is archived as <name>-failed-<id>, so its name is free for the
+// next try, and an alert opens on the service restored from. Their rows
+// say failed since Start's recovery, so nothing could switch to them
+// meanwhile. It runs once, as the backup scheduler starts: by then the
+// alerts are loaded and the routes applied, which the recovery itself
+// runs too early for. Nothing polls: the list was read in recovery.
+func (c *Core) finishCutRestores(ctx context.Context) {
+	c.backups.mu.Lock()
+	cut := c.backups.cut
+	c.backups.cut = nil
+	c.backups.mu.Unlock()
+	cause := errors.New("the daemon restarted while it was running")
+	for _, cr := range cut {
+		if ctx.Err() != nil {
+			return
+		}
+		from, err := c.scopeOf(ctx, cr.from)
+		if err != nil {
+			c.log.Error("load the service a cut-short restore read", "service", cr.from, "err", err)
+			continue
+		}
+		to, err := c.store.GetService(ctx, cr.to)
+		if err != nil {
+			c.log.Error("load a cut-short restore's target", "service", cr.to, "err", err)
+			continue
+		}
+		kept := c.restoreTargetFailed(ctx, from, cr.to, cr.r, cause)
+		if kept == "" || kept == to.Name {
+			continue // a drill's, which its next drill removes, or not archived (logged)
+		}
+		action := "backup.restore_failed"
+		if cr.r.snapshot {
+			action = "snapshot.restore_failed"
+		}
+		c.audit(ctx, System, action, &from.project, &from.env, from.String(),
+			fmt.Sprintf("%s into %s was cut short by a daemon restart; %s is archived as %s for a look, and its name is free to restore again", upperFirst(cr.r.String()), to.Name, to.Name, kept))
+	}
 }
 
 // restoreAlertKey is the key of a service's failed-restore alert.

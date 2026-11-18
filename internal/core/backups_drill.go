@@ -1,7 +1,6 @@
 package core
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -25,13 +24,6 @@ const drillMaxBytes = 2 << 30
 
 // drillSuffix is appended to a database's name for its drill service.
 const drillSuffix = "-drill"
-
-// drillEventWait is how long a drill waits for the audit event of a
-// restore whose claim is released but whose row still says running: the
-// event follows the release at once, so this only ends a wait for one
-// that failed to be written. One timer, only while a drill is in that
-// window (docs/performance.md).
-const drillEventWait = 2 * time.Minute
 
 // drillPass runs every restore drill that is due (verifyDue), one at a
 // time, and returns when the next one is due (zero: none). force runs
@@ -228,13 +220,11 @@ func (c *Core) runDrill(ctx context.Context, ss svcScope, row store.BackupCheck,
 // copy, and removes the copy whatever happened. It answers succeeded with
 // what the query counted, skipped with why, or the error that failed it.
 //
-// Nothing polls. The restore holds the source's claim until its work is
-// done, so claiming it (claimServiceWait) returns then; it records its
-// outcome just after (the claim goes first, the row last), so a row that
-// still says running is followed by the restore's audit event, which the
-// drill subscribed to before it started. The drill keeps the claim while
-// it queries and removes the copy, so no backup of the source starts on
-// the same small server meanwhile.
+// Nothing polls and no timer runs: the restore sends its outcome when it
+// finishes (restoreBackup's done signal), after its row is written. The
+// restore held the source's claim; the drill takes it next
+// (claimServiceWait) and keeps it while it queries and removes the copy,
+// so no backup of the source starts on the same small server meanwhile.
 func (c *Core) drill(ctx context.Context, ss svcScope, row store.BackupCheck, size int64, set store.BackupSetting) (apitypes.BackupStatus, string, error) {
 	if row.Trigger == "schedule" && size > drillMaxBytes {
 		return apitypes.BackupSkipped, fmt.Sprintf("the snapshot is over 2 GB (%s), more than a scheduled drill restores on a shared server; run it by hand: dock backup drill %s",
@@ -248,13 +238,17 @@ func (c *Core) drill(ctx context.Context, ss svcScope, row store.BackupCheck, si
 	if err := c.removeLeftDrill(ctx, ss, name); err != nil {
 		return "", "", err
 	}
-	ended := c.bus.subscribe(func(e busEvent) bool {
-		return e.ev.Type == apitypes.EventAudit && e.projectID == ss.project.ID && e.ev.Audit != nil && e.ev.Audit.Target == ss.String() &&
-			(e.ev.Audit.Action == "backup.restored" || e.ev.Audit.Action == "backup.restore_failed")
-	})
-	defer ended.close()
-	res, rerr := c.RestoreBackup(ctx, sys, ServiceRef{ss.project.Name, ss.env.Name, ss.svc.Name},
+	res, done, rerr := c.restoreBackup(ctx, sys, ServiceRef{ss.project.Name, ss.env.Name, ss.svc.Name},
 		apitypes.RestoreBackupRequest{Snapshot: row.SnapshotID, As: name})
+	var restoreErr error
+	if done != nil {
+		// The restore runs, whatever rerr says: wait for how it ends.
+		select {
+		case restoreErr = <-done:
+		case <-ctx.Done():
+			return "", "", ctx.Err()
+		}
+	}
 	if !c.claimServiceWait(ctx, ss.svc.ID) {
 		return "", "", ctx.Err()
 	}
@@ -267,7 +261,7 @@ func (c *Core) drill(ctx context.Context, ss svcScope, row store.BackupCheck, si
 	if err != nil {
 		return "", "", fmt.Errorf("find the drill's service %s: %w", name, err)
 	}
-	detail, err := c.drillResult(ctx, ss, to, res.Restore.ID, row.StartedAt, ended)
+	detail, err := c.drillResult(ctx, ss, to, restoreErr, row.StartedAt)
 	if ctx.Err() != nil {
 		return "", "", ctx.Err()
 	}
@@ -283,41 +277,13 @@ func (c *Core) drill(ctx context.Context, ss svcScope, row store.BackupCheck, si
 	return apitypes.BackupSucceeded, detail, nil
 }
 
-// drillResult reads how the restore a drill started ended and, when it
-// succeeded, queries the copy: the detail is what that counted and how
-// long the drill took since started. The caller holds the source's
-// claim, so the restore's work is over; when its row doesn't say so yet,
-// ended brings its audit event (see drill).
-func (c *Core) drillResult(ctx context.Context, from, to svcScope, restoreID int64, started time.Time, ended *subscription) (string, error) {
-	run, err := c.store.GetBackup(ctx, restoreID)
-	if err != nil {
-		return "", fmt.Errorf("read restore %d: %w", restoreID, err)
-	}
-	if run.Status == string(apitypes.BackupRunning) {
-		// The event is written right after the claim's release; the
-		// deadline only keeps a drill (and the scheduler's pass behind
-		// it) from waiting for good on one that was never written.
-		wait := time.NewTimer(drillEventWait)
-		defer wait.Stop()
-		select {
-		case ev := <-ended.ch:
-			run.Status = string(apitypes.BackupSucceeded)
-			if ev.Audit.Action == "backup.restore_failed" {
-				run.Status, run.Error = string(apitypes.BackupFailed), ev.Audit.Summary
-			}
-		case <-wait.C:
-			if run, err = c.store.GetBackup(ctx, restoreID); err != nil {
-				return "", fmt.Errorf("read restore %d: %w", restoreID, err)
-			}
-			if run.Status == string(apitypes.BackupRunning) {
-				return "", fmt.Errorf("restore %d never reported how it ended; see `dock backup list` and run the drill again", restoreID)
-			}
-		case <-ctx.Done():
-			return "", ctx.Err()
-		}
-	}
-	if run.Status != string(apitypes.BackupSucceeded) {
-		return "", fmt.Errorf("restoring the snapshot %s: %s", run.Status, cmp.Or(run.Error, "no error was recorded"))
+// drillResult is what a drill found once its restore ended with
+// restoreErr: a failed restore fails the drill; one that worked has its
+// copy to queried, and the detail is what that counted and how long the
+// drill took since started.
+func (c *Core) drillResult(ctx context.Context, from, to svcScope, restoreErr error, started time.Time) (string, error) {
+	if restoreErr != nil {
+		return "", fmt.Errorf("restoring the snapshot failed: %w", restoreErr)
 	}
 	found, err := c.drillQuery(ctx, from, to)
 	if err != nil {
