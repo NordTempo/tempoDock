@@ -94,6 +94,14 @@ ORDER BY id;
 -- name: PruneBackup :exec
 UPDATE backups SET pruned = 1 WHERE id = +?;
 
+-- name: FailRunningInPlaceRestores :execrows
+-- In-place restores a restart cut short (a volume backup's, or to a
+-- time): the service is its own target. Run before FailRunningBackups,
+-- with what to do about the data. Once at start-up: a scan of the running
+-- rows.
+UPDATE backups SET status = 'failed', error = ?, finished_at = ?
+WHERE status = 'running' AND operation = 'restore' AND restored_to = service_id;
+
 -- name: FailRunningBackups :execrows
 -- Runs a restart cut short.
 UPDATE backups SET status = 'failed', error = ?, finished_at = ? WHERE status = 'running';

@@ -684,3 +684,38 @@ func TestRestoreIntoAnArchivedServicesNameSaysSo(t *testing.T) {
 		t.Fatalf("restore into an archived service's name: %v", err)
 	}
 }
+
+// A restart during an in-place restore leaves the service stopped on
+// data that may be half replaced: the failed row says how to finish or
+// undo it.
+func TestVolumeBackupRestoreInterruptedByCrash(t *testing.T) {
+	h := newHarness(t)
+	const snap = "eeee5555eeee"
+	filling, stuck := make(chan struct{}), make(chan struct{})
+	h.snapshotJobs(func(spec node.JobSpec) *node.JobResult {
+		switch {
+		case strings.Contains(spec.Name, "_backup"):
+			return &node.JobResult{Output: resticOutput(snap, 10, snap)}
+		case spec.Script == backup.VolumeRestoreScript:
+			close(filling)
+			<-stuck // the daemon dies first
+		}
+		return nil
+	})
+	app := h.volumeService("app")
+	h.runBackup(app)
+	var res apitypes.RestoreResult
+	h.untilFree(func() (err error) {
+		res, err = h.c.RestoreBackup(h.ctx, testSystem, app, apitypes.RestoreBackupRequest{Snapshot: snap, InPlace: true})
+		return err
+	})
+	<-filling
+	h.snapshotJobs(nil)
+	h.crash()
+	// Before the dead daemon's Close (cleanups run last first), which
+	// waits for its job.
+	t.Cleanup(func() { close(stuck) })
+	if r := h.waitRun(app, res.Restore.ID); r.Status != apitypes.BackupFailed || !strings.Contains(r.Error, "in place again") || !strings.Contains(r.Error, "to undo") {
+		t.Fatalf("restore = %+v", r)
+	}
+}

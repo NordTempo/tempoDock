@@ -981,6 +981,11 @@ func (c *Core) ensureImage(ctx context.Context, serverID int64, rt node.Runtime,
 // control plane's own backup included.
 func (c *Core) failInterruptedBackups(ctx context.Context) error {
 	const msg = "the daemon restarted while this was running; run it again"
+	// An in-place restore stopped the service and was replacing its data.
+	const inPlace = "the daemon restarted during the restore, which may have replaced part of the data and left the service stopped: restore in place again, or restore the snapshot taken before it (`dock volume snapshot list`) to undo"
+	if _, err := c.store.FailRunningInPlaceRestores(ctx, store.FailRunningInPlaceRestoresParams{Error: inPlace, FinishedAt: ptr(now())}); err != nil {
+		return err
+	}
 	n, err := c.store.FailRunningBackups(ctx, store.FailRunningBackupsParams{Error: msg, FinishedAt: ptr(now())})
 	if err != nil {
 		return err

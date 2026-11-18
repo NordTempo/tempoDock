@@ -233,6 +233,28 @@ func (q *Queries) FailRunningBackups(ctx context.Context, arg FailRunningBackups
 	return result.RowsAffected()
 }
 
+const failRunningInPlaceRestores = `-- name: FailRunningInPlaceRestores :execrows
+UPDATE backups SET status = 'failed', error = ?, finished_at = ?
+WHERE status = 'running' AND operation = 'restore' AND restored_to = service_id
+`
+
+type FailRunningInPlaceRestoresParams struct {
+	Error      string
+	FinishedAt *time.Time
+}
+
+// In-place restores a restart cut short (a volume backup's, or to a
+// time): the service is its own target. Run before FailRunningBackups,
+// with what to do about the data. Once at start-up: a scan of the running
+// rows.
+func (q *Queries) FailRunningInPlaceRestores(ctx context.Context, arg FailRunningInPlaceRestoresParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, failRunningInPlaceRestores, arg.Error, arg.FinishedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const finishBackup = `-- name: FinishBackup :exec
 UPDATE backups SET status = ?, snapshot_id = ?, size_bytes = ?, error = ?, finished_at = ? WHERE id = +?
 `

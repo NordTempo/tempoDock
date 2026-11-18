@@ -64,19 +64,30 @@ safety snapshot, before the service first starts.
   <length>`); a dump without the header is an older one and restores as
   before. A restore creates the roles that are missing, without
   passwords, then runs pg_restore.
-- **A restore target is unusable until its restore succeeds** (not
-  built): `service switch-references --to` and the UI refuse a service
-  whose restore is running or failed, saying which. A failed restore
-  marks its target failed, raises an alert, and frees the name by
-  archiving the target under `<name>-failed-<restore id>`.
+- **A restore target is unusable until its restore succeeds** (built):
+  `service switch-references --to` refuses a service whose restore is
+  running or failed, saying which, in a dry run too. Whether a service is
+  such a target is read from the restore row that names it, never stored
+  on the service. A failed restore into a new service archives its target
+  as `<name>-failed-<restore id>` (`-failed-s<id>` for a snapshot
+  restore), which frees the name for the next try and stops its
+  container; its volume is kept for a look. It raises a `backup_failed`
+  alert on the service restored from, which the next successful restore
+  of it resolves.
+- A restart during an in-place restore fails it with what to do: restore
+  in place again, or restore the safety snapshot.
+
+Left open: a restore into a new service that a restart interrupts is
+marked failed and refused as a switch target, but its target keeps its
+name and no alert is raised.
 
 ## Consequences
 
 - No idle cost. One job container while a restore runs, capped like
   backup jobs.
-- No migration and no node protocol change for part 1: the job is an
-  ordinary job. Migration 0125 and protocol 34 stay reserved for the
-  failed-target mark.
+- No node protocol change: the restore is an ordinary job. One
+  migration: an index on `backups.restored_to`, to find the restore that
+  made a service.
 - Manual snapshots taken before this change carry the daily tag and age
   out with the daily ones.
 - `restic snapshots --tag dock-s<id>` by hand no longer lists manual
