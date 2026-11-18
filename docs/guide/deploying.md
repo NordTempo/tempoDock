@@ -90,8 +90,11 @@ tar:
   so apps win any contention. A build that
   needs more memory fails with `build_failed` and says so; running apps are
   unaffected. Raise the cap or build in CI and deploy the image.
-- **First Railpack build** downloads a ~150 MB version resolver to
-  `/tmp/railpack`.
+- **First Railpack build** downloads the version resolver Railpack plans
+  with (mise, 55 MB, 150 MB unpacked) from its GitHub release to
+  `/tmp/railpack`. Dock downloads it itself and uses it only when it
+  matches the SHA-256 this Dock version was built with; a download that
+  doesn't match fails the build and is not kept.
 - Servers with `[buildkit] enabled = false` reject source deploys.
 
 ### Build caches
