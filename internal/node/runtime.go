@@ -451,6 +451,10 @@ type DialRequest struct {
 	ContainerID string
 	// Port is the container port (e.g. 5432), not a published host port.
 	Port int
+	// Forwarded marks a connection a server forwards to a service that
+	// moved away (ADR 0063): a remote server counts it against its
+	// forwarded connections, not against the dials of the data panel.
+	Forwarded bool
 }
 
 // Builder turns source code into an image available to this server.
