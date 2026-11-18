@@ -216,6 +216,8 @@ type Core struct {
 	// issues is the error sink the statistics tick writes as error
 	// issues (errors_ingest.go).
 	issues errorSink
+	// stops is when failed releases' containers began to stop (errors_ingest.go).
+	stops releaseStops
 	// cliLogins wakes CLIs waiting on browser logins (cli_login.go).
 	cliLogins *cliLogins
 	// streams counts the event streams open (streams.go).

@@ -671,6 +671,9 @@ func (d *deployment) fail(ctx context.Context, err error) {
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 	defer cancel()
+	// From here on its container is stopping: errors it first logs now
+	// are no issues (logFate.noise).
+	c.stops.mark(releaseKey{d.ss.svc.ID, d.rel.Number}, now())
 	// What explains the failure, read while its container still exists.
 	var captured containerCapture
 	if !canceled {
