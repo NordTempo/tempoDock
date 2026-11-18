@@ -43,7 +43,12 @@ install tarball (`deploy/`: the script and the systemd units) and the
 this the signature check is required: it needs OpenSSL 3, which Debian 12,
 Ubuntu 22.04 and later have (`DOCK_REQUIRE_SIGNATURE=0` accepts
 `SHA256SUMS` alone). A download cut short runs nothing: the whole script is
-one function, called on its last line.
+one function, called on its last line. Everything it needs from GitHub
+(the release, Caddy) is downloaded and checked before anything of Dock's
+on the server changes, so a download that fails leaves the server as it
+was: run it again. The release itself comes through GitHub's API, which
+allows 60 requests an hour per address without a token (an install takes
+five); behind a shared address, set `GITHUB_TOKEN`.
 
 On Debian and Ubuntu it installs what's missing: Docker Engine (from
 Docker's own apt repository, as [docs.docker.com](https://docs.docker.com/engine/install/)
@@ -725,6 +730,15 @@ else.
    Read like this, the token is in neither the shell's history nor the
    process list. The printed command has it after `sudo` instead, where
    other users of the server can see it while the install runs.
+
+   The one-line install does the same on a bare Debian or Ubuntu server,
+   Docker included, with nothing copied over. Name the control plane's
+   version, or the node gets the latest release:
+
+   ```sh
+   read -rs NODE_JOIN_TOKEN && export NODE_JOIN_TOKEN
+   curl -fsSL https://dock.nordtempo.com/install.sh | sudo --preserve-env=NODE_JOIN_TOKEN DOCK_VERSION=v0.61.0 bash -s -- --yes
+   ```
 
    The script installs the same binaries, Caddy and app firewall as on the
    control plane, runs `dock node join` once (it creates the node's key in
