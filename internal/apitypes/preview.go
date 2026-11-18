@@ -190,7 +190,7 @@ type Preview struct {
 	Number      int64  `json:"number" doc:"Pull request number"`
 	Title       string `json:"title"`
 	Author      string `json:"author"`
-	PullURL     string `json:"pull_url" doc:"The pull request on GitHub"`
+	PullURL     string `json:"pull_url" doc:"The pull request on GitHub: https://github.com/<repo>/pull/<number>"`
 	Branch      string `json:"branch" doc:"The pull request's head branch"`
 	Commit      string `json:"commit" doc:"The head commit previewed"`
 	Fork        bool   `json:"fork"`
@@ -222,5 +222,5 @@ type PullRequestRef struct {
 	Number int64  `json:"number"`
 	Title  string `json:"title"`
 	Author string `json:"author"`
-	URL    string `json:"url" doc:"The pull request on GitHub"`
+	URL    string `json:"url" doc:"The pull request on GitHub: https://github.com/<repo>/pull/<number>"`
 }

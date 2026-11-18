@@ -10243,7 +10243,7 @@ export interface components {
              * @description Pull request number
              */
             number: number;
-            /** @description The pull request on GitHub */
+            /** @description The pull request on GitHub: https://github.com/<repo>/pull/<number> */
             pull_url: string;
             /** @description owner/name */
             repo: string;
@@ -10453,7 +10453,7 @@ export interface components {
             /** @description owner/name */
             repo: string;
             title: string;
-            /** @description The pull request on GitHub */
+            /** @description The pull request on GitHub: https://github.com/<repo>/pull/<number> */
             url: string;
         };
         RecoveryCodes: {

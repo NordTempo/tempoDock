@@ -385,7 +385,7 @@ func (c *Core) GetEnvironment(ctx context.Context, a Actor, ref EnvRef) (apitype
 	}
 	out := c.toEnvironment(a, es.project, es.env, srv)
 	if pv, err := c.store.GetPreviewByEnvironment(ctx, es.env.ID); err == nil {
-		out.Preview = &apitypes.PullRequestRef{Repo: pv.Repo, Number: pv.Number, Title: pv.Title, Author: pv.Author, URL: pv.HtmlUrl}
+		out.Preview = &apitypes.PullRequestRef{Repo: pv.Repo, Number: pv.Number, Title: pv.Title, Author: pv.Author, URL: pullURL(pv.Repo, pv.Number)}
 	} else if !store.IsNotFound(err) {
 		return out, err
 	}
