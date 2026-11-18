@@ -12,6 +12,7 @@ the CLI and real traffic through the proxy.
 | `traces.sh`, `metrics.sh` | OTLP traces and metrics, on their own servers |
 | `analytics-*.sh` | Dock Analytics with a headless browser, on their own containers |
 | `drain.sh` | `dock server drain` of a node under load: Postgres, Redis, a volume and stateless apps move with no failed request and every acknowledged write kept |
+| `pitr.sh` | point-in-time restore with the slot's S3 store: restores to a time between writes, across a replaced container, of a stopped database, across off and on, in place; the archiver under write load and idle |
 | `upgrade/run.sh` | one published release updated to another, with data checks |
 | `sso.sh` | single sign-on through a real Keycloak over HTTPS (its own CA, in the slot): the oidc kind and the keycloak preset, invites, refusals, step-ups, logout |
 | `fresh-install.sh` | the README's install on bare Debian 12/13 and Ubuntu 22.04/24.04: piped install with Docker, CLI login, a template, re-run, uninstall |
@@ -50,6 +51,11 @@ points it at the server the project was placed on.
 Several slots at once need more inotify instances than the default 128
 (each server runs systemd and Docker as root): the dev VM has
 `fs.inotify.max_user_instances = 1024` in `/etc/sysctl.d/90-dock-e2e.conf`.
+
+Each slot gets an S3 store, MinIO as `$SLOT-minio` on `.30` with a bucket
+`dock`; its address and keys are `E2E_S3_*` in the env file (`E2E_S3=0`
+leaves it out). Nothing uses it until a scenario adds it as a storage
+connection (`pitr.sh` does, and moves the backups there).
 
 `E2E_RELEASE=v0.54.2 e2e/vm/up.sh` installs a published release instead
 of `bin/dock`; `E2E_VM_MEMORY=5g` caps each server's memory.

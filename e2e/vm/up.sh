@@ -23,6 +23,11 @@
 # E2E_VM_MEMORY caps each server container's memory (docker --memory, e.g.
 # 5g), so a runaway test can't take the host down; unset means no cap.
 #
+# An S3 store runs beside the servers as $SLOT-minio (MinIO, .30, bucket
+# "dock"): E2E_S3_ENDPOINT and its keys are in the env file, for what needs
+# a bucket (backups on a storage connection, point-in-time restore).
+# E2E_S3=0 leaves it out.
+#
 # Re-running with the servers up re-installs the binary (an upgrade).
 # Everything is named $SLOT-*; nothing else on the host is touched.
 set -euo pipefail
@@ -37,6 +42,8 @@ SUBNET=${E2E_SUBNET:-10.250.250.0/24}
 PREFIX=${SUBNET%.*}
 BASE_DOMAIN=${BASE_DOMAIN:-$SLOT.test}
 STATE=/tmp/$SLOT
+# The MinIO image the integration tests use (internal/core).
+MINIO_IMAGE=${MINIO_IMAGE:-pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372}
 TLS_OFF=true
 [[ ${E2E_TLS:-} != 1 ]] || TLS_OFF=false
 mkdir -p "$STATE"
@@ -118,6 +125,19 @@ cat >"$STATE/env" <<EOF
 export DOCK_URL=$DOCK_URL DOCK_TOKEN=$token E2E_PROXY=$CP_IP:80 E2E_BASE_DOMAIN=$BASE_DOMAIN E2E_SLOT=$SLOT E2E_SUBNET=$SUBNET
 export E2E_ADMIN_EMAIL=admin@localhost E2E_ADMIN_PASSWORD=$(cat "$STATE/admin-password")
 EOF
+
+# The S3 store: one MinIO on $SLOT-net, its data in the container (gone
+# with down.sh). A directory under /data is a bucket.
+if [[ ${E2E_S3:-1} != 0 ]]; then
+	S3_IP=$PREFIX.30
+	say "S3 store $SLOT-minio ($S3_IP)"
+	docker inspect "$SLOT-minio" >/dev/null 2>&1 ||
+		docker run -d --name "$SLOT-minio" --network "$NET" --ip "$S3_IP" --memory 512m \
+			-e MINIO_ROOT_USER=dockminio -e MINIO_ROOT_PASSWORD=dockminio-secret \
+			--entrypoint sh "$MINIO_IMAGE" -c 'mkdir -p /data/dock && exec minio server /data' >/dev/null
+	for _ in $(seq 60); do curl -fsS -o /dev/null "http://$S3_IP:9000/minio/health/live" 2>/dev/null && break; sleep 1; done
+	echo "export E2E_S3_ENDPOINT=http://$S3_IP:9000 E2E_S3_BUCKET=dock E2E_S3_KEY_ID=dockminio E2E_S3_SECRET=dockminio-secret" >>"$STATE/env"
+fi
 
 servers="$CP=$CP_IP"
 for i in $(seq "$NODES"); do
