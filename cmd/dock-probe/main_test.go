@@ -51,10 +51,22 @@ func TestRun(t *testing.T) {
 	refused := port(t, closed)
 	_ = closed.Close()
 
+	// Four PostgreSQL servers, by their first answer to a startup message.
+	starting := pgServer(t, pgError("57P03", "the database system is starting up"))
+	asksAuth := pgServer(t, []byte{'R', 0, 0, 0, 8, 0, 0, 0, 3})
+	badLogin := pgServer(t, pgError("28P01", "password authentication failed"))
+	cutShort := pgServer(t, []byte{'E', 0, 0, 0, 40, 'S'})
+
 	for _, tc := range []struct {
 		args []string
 		want string // "" passes
 	}{
+		{[]string{"pg", starting, "1000"}, "PostgreSQL is not accepting connections yet: the database system is starting up"},
+		{[]string{"pg", asksAuth, "1000"}, ""},
+		{[]string{"pg", badLogin, "1000"}, ""},
+		{[]string{"pg", cutShort, "1000"}, "connection closed without a whole answer"},
+		{[]string{"pg", port(t, hung), "200"}, "timed out"},
+		{[]string{"pg", refused, "200"}, "connection refused"},
 		{[]string{"http", up, "/up", "1000"}, ""},
 		{[]string{"http", up, "/down", "1000"}, "GET /down returned 503"},
 		{[]string{"http", port(t, hung), "/up", "200"}, "GET /up: timed out"},
@@ -70,6 +82,42 @@ func TestRun(t *testing.T) {
 			t.Errorf("%v = %v, want %q", tc.args, err, tc.want)
 		}
 	}
+}
+
+// pgServer listens on loopback and answers every connection's startup
+// message (protocol 3.0, user and database postgres) with answer, then
+// closes. It returns its port.
+func pgServer(t *testing.T, answer []byte) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = l.Close() })
+	want := "\x00\x00\x00\x29\x00\x03\x00\x00user\x00postgres\x00database\x00postgres\x00\x00"
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			got := make([]byte, len(want))
+			if _, err := io.ReadFull(c, got); err != nil || string(got) != want {
+				t.Errorf("startup message = %q, %v", got, err)
+			}
+			_, _ = c.Write(answer)
+			_ = c.Close()
+		}
+	}()
+	return port(t, l)
+}
+
+// pgError is an ErrorResponse with the severity, SQLSTATE code and
+// message fields, as PostgreSQL sends them.
+func pgError(code, message string) []byte {
+	body := "SFATAL\x00VFATAL\x00C" + code + "\x00M" + message + "\x00\x00"
+	n := 4 + len(body)
+	return append([]byte{'E', byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n)}, body...)
 }
 
 // port is l's port as the probe takes it.

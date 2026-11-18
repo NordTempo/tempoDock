@@ -825,8 +825,11 @@ const TraceIngestHost = "dock-otlp"
 // within StartPeriod after a start don't count; probes run every
 // StartInterval then, so a healthy start is seen quickly.
 type LivenessCheck struct {
-	Port          int
-	Path          string
+	Port int
+	Path string
+	// Kind, without Path, is what the probe asks the port (HealthKind);
+	// "" is a TCP connect.
+	Kind          HealthKind
 	Interval      time.Duration
 	Timeout       time.Duration
 	Retries       int
@@ -895,6 +898,16 @@ type Container struct {
 	AnonymousVolumes []string
 }
 
+// HealthKind is what a health check asks a port beyond a TCP connect.
+// The zero value asks nothing more. A server on an older dock doesn't
+// know a newer kind and runs the TCP check.
+type HealthKind string
+
+// HealthPostgres checks that a PostgreSQL server accepts connections
+// (internal/node/pgready): one that is starting up or recovering has its
+// port open but refuses every connection with SQLSTATE 57P03.
+const HealthPostgres HealthKind = "pg"
+
 // HealthCheck describes when a new container counts as healthy.
 //   - Path set: HTTP GET http://127.0.0.1:HostPort{Path} returns 2xx/3xx.
 //   - No Path, container publishes a port: TCP connect succeeds.
@@ -902,13 +915,17 @@ type Container struct {
 //
 // Port (set without Path) instead probes that container port over TCP on
 // the container's environment network, for services that publish nothing
-// (database templates, ADR 0019).
+// (database templates, ADR 0019). Kind says what that probe asks the
+// port: "" only connects, HealthPostgres also waits for PostgreSQL to
+// accept connections.
 //
 // Interval is the steady probe interval; the first probes come sooner (the
 // Docker runtime backs off from 50 ms).
 type HealthCheck struct {
-	Path     string
-	Port     int
+	Path string
+	Port int
+	// Kind applies to the Port probe only.
+	Kind     HealthKind
 	Timeout  time.Duration
 	Interval time.Duration
 	// Grace is how long a portless container must stay up to count as healthy.

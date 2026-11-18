@@ -19,6 +19,7 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/node/pgready"
 )
 
 const (
@@ -108,7 +109,7 @@ func (r *Runtime) HealthCheck(ctx context.Context, c node.Container, hc node.Hea
 				return errors.New("health check path is set but the container publishes no port")
 			}
 			if hc.Path == "" && hc.Port != 0 {
-				lastErr = r.probeNetwork(ctx, st, hc.Port)
+				lastErr = r.probeNetwork(ctx, st, hc.Port, hc.Kind)
 			} else {
 				lastErr = probe(ctx, cur, hc)
 			}
@@ -277,8 +278,9 @@ func probeHTTP(ctx context.Context, target string) error {
 // probeNetwork checks that something accepts TCP connections on port of the
 // container, on its environment network (as Dial reaches it). Unlike the
 // loopback probe there is no docker-proxy in between, so a connect is
-// enough.
-func (r *Runtime) probeNetwork(ctx context.Context, st container.InspectResponse, port int) error {
+// enough. With kind node.HealthPostgres the server must also answer that
+// it accepts connections (pgready.Check), within probeTimeout.
+func (r *Runtime) probeNetwork(ctx context.Context, st container.InspectResponse, port int, kind node.HealthKind) error {
 	addr, err := r.envAddr(ctx, st, node.LabelsFrom(st.Config.Labels))
 	if err != nil {
 		return err
@@ -289,7 +291,15 @@ func (r *Runtime) probeNetwork(ctx context.Context, st container.InspectResponse
 	if err != nil {
 		return fmt.Errorf("connect to port %d: %w", port, err)
 	}
-	return conn.Close()
+	defer func() { _ = conn.Close() }()
+	if kind != node.HealthPostgres {
+		return nil
+	}
+	_ = conn.SetDeadline(time.Now().Add(probeTimeout))
+	if err := pgready.Check(conn); err != nil {
+		return fmt.Errorf("PostgreSQL on port %d: %w", port, err)
+	}
+	return nil
 }
 
 func probeTCP(ctx context.Context, port int) error {

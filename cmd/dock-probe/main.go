@@ -6,6 +6,7 @@
 //
 //	dock-probe tcp PORT TIMEOUT_MS
 //	dock-probe http PORT PATH TIMEOUT_MS
+//	dock-probe pg PORT TIMEOUT_MS
 //	dock-probe relay ADDR SOCKET
 //	dock-probe wal-push ADDR PATH FILE
 //	dock-probe version
@@ -13,8 +14,12 @@
 // It connects to PORT on the container's loopback, then, if nothing
 // listens there, on the container's other addresses (an app bound to its
 // network address only). The http probe sends one GET for PATH and passes
-// on a 2xx or 3xx status. Exit status 0 is healthy, 1 unhealthy; the one
-// line it prints says why, and Docker keeps it in the health log.
+// on a 2xx or 3xx status. The pg probe sends a PostgreSQL startup message
+// and fails while the server answers that it can't take connections yet
+// (SQLSTATE 57P03: starting up, shutting down or recovering); any other
+// answer passes (internal/node/pgready). Exit status 0 is healthy, 1
+// unhealthy; the one line it prints says why, and Docker keeps it in the
+// health log.
 //
 // relay is the BuildKit container's way to the platform registry (ADR
 // 0089 amendment): it listens on ADDR (the registry's 127.0.0.1:PORT,
@@ -29,8 +34,8 @@
 // the archiver answers that the file is stored off the server. The
 // archiver holds the storage keys; the database's container never does.
 //
-// It imports only io, net, os, strconv and time (no net/http, no fmt) to
-// stay small: Docker execs it every interval in the app's own cgroup.
+// It imports only io, net, os, strconv and time, and pgready, which
+// imports no more (no net/http, no fmt), to stay small: Docker execs it every interval in the app's own cgroup.
 package main
 
 import (
@@ -41,6 +46,8 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+
+	"github.com/NordTempo/tempoDock/internal/node/pgready"
 )
 
 // version is what `dock-probe version` prints; dock checks the probe can
@@ -68,7 +75,7 @@ func run(args []string) error {
 		return relay(args[1], args[2], os.Stdin)
 	}
 	if len(args) < 3 {
-		return errors.New("usage: dock-probe tcp PORT TIMEOUT_MS | http PORT PATH TIMEOUT_MS")
+		return errors.New(usage)
 	}
 	port, err := strconv.Atoi(args[1])
 	if err != nil || port < 1 || port > 65535 {
@@ -88,8 +95,29 @@ func run(args []string) error {
 		return conn.Close()
 	case args[0] == "http" && len(args) == 4:
 		return probeHTTP(port, args[2], deadline)
+	case args[0] == "pg" && len(args) == 3:
+		return probePG(port, deadline)
 	}
-	return errors.New("usage: dock-probe tcp PORT TIMEOUT_MS | http PORT PATH TIMEOUT_MS")
+	return errors.New(usage)
+}
+
+// usage is the error for arguments that name no probe.
+const usage = "usage: dock-probe tcp PORT TIMEOUT_MS | http PORT PATH TIMEOUT_MS | pg PORT TIMEOUT_MS"
+
+// probePG asks the PostgreSQL server on port whether it accepts
+// connections (pgready.Check).
+func probePG(port int, deadline time.Time) error {
+	conn, err := dial(port, deadline)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.Close() }()
+	_ = conn.SetDeadline(deadline)
+	err = pgready.Check(conn)
+	if _, ok := errors.AsType[*pgready.NotReadyError](err); ok {
+		return err
+	}
+	return describe("PostgreSQL on port "+strconv.Itoa(port), err)
 }
 
 // dial connects to port on loopback, or on the container's other
@@ -184,6 +212,8 @@ func describe(what string, err error) error {
 		return errors.New(what + ": connection refused, nothing listens on it")
 	case errors.Is(err, syscall.ECONNRESET):
 		return errors.New(what + ": connection reset")
+	case errors.Is(err, io.ErrUnexpectedEOF):
+		return errors.New(what + ": connection closed without a whole answer")
 	}
 	return errors.New(what + ": " + err.Error())
 }

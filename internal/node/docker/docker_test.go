@@ -127,6 +127,10 @@ func TestCreateOptionsHealth(t *testing.T) {
 	if hc := createOptions(spec, "/p", nil).Config.Healthcheck; !slices.Equal(hc.Test, []string{"CMD", "/.dock-probe", "tcp", "8080", "5000"}) {
 		t.Errorf("tcp Test = %v", hc.Test)
 	}
+	spec.Health.Kind = node.HealthPostgres
+	if hc := createOptions(spec, "/p", nil).Config.Healthcheck; !slices.Equal(hc.Test, []string{"CMD", "/.dock-probe", "pg", "8080", "5000"}) {
+		t.Errorf("pg Test = %v", hc.Test)
+	}
 	// Without a probe, or without a check of Dock's (a worker, the check
 	// turned off), the image's own HEALTHCHECK is turned off: core acts
 	// on what Docker reports, so it must only ever report Dock's check.

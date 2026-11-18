@@ -141,6 +141,9 @@ queued → building → starting → health_checking → active → superseded
    after a snapshot when asked. Then the new container starts next to the
    old one, on the environment's network, with resource limits.
 4. **health_checking:** HTTP path or TCP port until it passes or times out.
+   A Postgres template must also accept connections
+   ([ADR 0043](decisions/0043-ongoing-health-checks.md)): its port is open
+   while it starts up or recovers.
 5. **active:** switch the Caddy route (the service's upstream file, so
    Caddy doesn't reload, [ADR 0091](decisions/0091-switches-without-reloads.md)),
    drain the old container for 12 s and stop it (the old release becomes `superseded`). From here Docker

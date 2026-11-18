@@ -163,7 +163,7 @@ func (c *Core) addArchiving(spec *node.ContainerSpec, ss svcScope) {
 		return
 	}
 	if spec.Health == nil {
-		spec.Health = liveness(releaseConfig{HealthPort: t.port})
+		spec.Health = liveness(releaseConfig{HealthPort: t.port, HealthKind: t.health})
 	}
 }
 
