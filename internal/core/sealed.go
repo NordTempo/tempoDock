@@ -45,6 +45,7 @@ var (
 	sealedBackupKeys                   = secrets.Column{Table: "backup_settings", Name: "credentials"}
 	sealedBackupPassword               = secrets.Column{Table: "backup_settings", Name: "password"}
 	sealedAnalyticsToken               = secrets.Column{Table: "analytics_settings", Name: "token"}
+	sealedHeartbeatURL                 = secrets.Column{Table: "heartbeat", Name: "url"} // ADR 0097
 	sealedAppKey                       = secrets.Column{Table: "github_app", Name: "private_key"}
 	sealedAppWebhookSecret             = secrets.Column{Table: "github_app", Name: "webhook_secret"}
 	sealedAppClientSecret              = secrets.Column{Table: "github_app", Name: "client_secret"} // its OAuth client's (ADR 0066)
@@ -69,6 +70,7 @@ var (
 		sealedBackupPassword, sealedAnalyticsToken, sealedAppKey, sealedAppWebhookSecret, sealedAppClientSecret,
 		sealedDataReader, sealedDataWriter, sealedRequestArgs, sealedLogDrain, sealedRegistrySecret, sealedUserFactor,
 		sealedSSOSecret, sealedSessionIDToken, sealedStatusHook, sealedEmailPassword, sealedEmailBody, sealedWildcardKey, sealedACMEKey,
+		sealedHeartbeatURL,
 	}
 )
 
@@ -81,6 +83,7 @@ var (
 	appWebhookSecretAAD = sealedAppWebhookSecret.AAD()
 	appClientSecretAAD  = sealedAppClientSecret.AAD()
 	emailPasswordAAD    = sealedEmailPassword.AAD()
+	heartbeatURLAAD     = sealedHeartbeatURL.AAD()
 )
 
 // variableAAD binds a variable's live and staged value (serviceID nil:

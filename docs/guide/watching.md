@@ -78,6 +78,38 @@ dock alerts channel test team
 dock alerts resolve 31                                           # by hand
 ```
 
+### Outside heartbeat
+
+Every alert is sent by the control plane, so the one failure that takes
+the control plane down sends nothing. The heartbeat covers it: while the
+control plane runs, it sends a GET to one URL every few minutes. Point it
+at a dead man's switch, a monitor outside this server that raises the
+alarm when the pings stop. Any service or endpoint that expects a
+regular GET works.
+
+```sh
+dock alerts heartbeat set https://monitor.example.com/ping/3f2a   # every 5 minutes
+dock alerts heartbeat set - --every 2 < heartbeat-url             # the URL from stdin
+dock alerts heartbeat                                             # how the last pings went
+dock alerts heartbeat test                                        # send one now
+dock alerts heartbeat remove
+```
+
+Operators set it. The URL names the check, so it is stored encrypted and
+only its scheme and host are shown. Set the monitor's grace period to a
+few intervals: a ping that fails isn't retried, the next interval is the
+retry, and a control plane restart skips at most one. The address may be
+private (a monitor on your own network); redirects aren't followed.
+Three failed pings in a row open a platform alert, which resolves with
+the next ping that works. A control plane whose database is stuck stops
+pinging too.
+
+A server other than the control plane can't send alerts itself. When it
+has lost the control plane for five minutes it says so once in its log
+(`journalctl -u dock`), at error level, and once more when the link is
+back, with how long it was gone. Its apps keep running meanwhile. A
+server that dies is what the server offline alert is for.
+
 ## Analytics
 
 Dock Analytics counts visits to your sites first party and without

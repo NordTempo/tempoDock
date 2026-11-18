@@ -80,7 +80,7 @@ platform's. Thresholds are in the control plane's config.toml ([alerts]).`,
 	cmd.Flags().BoolVar(&all, "all", false, "also list resolved alerts")
 	cmd.PersistentFlags().Bool("platform", false, "the platform's alerts and channels instead of the organization's (operators)")
 	cmd.Flags().IntVar(&limit, "limit", 100, "with --all: how many (at most 500)")
-	cmd.AddCommand(newAlertResolveCmd(g), newAlertChannelCmd(g), newVulnAlertsCmd(g))
+	cmd.AddCommand(newAlertResolveCmd(g), newAlertChannelCmd(g), newVulnAlertsCmd(g), newAlertHeartbeatCmd(g))
 	return cmd
 }
 
