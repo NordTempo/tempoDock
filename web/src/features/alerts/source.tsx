@@ -261,6 +261,13 @@ export function AlertLink({
       );
     case "connection_failed": {
       const [kind] = (a.target?.connection ?? "").split(":");
+      // The outside heartbeat (ADR 0097): its status line says why.
+      if (kind === "heartbeat")
+        return (
+          <Link to="/console/alerts" hash="heartbeat" {...props}>
+            Open heartbeat
+          </Link>
+        );
       const to = connectionPages[kind ?? ""];
       if (!to) break;
       return (

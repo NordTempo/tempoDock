@@ -331,6 +331,12 @@ const words: Record<string, readonly [label: string, past: string]> = {
   ],
   "error.resolve": ["resolve error", "resolved an error in"],
   "github.app_client": ["set GitHub App secret", "set the client secret of"],
+  "heartbeat.set": ["set outside heartbeat", "set the outside"],
+  "heartbeat.remove": ["remove outside heartbeat", "removed the outside"],
+  "heartbeat.test": [
+    "test outside heartbeat",
+    "sent a test ping to the outside",
+  ],
   "incident.delete": ["delete incident", "deleted an incident on"],
   "incident.draft": ["draft incident", "drafted an incident on"],
   "incident.edit": ["edit incident", "edited an incident on"],

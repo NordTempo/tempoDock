@@ -8,7 +8,7 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { currentOrg } from "../api/client";
 import { useEventStream } from "../api/events";
 import type { components } from "../api/schema";
-import { applyAlertEvent } from "../features/alerts/data";
+import { alertKeys, applyAlertEvent } from "../features/alerts/data";
 import { backupSettingsKey } from "../features/backups/settings";
 import { applyRedirectEvent, cloudflareKey } from "../features/cloudflare/data";
 import { applyEmailEvent } from "../features/console/email";
@@ -728,6 +728,8 @@ function invalidateForAudit(
     invalidate(["org", "registry-credentials"]);
   // Channels added, removed or alerts resolved (from the CLI too).
   if (kind === "alert") invalidate(["alerts"]);
+  // The outside heartbeat set, removed or tested (ADR 0097).
+  if (kind === "heartbeat") invalidate(alertKeys.heartbeat);
   // A status page or one of its incidents made, changed or removed (ADR
   // 0073).
   if (kind === "status_page" || kind === "incident") invalidate(statusPagesKey);
