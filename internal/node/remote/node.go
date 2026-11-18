@@ -65,6 +65,10 @@ type Node struct {
 
 	connectedOnce sync.Once
 
+	// watch notes how long the control plane has been out of reach, for
+	// the one log line that says so (ADR 0097).
+	watch linkWatch
+
 	// wakes carries RequestWake's events to the control plane's open
 	// event stream; streams counts those open (normally one).
 	wakes   chan node.ContainerEvent
@@ -88,10 +92,19 @@ func (n *Node) Run(ctx context.Context) error {
 	minB, maxB := or(n.MinBackoff, time.Second), or(n.MaxBackoff, 30*time.Second)
 	log := n.logger()
 	backoff := minB
+	// A node that never reaches the control plane says so too.
+	n.watch.lost(time.Now())
 	for {
 		o := n.serveOnce(ctx)
 		if ctx.Err() != nil {
 			return nil
+		}
+		// No timer for this: the loop wakes for its backoff anyway, at
+		// least every maxB while the link is down.
+		now := time.Now()
+		n.watch.lost(now)
+		if since, say := n.watch.overdue(now); say {
+			log.Error("control plane unreachable for 5 minutes; apps keep running, deploys and alerts from here don't", "since", since)
 		}
 		switch {
 		case o.retryNow:
@@ -113,6 +126,57 @@ func (n *Node) Run(ctx context.Context) error {
 		}
 		backoff = min(backoff*2, maxB)
 	}
+}
+
+// linkLostAfter is how long the control plane is out of reach before the
+// node says so in its log.
+const linkLostAfter = 5 * time.Minute
+
+// linkWatch tracks when the link to the control plane was lost, so a node
+// says once at error level that it has been gone for linkLostAfter, and
+// once when it is back (ADR 0097). A node can't send alerts itself: its
+// log (`journalctl -u dock`) is where this shows. Run marks the loss and
+// a hello the return, on different goroutines.
+type linkWatch struct {
+	mu sync.Mutex
+	// lostAt is zero while the link is up.
+	lostAt time.Time
+	// said: the loss was logged, so the return is logged too.
+	said bool
+}
+
+// lost marks the link as down since now, unless it already is.
+func (w *linkWatch) lost(now time.Time) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.lostAt.IsZero() {
+		w.lostAt = now
+	}
+}
+
+// overdue reports, once per loss, that the link has been down for
+// linkLostAfter, and since when.
+func (w *linkWatch) overdue(now time.Time) (since time.Time, say bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.lostAt.IsZero() || w.said || now.Sub(w.lostAt) < linkLostAfter {
+		return time.Time{}, false
+	}
+	w.said = true
+	return w.lostAt, true
+}
+
+// back marks the link as up again; say is true when its loss was logged,
+// with how long it was gone.
+func (w *linkWatch) back(now time.Time) (gone time.Duration, say bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.lostAt.IsZero() {
+		return 0, false
+	}
+	gone, say = now.Sub(w.lostAt), w.said
+	w.lostAt, w.said = time.Time{}, false
+	return gone, say
 }
 
 // load reads the link and keys written by Join (and a rotation).
@@ -282,6 +346,9 @@ func (n *Node) hello(ctx context.Context, req helloRequest, st *connState) (Hell
 		n.promoteNext()
 	}
 	st.helloed.Store(true)
+	if gone, say := n.watch.back(time.Now()); say {
+		n.logger().Info("control plane reachable again", "gone_for", gone.Round(time.Second))
+	}
 	n.markConnected()
 	return h, nil
 }

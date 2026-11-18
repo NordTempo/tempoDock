@@ -423,6 +423,8 @@ func (c *Core) statsTick(ctx context.Context, col *collector, now time.Time) {
 	c.healthTick(ctx, now)
 	c.retentionTick(ctx, now, servers, hosts)
 	c.uptimeTick(ctx, now)
+	// The outside heartbeat goes last, from a tick that got this far (ADR 0097).
+	c.heartbeatTick(ctx, now)
 }
 
 // serviceEvents adds one usage event per environment of a server with the
