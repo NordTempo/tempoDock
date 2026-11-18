@@ -117,11 +117,11 @@ The repository password is made on first use; **store it** in your password
 manager: without it nobody can read the backups, including you after losing
 the server. Operators show it with `dock backup status --reveal`.
 
-Retention per service: 7 daily, 4 weekly and 6 monthly snapshots. A day
-keeps its newest backup, manual ones included: `dock backup run` twice in
-a day leaves the second (take a volume snapshot before a risky change if
-you want both). An
-operator changes it, and the hour every service follows by default, with
+Retention per service: 7 daily, 4 weekly and 6 monthly snapshots of the
+scheduled backups, and apart from those the last 5 manual ones
+(`dock backup run`, Back up now): a manual backup never pushes out a
+daily one, nor the other way round. An operator changes the daily, weekly
+and monthly numbers, and the hour every service follows by default, with
 `dock backup configure --keep-daily 14 --keep-weekly 4 --keep-monthly 6 --hour 2`.
 
 A store on your LAN (MinIO on a NAS) is a private address: allow it with
@@ -180,14 +180,20 @@ either:
   reference in the environment's variables becomes `${{db-restored.KEY}}`
   and the services using it redeploy. Switching back is the same action
   the other way, and `db` stays until you archive it.
-- **Any other service** restores a snapshot **in place**, after a safety
-  snapshot (see [Snapshots](#snapshots)): nothing refers to it by name.
+- **Any other service** restores a backup or a snapshot **in place**,
+  after a safety snapshot (see [Snapshots](#snapshots)): nothing refers
+  to it by name. The service stops, the safety snapshot keeps what its
+  volumes hold, the volumes in the backup are emptied and filled, and it
+  starts again. If that fails the safety snapshot is put back; restoring
+  it later undoes the restore. A volume added after the backup is left as
+  it is; one removed since must be added back first.
 
 From the CLI:
 
 ```sh
 dock backup restore -s db --snapshot 4cf53263          # into db-restored
 dock volume snapshot restore 12 -s db                  # the same, from a snapshot
+dock backup restore -s uploads --snapshot 9d2c11f0 --in-place   # a service's volumes, in place
 dock service switch-references db --to db-restored --dry-run   # who would redeploy
 dock service switch-references db --to db-restored     # use it
 dock service switch-references db-restored --to db     # switch back
@@ -202,11 +208,13 @@ are not rewritten; use references so a switch catches them.
 Restores read only the repository backups go to now. A backup whose
 snapshot is in another one (its storage connection's endpoint or bucket
 changed, say) says so on Settings, Backups, Restore is off for it, and it is
-restored by hand like the backups below.
+restored by hand.
 
-Backups of other volumes are restored by hand for now: with the repository
-password, `restic -r <repository> restore <snapshot> --target <dir>`
-(locally, the repository is the `dock_backups_*` volume on the server).
+By hand, with the repository password: `restic -r <repository> restore
+<snapshot> --target <dir>` (locally, the repository is the
+`dock_backups_*` volume on the server). A volume backup holds one folder
+per volume. A service's scheduled snapshots are tagged `dock-s<id>`, its
+manual ones `dock-s<id>-manual`.
 
 A Postgres backup read by hand is one file, `/postgres.dump`: a 21-byte
 line `DOCKPG1 <length>`, the roles as SQL of that length, then the

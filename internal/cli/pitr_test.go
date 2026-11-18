@@ -32,7 +32,7 @@ func TestPITRCommands(t *testing.T) {
 	}{
 		{[]string{"backup", "restore"}, "--snapshot or --to-time"},
 		{[]string{"backup", "restore", "--snapshot", "4cf53263", "--to-time", "now"}, "not both"},
-		{[]string{"backup", "restore", "--snapshot", "4cf53263", "--in-place"}, "--in-place restores a time"},
+		{[]string{"backup", "restore", "--snapshot", "4cf53263", "--in-place"}, "--yes"},
 		{[]string{"backup", "restore", "--to-time", "yesterday"}, "isn't a time"},
 		{[]string{"backup", "restore", "--to-time", "2026-11-17T14:01Z", "--in-place"}, "--yes"},
 		{[]string{"backup", "pitr", "maybe"}, "is not on or off"},
