@@ -280,6 +280,15 @@ func TestPITRWindowAcrossOffAndOn(t *testing.T) {
 	if _, err := h.c.RestoreLatest(h.ctx, testSystem, db, apitypes.RestoreBackupRequest{ToLatest: true, ToTime: &end}); CodeOf(err) != apitypes.CodeValidation {
 		t.Fatalf("latest and a time: %v", err)
 	}
+
+	// The storage down: a refusal that says so, not an internal error.
+	srv.Close()
+	if _, err := h.c.planToTime(h.ctx, ss, end); CodeOf(err) != apitypes.CodeConflict || !strings.Contains(err.Error(), "can't be read (connection refused)") {
+		t.Fatalf("with the storage down: %v", err)
+	}
+	if _, err := h.c.latestRestorable(h.ctx, ss); CodeOf(err) != apitypes.CodeConflict || !strings.Contains(err.Error(), "can't be read (connection refused)") {
+		t.Fatalf("latest with the storage down: %v", err)
+	}
 }
 
 // TestPITROffRestartFails: a turn-off whose restart release fails never

@@ -9,6 +9,7 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/backup"
+	"github.com/NordTempo/tempoDock/internal/httpkit"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/store"
 	"github.com/NordTempo/tempoDock/internal/walarchive"
@@ -70,7 +71,7 @@ func (c *Core) planToTime(ctx context.Context, ss svcScope, target time.Time) (p
 	}
 	ix, err := walarchive.List(ctx, cfg)
 	if err != nil {
-		return pitrPlan{}, fmt.Errorf("list the WAL archive: %w", err)
+		return pitrPlan{}, c.archiveUnreadable(ss, err)
 	}
 	if err := ix.Reaches(base.WalStart, base.WalSegmentBytes, target); err != nil {
 		// A later base backup means the archive started over after this
@@ -126,7 +127,7 @@ func (c *Core) latestRestorable(ctx context.Context, ss svcScope) (time.Time, er
 	}
 	ix, err := walarchive.List(ctx, cfg)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("list the WAL archive: %w", err)
+		return time.Time{}, c.archiveUnreadable(ss, err)
 	}
 	cov, err := ix.Cover(base.WalStart, base.WalSegmentBytes)
 	if err != nil {
@@ -161,6 +162,20 @@ func (c *Core) RestoreLatest(ctx context.Context, a Actor, ref ServiceRef, req a
 	}
 	req.ToTime = &at
 	return c.RestoreBackup(ctx, a, ref, req)
+}
+
+// archiveUnreadable is the refusal of a restore to a time whose WAL
+// archive can't be listed: the storage is down or refuses, which the one
+// who asked can look into, so it is not an internal error. A network
+// failure is said in plain words; anything else is logged, since its text
+// can carry the storage's internals.
+func (c *Core) archiveUnreadable(ss svcScope, err error) error {
+	why := httpkit.NetErrorText(err, 0)
+	if why == "" {
+		c.log.Error("list the WAL archive", "service", ss.String(), "err", err)
+		why = "the storage's answer is in the daemon log"
+	}
+	return conflict("%s can't be restored to a time right now: its WAL archive on the backup storage can't be read (%s); check the storage (`dock backup status`) and try again", ss, why)
 }
 
 // restoreToTime restores ss as it was at req.ToTime, into a new service
