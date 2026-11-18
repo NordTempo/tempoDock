@@ -24,7 +24,8 @@ import (
 // Templates, backups and restores on the real Docker runtime: create a
 // Redis from its template, write data, back it up to the local restic
 // repository, restore it into a new service and read the data back there.
-// Postgres's backup and restore run in TestIntegrationMoveBackups.
+// Postgres's run in TestIntegrationPostgresRolesRestore and
+// TestIntegrationMoveBackups.
 func TestIntegrationTemplateBackupRestore(t *testing.T) {
 	t.Parallel()
 	// Registered first, so it runs after the harness removed the containers.
@@ -71,6 +72,82 @@ func TestIntegrationTemplateBackupRestore(t *testing.T) {
 	}
 	if out := execIn(t, c, restoredCache, "redis-cli", "-a", newPw, "--no-auth-warning", "GET", "greeting"); out != "hello" {
 		t.Errorf("restored Redis: %q", out)
+	}
+}
+
+// A Postgres backup carries the server's roles: a table policy TO a role
+// made inside the server restores into a new service, where the role is
+// created (without its password) before pg_restore needs it.
+func TestIntegrationPostgresRolesRestore(t *testing.T) {
+	t.Parallel()
+	var install string
+	t.Cleanup(func() { removeInstallVolumes(t, install) })
+	c := dockerHarness(t)
+	install = c.install
+	ctx := context.Background()
+	project := fmt.Sprintf("pr-%d", time.Now().UnixNano()%1_000_000)
+	if _, err := c.CreateProject(ctx, testSystem, apitypes.CreateProjectRequest{Name: project}); err != nil {
+		t.Fatal(err)
+	}
+	db := ServiceRef{project, "production", "db"}
+	if _, err := c.CreateService(ctx, testSystem, db.Env(), apitypes.CreateServiceRequest{Name: db.Service, Template: apitypes.TemplatePostgres}); err != nil {
+		t.Fatal(err)
+	}
+	if r := waitRelease(t, c, db, 1); r.Status != apitypes.ReleaseActive {
+		t.Fatalf("db: %s %s", r.Status, r.Error)
+	}
+	for start := time.Now(); ; time.Sleep(200 * time.Millisecond) {
+		if info, err := c.DataInfo(ctx, testSystem, db); err == nil && info.Status == apitypes.DataReady {
+			break
+		}
+		if time.Since(start) > 30*time.Second {
+			t.Fatal("data setup of the template database")
+		}
+	}
+	execIn(t, c, db, "psql", "-U", "postgres", "-d", "app", "-v", "ON_ERROR_STOP=1", "-c", `
+		CREATE ROLE tenant LOGIN PASSWORD 'secret' CONNECTION LIMIT 7;
+		CREATE ROLE "Odd Name" IN ROLE tenant;
+		CREATE TABLE notes (id int PRIMARY KEY, owner text);
+		INSERT INTO notes SELECT n, 'tenant' FROM generate_series(1, 300) n;
+		ALTER TABLE notes ENABLE ROW LEVEL SECURITY;
+		CREATE POLICY own_notes ON notes TO tenant USING (owner = current_user);`)
+
+	run, err := c.RunBackup(ctx, testSystem, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := waitBackupRun(t, c, db, run.ID)
+	if done.Status != apitypes.BackupSucceeded {
+		t.Fatalf("backup: %+v", done)
+	}
+	res, err := c.RestoreBackup(ctx, testSystem, db, apitypes.RestoreBackupRequest{Snapshot: done.Snapshot[:8]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := waitBackupRun(t, c, db, res.Restore.ID); r.Status != apitypes.BackupSucceeded {
+		t.Fatalf("restore: %+v", r)
+	}
+
+	restored := ServiceRef{project, "production", "db-restored"}
+	query := func(sql string) string {
+		return execIn(t, c, restored, "psql", "-U", "postgres", "-d", "app", "-tAc", sql)
+	}
+	if out := query("SELECT count(*) FROM notes"); out != "300" {
+		t.Errorf("restored rows: %q", out)
+	}
+	if out := query("SELECT array_to_string(roles, ',') FROM pg_policies WHERE policyname = 'own_notes'"); out != "tenant" {
+		t.Errorf("the restored policy is for %q, want tenant", out)
+	}
+	// The role came back with its settings and memberships, and no password.
+	if out := query("SELECT rolcanlogin, rolconnlimit, rolpassword IS NULL FROM pg_authid WHERE rolname = 'tenant'"); out != "t|7|t" {
+		t.Errorf("restored role tenant: %q", out)
+	}
+	if out := query(`SELECT pg_has_role('Odd Name', 'tenant', 'MEMBER')`); out != "t" {
+		t.Errorf("restored membership of \"Odd Name\" in tenant: %q", out)
+	}
+	// The new service's owner kept its own password: it still logs in.
+	if out := query("SELECT rolsuper AND rolpassword IS NOT NULL FROM pg_authid WHERE rolname = 'postgres'"); out != "t" {
+		t.Errorf("the restored service's owner: %q", out)
 	}
 }
 

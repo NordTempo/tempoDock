@@ -17,9 +17,10 @@ import (
 
 func TestBackupScript(t *testing.T) {
 	for kind, want := range map[apitypes.BackupKind][]string{
-		apitypes.BackupPostgres: {"--stdin-from-command -- pg_dump -Fc", "--stdin-filename postgres.dump"},
-		apitypes.BackupRedis:    {`redis-cli -h "$DOCK_DB_HOST" -p "$DOCK_DB_PORT" --rdb /tmp/dock.rdb`, "--stdin-filename redis.rdb", "-- cat /tmp/dock.rdb"},
-		apitypes.BackupVolume:   {"cd /volumes", "backup --json"},
+		apitypes.BackupPostgres: {`pg_dumpall --roles-only --no-role-passwords -l "$PGDATABASE" > /tmp/dock-roles.sql`, "--stdin-filename postgres.dump",
+			`--stdin-from-command -- sh -c 'printf "DOCKPG1 %012d\n" "$(wc -c < /tmp/dock-roles.sql)" && cat /tmp/dock-roles.sql && exec pg_dump -Fc' sh`},
+		apitypes.BackupRedis:  {`redis-cli -h "$DOCK_DB_HOST" -p "$DOCK_DB_PORT" --rdb /tmp/dock.rdb`, "--stdin-filename redis.rdb", "-- cat /tmp/dock.rdb"},
+		apitypes.BackupVolume: {"cd /volumes", "backup --json"},
 		apitypes.BackupMySQL: {`CLIENT="$(command -v mariadb || command -v mysql)"`, "grep -Ev '^(information_schema|performance_schema|mysql|sys)$'",
 			"--stdin-filename mysql.sql", "--stdin-from-command -- $DUMP $AT --single-transaction --routines --triggers --events --databases \"$@\""},
 	} {
@@ -84,7 +85,14 @@ func TestRestoreScript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, w := range []string{`dump --retry-lock 10m "$DOCK_SNAPSHOT" /postgres.dump | pg_restore --no-owner --no-acl --exit-on-error -d "$PGDATABASE"`, "set -o pipefail"} {
+	for _, w := range []string{
+		`dump --retry-lock 10m "$DOCK_SNAPSHOT" /postgres.dump | {`, "set -o pipefail",
+		"dd bs=1 count=" + strconv.Itoa(PostgresHeaderLen) + " of=/tmp/dock-pg-head",
+		`psql -X -q -d "$PGDATABASE" -f /tmp/dock-roles.sql`,
+		// With the header, and without it (an older snapshot).
+		`    pg_restore --no-owner --no-acl --exit-on-error -d "$PGDATABASE" ;;`,
+		`{ cat /tmp/dock-pg-head; cat; } | pg_restore --no-owner --no-acl --exit-on-error -d "$PGDATABASE" ;;`,
+	} {
 		if !strings.Contains(pg, w) {
 			t.Errorf("postgres restore lacks %q:\n%s", w, pg)
 		}

@@ -52,16 +52,26 @@ The others follow the same pattern:
 
 | What | How |
 |---|---|
-| Postgres template | `pg_dump -Fc`, in a short-lived container of the same image (so the tool matches the server), streamed into restic |
+| Postgres template | The server's roles (`pg_dumpall --roles-only`) and `pg_dump -Fc`, in a short-lived container of the same image (so the tools match the server), streamed into restic |
 | Redis template | `redis-cli --rdb`: a consistent snapshot over the replication protocol |
 | Any other service with a volume | The volume's files, mounted read-only. A database writing while it is copied can leave an inconsistent copy: use a template for databases |
 
-A Postgres backup is the template's database (`POSTGRES_DB`) only: roles
-you created, their grants and ownership, and other databases in the same
-server are not in it, and a restored copy's objects belong to its own
-user. A dump that names such a role (a row-level-security policy
-`TO tenant`) fails to restore until the role exists. A volume snapshot
-(below) is the whole server, roles and every database included.
+A Postgres backup is the template's database (`POSTGRES_DB`) and the
+server's roles. A restore creates the roles the new service lacks, with
+their settings and memberships, before the data, so a dump that names one
+(a row-level-security policy `TO tenant`) restores. Three things are not
+in it:
+
+- **Role passwords.** A restored role has none and can't log in until you
+  set one: `ALTER ROLE tenant PASSWORD '...'` on the restored service
+  (the Data tab or `dock db`).
+- **Grants and ownership.** A restored copy's objects belong to its own
+  user; grant your roles their tables again.
+- **Other databases** in the same server.
+
+A volume snapshot (below) is the whole server: passwords, grants and
+every database included. Backups from before roles were saved restore as
+they did: create a role they name first, on the restored service.
 
 Backups run daily at 03:00 (the control plane's local time) and after a
 server that was offline at that time reconnects. One runs at a time.
@@ -197,6 +207,20 @@ restored by hand like the backups below.
 Backups of other volumes are restored by hand for now: with the repository
 password, `restic -r <repository> restore <snapshot> --target <dir>`
 (locally, the repository is the `dock_backups_*` volume on the server).
+
+A Postgres backup read by hand is one file, `/postgres.dump`: a 21-byte
+line `DOCKPG1 <length>`, the roles as SQL of that length, then the
+`pg_dump -Fc` archive. Take the two apart before `pg_restore`:
+
+```sh
+restic -r <repository> dump <snapshot> /postgres.dump > backup.bin
+n=$(head -c 21 backup.bin | cut -c9- | sed 's/^0*//')        # the length of the roles
+tail -c +22 backup.bin | head -c "${n:-0}" > roles.sql        # psql -f roles.sql
+tail -c +$((22 + ${n:-0})) backup.bin | pg_restore --no-owner --no-acl -d app
+```
+
+A file that starts with `PGDMP` is a backup from before roles were saved:
+pipe it into `pg_restore` as it is.
 
 ## Point-in-time restore
 

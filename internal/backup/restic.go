@@ -46,6 +46,72 @@ const (
 	MySQLFile    = "/mysql.sql"
 )
 
+// A Postgres snapshot's one file holds the server's roles ahead of the
+// dump, since restic stores one stream per snapshot and a dump that names
+// a role (a policy TO tenant) only restores where the role exists:
+//
+//	DOCKPG1 <length of the roles SQL, 12 digits>\n   (PostgresHeaderLen bytes)
+//	<pg_dumpall --roles-only --no-role-passwords>
+//	<pg_dump -Fc>
+//
+// A stream without the header is a snapshot from before roles were saved:
+// pg_dump's output alone, which starts with PGDMP.
+const (
+	// PostgresMagic starts the header of a Postgres snapshot's stream.
+	PostgresMagic = "DOCKPG1"
+	// PostgresHeaderLen is the header's length in bytes, its newline
+	// included: `tail -c +22` of the stream is the roles and the dump.
+	PostgresHeaderLen = len(PostgresMagic) + 1 + len(pgLenZeros) + 1
+	// pgLenZeros is as many zeros as the header's length has digits:
+	// 1<digits> - 1<zeros> reads the length as decimal in a shell,
+	// whatever its leading zeros.
+	pgLenZeros = "000000000000"
+	// pgLenPattern matches the header's digits in a shell case.
+	pgLenPattern = "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]"
+	// pgRolesFile holds the roles SQL in a backup or restore job; small,
+	// unlike the dump, which only ever streams.
+	pgRolesFile = "/tmp/dock-roles.sql"
+	// pgHeadFile holds the first PostgresHeaderLen bytes of the stream in
+	// a restore job.
+	pgHeadFile = "/tmp/dock-pg-head"
+)
+
+// pgRoles dumps the server's roles, without passwords, into pgRolesFile
+// before a backup, so the header can say how long they are. A failure
+// fails the job (set -e) before anything is saved.
+const pgRoles = `pg_dumpall --roles-only --no-role-passwords -l "$PGDATABASE" > ` + pgRolesFile + `
+`
+
+// pgStream is the command restic backs up the output of: the header, the
+// roles, then pg_dump, which streams. It runs under sh -c in single
+// quotes, so it holds none; each step failing fails it, and the backup.
+const pgStream = `printf "` + PostgresMagic + ` %012d\n" "$(wc -c < ` + pgRolesFile + `)" && cat ` + pgRolesFile + ` && exec pg_dump -Fc`
+
+// pgUnpack restores a Postgres snapshot's stream from its stdin, in one
+// pass. dd with bs=1 takes the header and the roles byte for byte and
+// leaves the rest in the pipe for pg_restore, which head doesn't promise
+// (busybox's reads ahead). With the header, the roles SQL runs through
+// psql without ON_ERROR_STOP, so a role that exists already (the new
+// service's owner) is skipped and the missing ones are created, without
+// passwords. The job connects as the template's owner, POSTGRES_USER of
+// the official image: a superuser, which creating roles needs. Without
+// the header the bytes read are put back in front of the stream, and it
+// restores as it always did.
+const pgUnpack = `{
+  dd bs=1 count=21 of=` + pgHeadFile + ` 2>/dev/null
+  H="$(tr -cd 'A-Z0-9 ' < ` + pgHeadFile + `)"
+  case "$H" in
+  "` + PostgresMagic + ` "` + pgLenPattern + `)
+    N="${H#` + PostgresMagic + ` }"
+    dd bs=1 count="$((1$N - 1` + pgLenZeros + `))" of=` + pgRolesFile + ` 2>/dev/null
+    psql -X -q -d "$PGDATABASE" -f ` + pgRolesFile + ` 2>&1 >/dev/null | { grep -v "already exists" || true; } >&2
+    pg_restore --no-owner --no-acl --exit-on-error -d "$PGDATABASE" ;;
+  *)
+    { cat ` + pgHeadFile + `; cat; } | pg_restore --no-owner --no-acl --exit-on-error -d "$PGDATABASE" ;;
+  esac
+}
+`
+
 // mysqlTools picks the client and dump tools of a MySQL or MariaDB image
 // (MariaDB's are mariadb and mariadb-dump) and how they reach the server;
 // the password is MYSQL_PWD, which both read.
@@ -279,8 +345,10 @@ func BackupScript(kind apitypes.BackupKind) (string, error) {
 	var run string
 	switch kind {
 	case apitypes.BackupPostgres:
-		// --stdin-from-command fails the backup when pg_dump fails.
-		run = `$R backup ` + backupFlags + ` --stdin-filename ` + strings.TrimPrefix(PostgresFile, "/") + ` --stdin-from-command -- pg_dump -Fc
+		// --stdin-from-command fails the backup when its command fails:
+		// pgStream exits non-zero if the roles or pg_dump do.
+		run = pgRoles + `$R backup ` + backupFlags + ` --stdin-filename ` + strings.TrimPrefix(PostgresFile, "/") + ` --stdin-from-command -- sh -c '` + pgStream + `' sh
+rm -f ` + pgRolesFile + `
 `
 	case apitypes.BackupRedis:
 		// redis-cli --rdb fetches a consistent snapshot over the
@@ -381,8 +449,7 @@ func RestoreScript(kind apitypes.BackupKind, dataDir string) (string, error) {
 	dump := `$R dump --retry-lock ` + RetryLock + ` "$DOCK_SNAPSHOT" `
 	switch kind {
 	case apitypes.BackupPostgres:
-		return prelude + dump + PostgresFile + ` | pg_restore --no-owner --no-acl --exit-on-error -d "$PGDATABASE"
-`, nil
+		return prelude + dump + PostgresFile + ` | ` + pgUnpack, nil
 	case apitypes.BackupMySQL:
 		return prelude + mysqlTools + dump + MySQLFile + ` | $CLIENT $AT
 `, nil
