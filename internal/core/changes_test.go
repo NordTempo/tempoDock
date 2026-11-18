@@ -475,3 +475,44 @@ func TestBrokenReferenceSaysWhatToDo(t *testing.T) {
 		t.Errorf("apply with a broken reference: %v", err)
 	}
 }
+
+// Rolling back puts the service's settings back to the release's as well
+// (all but the image), so the next unrelated apply doesn't deploy the
+// settings that were rolled away from.
+func TestRollbackPutsSettingsBack(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	h.wait(web, h.deploy(web, "app:1").Number)
+	broken, memory := "serve --broken", 256
+	res, err := h.c.UpdateService(h.ctx, testSystem, web, apitypes.UpdateServiceRequest{StartCommand: &broken, MemoryMB: &memory, Apply: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.wait(web, res.Applied.Releases[0].Number)
+	before, _ := h.c.GetService(h.ctx, testSystem, web)
+	if before.StartCommand != broken {
+		t.Fatalf("start command %q before the rollback", before.StartCommand)
+	}
+
+	rb, err := h.c.Rollback(h.ctx, testSystem, web, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.wait(web, rb.Number)
+	svc, _ := h.c.GetService(h.ctx, testSystem, web)
+	if svc.StartCommand != "" || svc.MemoryMB == memory || svc.Image != "app:1" {
+		t.Fatalf("settings after the rollback: start %q, memory %d, image %q", svc.StartCommand, svc.MemoryMB, svc.Image)
+	}
+	if p, _ := h.c.GetChanges(h.ctx, testSystem, web.Env(), false); p.Count != 0 {
+		t.Fatalf("the rollback staged something: %+v", p)
+	}
+	// An unrelated apply runs what the rollback runs.
+	set := apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"A": "1"}, Apply: true}
+	applied, err := h.c.SetVariables(h.ctx, testSystem, web.Env(), set)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := h.wait(web, applied.Applied.Releases[0].Number); r.Config.StartCommand != "" {
+		t.Fatalf("the next release starts with %q", r.Config.StartCommand)
+	}
+}

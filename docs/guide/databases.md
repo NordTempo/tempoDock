@@ -53,6 +53,13 @@ The others follow the same pattern:
 | Redis template | `redis-cli --rdb`: a consistent snapshot over the replication protocol |
 | Any other service with a volume | The volume's files, mounted read-only. A database writing while it is copied can leave an inconsistent copy: use a template for databases |
 
+A Postgres backup is the template's database (`POSTGRES_DB`) only: roles
+you created, their grants and ownership, and other databases in the same
+server are not in it, and a restored copy's objects belong to its own
+user. A dump that names such a role (a row-level-security policy
+`TO tenant`) fails to restore until the role exists. A volume snapshot
+(below) is the whole server, roles and every database included.
+
 Backups run daily at 03:00 (the control plane's local time) and after a
 server that was offline at that time reconnects. One runs at a time.
 
@@ -97,7 +104,10 @@ The repository password is made on first use; **store it** in your password
 manager: without it nobody can read the backups, including you after losing
 the server. Operators show it with `dock backup status --reveal`.
 
-Retention per service: 7 daily, 4 weekly and 6 monthly snapshots. An
+Retention per service: 7 daily, 4 weekly and 6 monthly snapshots. A day
+keeps its newest backup, manual ones included: `dock backup run` twice in
+a day leaves the second (take a volume snapshot before a risky change if
+you want both). An
 operator changes it, and the hour every service follows by default, with
 `dock backup configure --keep-daily 14 --keep-weekly 4 --keep-monthly 6 --hour 2`.
 

@@ -154,7 +154,8 @@ func (c *Core) promoteSteps(ctx context.Context, a Actor, src, dst envScope, nam
 				from.Number, name, src.env.Name, dst.env.Name, src.env.Name)
 			continue
 		}
-		if cur, ok := serving[target.ID]; ok && !applyStaged && sameImage(from, cur) {
+		// A stopped service is promoted as before: that starts it.
+		if cur, ok := serving[target.ID]; ok && !applyStaged && target.StoppedAt == nil && sameImage(from, cur) {
 			skip(name, apitypes.SkipSameImage, "already runs this image in %s (release %d), left alone", dst.env.Name, cur.Number)
 			continue
 		}

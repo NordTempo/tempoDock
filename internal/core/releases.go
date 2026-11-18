@@ -1088,15 +1088,32 @@ func (c *Core) Rollback(ctx context.Context, a Actor, ref ServiceRef, number int
 	if from.Status != string(apitypes.ReleaseSuperseded) && from.Status != string(apitypes.ReleaseActive) {
 		return apitypes.Release{}, invalid("release %d never went live (status %s); roll back to a release that served traffic", number, from.Status)
 	}
-	undo, shared, err := c.rollbackVariables(ctx, ss, from)
+	undo, shared, settings, err := c.rollbackVariables(ctx, ss, from)
 	if err != nil {
 		return apitypes.Release{}, err
+	}
+	// The settings go back too, all but the image: that one says what
+	// Deploy deploys, and a rollback leaves it alone (deploying.md).
+	live := settingsOf(ss.svc)
+	if settings != nil {
+		settings.Image = live.Image
+		if *settings != live {
+			undo.Settings = &carriedSettings{Old: live, New: *settings}
+		}
 	}
 	rel, err := c.startRelease(ctx, a, ss, releaseSpec{source: apitypes.SourceRollback, from: &from, carried: undo})
 	if err != nil {
 		return apitypes.Release{}, err
 	}
 	summary := fmt.Sprintf("release %d rolls back to release %d", rel.Number, number)
+	if undo.Settings != nil {
+		if err := c.store.Tx(ctx, func(q *store.Queries) error { return setSettings(ctx, q, ss.svc.ID, undo.Settings.New) }); err != nil {
+			return apitypes.Release{}, err
+		}
+		note := fmt.Sprintf("%s's settings are release %d's again: %s", ss.svc.Name, number, describeSettings(live, undo.Settings.New))
+		c.releaseEvent(ctx, ss, rel, note)
+		summary += "; " + note
+	}
 	if len(undo.Variables) > 0 {
 		if err := c.store.Tx(ctx, func(q *store.Queries) error { return setLiveVariables(ctx, q, ss.env.ID, undo) }); err != nil {
 			return apitypes.Release{}, err
@@ -1124,13 +1141,16 @@ func (c *Core) Rollback(ctx context.Context, a Actor, ref ServiceRef, number int
 // the newer ones back. Shared variables changed since are only named:
 // they affect other services too, so they keep their current values.
 // Failed releases are skipped: their changes were staged again.
-func (c *Core) rollbackVariables(ctx context.Context, ss svcScope, from store.Release) (carried, []string, error) {
+// settings are the service's settings as from ran them (what they were
+// before the first release since that changed them), nil when no release
+// since changed any: they follow the rollback for the same reason.
+func (c *Core) rollbackVariables(ctx context.Context, ss svcScope, from store.Release) (undo carried, shared []string, settings *apitypes.ServiceSettings, err error) {
 	since, err := c.store.ListReleasesSince(ctx, store.ListReleasesSinceParams{ServiceID: ss.svc.ID, Number: from.Number})
 	if err != nil {
-		return carried{}, nil, err
+		return carried{}, nil, nil, err
 	}
 	before := map[string][]byte{} // key → its value at from (nil: unset)
-	var order, shared []string
+	var order []string
 	seenShared := map[string]bool{}
 	for _, r := range since {
 		if r.Status != string(apitypes.ReleaseActive) && r.Status != string(apitypes.ReleaseSuperseded) {
@@ -1138,7 +1158,10 @@ func (c *Core) rollbackVariables(ctx context.Context, ss svcScope, from store.Re
 		}
 		ch, err := decodeCarried(r.Carried)
 		if err != nil {
-			return carried{}, nil, fmt.Errorf("read release %d's changes: %w", r.Number, err)
+			return carried{}, nil, nil, fmt.Errorf("read release %d's changes: %w", r.Number, err)
+		}
+		if ch.Settings != nil && settings == nil {
+			settings = new(ch.Settings.Old)
 		}
 		for _, v := range ch.Variables {
 			switch {
@@ -1156,11 +1179,10 @@ func (c *Core) rollbackVariables(ctx context.Context, ss svcScope, from store.Re
 			}
 		}
 	}
-	var undo carried
 	for _, k := range order {
 		cur, err := c.store.GetVariable(ctx, store.GetVariableParams{EnvironmentID: ss.env.ID, ServiceID: &ss.svc.ID, Key: k})
 		if err != nil && !store.IsNotFound(err) {
-			return carried{}, nil, err
+			return carried{}, nil, nil, err
 		}
 		if bytes.Equal(cur.Value, before[k]) {
 			continue // the same value again (or still unset)
@@ -1168,7 +1190,7 @@ func (c *Core) rollbackVariables(ctx context.Context, ss svcScope, from store.Re
 		undo.Variables = append(undo.Variables, carriedVar{ServiceID: &ss.svc.ID, Key: k, Old: cur.Value, New: before[k]})
 	}
 	slices.Sort(shared)
-	return undo, shared, nil
+	return undo, shared, settings, nil
 }
 
 // setLiveVariables makes ch's variable changes live (each key's New), in

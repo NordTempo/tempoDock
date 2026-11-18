@@ -454,7 +454,8 @@ it copies ("release 43 copies release 41, image ghcr.io/acme/web:1.4.1
 (4be1c0ffee12), port 8080, 7 variables"), and the UI shows the same
 before you confirm. That includes the old
 variable values: rolling back also rolls back config, and the service's
-own variables go back to that release's values ([Variables](variables.md#who-can-see-what)
+own variables and settings (all but `image`) go back to that release's
+values, so the next apply doesn't bring the newer ones back ([Variables](variables.md#who-can-see-what)
 says what happens to shared ones). Only releases that
 went live (`active` or `superseded`) can be rolled back to. If the image is
 no longer on the server it is pulled again, which only works for images
