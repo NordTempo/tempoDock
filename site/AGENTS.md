@@ -27,6 +27,13 @@ docker build site   # the image, built from site/ as Dock builds it
   into commands to copy. The image build fetches `docs/guide` from `main`
   (`Dockerfile`), and Dock deploys the site on pushes that touch `site/`:
   a change to the guide alone goes live with the next site deploy.
+- `public/install.sh` and `public/cli.sh` are what the one-line installs
+  run: one POSIX sh script, the same but for its `script=` line, that
+  checks the latest release's install script against the signed
+  `SHA256SUMS` and runs it. Change `install.sh`, then make `cli.sh` from
+  it (the `sed` in `internal/update/bootstrap_test.go`, which tests
+  both). Raise `minimum` when a release fixes the install scripts. The
+  release keys are `internal/update/sign.go`'s.
 - Addresses (repository, early access email) live in `src/site.ts`. The
   site never links or redirects to NordTempo's own console; example
   hostnames in the guide are fine. A path the site doesn't have gets its

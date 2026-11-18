@@ -7,7 +7,7 @@
 #   curl -fsSL https://dock.nordtempo.com/install.sh | sudo bash
 #   curl -fsSL https://dock.nordtempo.com/install.sh | sudo bash -s -- --yes --uninstall
 #   sudo DOCK_BINARY=./dock-linux-amd64 ./deploy/install.sh
-#   sudo DOCK_BINARY=./dock-linux-amd64 NODE_JOIN_TOKEN=dockjoin1_... ./deploy/install.sh --node
+#   sudo --preserve-env=NODE_JOIN_TOKEN DOCK_BINARY=./dock-linux-amd64 ./deploy/install.sh --node
 #   sudo ./deploy/install.sh                               # downloads the release's binary
 #   sudo DOCK_BINARY=./dock-linux-amd64 ./deploy/install.sh --restore /root/dock-backup.tar.gz
 #
@@ -92,6 +92,12 @@
 # Node only:
 #   NODE_JOIN_TOKEN   from `dock server add` on the control plane; implies --node.
 #                     Needed for the first run only (and to re-join)
+#
+# Tokens (NODE_JOIN_TOKEN, CLOUDFLARE_TUNNEL_TOKEN, the registry's keys) are
+# best kept off the command line, where other users of the server can read
+# them in the process list: set them in your shell first (`read -rs
+# NODE_JOIN_TOKEN && export NODE_JOIN_TOKEN`) and pass them through with
+# `sudo --preserve-env=NODE_JOIN_TOKEN`, or run the script from a root shell.
 set -euo pipefail
 
 CADDY_VERSION="${CADDY_VERSION:-2.11.7}"
@@ -106,7 +112,7 @@ SRC_DIR=""
 # Releases (.github/workflows/release.yml) are downloaded from here.
 RELEASE_REPO=NordTempo/tempoDock
 # The one-line installs: this script and install-cli.sh from the latest
-# release, through the site's redirects (site/Caddyfile).
+# release, through the site's script, which checks them first (site/public).
 INSTALL_URL=https://dock.nordtempo.com/install.sh
 # The release whose asset this is: scripts/release/build.sh sets it in the
 # release's install.sh, so a piped install of it installs that release.
@@ -349,6 +355,24 @@ toml_set() {
     }
   ' "$1")"
   printf '%s\n' "$out" > "$1"
+}
+
+# refresh_buildkit_image FILE moves [buildkit] image in an existing config
+# to this release's pinned image: config.toml is written once, so without
+# this a server would build with the image of the release it was installed
+# from for good. Only Dock's own default is moved: an image from another
+# repository, or a moby/buildkit newer than this release's, is the
+# operator's choice and stays.
+refresh_buildkit_image() {
+  local cur cur_tag new_tag
+  cur="$(toml_get "$1" buildkit image)"
+  [[ "$cur" == moby/buildkit:* && "$cur" != "$BUILDKIT_IMAGE" ]] || return 0
+  cur_tag="${cur#moby/buildkit:}"; cur_tag="${cur_tag%%@*}"
+  new_tag="${BUILDKIT_IMAGE#moby/buildkit:}"; new_tag="${new_tag%%@*}"
+  [[ "$cur_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
+  [[ "$(printf '%s\n%s\n' "$cur_tag" "$new_tag" | sort -V | tail -n 1)" == "$new_tag" ]] || return 0
+  toml_set "$1" buildkit image "\"$BUILDKIT_IMAGE\""
+  say "    [buildkit] image: $cur_tag -> $new_tag"
 }
 
 # tunnel_id prints the tunnel ID inside a Cloudflare tunnel token: base64 of
@@ -1086,6 +1110,7 @@ CONF
   fi
   [[ -z "${REGISTRY_NAME:-}" ]] || toml_set "$staged" registry public_name "\"$REGISTRY_NAME\""
   [[ -z "${REGISTRY_LISTEN:-}" ]] || toml_set "$staged" registry listen "\"$REGISTRY_LISTEN\""
+  refresh_buildkit_image "$staged"
 
   /usr/local/bin/dock admin caddy-config --config "$staged" > /etc/dock/caddy.json.new \
     || die "the config above was not accepted; nothing in $CONF was changed"

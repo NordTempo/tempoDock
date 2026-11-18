@@ -31,6 +31,7 @@ docs/guide/agents.md go=true web=false site=true
 docs/guide/guide_test.go go=true web=false site=false
 docs/decisions/0001-one-binary.md go=false web=false site=false
 site/src/pages/index.astro go=false web=false site=true
+site/public/install.sh go=true web=false site=true
 EOF2
 
 # read lists the tracked files Go reads: embedded ones, and test reads by

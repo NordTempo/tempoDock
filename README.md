@@ -30,8 +30,10 @@ curl -fsSL https://dock.nordtempo.com/cli.sh | sh -s -- http://localhost:7070
 brew install nordtempo/tap/dock   # or with Homebrew, then: dock login <url>
 ```
 
-Downloads are checked against the release's signed checksums. Options,
-other systems, nodes and uninstalling: the [install guide](docs/guide/install.md).
+Both lines run a small script that fetches the latest release's install
+script and runs it only once it matches the release's signed checksums;
+what that script downloads is checked the same way. Options, other
+systems, nodes and uninstalling: the [install guide](docs/guide/install.md).
 
 ## Status
 

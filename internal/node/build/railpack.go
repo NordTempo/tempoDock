@@ -40,6 +40,10 @@ func railpackOpt(ctx context.Context, dir, src string, req node.BuildRequest, ns
 			return bkclient.SolveOpt{}, fmt.Errorf("%s must be a path inside the source", k)
 		}
 	}
+	// The planner runs mise on this host; it has to be the checked one.
+	if err := ensureMise(ctx, logs); err != nil {
+		return bkclient.SolveOpt{}, err
+	}
 	res, err := runPlan(ctx, planInput{
 		Dir:          src,
 		Vars:         req.BuildArgs,

@@ -13,7 +13,8 @@
 # The API's contract sets both: its Go types and handlers, the OpenAPI
 # specs generated from them, the UI's clients generated from those, and
 # the recorder script the UI builds into internal/analytics. So do the UI
-# files Go tests read (routes, the browser's pack, the help topics). Docs
+# files Go tests read (routes, the browser's pack, the help topics) and the
+# site's install scripts, which Go tests run. Docs
 # a binary embeds (the guide, tempoBase's) set go; other markdown and
 # docs/ set nothing. changes_test.sh checks all of it: every file Go
 # embeds or a test reads by relative path must set go. A change to .github/
@@ -55,6 +56,12 @@ site=false
 while IFS= read -r f; do
 	case "$f" in
 	.github/*) all ;;
+	# The scripts behind the one-line installs: Go tests run them
+	# (internal/update/bootstrap_test.go).
+	site/public/install.sh | site/public/cli.sh)
+		go=true
+		site=true
+		;;
 	site/*) site=true ;;
 	internal/apitypes/* | internal/api/* | internal/tempobase/tbhttp/* | \
 		web/openapi.json | web/src/api/* | web/tempobase/openapi.json | web/tempobase/src/api/* | \

@@ -27,7 +27,15 @@ On the server, as a user who can `sudo`:
 curl -fsSL https://dock.nordtempo.com/install.sh | sudo bash
 ```
 
-That is the latest release's `install.sh`. It downloads the release's
+That address serves a small script, the same on every release
+([`site/public/install.sh`](../../site/public/install.sh)). It finds the
+latest release, refuses one older than the release it was written for,
+checks the release's `SHA256SUMS` against its signature, and runs the
+release's `install.sh` only when the script matches its line in
+`SHA256SUMS`, with your options and variables as they are. `cli.sh` below
+does the same for `install-cli.sh`.
+
+`install.sh` then downloads the release's
 install tarball (`deploy/`: the script and the systemd units) and the
 `dock-linux-<arch>` binary, checks both against the release's
 `SHA256SUMS` and that file's signature
@@ -75,8 +83,8 @@ login; an organization's admins manage its projects, members' roles and
 tokens ([ADR 0027](../decisions/0027-organizations.md),
 [ADR 0080](../decisions/0080-permissions-roles-groups-and-agents.md)).
 
-A given release: `releases/download/<version>/install.sh` installs that
-version. Running the script again is safe ([What it installs](#what-it-installs)).
+A given release: `DOCK_VERSION=<version>` after `sudo` installs that
+version, and so does its own `releases/download/<version>/install.sh`. Running the script again is safe ([What it installs](#what-it-installs)).
 
 ### By hand
 
@@ -499,9 +507,14 @@ managed by Dock](#tunnels-managed-by-dock). By hand:
 5. **Install** with the token, and the zone as the base domain:
 
    ```sh
-   sudo DOCK_BINARY=./dock CLOUDFLARE_TUNNEL_TOKEN=eyJ... BASE_DOMAIN=example-apps.dev \
+   read -rs CLOUDFLARE_TUNNEL_TOKEN && export CLOUDFLARE_TUNNEL_TOKEN   # paste the token, Enter
+   sudo --preserve-env=CLOUDFLARE_TUNNEL_TOKEN DOCK_BINARY=./dock BASE_DOMAIN=example-apps.dev \
      ./deploy/install.sh            # add --node and NODE_JOIN_TOKEN for a node
    ```
+
+   `read` takes the token from the terminal without showing it, so it is
+   in neither the shell's history nor the process list, where a variable
+   written after `sudo` would be for as long as the install runs.
 
 The script installs `cloudflared` (checked against a pinned SHA-256), runs
 it as `dock-cloudflared.service`, and sets `[ingress] mode =
@@ -673,13 +686,18 @@ else.
 
 3. **The new server:** install Docker, join the tailnet, copy the `dock`
    binary and `deploy/` over (the control plane's release, as in
-   [Install](#install)), then run the printed command. Add
+   [Install](#install)), then install with the printed token. Add
    `CLOUDFLARE_TUNNEL_TOKEN` (and `BASE_DOMAIN`) for a
    [tunnel](#cloudflare-tunnel) server.
 
    ```sh
-   sudo DOCK_BINARY=./dock NODE_JOIN_TOKEN=dockjoin1_... ./deploy/install.sh --node
+   read -rs NODE_JOIN_TOKEN && export NODE_JOIN_TOKEN   # paste the token, Enter
+   sudo --preserve-env=NODE_JOIN_TOKEN DOCK_BINARY=./dock ./deploy/install.sh --node
    ```
+
+   Read like this, the token is in neither the shell's history nor the
+   process list. The printed command has it after `sudo` instead, where
+   other users of the server can see it while the install runs.
 
    The script installs the same binaries, Caddy and app firewall as on the
    control plane, runs `dock node join` once (it creates the node's key in
@@ -940,16 +958,17 @@ matching CLI on laptops and in CI with `dock self-update` ([The CLI](#the-cli));
   Caddy). Traffic blips briefly; `--resume` restores the routes. A
   rollback leaves an upgraded Caddy, cloudflared or BuildKit image as it
   is.
-- To upgrade BuildKit, change `[buildkit] image` in `config.toml`.
+- BuildKit follows Dock: an update sets `[buildkit] image` to the image
+  that release pins by digest, and the next build starts it. An image you
+  set yourself stays when it comes from another repository or is a newer
+  `moby/buildkit` than the release's.
 - To upgrade `cloudflared`, re-run with `CLOUDFLARED_VERSION` and
   `CLOUDFLARED_SHA256` (from the release notes); the tunnel restarts.
 - Upgrading an install from before the app firewall: the script moves Caddy
   to the `dock-caddy` user (one Caddy restart, `--resume` restores routes),
   takes `dock` out of the `docker` group, and enables `dock-firewall`.
   Existing app networks keep their Docker-assigned addresses; the firewall
-  covers them too. Your `config.toml` is not rewritten, so pin
-  `[buildkit] image` by digest yourself if it still says only
-  `moby/buildkit:v0.34.1`.
+  covers them too.
 - Air-gapped: copy a release's assets to `<dir>/<version>/` on the
   control plane and set `[updates] source = "<dir>"`.
 
@@ -1085,8 +1104,9 @@ Tailscale address with the old port, if the old control plane took any.
 
    ```sh
    dock server add dock-lab --non-production
-   # on the old server:
-   sudo DOCK_BINARY=./dock NODE_JOIN_TOKEN=dockjoin1_... ./deploy/install.sh --node
+   # on the old server (paste the token, Enter):
+   read -rs NODE_JOIN_TOKEN && export NODE_JOIN_TOKEN
+   sudo --preserve-env=NODE_JOIN_TOKEN DOCK_BINARY=./dock ./deploy/install.sh --node
    ```
 
    `install.sh` sees the retired control plane: it removes `dock.service`
