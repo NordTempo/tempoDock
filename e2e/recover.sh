@@ -68,6 +68,7 @@ marker_back() { [[ $(psql_in 'select v from recover_marker' 2>/dev/null) == "$MA
 allow_minio() {
 	on bash -c "grep -q '^allow_private' /etc/dock/config.toml && sed -i 's|^allow_private.*|allow_private = [\"$SUBNET_PREFIX.0/24\"]|' /etc/dock/config.toml || printf '\n[network]\nallow_private = [\"$SUBNET_PREFIX.0/24\"]\n' >>/etc/dock/config.toml; systemctl restart dock-firewall"
 }
+held() { on journalctl -u dock --no-pager | grep -q 'recovery mode: scheduled backups are held back'; }
 # stop ends the drill early: what follows needs what just failed.
 stop() { fail "$*"; echo "$FAILURES failed" >&2; exit 1; }
 
@@ -115,8 +116,8 @@ check "web answers before the loss" wait_http "$HOST" / 'Welcome to nginx' 60
 
 if [[ $VOLUME_APP == 1 ]]; then
 	dk_p service create files --image nginx:1.29-alpine --port 80 >/dev/null || fail "files not created"
-	dk_p volume add data /usr/share/nginx/html -s files >/dev/null || fail "files: volume not added"
 	dk_p deploy -s files --image nginx:1.29-alpine >/dev/null 2>&1 || fail "files did not deploy"
+	dk_p volume add data /usr/share/nginx/html -s files --deploy >/dev/null 2>&1 || fail "files: volume not added"
 	FILES_HOST=$(generate_domain "$P" files)
 	wait_for 60 newest_active files
 	in_svc files sh -c "echo $MARKER >/usr/share/nginx/html/marker.txt"
@@ -171,10 +172,14 @@ fi
 check "the install names the next command" grep -q 'dock admin recover' "$TMP/install.log"
 check "the fetched archive is named for deleting" grep -q 'holds every secret' "$TMP/install.log"
 check "dock runs" wait_for 60 curl -fsS -o /dev/null "$DOCK_URL/api/v1/health"
+# allow_private is the machine's own in a restore (install.sh's
+# MACHINE_KEYS), so the new server starts without the old one's.
+log "note: allow_private after the install: $(on grep '^allow_private' /etc/dock/config.toml || echo unset)"
 allow_minio
 
 # ---- recovery mode and the plan ---------------------------------------------
 
+check "the daemon holds scheduled backups back" held
 check "the old API token still works" api GET "/projects/$P"
 check "no container of the project runs yet" test -z "$(container db)$(container web)"
 PLAN=$(on dock admin recover --json) || fail "dock admin recover --json failed: $PLAN"

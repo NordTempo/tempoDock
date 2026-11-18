@@ -1106,6 +1106,14 @@ CONF
       || die "$restore is not a backup this dock can restore (see above)"
     if [[ -s "$old_config" ]]; then
       keys=("${MACHINE_KEYS[@]}")
+      # From the bucket, the old allow list stays: the recovery's restore
+      # jobs must reach a backup store on a private address (a NAS), which
+      # a fresh install's empty list would block.
+      if [[ "$from_bucket" == true ]]; then
+        kept=()
+        for k in "${keys[@]}"; do [[ "$k" == network:allow_private ]] || kept+=("$k"); done
+        keys=("${kept[@]}")
+      fi
       [[ "$old_server_node" == false && -z "${BASE_DOMAIN+x}" ]] || keys+=(:base_domain)
       [[ "$old_server_node" == false && -z "${DISABLE_TLS:-}" ]] || keys+=(caddy:disable_tls)
       merged="$(mktemp /etc/dock/.config.toml.XXXXXX)"

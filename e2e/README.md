@@ -40,8 +40,9 @@ Two slots never touch each other's servers, so give each its own subnet:
 | `e2e2` | `10.250.250.0/24` | interactive work (bug hunts, release walks) |
 | `e2e-nightly` | `10.250.251.0/24` | `nightly.sh` only |
 | `e2e-nightly-fresh` | `10.250.252.0/24` | `nightly.sh`'s `fresh-install.sh` |
+| `e2e-nightly-recover` | `10.250.253.0/24` | `nightly.sh`'s `recover.sh` |
 | `e2e-fresh` | `10.250.255.0/24` | `fresh-install.sh` by hand (`E2E_FRESH_SLOT`, `E2E_FRESH_SUBNET`) |
-| `e2e-rw`, `e2e-rw-*` | `10.250.241.0/24` to `10.250.249.0/24` | real-world tests by hand (drains, SSO, alert channels, Cloudflare, GitHub Apps): `e2e-rw` has .241, `e2e-rw-sso` .242, `e2e-rw-slack` .243 |
+| `e2e-rw`, `e2e-rw-*` | `10.250.241.0/24` to `10.250.249.0/24` | real-world tests by hand (drains, SSO, alert channels, Cloudflare, GitHub Apps): `e2e-rw` has .241, `e2e-rw-sso` .242, `e2e-rw-slack` .243, `e2e-rw-recover` .244 |
 
 A new scenario names containers through `$SLOT` and addresses through
 `$SUBNET_PREFIX` (both from `lib.sh`), never `e2e2-*` or `10.250.250.*`,
@@ -79,7 +80,8 @@ GitHub's runners):
    server: one failed request fails the night;
 4. runs each scenario of `SUITE` in `nightly.sh` in its own process and
    log, with a 45 minute cap each, no retries, then `fresh-install.sh`
-   on bare servers of its own (slot `e2e-nightly-fresh`);
+   on bare servers of its own (slot `e2e-nightly-fresh`) and `recover.sh`
+   on a control plane of its own (slot `e2e-nightly-recover`);
 5. removes the servers.
 
 It holds `/tmp/dock-heavy.lock` from the build to the last scenario
