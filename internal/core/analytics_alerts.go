@@ -328,7 +328,7 @@ func (c *Core) checkTraffic(ctx context.Context, t time.Time) {
 	if cl == nil || !settled {
 		return
 	}
-	c.wg.Go(func() {
+	c.goCounted("checking sites' traffic", func() {
 		qctx, cancel := context.WithTimeout(c.ctx, time.Minute)
 		defer cancel()
 		rows, err := cl.Traffic(qctx, analytics.TrafficQuery{Hour: hour.UnixMilli(), Days: trafficDays})

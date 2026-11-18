@@ -105,7 +105,7 @@ func (c *Core) retentionTick(ctx context.Context, now time.Time, servers []store
 			remote = slices.Delete(remote, i, i+1)
 		}
 		if len(remote) > 0 {
-			c.wg.Go(func() { c.pruneLogs(c.ctx, remote) })
+			c.goCounted("pruning log archives", func() { c.pruneLogs(c.ctx, remote) })
 		}
 	}
 }

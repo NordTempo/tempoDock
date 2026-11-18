@@ -286,7 +286,7 @@ func (c *Core) deployInOrder(ctx context.Context, a Actor, es envScope, svcs []s
 		failed []string
 	}
 	res := make(chan result, 1)
-	c.wg.Go(func() {
+	c.goCounted("deploying a template's services", func() {
 		var r result
 		defer func() { res <- r }()
 		// finished holds each started service's outcome, put back after

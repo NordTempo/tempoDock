@@ -84,6 +84,21 @@ func TestPickServer(t *testing.T) {
 	}
 }
 
+// A call that panics ends alone: fanOut returns, and the other servers'
+// results are there. Unrecovered, the panic would end the process.
+func TestFanOutOutlivesAPanic(t *testing.T) {
+	got := make([]bool, 3)
+	fanOut(context.Background(), len(got), time.Minute, func(_ context.Context, i int) {
+		if i == 1 {
+			panic("a reply this server's call can't read")
+		}
+		got[i] = true
+	})
+	if !got[0] || got[1] || !got[2] {
+		t.Fatalf("results = %v, want the first and the last server's", got)
+	}
+}
+
 // One server that doesn't answer costs fanOut its timeout and holds up no
 // other server's call.
 func TestFanOutIsolatesHungServers(t *testing.T) {

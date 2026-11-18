@@ -122,18 +122,18 @@ func (c *Core) SiteErrors(ctx context.Context, a Actor, project, name string, q 
 	var res, before analytics.ErrorsResult
 	var now, then analytics.Overview
 	g, gctx := errgroup.WithContext(ctx)
-	g.Go(func() (err error) {
+	goGroup(g, c.log, "reading a site's errors", func() (err error) {
 		res, err = r.cl.Errors(gctx, analytics.ErrorsQuery{Query: r.query, Bucket: analytics.Bucket(r.bucket), Limit: min(max(limit, 1), analytics.MaxErrorGroups)})
 		return err
 	})
-	g.Go(func() (err error) {
+	goGroup(g, c.log, "reading a site's errors", func() (err error) {
 		before, err = r.cl.Errors(gctx, analytics.ErrorsQuery{Query: prev, Limit: 1})
 		return err
 	})
 	// The share of sessions with an error is of all sessions, unfiltered
 	// by what errors record but not events (a browser, a page).
-	g.Go(func() (err error) { now, err = r.cl.Overview(gctx, r.query); return err })
-	g.Go(func() (err error) { then, err = r.cl.Overview(gctx, prev); return err })
+	goGroup(g, c.log, "reading a site's errors", func() (err error) { now, err = r.cl.Overview(gctx, r.query); return err })
+	goGroup(g, c.log, "reading a site's errors", func() (err error) { then, err = r.cl.Overview(gctx, prev); return err })
 	if out.StoreOnline, out.StoreError, err = storeStatus(g.Wait()); err != nil || !out.StoreOnline {
 		return out, err
 	}

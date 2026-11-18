@@ -625,7 +625,7 @@ func (c *Core) gitWork(serviceID int64, w *gitWorker) {
 		delete(c.git.workers, serviceID)
 		c.git.mu.Unlock()
 		if step == gitRetry {
-			time.AfterFunc(gitRetryDelay, func() { c.kickGit(serviceID, false) })
+			c.afterCaught(gitRetryDelay, "retrying a push", func() { c.kickGit(serviceID, false) })
 		}
 		return
 	}

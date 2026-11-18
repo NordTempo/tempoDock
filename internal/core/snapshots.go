@@ -189,7 +189,7 @@ func (c *Core) CreateSnapshot(ctx context.Context, a Actor, ref ServiceRef, req 
 		return apitypes.Snapshot{}, err
 	}
 	c.audit(ctx, a, "snapshot.create", &ss.project, &ss.env, ss.String(), fmt.Sprintf("taking snapshot %d of %s", row.ID, strings.Join(volumeNames(vols), ", ")))
-	c.wg.Go(func() {
+	c.goCounted("taking a snapshot", func() {
 		_, _ = c.takeClaimed(c.ctx, ss, row, vols, func() { c.releaseService(ss.svc.ID) })
 	})
 	names, err := c.serverNamesFor(ctx, a)
@@ -322,7 +322,17 @@ func (c *Core) claimWithin(ctx context.Context, serviceID int64, wait time.Durat
 // (the CLI's wait, MCP) may restore or delete at once. Without end the
 // caller keeps the claim (an in-place restore's safety snapshot).
 func (c *Core) takeClaimed(ctx context.Context, ss svcScope, row store.VolumeSnapshot, vols []store.Volume, end func()) (store.VolumeSnapshot, error) {
-	size, paused, out, err := c.snapshotJob(ctx, ss, row, vols)
+	var (
+		size   int64
+		paused time.Duration
+		out    string
+	)
+	// Through caught: a job that panics is a failed snapshot, which
+	// releases the claim (end) and is recorded below.
+	err := caughtErr(c.log, "taking a snapshot", func() (err error) {
+		size, paused, out, err = c.snapshotJob(ctx, ss, row, vols)
+		return err
+	})
 	if ctx.Err() != nil {
 		if end != nil {
 			end()
@@ -595,8 +605,12 @@ func (c *Core) restoreInPlace(ctx context.Context, a Actor, ss svcScope, snap st
 	}
 	c.audit(ctx, a, "snapshot.restore", &ss.project, &ss.env, ss.String(),
 		fmt.Sprintf("restoring snapshot %d in place; %s stops, and snapshot %d keeps the data it holds now", snap.ID, ss.svc.Name, safety.ID))
-	c.wg.Go(func() {
-		err := c.runRestoreInPlace(c.ctx, ss, snap, safety, safetyVols, mounts)
+	c.goCounted("restoring a snapshot", func() {
+		// Through caught: a restore that panics is a failed restore,
+		// which releases the service and is recorded below.
+		err := caughtErr(c.log, "restoring a snapshot", func() error {
+			return c.runRestoreInPlace(c.ctx, ss, snap, safety, safetyVols, mounts)
+		})
 		if c.ctx.Err() == nil {
 			c.pruneSnapshots(c.ctx, ss, 0)
 		}
@@ -733,8 +747,9 @@ func (c *Core) restoreIntoNew(ctx context.Context, a Actor, ss svcScope, t dbTem
 		return apitypes.SnapshotRestoreResult{}, err
 	}
 	c.audit(ctx, a, "snapshot.restore", &ss.project, &ss.env, ss.String(), fmt.Sprintf("restoring snapshot %d into new service %s", snap.ID, name))
-	c.wg.Go(func() {
-		err := c.fillFromSnapshot(c.ctx, to, snap)
+	c.goCounted("restoring a snapshot into a new service", func() {
+		// Through caught, as in restoreInPlace.
+		err := caughtErr(c.log, "restoring a snapshot into a new service", func() error { return c.fillFromSnapshot(c.ctx, to, snap) })
 		// The copy is done; the deploy is the new service's.
 		c.unlockVolumes(to.svc.ID)
 		c.releaseService(ss.svc.ID)

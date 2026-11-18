@@ -604,7 +604,9 @@ func (c *Core) checkDomains() {
 		groups := slices.Collect(maps.Values(byServer))
 		fanOut(c.ctx, len(groups), domainServerTimeout, func(ctx context.Context, i int) {
 			for _, ch := range groups[i] {
-				c.checkDomain(ctx, ch.d, &ch.b.dnsOK)
+				// Recovered per domain: one whose check panics is due
+				// again after its delay like the rest, not at once.
+				c.safely("checking a domain", func() { c.checkDomain(ctx, ch.d, &ch.b.dnsOK) })
 				ch.b.next = time.Now().Add(ch.b.delay)
 				ch.b.delay = min(ch.b.delay*2, domainCheckMax)
 			}

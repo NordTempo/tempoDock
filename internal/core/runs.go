@@ -355,7 +355,9 @@ func (r *Run) wait(ctx context.Context, stream *node.JobStream) apitypes.Command
 		}
 		stream, flush = &masked, func() error { return errors.Join(flushOut(), flushErr()) }
 	}
-	res, err := r.runJob(jctx, stream)
+	// Through caught: a run that panics is a failed run, which gives its
+	// slots back and is recorded below.
+	res, err := caught(c.log, "running a command", func() (node.JobResult, error) { return r.runJob(jctx, stream) })
 	if ferr := flush(); ferr != nil && err == nil {
 		c.log.Debug("run: write held output", "run", r.row.ID, "err", ferr)
 	}
@@ -517,7 +519,7 @@ func (c *Core) StartRun(ctx context.Context, a Actor, ref ServiceRef, req apityp
 		return apitypes.CommandRun{}, err
 	}
 	info := r.Info() // before it runs: the run's end rewrites it
-	c.wg.Go(func() { r.Wait(c.ctx, nil) })
+	c.goCounted("running a command", func() { r.Wait(c.ctx, nil) })
 	return info, nil
 }
 
