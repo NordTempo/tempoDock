@@ -55,6 +55,7 @@ func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog
 		return nil, nil, ingests{}, err
 	}
 	containers.DataDir = cfg.DataDir
+	containers.PidsLimit = int64(cfg.Defaults.PidsLimit)
 	// Without the probe apps run as before, only without ongoing health
 	// checks (ADR 0043).
 	if containers.Probe, err = probe.Install(cfg.DataDir); err != nil {

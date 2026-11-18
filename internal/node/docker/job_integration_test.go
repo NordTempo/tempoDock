@@ -213,3 +213,40 @@ func TestRunJobHugeOutput(t *testing.T) {
 		t.Fatalf("job = %d bytes, exit %d, %v", len(res.Output), res.ExitCode, err)
 	}
 }
+
+// A job without a network has none: only loopback, not Docker's default
+// bridge. One with a network is on that network alone.
+func TestRunJobNetwork(t *testing.T) {
+	e := newEnv(t)
+	ctx := ctxTimeout(t, time.Minute)
+	const ifaces = `ls /sys/class/net | tr '\n' ' '`
+	res, err := e.RunJob(ctx, node.JobSpec{Name: e.name("nonet"), Image: shellImage, Script: ifaces})
+	if err != nil || res.ExitCode != 0 || strings.TrimSpace(res.Output) != "lo" {
+		t.Fatalf("a job without a network sees %q (exit %d, %v), want only lo", res.Output, res.ExitCode, err)
+	}
+	labels := node.Labels{ControlPlane: e.prefix}
+	network := e.name("net")
+	if err := e.EnsureNetwork(ctx, network, labels); err != nil {
+		t.Fatal(err)
+	}
+	res, err = e.RunJob(ctx, node.JobSpec{Name: e.name("net"), Image: shellImage, Script: ifaces, Network: network, Labels: labels})
+	if err != nil || res.ExitCode != 0 || len(strings.Fields(res.Output)) != 2 {
+		t.Fatalf("a job on a network sees %q (exit %d, %v), want lo and one interface", res.Output, res.ExitCode, err)
+	}
+}
+
+// Jobs and app containers run under the runtime's limit on processes.
+func TestPidsLimitApplied(t *testing.T) {
+	e := newEnv(t)
+	ctx := ctxTimeout(t, time.Minute)
+	e.PidsLimit = 321
+	res, err := e.RunJob(ctx, node.JobSpec{Name: e.name("pids"), Image: shellImage, Script: `cat /sys/fs/cgroup/pids.max 2>/dev/null || cat /sys/fs/cgroup/pids/pids.max`})
+	if err != nil || strings.TrimSpace(res.Output) != "321" {
+		t.Fatalf("a job's pids.max = %q (%v), want 321", res.Output, err)
+	}
+	svc := e.start(node.ContainerSpec{Name: e.name("svc"), Image: shellImage, Cmd: "sleep 600", Labels: node.Labels{ControlPlane: e.prefix}})
+	got, err := e.cli.ContainerInspect(ctx, svc.ID, client.ContainerInspectOptions{})
+	if err != nil || got.Container.HostConfig.PidsLimit == nil || *got.Container.HostConfig.PidsLimit != 321 {
+		t.Fatalf("an app container's pids limit = %v (%v), want 321", got.Container.HostConfig, err)
+	}
+}

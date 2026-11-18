@@ -319,7 +319,9 @@ type JobSpec struct {
 	Env    map[string]string
 	// Script runs as `/bin/sh -c Script`, replacing the image's entrypoint.
 	Script string
-	// Network is joined without aliases; empty means none.
+	// Network is joined without aliases; empty means none at all: the
+	// job has only loopback. A job that needs the internet names a
+	// managed network, which the app firewall covers.
 	Network   string
 	Mounts    []Mount
 	Resources Resources

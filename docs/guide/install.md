@@ -310,6 +310,7 @@ running).
 | `[defaults] memory_mb` | `512` | Memory limit for services that don't set one |
 | `[defaults] cpus` | `1` | CPU limit for services that don't set one |
 | `[defaults] health_check_timeout_seconds` | `60` | Health check timeout for services that don't set one |
+| `[defaults] pids_limit` | `4096` | Processes and threads each container on this server may have (apps, databases, jobs), so one that forks without end stops at its own limit. Applies to containers started after the change; negative is no limit |
 | `[defaults] keep_releases` | `5` | Releases kept for rollback per service: their images and history are never pruned |
 | `[ingress] mode` | `direct` | `direct`: public IP, Caddy issues certificates. `cloudflare_tunnel`: Caddy serves plain HTTP on `127.0.0.1:<http_port>` only, for the local `cloudflared`; `disable_tls` must stay `false` (apps are `https://` at Cloudflare) |
 | `[ingress] tunnel_hostname` | empty | `<tunnel-id>.cfargotunnel.com`, the CNAME target for hostnames on a tunnel server. Set by `install.sh` from the tunnel token |
@@ -466,9 +467,14 @@ The service re-applies them whenever Docker starts. If the server's DNS
 servers change, restart it, or apps lose DNS. Containers that Docker
 restarts at boot run unfiltered for the moment before the service starts.
 
-The rules cover dock's networks and Docker's default bridge (`docker0`),
-where BuildKit runs, so they also apply to any container you start yourself
-with plain `docker run`. Docker's `nftables` firewall backend isn't
+The rules cover dock's own networks: each environment's, BuildKit's and
+the one backup jobs without an environment use (the control plane's
+backup, moving backups to other storage). Nothing Dock starts runs on
+Docker's default bridge (`docker0`), and a job that needs no network, such
+as a volume snapshot, has none. A container you start yourself with plain
+`docker run` is not covered. Backup storage on a private address has to be
+in `allow_private`, for services' backups and the control plane's alike.
+Docker's `nftables` firewall backend isn't
 supported; the service fails with an error instead. To switch the firewall
 off: `sudo systemctl disable --now dock-firewall && sudo dock admin firewall remove`.
 
