@@ -11,6 +11,7 @@ import { ProviderMark } from "../features/sso/ProviderMark";
 import { CodeInput } from "../ui/CodeInput";
 import { cliInstallLine } from "../ui/cliInstall";
 import { ErrorText } from "../ui/kit";
+import { localPath } from "../ui/localPath";
 
 /**
  * The sign-in page's query: where to go afterwards, and where a sign-in
@@ -205,7 +206,7 @@ function Login() {
   // Why the second step ended (expired, too many wrong codes).
   const [ended, setEnded] = useState<Error | null>(null);
   // Same-origin paths only, never an absolute URL from the query.
-  const to = back?.startsWith("/") && !back.startsWith("//") ? back : undefined;
+  const to = localPath(back);
   const done = () => navigate({ href: to ?? "/" });
   // A single sign-on's answer is read once; starting over drops it.
   const fresh = () =>

@@ -182,7 +182,7 @@ function ClientSecretForm({ callbackURL }: { callbackURL: string }) {
           type="password"
           aria-label="Client secret"
           placeholder="client secret"
-          autoComplete="off"
+          autoComplete="new-password"
           value={secret}
           onChange={(e) => setSecret(e.target.value)}
           className="field min-w-0 flex-[1_1_200px] py-[5px] font-mono"

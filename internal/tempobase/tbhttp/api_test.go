@@ -241,3 +241,19 @@ func TestStrictTransportSecurity(t *testing.T) {
 		}
 	}
 }
+
+// tempoBase serves the OpenAPI spec but no docs page for it: that page
+// would load its script from another site.
+func TestNoDocsPage(t *testing.T) {
+	srv, _, _ := testServerAt(t, "")
+	for path, want := range map[string]int{"/api/v1/docs": http.StatusNotFound, "/api/v1/openapi.json": http.StatusOK} {
+		res, err := srv.Client().Get(srv.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = res.Body.Close()
+		if res.StatusCode != want {
+			t.Errorf("GET %s: %d, want %d", path, res.StatusCode, want)
+		}
+	}
+}

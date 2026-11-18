@@ -684,7 +684,7 @@ function ProviderForm({
       >
         <input
           type="password"
-          autoComplete="off"
+          autoComplete="new-password"
           value={secret}
           onChange={(e) => setSecret(e.target.value)}
           placeholder={provider ? "unchanged" : undefined}

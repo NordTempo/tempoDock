@@ -209,10 +209,22 @@ func (c *Core) toPreview(ctx context.Context, es envScope, r store.Preview) (api
 // basePreview is a preview row's pull request, without status or URLs.
 func basePreview(env string, r store.Preview) apitypes.Preview {
 	return apitypes.Preview{
-		Environment: env, Repo: r.Repo, Number: r.Number, Title: r.Title, Author: r.Author, PullURL: r.HtmlUrl,
+		Environment: env, Repo: r.Repo, Number: r.Number, Title: r.Title, Author: r.Author, PullURL: pullURL(r.Repo, r.Number),
 		Branch: r.HeadBranch, Commit: r.HeadSha, Fork: r.Fork, URLs: []apitypes.PreviewURL{}, Databases: []apitypes.PreviewDatabase{}, Event: r.LastEvent,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, ClosedAt: r.ClosedAt, Status: apitypes.PreviewClosed,
 	}
+}
+
+// pullURL is a pull request's page on GitHub, built from the connected
+// repository (owner/name, as validGitTarget leaves it) and the number:
+// the address a delivery names for it is never stored or shown, so the
+// link in the UI can only lead to that repository. Empty for a repo or
+// number that isn't one.
+func pullURL(repo string, number int64) string {
+	if !repoRe.MatchString(repo) || number <= 0 {
+		return ""
+	}
+	return "https://github.com/" + repo + "/pull/" + strconv.FormatInt(number, 10)
 }
 
 // hostURL is a hostname's address: https, or http on a server with TLS
@@ -250,7 +262,6 @@ type pullRequestPayload struct {
 	Action      string `json:"action"`
 	Number      int64  `json:"number"`
 	PullRequest struct {
-		HTMLURL   string    `json:"html_url"`
 		Title     string    `json:"title"`
 		UpdatedAt time.Time `json:"updated_at"`
 		Merged    bool      `json:"merged"`
@@ -503,7 +514,7 @@ func (c *Core) previewEvent(ctx context.Context, p store.Project, repo string, e
 		return pr + ": ignored, no valid head commit", nil
 	}
 	head := previewHead{
-		title: cleanLine(ev.PullRequest.Title, 200), author: loginOf(ev.PullRequest.User.Login), url: cleanLine(ev.PullRequest.HTMLURL, 300),
+		title: cleanLine(ev.PullRequest.Title, 200), author: loginOf(ev.PullRequest.User.Login), url: pullURL(repo, ev.Number),
 		branch: cleanLine(ev.PullRequest.Head.Ref, 255), sha: sha, fork: ev.fork(), updated: ev.PullRequest.UpdatedAt,
 	}
 	if head.fork {
@@ -1033,7 +1044,7 @@ func (c *Core) previewEnvironments(ctx context.Context, projectID int64) (map[in
 	}
 	out := make(map[int64]*apitypes.PullRequestRef, len(rows))
 	for _, r := range rows {
-		out[r.EnvironmentID] = &apitypes.PullRequestRef{Repo: r.Repo, Number: r.Number, Title: r.Title, Author: r.Author, URL: r.HtmlUrl}
+		out[r.EnvironmentID] = &apitypes.PullRequestRef{Repo: r.Repo, Number: r.Number, Title: r.Title, Author: r.Author, URL: pullURL(r.Repo, r.Number)}
 	}
 	return out, nil
 }

@@ -11878,7 +11878,7 @@
             "type": "integer"
           },
           "pull_url": {
-            "description": "The pull request on GitHub",
+            "description": "The pull request on GitHub: https://github.com/\u003crepo\u003e/pull/\u003cnumber\u003e",
             "type": "string"
           },
           "repo": {
@@ -12563,7 +12563,7 @@
             "type": "string"
           },
           "url": {
-            "description": "The pull request on GitHub",
+            "description": "The pull request on GitHub: https://github.com/\u003crepo\u003e/pull/\u003cnumber\u003e",
             "type": "string"
           }
         },

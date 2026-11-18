@@ -62,6 +62,10 @@ tests/          dev-only browser fixtures (`*.html`, with `*.test.ts(x)`
   everything they import: a check that needs a big module belongs in the
   component (see `routes/_app.$org.help.$topic.tsx`, whose topic check in
   `beforeLoad` once put every help topic in the initial JS).
+- An input for a secret (a key, a token, a variable's value) sets
+  `autoComplete`: `new-password` on a `type="password"` input, since
+  browsers ignore `off` there, and `off` on a text input or textarea.
+  `src/ui/secretInputs.unit.test.ts` checks the password inputs.
 - Help (`features/help`): a new page gets its topic in `where.ts` if its
   parent's isn't right, and a new feature a topic in `topics.ts`, short:
   the rows' `dock` commands are run against the real CLI in

@@ -486,7 +486,7 @@ function ServiceForm({
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
                 placeholder="public repository"
-                autoComplete="off"
+                autoComplete="new-password"
                 className={input}
               />
             </Field>
