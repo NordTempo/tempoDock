@@ -238,6 +238,12 @@ func (c *Core) recoverService(ctx context.Context, a Actor, ss svcScope, org str
 			}
 		}
 	}
+	if isTemplate {
+		// A database with point-in-time restore comes back as a new
+		// history (a dump into a new cluster): its WAL goes to a new
+		// generation, never next to the lost one's files of the same names.
+		c.pitrNewGeneration(ctx, ss)
+	}
 	done := make(chan bool, 1)
 	rel, err := c.startRelease(ctx, a, ss, releaseSpec{source: apitypes.SourceRestart, from: &active, done: func(ok bool) { done <- ok }})
 	if err != nil {
