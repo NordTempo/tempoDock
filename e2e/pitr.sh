@@ -231,6 +231,9 @@ t0=$SECONDS
 check "the archive catches up within 60 s of the load" wait_for 60 eval '[[ $(pitr | jq .archiver.waiting) == 0 ]]'
 log "caught up after $((SECONDS - t0))s; most segments waiting at once: $worst; $(($(wal_objects) - o0)) segments archived"
 check "the archiver stayed healthy" eval '[[ $(pitr | jq -r .archiver.healthy) == true ]]'
+# A full second after the load's commit: utc has no fractions, and a
+# restore to the commit's own second stops before it.
+sleep 2
 T5=$(utc)
 check "the load's end is archived" flush
 want=$(psql_in db "select (select count(*) from pgbench_history) + (select count(*) from big)")
