@@ -56,6 +56,7 @@ SCENARIO_TIMEOUT=45m
 # release.sh's, then each app template (templates/*, listed at run time),
 # restore.sh (volume backups, in the slot's local repository),
 # pitr.sh (after the others: it moves the slot's backups into its S3 store),
+# checked.sh (failed restores, the repository check and a drill, in that store),
 # and last drain.sh, which drains node2 with whatever the others left there.
 # Left out: traces.sh and metrics.sh (they start their own servers; release.sh's
 # traces covers tracing), analytics-*.sh (fixed container names and a
@@ -69,6 +70,7 @@ SUITE=(
 	templates/all
 	restore/all
 	pitr/all
+	checked/all
 	drain/node2
 )
 

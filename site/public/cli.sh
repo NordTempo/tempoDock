@@ -130,7 +130,7 @@ main() {
 
   # .../releases/latest redirects to .../releases/tag/<version>.
   url="$(github -I -o /dev/null -w '%{url_effective}' "https://github.com/$repo/releases/latest")" \
-    || die "could not find the latest release of $repo"
+    || die "could not find the latest release of $repo, so nothing was run. Check that this machine reaches github.com and run this again"
   version="${url##*/}"
   # The one place a version becomes part of a URL.
   release_version "$version" \
@@ -138,18 +138,21 @@ main() {
   at_least "$version" "$minimum" \
     || die "the latest release of $repo came back as $version, older than $minimum, so nothing was downloaded. Try again; if it stays, report it: https://github.com/$repo/security"
   base="https://github.com/$repo/releases/download/$version"
-  for name in "$script" SHA256SUMS SHA256SUMS.sig; do
-    github -o "$tmp/$name" "$base/$name" || die "could not download $name of release $version from $repo"
+  for name in "$script" SHA256SUMS; do
+    github -o "$tmp/$name" "$base/$name" || die "could not download $name of release $version from $repo (above), so nothing was run. Check that this machine reaches github.com and run this again"
   done
-  # A release from before the ssh-keygen signature has none: a 404 (curl's
-  # exit 22) leaves the file empty and verify_sums decides.
-  rc=0
-  github -o "$tmp/SHA256SUMS.sshsig" "$base/SHA256SUMS.sshsig" 2>/dev/null || rc=$?
-  case $rc in
-    0) ;;
-    22) : > "$tmp/SHA256SUMS.sshsig" ;;
-    *) die "could not download SHA256SUMS.sshsig of release $version from $repo" ;;
-  esac
+  # A signature the release doesn't have is a 404 (curl's exit 22): the
+  # file is left empty and verify_sums decides. Every release has a
+  # SHA256SUMS.sig; one from before the ssh-keygen signature has no .sshsig.
+  for name in SHA256SUMS.sig SHA256SUMS.sshsig; do
+    rc=0
+    github -o "$tmp/$name" "$base/$name" 2>/dev/null || rc=$?
+    case $rc in
+      0) ;;
+      22) : > "$tmp/$name" ;;
+      *) die "could not download $name of release $version from $repo (curl's exit $rc), so nothing was run. Check that this machine reaches github.com and run this again" ;;
+    esac
+  done
   verify_sums "$tmp" "$version" "$require"
 
   awk -v n="$script" '$2 == n' "$tmp/SHA256SUMS" > "$tmp/sum"

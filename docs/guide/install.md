@@ -43,7 +43,12 @@ install tarball (`deploy/`: the script and the systemd units) and the
 this the signature check is required: it needs OpenSSL 3, which Debian 12,
 Ubuntu 22.04 and later have (`DOCK_REQUIRE_SIGNATURE=0` accepts
 `SHA256SUMS` alone). A download cut short runs nothing: the whole script is
-one function, called on its last line.
+one function, called on its last line. Everything it needs from GitHub
+(the release, Caddy) is downloaded and checked before anything of Dock's
+on the server changes, so a download that fails leaves the server as it
+was: run it again. The release itself comes through GitHub's API, which
+allows 60 requests an hour per address without a token (an install takes
+five); behind a shared address, set `GITHUB_TOKEN`.
 
 On Debian and Ubuntu it installs what's missing: Docker Engine (from
 Docker's own apt repository, as [docs.docker.com](https://docs.docker.com/engine/install/)
@@ -312,7 +317,7 @@ running).
 | `[defaults] memory_mb` | `512` | Memory limit for services that don't set one |
 | `[defaults] cpus` | `1` | CPU limit for services that don't set one |
 | `[defaults] health_check_timeout_seconds` | `60` | Health check timeout for services that don't set one |
-| `[defaults] pids_limit` | `4096` | Processes and threads each container on this server may have (apps, databases, jobs), so one that forks without end stops at its own limit. Applies to containers started after the change; negative is no limit |
+| `[defaults] pids_limit` | `4096` | Processes and threads each container on this server may have (apps, databases, jobs), so one that forks without end stops at its own limit. Each server reads its own config. An app at its limit can't start a process or thread and says so in its own words (`Resource temporarily unavailable`, `can't fork`, `unable to create native thread`, `failed to create new OS thread`); Dock doesn't name the limit. Raise it, restart the daemon (`dock`, or `dock-node` on a node) and `dock restart` the service: a container keeps the limit it started with. Negative is no limit. Build steps aren't counted |
 | `[defaults] keep_releases` | `5` | Releases kept for rollback per service: their images and history are never pruned |
 | `[ingress] mode` | `direct` | `direct`: public IP, Caddy issues certificates. `cloudflare_tunnel`: Caddy serves plain HTTP on `127.0.0.1:<http_port>` only, for the local `cloudflared`; `disable_tls` must stay `false` (apps are `https://` at Cloudflare) |
 | `[ingress] tunnel_hostname` | empty | `<tunnel-id>.cfargotunnel.com`, the CNAME target for hostnames on a tunnel server. Set by `install.sh` from the tunnel token |
@@ -725,6 +730,15 @@ else.
    Read like this, the token is in neither the shell's history nor the
    process list. The printed command has it after `sudo` instead, where
    other users of the server can see it while the install runs.
+
+   The one-line install does the same on a bare Debian or Ubuntu server,
+   Docker included, with nothing copied over. Name the control plane's
+   version, or the node gets the latest release:
+
+   ```sh
+   read -rs NODE_JOIN_TOKEN && export NODE_JOIN_TOKEN
+   curl -fsSL https://dock.nordtempo.com/install.sh | sudo --preserve-env=NODE_JOIN_TOKEN DOCK_VERSION=v0.61.0 bash -s -- --yes
+   ```
 
    The script installs the same binaries, Caddy and app firewall as on the
    control plane, runs `dock node join` once (it creates the node's key in

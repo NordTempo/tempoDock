@@ -13,8 +13,10 @@
 # included, by its time and as "latest"), off and on again (the window
 # as two ranges, a time before the gap restores, a time in it is refused,
 # a time after it restores from the new base backup, "latest" of the
-# running database), an in-place restore, the archiver keeping up under pgbench, and what an
-# idle database costs (no uploads, next to no CPU). About 6 minutes.
+# running database), an in-place restore, the storage down for a while (a
+# restore then is refused naming the storage, segments wait, the archive
+# catches up with no gap), the archiver keeping up under pgbench, and what
+# an idle database costs (no uploads, next to no CPU). About 7 minutes.
 # PITR_LOAD_S sets the seconds of pgbench (default 30), PITR_LOAD_ROWS the
 # rows of the bulk insert after it (default 3 million, about 400 MB of WAL).
 set -uo pipefail
@@ -174,11 +176,29 @@ restored db-t5 "$T4" 1 2 3 4 5 6 7 8 9
 restored db-now latest 1 2 3 4 5 6 7 8 9 10
 
 log "in place"
+BASES=$(pitr | jq .base_backups)
 out=$(dk_p backup restore db --to-time "$T4" --in-place --yes 2>&1) || fail "in-place restore: $(tail -2 <<<"$out")"
 wait_for 120 newest_active db
 wait_for 60 psql_in db "select 1" >/dev/null
 check "db itself is back at $T4" eval '[[ $(ids db) == "1 2 3 4 5 6 7 8 9" ]]'
-check "a new window opens after the in-place restore" wait_for 180 eval '[[ $(pitr | jq -r .archiver.healthy) == true && -n $(pitr | jq -r ".through // empty") ]]'
+# The archive started over: its window opens with a base backup of its own.
+check "a new window opens after the in-place restore, with a base backup" wait_for 180 eval '[[ $(pitr | jq -r .archiver.healthy) == true && $(pitr | jq .base_backups) -gt $BASES && -n $(pitr | jq -r ".through // empty") ]]'
+
+log "the storage down for a while"
+# Stopped, not removed: the bucket's data is in the container. Other
+# scenarios of the slot find it running again.
+note 11
+docker stop "$SLOT-minio" >/dev/null
+check "a restore while the storage is down is refused, naming the storage" out_has "WAL archive on the backup storage can't be read" dk_p backup restore db --to-time "$T4" --as db-nostore
+psql_in db "select pg_switch_wal()" >/dev/null
+note 12
+TDOWN=$(a_moment)
+note 13
+psql_in db "select pg_switch_wal()" >/dev/null
+check "segments wait while the storage is down" wait_for 60 eval '[[ $(pitr | jq ".archiver.waiting // 0") -ge 1 ]]'
+docker start "$SLOT-minio" >/dev/null
+check "the archive catches up once the storage is back" wait_for 120 eval '[[ $(pitr | jq .archiver.waiting) == 0 ]] && archived_past "$TDOWN"'
+restored db-t6 "$TDOWN" 1 2 3 4 5 6 7 8 9 11 12
 
 log "idle cost: 90 s without writes"
 # Before the load, whose vacuuming writes for minutes. What the restore
@@ -211,6 +231,9 @@ t0=$SECONDS
 check "the archive catches up within 60 s of the load" wait_for 60 eval '[[ $(pitr | jq .archiver.waiting) == 0 ]]'
 log "caught up after $((SECONDS - t0))s; most segments waiting at once: $worst; $(($(wal_objects) - o0)) segments archived"
 check "the archiver stayed healthy" eval '[[ $(pitr | jq -r .archiver.healthy) == true ]]'
+# A full second after the load's commit: utc has no fractions, and a
+# restore to the commit's own second stops before it.
+sleep 2
 T5=$(utc)
 check "the load's end is archived" flush
 want=$(psql_in db "select (select count(*) from pgbench_history) + (select count(*) from big)")

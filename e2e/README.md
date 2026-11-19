@@ -13,11 +13,12 @@ the CLI and real traffic through the proxy.
 | `analytics-*.sh` | Dock Analytics with a headless browser, on their own containers |
 | `drain.sh` | `dock server drain` of a node under load: Postgres, Redis, a volume and stateless apps move with no failed request and every acknowledged write kept |
 | `restore.sh` | a volume backup of a service that isn't a template database: restored in place (the file is back, the safety snapshot is named and undoes it) and into a copy (`--as`) |
-| `pitr.sh` | point-in-time restore with the slot's S3 store: restores to a time between writes, across a replaced container, of a stopped database, to latest, across off and on (the window as two ranges), in place; the archiver under write load and idle |
+| `pitr.sh` | point-in-time restore with the slot's S3 store: restores to a time between writes, across a replaced container, of a stopped database, to latest, across off and on (the window as two ranges), in place, with the storage stopped under load (segments wait and catch up, a restore meanwhile is refused); the archiver under write load and idle |
+| `checked.sh` | backups in the slot's S3 store: a volume added since the backup, a copy that can't start archived with an alert, the repository check failing and passing, a restore drill |
 | `upgrade/run.sh` | one published release updated to another, with data checks |
 | `sso.sh` | single sign-on through a real Keycloak over HTTPS (its own CA, in the slot): the oidc kind and the keycloak preset, invites, refusals, step-ups, logout |
 | `recover.sh` | a lost server ([ADR 0098](../docs/decisions/0098-recovering-a-lost-server.md)): backups in a MinIO bucket, the control plane removed with everything on it, `install.sh --restore-from-bucket` on a fresh one, `dock admin recover --yes`, then the database's rows, the app and the old token are checked. Removes the slot's control plane: run it last or in a slot of its own (`e2e/vm/up.sh 0`) |
-| `fresh-install.sh` | the README's install on bare Debian 12/13 and Ubuntu 22.04/24.04: piped install with Docker, CLI login, a template, re-run, uninstall |
+| `fresh-install.sh` | the README's install on bare Debian 12/13 and Ubuntu 22.04/24.04: piped install with Docker, CLI login, a template, re-run, uninstall, a failed download changing nothing, the site's `install.sh` refusing another key and installing the latest release |
 | `nightly.sh` | all of the above that fits one cycle, every night (below) |
 | `repeat.sh` | one scenario N times, a line per run, for failures too rare for one run |
 

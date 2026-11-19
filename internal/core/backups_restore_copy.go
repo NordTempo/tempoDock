@@ -88,7 +88,9 @@ func (c *Core) restoreVolumeCopy(ctx context.Context, a Actor, ss svcScope, req 
 		rel, err := c.startRelease(ctx, a, to, releaseSpec{source: apitypes.SourcePromote, promote: step, done: func(ok bool) {
 			var err error
 			if !ok {
-				err = fmt.Errorf("%s failed to start with the backup's data; see its release (`dock releases -s %s`)", name, name)
+				// Whoever reads this finds the copy archived under another
+				// name (finishVolumeCopy), so the hint names that one.
+				err = fmt.Errorf("%s failed to start with the backup's data; see its release (`dock releases -s %s`)", name, failedTargetName(name, restoreInto{id: row.ID}))
 			}
 			c.finishVolumeCopy(c.ctx, ss, to, row, log, err)
 		}})
@@ -221,7 +223,7 @@ func (c *Core) finishVolumeCopy(ctx context.Context, ss, to svcScope, row store.
 		fin.Status, fin.Error = string(apitypes.BackupFailed), err.Error()
 		kept := c.restoreTargetFailed(ctx, ss, to.svc.ID, restoreInto{id: row.ID}, err)
 		c.audit(ctx, System, "backup.restore_failed", &ss.project, &ss.env, ss.String(),
-			fmt.Sprintf("restore of backup %s into %s failed: %v; it is archived as %s for a look, and its name is free to restore again", short, to.svc.Name, err, kept))
+			fmt.Sprintf("restore of backup %s into %s failed: %v%s", short, to.svc.Name, err, keptText(to.svc.Name, kept)))
 	} else {
 		c.restoreSucceeded(ctx, ss)
 		c.audit(ctx, System, "backup.restored", &ss.project, &ss.env, ss.String(),

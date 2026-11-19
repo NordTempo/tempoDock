@@ -165,7 +165,9 @@ func TestDrillFailureAlertsUntilOnePasses(t *testing.T) {
 	ss, _ := h.c.loadService(h.ctx, 1, db)
 	*restoreErr = errors.New("pg_restore: error: could not read from input file")
 	d := h.drillNow(db, true)
-	if d.Status != apitypes.BackupFailed || !strings.Contains(d.Error, "could not read from input file") {
+	// The cause alone: the drill's service is removed, never archived, so
+	// the restore's own words about its target don't belong here.
+	if d.Status != apitypes.BackupFailed || !strings.HasSuffix(d.Error, "restoring the snapshot failed: pg_restore: error: could not read from input file") {
 		t.Fatalf("drill = %+v", d)
 	}
 	if !h.alertOpen(drillKey(ss)) {

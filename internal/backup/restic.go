@@ -297,7 +297,7 @@ reach() {
   rc=0
   RESTIC_REPOSITORY="$1" RESTIC_PASSWORD="$2" $T $R cat config </dev/null >/dev/null 2>&1 || rc=$?
   case $rc in 124|137)
-    echo "dock: can't reach the backup storage at ${1#s3:} from a backup job (no answer in ` + reachTimeout + `s). Jobs run in a container behind the app firewall: a loopback endpoint never works and a private one must be in [network] allow_private. Fix the storage endpoint and run it again." >&2
+    echo "dock: can't reach the backup storage at ${1#s3:} from a backup job (no answer in ` + reachTimeout + `s). Jobs run in a container behind the app firewall: a loopback endpoint never works and a private one must be in [network] allow_private. Fix the storage endpoint and run it again" >&2
     exit ` + unreachableExit + ` ;;
   esac
 }

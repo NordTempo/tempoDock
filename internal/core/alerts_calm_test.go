@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -200,6 +201,48 @@ func TestSlackGroupsQueuedAlerts(t *testing.T) {
 	}
 	if want := "3 alerts\n\n[warning] Broken a\n\n[warning] Broken b\n\n[warning] Broken c"; msg.Text != want {
 		t.Fatalf("grouped message = %q, want %q", msg.Text, want)
+	}
+}
+
+// A daemon that stops while a channel has alerts queued sends them before
+// it is gone, once: the delivery it was cut off in and what waited behind
+// it go out as one last message, and the next daemon sends nothing again.
+func TestStoppingDaemonSendsQueuedAlerts(t *testing.T) {
+	h := newHarness(t)
+	h.c.AllowLoopbackAlertChannels(true)
+	// The first delivery hangs at the receiver until the test ends; what
+	// comes after it is answered and kept.
+	arrived, gate, got := make(chan struct{}), make(chan struct{}), make(chan string, 4)
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if requests.Add(1) == 1 {
+			close(arrived)
+			<-gate
+			return
+		}
+		got <- string(body)
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(gate) }) // runs first: srv.Close waits for the handler
+	h.platformChannel(apitypes.CreateAlertChannelRequest{Name: "ops", Kind: apitypes.ChannelSlack, URL: srv.URL})
+	for _, key := range []string{"first", "a", "b"} {
+		if key == "a" {
+			<-arrived
+		}
+		h.c.signalAlert(h.ctx, alertSignal{Key: key, Kind: "test", Severity: apitypes.SeverityWarning, Title: "Broken " + key})
+	}
+	h.restart()
+	h.outboxSent()
+	if n := requests.Load(); n != 2 {
+		t.Fatalf("the receiver got %d requests, want the one cut off and one sent while stopping", n)
+	}
+	var msg struct{ Text string }
+	if err := json.Unmarshal([]byte(<-got), &msg); err != nil {
+		t.Fatal(err)
+	}
+	if want := "3 alerts\n\n[warning] Broken first\n\n[warning] Broken a\n\n[warning] Broken b"; msg.Text != want {
+		t.Fatalf("message sent while stopping = %q, want %q", msg.Text, want)
 	}
 }
 

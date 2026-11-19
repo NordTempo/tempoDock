@@ -87,7 +87,7 @@ Both are on by default; one install-level switch turns them off
   Backups tab says "checked 3 days ago" or the failure. The line and its
   switch are B's part of the tab; restore actions stay A's.
 - A failure raises a `backup_failed` alert (warning): key
-  `backup-check:<repository>:<server>` for a check, platform-wide like
+  `backup-check:<server>:<repository>` for a check, platform-wide like
   the control plane's backup alert; `backup-drill:<service>` for a
   drill, on the service. The next pass of the same check resolves it.
 - `dock backup check` runs the checks now and `dock backup drill` one

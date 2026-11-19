@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 # Removes everything e2e/vm/up.sh and the scenarios made on the host for
-# one slot (E2E_SLOT, default e2e2): the $SLOT-* containers with their
-# volumes, the $SLOT-net network and, with --images, the e2e2-* images
-# (shared by every slot). Never touches anything else.
+# one slot (E2E_SLOT, default e2e2): the containers on the $SLOT-net
+# network and the slot's servers by name, with their volumes, the network
+# and, with --images, the e2e2-* images (shared by every slot). Never
+# touches anything else: a slot's name may start another's (e2e-rw and
+# e2e-rw-sso), so containers are never matched by the "$SLOT-" prefix.
 set -uo pipefail
 SLOT=${E2E_SLOT:-e2e2}
 [[ $SLOT =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "bad E2E_SLOT $SLOT" >&2; exit 1; }
-ids=$(docker ps -aq --filter name="^$SLOT-")
+ids=$({
+	docker ps -aq --filter network="$SLOT-net"
+	docker ps -aq --filter name="^$SLOT-(cp|minio|node[0-9]+)$"
+} | sort -u)
 [[ -z $ids ]] || docker rm -fv $ids >/dev/null
 docker network rm "$SLOT-net" >/dev/null 2>&1 || true
 if [[ ${1:-} == --images ]]; then

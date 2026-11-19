@@ -185,7 +185,9 @@ bootstrap_err=""
 # The archive --restore-from-bucket fetched, until the install is through:
 # it holds every secret, so a failed run doesn't leave it lying around.
 fetched=""
-cleanup() { rm -rf ${fetched:+"$fetched"} ${staged:+"$staged"} ${download_dir:+"$download_dir"} ${old_config:+"$old_config"} ${merged:+"$merged"} ${bootstrap_err:+"$bootstrap_err"}; }
+# What the install downloads before it changes anything (Caddy, cloudflared).
+prefetched=""
+cleanup() { rm -rf ${fetched:+"$fetched"} ${prefetched:+"$prefetched"} ${staged:+"$staged"} ${download_dir:+"$download_dir"} ${old_config:+"$old_config"} ${merged:+"$merged"} ${bootstrap_err:+"$bootstrap_err"}; }
 trap cleanup EXIT
 
 # github CURL-ARGS... runs curl against GitHub, https only (redirects
@@ -291,7 +293,7 @@ release_info() {
   path="releases/tags/$version"
   [[ "$version" != latest ]] || path=releases/latest
   github "https://api.github.com/repos/$RELEASE_REPO/$path" > "$dir/release.json" \
-    || die "could not read release $version of $RELEASE_REPO; set GITHUB_TOKEN to a token that can read it (sudo --preserve-env=GITHUB_TOKEN), or download it yourself and set DOCK_BINARY"
+    || die "could not read release $version of $RELEASE_REPO from GitHub (above), so nothing was installed. A 404 means there is no such release: see https://github.com/$RELEASE_REPO/releases. Otherwise check that this server reaches api.github.com and run this again; GitHub also limits requests without a token per address and hour (a 403): wait, or set GITHUB_TOKEN (sudo --preserve-env=GITHUB_TOKEN)"
   version="$(grep -o '"tag_name": *"[^"]*"' "$dir/release.json" | head -n1 | sed 's/.*"\([^"]*\)"$/\1/')"
   [[ -n "$version" ]] || die "GitHub's answer for the release names no version"
   check_version "$version" "the release GitHub answered with"
@@ -459,7 +461,6 @@ bootstrap() {
 # agrees; elsewhere it says what to install.
 ensure_prereqs() {
   local missing=() id="" like="" codename=""
-  command -v systemctl > /dev/null || die "systemd is required"
   command -v docker > /dev/null || missing+=("Docker Engine")
   command -v iptables > /dev/null || missing+=(iptables)
   if (( ${#missing[@]} )); then
@@ -799,6 +800,9 @@ main() {
     aarch64|arm64) ARCH=arm64 ;;
     *) die "unsupported architecture $(uname -m)" ;;
   esac
+  # Before anything is downloaded: Dock's services are systemd units.
+  command -v systemctl > /dev/null \
+    || die "Dock runs as systemd services and this machine has no systemd (no systemctl), so nothing was installed. Install it on a server that boots with systemd, like Debian or Ubuntu; not inside a container"
 
   if [[ "$remove" == true ]]; then
     uninstall "$purge"
@@ -898,6 +902,47 @@ main() {
     say "         127.0.0.1 are reachable from the LAN. Upgrade Docker."
   fi
 
+  # What this run still needs from the network, before anything of Dock's
+  # on this server changes: a download that fails leaves it as it was, and
+  # says so.
+  prefetched="$(mktemp -d)"
+  caddy_new=""
+  if ! /usr/local/bin/caddy version 2>/dev/null | grep -q "v$CADDY_VERSION"; then
+    say "==> download caddy $CADDY_VERSION"
+    base="https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}"
+    tarball="caddy_${CADDY_VERSION}_linux_${ARCH}.tar.gz"
+    # By a checksum kept here, as cloudflared's is: the release's own
+    # checksum file comes from the same place as the tarball. CI installs
+    # the same tarball by the same checksum (ci.yml; a test keeps the two
+    # in step).
+    case "$CADDY_VERSION/$ARCH" in
+      2.11.7/amd64) caddy_sha256=727b91701a392de6ebc5027509f548bf39979e5216340d0faed8fa5e69c84f8b ;;
+      2.11.7/arm64) caddy_sha256=d8fc6d179a5d283028a472a5618564f6ad8a86fed513e64f032b3b0b7cc45e42 ;;
+      *) caddy_sha256="${CADDY_SHA256:-}" ;;
+    esac
+    [[ -n "$caddy_sha256" ]] \
+      || die "set CADDY_SHA256 to the SHA-256 of $tarball from Caddy's $CADDY_VERSION release"
+    curl --proto '=https' --proto-redir '=https' -fsSLo "$prefetched/$tarball" "$base/$tarball" \
+      || die "could not download Caddy $CADDY_VERSION from github.com (above), so nothing of Dock's was changed. Check that this server reaches github.com and run this again"
+    printf '%s  %s\n' "$caddy_sha256" "$prefetched/$tarball" | sha256sum --check --quiet --strict \
+      || die "$tarball does not match its checksum"
+    tar -xzf "$prefetched/$tarball" -C "$prefetched" caddy
+    caddy_new="$prefetched/caddy"
+  fi
+  cloudflared_new=""
+  if [[ "$tunnel_unit" == true ]] \
+    && ! /usr/local/bin/cloudflared --version 2>/dev/null | grep -q "version $CLOUDFLARED_VERSION "; then
+    say "==> download cloudflared $CLOUDFLARED_VERSION"
+    curl --proto '=https' --proto-redir '=https' -fsSLo "$prefetched/cloudflared" \
+      "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-${ARCH}" \
+      || die "could not download cloudflared $CLOUDFLARED_VERSION from github.com (above), so nothing of Dock's was changed. Check that this server reaches github.com and run this again"
+    # Cloudflare publishes checksums only in the release notes, so the
+    # default version's are pinned above.
+    printf '%s  %s\n' "$cloudflared_sha256" "$prefetched/cloudflared" | sha256sum --check --quiet --strict \
+      || die "cloudflared-linux-$ARCH does not match the expected SHA-256"
+    cloudflared_new="$prefetched/cloudflared"
+  fi
+
   say "==> users"
   # dock runs the daemon; its unit adds the docker group to that process
   # only. dock-caddy runs Caddy, with no Docker access at all.
@@ -937,44 +982,17 @@ main() {
   fi
 
   say "==> caddy $CADDY_VERSION"
-  if ! /usr/local/bin/caddy version 2>/dev/null | grep -q "v$CADDY_VERSION"; then
-    tmp="$(mktemp -d)"
-    base="https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}"
-    tarball="caddy_${CADDY_VERSION}_linux_${ARCH}.tar.gz"
-    # By a checksum kept here, as cloudflared's is: the release's own
-    # checksum file comes from the same place as the tarball. CI installs
-    # the same tarball by the same checksum (ci.yml; a test keeps the two
-    # in step).
-    case "$CADDY_VERSION/$ARCH" in
-      2.11.7/amd64) caddy_sha256=727b91701a392de6ebc5027509f548bf39979e5216340d0faed8fa5e69c84f8b ;;
-      2.11.7/arm64) caddy_sha256=d8fc6d179a5d283028a472a5618564f6ad8a86fed513e64f032b3b0b7cc45e42 ;;
-      *) caddy_sha256="${CADDY_SHA256:-}" ;;
-    esac
-    [[ -n "$caddy_sha256" ]] \
-      || die "set CADDY_SHA256 to the SHA-256 of $tarball from Caddy's $CADDY_VERSION release"
-    curl --proto '=https' --proto-redir '=https' -fsSLo "$tmp/$tarball" "$base/$tarball"
-    printf '%s  %s\n' "$caddy_sha256" "$tmp/$tarball" | sha256sum --check --quiet --strict \
-      || die "$tarball does not match its checksum"
-    tar -xzf "$tmp/$tarball" -C "$tmp" caddy
-    install -m 0755 "$tmp/caddy" /usr/local/bin/caddy.new
+  if [[ -n "$caddy_new" ]]; then
+    install -m 0755 "$caddy_new" /usr/local/bin/caddy.new
     mv /usr/local/bin/caddy.new /usr/local/bin/caddy
-    rm -rf "$tmp"
   fi
 
   tunnel_changed=false
   if [[ "$tunnel_unit" == true ]]; then
     say "==> cloudflared $CLOUDFLARED_VERSION"
-    if ! /usr/local/bin/cloudflared --version 2>/dev/null | grep -q "version $CLOUDFLARED_VERSION "; then
-      tmp="$(mktemp -d)"
-      curl --proto '=https' --proto-redir '=https' -fsSLo "$tmp/cloudflared" \
-        "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-${ARCH}"
-      # Cloudflare publishes checksums only in the release notes, so the
-      # default version's are pinned above.
-      printf '%s  %s\n' "$cloudflared_sha256" "$tmp/cloudflared" | sha256sum --check --quiet --strict \
-        || die "cloudflared-linux-$ARCH does not match the expected SHA-256"
-      install -m 0755 "$tmp/cloudflared" /usr/local/bin/cloudflared.new
+    if [[ -n "$cloudflared_new" ]]; then
+      install -m 0755 "$cloudflared_new" /usr/local/bin/cloudflared.new
       mv /usr/local/bin/cloudflared.new /usr/local/bin/cloudflared
-      rm -rf "$tmp"
       tunnel_changed=true
     fi
     if [[ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]]; then

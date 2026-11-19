@@ -1,9 +1,12 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -49,6 +52,20 @@ func (h *harness) heartbeatSending() bool {
 	hb.mu.Lock()
 	defer hb.mu.Unlock()
 	return hb.sending
+}
+
+// A ping that got no answer is worded for the person reading the alert:
+// a slow receiver by the time it had, and never with the URL.
+func TestHeartbeatSendErr(t *testing.T) {
+	const u = "https://monitor.example.com/ping/check-3f2a9c"
+	slow := heartbeatSendErr(&url.Error{Op: "Get", URL: u, Err: context.DeadlineExceeded})
+	if got, want := slow.Error(), "the heartbeat URL didn't answer within 15 seconds"; got != want {
+		t.Fatalf("a slow receiver reads %q, want %q", got, want)
+	}
+	refused := heartbeatSendErr(&url.Error{Op: "Get", URL: u, Err: errors.New("connection refused")})
+	if got, want := refused.Error(), "GET the heartbeat URL: connection refused"; got != want {
+		t.Fatalf("a refused connection reads %q, want %q", got, want)
+	}
 }
 
 // Times in these tests start at the real clock: the harness's own

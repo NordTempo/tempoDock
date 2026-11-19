@@ -21,7 +21,10 @@
 #               down raises an alert and clears when it is back (0043)
 #   alerts      a Slack channel (a mock of Slack's webhooks on the slot's
 #               network) gets a crash loop and a failed deploy, escaped,
-#               waits out a 429's Retry-After, then gets both resolved (0020)
+#               waits out a 429's Retry-After, then gets both resolved (0020);
+#               two deploys failing together arrive as one message, once,
+#               across a daemon restart inside the grouping window; the
+#               outside heartbeat pings the mock until it is removed (0097)
 #
 # Projects are e2e2-<scenario>-<run>, <run> being E2E_RUN (default: the
 # time), so runs are repeatable. E2E_NODE_CONTAINER names the node's
@@ -620,7 +623,9 @@ scenario_backup() {
 # webhooks: a POST whose JSON has a "text" answers 200 "ok" (400
 # invalid_payload otherwise), or 429 with Retry-After while
 # POST /_mode?m=429&ra=SECONDS is set (m=ok ends it). GET /got returns a
-# JSON line per request: when, status and text.
+# JSON line per request: when, status and text. Any other GET is the
+# outside heartbeat's ping: answered 200 and kept as a line with its path
+# (ping) and header names.
 SLACK_IP=${E2E_SLACK_IP:-$SUBNET_PREFIX.21}
 slack_start() {
 	docker rm -fv "$SLOT-slack" >/dev/null 2>&1
@@ -645,6 +650,9 @@ class H(http.server.BaseHTTPRequestHandler):
         self.wfile.write({200: b"ok", 400: b"invalid_payload", 429: b"rate_limited"}[status])
     def do_GET(self):
         self.send_response(200); self.end_headers()
+        if self.path != "/got":
+            open("/tmp/got", "a").write(json.dumps({"at": time.time(), "status": 200, "ping": self.path, "headers": sorted(k.lower() for k in self.headers.keys())}) + "\n")
+            return
         try: self.wfile.write(open("/tmp/got", "rb").read())
         except FileNotFoundError: pass
 http.server.ThreadingHTTPServer(("", 8080), H).serve_forever()' >/dev/null
@@ -663,10 +671,28 @@ slack_gap() {
 	curl -fsS "http://$SLACK_IP:8080/got" | jq -rs --arg re "$1" '[.[] | select(.text // "" | test($re)) | .at] | if length < 2 then -1 else (.[1] - .[0] | floor) end'
 }
 
+# slack_pings prints how many heartbeat pings the mock got.
+slack_pings() { curl -fsS "http://$SLACK_IP:8080/got" | jq -s '[.[] | select(.ping != null)] | length'; }
+
+# slack_count PATTERN prints how many messages Slack took (200) whose text
+# matches PATTERN.
+slack_count() { curl -fsS "http://$SLACK_IP:8080/got" | jq -s --arg re "$1" '[.[] | select(.status == 200 and (.text // "" | test($re)))] | length'; }
+
+# deploys_failed P N: N services of P have an open failed deploy alert.
+deploys_failed() { [[ $(api GET /alerts | jq --arg p "$1" '[.[] | select(.kind == "deploy_failed" and .project == $p and .resolved_at == null)] | length') == "$2" ]]; }
+
 scenario_alerts() {
-	local p=e2e2-alerts-$RUN ch=e2e-slack-$RUN n gap
+	local p=e2e2-alerts-$RUN ch=e2e-slack-$RUN n gap pings s
 	fresh $p || return
 	slack_start || { fail "slack mock didn't start"; return; }
+	# The outside heartbeat (ADR 0097) pings the mock while the rest runs.
+	check "the heartbeat is set, its URL from stdin" dk alerts heartbeat set - --every 1 <<<"http://$SLACK_IP:8080/ping/check-$RUN"
+	check "its test ping arrives" eval 'dk alerts heartbeat test && (($(slack_pings) >= 1))'
+	if dk alerts heartbeat --json | jq -e --arg t "http://$SLACK_IP:8080" '.target == $t and (tostring | contains("check-") | not)' >/dev/null; then
+		pass "dock alerts heartbeat shows the host, never the path"
+	else
+		fail "dock alerts heartbeat: $(dk alerts heartbeat --json 2>&1 | jq -c .)"
+	fi
 	check "an org Slack channel is added" dk alerts channel add $ch --slack "http://$SLACK_IP:8080/services/T0/B0/$RUN" --renotify 0
 	check "its test message arrives" bash -c "'${DOCK_BIN:-$E2E_DIR/../bin/dock}' alerts channel test $ch >/dev/null && curl -fsS http://$SLACK_IP:8080/got | grep -q 'Test alert'"
 
@@ -676,6 +702,12 @@ scenario_alerts() {
 	n=$(deploy_source $p lab "$APPS/go-lab" 2>/dev/null)
 	expect_release $p lab "$n" active
 	check "the crash loop reaches Slack, naming the service" wait_for 300 slack_has "^\[critical\] $p/$ENV_NAME/lab is crash looping"
+
+	# The crash loop took minutes: the statistics tick sent pings meanwhile.
+	check "the heartbeat's pings arrive on the tick" wait_for 75 eval '(($(slack_pings) >= 3))'
+	check "a ping carries no header but dock's version" eval 'curl -fsS "http://$SLACK_IP:8080/got" | jq -es "[.[] | select(.ping != null) | .headers] | unique == [[\"accept-encoding\", \"connection\", \"host\", \"user-agent\"]]"'
+	check "the heartbeat is removed" dk alerts heartbeat remove --yes
+	pings=$(slack_pings)
 
 	# Slack rate limits the next message: the retry waits as long as asked.
 	slack_mode 429 30
@@ -697,6 +729,20 @@ scenario_alerts() {
 	expect_release $p lab "$n" active
 	check "the crash loop's resolution reaches Slack" wait_for 330 slack_has "^\[resolved\] $p/$ENV_NAME/lab is crash looping"
 	check "the failed deploy's resolution reaches Slack" wait_for 60 slack_has "^\[resolved\] Deploy of $p/$ENV_NAME/lab failed"
+	if [[ $(slack_pings) == "$pings" ]]; then pass "no ping after the heartbeat was removed"; else fail "$(($(slack_pings) - pings)) pings after the heartbeat was removed"; fi
+
+	# Two deploys fail together and the daemon restarts while the channel
+	# still holds them (the 10 s grouping window): Slack gets both in one
+	# message, once (ADR 0097).
+	for s in g1 g2; do ensure_service $p $s '{"image":"busybox:1.37","start_command":"sleep 100000"}'; done
+	for s in g1 g2; do api POST "$(svc_path $p $s)/releases" '{"image":"busybox:e2e-no-such-tag"}' >/dev/null; done
+	check "two deploys failed together" wait_for 60 deploys_failed $p 2
+	docker exec "$SLOT-cp" systemctl restart dock
+	check "the API is back after the restart" wait_for 60 curl -sf --max-time 2 -o /dev/null "$API/health"
+	check "both reach Slack in one message" wait_for 30 slack_has '^2 alerts$'
+	sleep 15
+	n=$(slack_count "Deploy of $p/$ENV_NAME/g[12] failed")
+	if [[ $n == 1 && $(slack_count '^2 alerts') == 1 ]]; then pass "the group arrived once, across the restart"; else fail "the two failed deploys arrived in $n messages, want one"; fi
 
 	dk alerts channel remove $ch --yes >/dev/null
 	docker rm -fv "$SLOT-slack" >/dev/null 2>&1

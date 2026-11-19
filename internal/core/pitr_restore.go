@@ -9,6 +9,7 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/backup"
+	"github.com/NordTempo/tempoDock/internal/httpkit"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/store"
 	"github.com/NordTempo/tempoDock/internal/walarchive"
@@ -70,7 +71,7 @@ func (c *Core) planToTime(ctx context.Context, ss svcScope, target time.Time) (p
 	}
 	ix, err := walarchive.List(ctx, cfg)
 	if err != nil {
-		return pitrPlan{}, fmt.Errorf("list the WAL archive: %w", err)
+		return pitrPlan{}, c.archiveUnreadable(ss, err)
 	}
 	if err := ix.Reaches(base.WalStart, base.WalSegmentBytes, target); err != nil {
 		// A later base backup means the archive started over after this
@@ -79,6 +80,16 @@ func (c *Core) planToTime(ctx context.Context, ss svcScope, target time.Time) (p
 		if cov, cerr := ix.Cover(base.WalStart, base.WalSegmentBytes); cerr == nil && cov.Last != "" && next != nil {
 			return pitrPlan{}, invalid("%s can't be restored to %s: it wasn't archived from %s to %s (point-in-time restore was off or started over); %s",
 				ss, target.UTC().Format(time.RFC3339), cov.Through.UTC().Format(time.RFC3339), next.UTC().Format(time.RFC3339), c.restorableText(ctx, ss, set, bases))
+		}
+		// The same without a later base backup: the archive started over
+		// and the base backup that opens the new one isn't there yet (it
+		// runs, waits for the storage, or failed). Waiting for archiving
+		// doesn't help; that backup does.
+		if cov, cerr := ix.Cover(base.WalStart, base.WalSegmentBytes); cerr == nil && cov.Last != "" {
+			if row, rerr := c.store.GetPITR(ctx, ss.svc.ID); rerr == nil && row.Enabled && !c.isLeaving(ss.svc.ID) && row.Generation != base.WalGeneration {
+				return pitrPlan{}, invalid("%s can't be restored to %s: its archive started over after %s (an in-place restore, or point-in-time restore off and on) and the base backup that opens the new one hasn't succeeded yet (`dock backup list` shows it); until it has, %s",
+					ss, target.UTC().Format(time.RFC3339), cov.Through.UTC().Format(time.RFC3339), c.restorableText(ctx, ss, set, bases))
+			}
 		}
 		return pitrPlan{}, invalid("%s can't be restored to %s: %v", ss, target.UTC().Format(time.RFC3339), err)
 	}
@@ -126,7 +137,7 @@ func (c *Core) latestRestorable(ctx context.Context, ss svcScope) (time.Time, er
 	}
 	ix, err := walarchive.List(ctx, cfg)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("list the WAL archive: %w", err)
+		return time.Time{}, c.archiveUnreadable(ss, err)
 	}
 	cov, err := ix.Cover(base.WalStart, base.WalSegmentBytes)
 	if err != nil {
@@ -161,6 +172,20 @@ func (c *Core) RestoreLatest(ctx context.Context, a Actor, ref ServiceRef, req a
 	}
 	req.ToTime = &at
 	return c.RestoreBackup(ctx, a, ref, req)
+}
+
+// archiveUnreadable is the refusal of a restore to a time whose WAL
+// archive can't be listed: the storage is down or refuses, which the one
+// who asked can look into, so it is not an internal error. A network
+// failure is said in plain words; anything else is logged, since its text
+// can carry the storage's internals.
+func (c *Core) archiveUnreadable(ss svcScope, err error) error {
+	why := httpkit.NetErrorText(err, 0)
+	if why == "" {
+		c.log.Error("list the WAL archive", "service", ss.String(), "err", err)
+		why = "the storage's answer is in the daemon log"
+	}
+	return conflict("%s can't be restored to a time right now: its WAL archive on the backup storage can't be read (%s); check the storage (`dock backup status`) and try again", ss, why)
 }
 
 // restoreToTime restores ss as it was at req.ToTime, into a new service
