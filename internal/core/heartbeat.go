@@ -206,10 +206,7 @@ func (e *alertEngine) get(ctx context.Context, target string) error {
 	_, client := e.guardFor(false)
 	resp, err := client.Do(req)
 	if err != nil {
-		if ue, ok := errors.AsType[*url.Error](err); ok {
-			err = ue.Err // the URL holds the check's ID; don't repeat it
-		}
-		return fmt.Errorf("GET the heartbeat URL: %w", err)
+		return heartbeatSendErr(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
@@ -217,6 +214,20 @@ func (e *alertEngine) get(ctx context.Context, target string) error {
 		return fmt.Errorf("the heartbeat URL answered %s", resp.Status)
 	}
 	return nil
+}
+
+// heartbeatSendErr words a ping that got no answer, for `dock alerts
+// heartbeat` and the alert: without the URL (it holds the check's ID),
+// and a receiver that was too slow in those words, not the transport's
+// "context deadline exceeded".
+func heartbeatSendErr(err error) error {
+	if ue, ok := errors.AsType[*url.Error](err); ok {
+		if ue.Timeout() {
+			return fmt.Errorf("the heartbeat URL didn't answer within %d seconds", int(heartbeatTimeout/time.Second))
+		}
+		err = ue.Err
+	}
+	return fmt.Errorf("GET the heartbeat URL: %w", err)
 }
 
 // errNoHeartbeat is what reading, removing or testing the heartbeat
