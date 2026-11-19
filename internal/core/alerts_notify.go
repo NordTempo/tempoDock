@@ -40,9 +40,11 @@ import (
 // Retry-After; never after an answer retrying can't change,
 // deliveryError.final); the outcome is kept on the channel, so failures
 // show in `dock alerts channel list` and the UI. Queues live in memory
-// only: a restart drops what wasn't sent. Email channels queue a mail per
-// notification in Dock's outbox at once (email_channels.go): they aren't
-// grouped.
+// only: a daemon that stops gives what a channel still has queued one
+// last attempt (flushGroup), so a restart or an update inside the grouping
+// window or a retry's wait loses nothing; a daemon that is killed drops
+// it. Email channels queue a mail per notification in Dock's outbox at
+// once (email_channels.go): they aren't grouped.
 
 // deliveryBackoff is how long each delivery attempt waits before it runs:
 // the first right away, the last about 20 minutes after the alert.
@@ -58,6 +60,11 @@ const maxRetryAfter = 15 * time.Minute
 // instead of one per alert. A one-shot timer that exists only while a
 // channel has something queued (docs/performance.md); tests set it to 0.
 var groupWindow = 10 * time.Second
+
+// closeFlush bounds the last attempt a stopping daemon makes at what a
+// channel still has queued (flushGroup): well inside the service's stop
+// timeout (deploy/systemd/dock.service).
+const closeFlush = 5 * time.Second
 
 const (
 	// maxQueued caps the notifications waiting for one channel (or status
@@ -220,22 +227,25 @@ func (q *deliveryQueue[T]) sendAll(ctx context.Context, id int64, send func(T)) 
 }
 
 // sendGroups is sendAll for a target that takes several items at once:
-// each round hands send everything queued, in order, and removes it once
-// send returns. What arrives meanwhile is the next round's.
-func (q *deliveryQueue[T]) sendGroups(ctx context.Context, id int64, send func([]T)) {
+// each round hands send everything queued, in order, and removes as many
+// as send says it is done with (sent, or failed for good). What arrives
+// meanwhile is the next round's. When ctx ends it returns what is still
+// queued, the items send wasn't done with first, for the caller's last
+// attempt.
+func (q *deliveryQueue[T]) sendGroups(ctx context.Context, id int64, send func([]T) (done int)) (left []T) {
 	for {
 		q.mu.Lock()
 		cur := q.queues[id]
 		if len(cur) == 0 || ctx.Err() != nil {
 			delete(q.queues, id)
 			q.mu.Unlock()
-			return
+			return cur
 		}
 		group := append([]T(nil), cur...)
 		q.mu.Unlock()
-		send(group)
+		done := send(group)
 		q.mu.Lock()
-		q.queues[id] = q.queues[id][len(group):]
+		q.queues[id] = q.queues[id][done:]
 		q.mu.Unlock()
 	}
 }
@@ -302,8 +312,9 @@ func (e *deliveryError) final() bool {
 // resolution: the channel would show the alert open for good, and
 // resolutions are bounded by the alerts it was told about (ADR 0097).
 // The sender waits groupWindow before its first send, so alerts raised
-// together go out as one group (sendGroup). Email goes to Dock's outbox
-// at once, ungrouped.
+// together go out as one group (sendGroup). When the daemon stops, what
+// is still queued (held by the window, or between retries) gets one last
+// attempt (flushGroup). Email goes to Dock's outbox at once, ungrouped.
 func (c *Core) deliver(ch store.AlertChannel, n apitypes.AlertNotification) {
 	if apitypes.AlertChannelKind(ch.Kind) == apitypes.ChannelEmail {
 		c.mailChannel(c.ctx, ch, n)
@@ -330,25 +341,75 @@ func (c *Core) deliver(ch store.AlertChannel, n apitypes.AlertNotification) {
 			case <-t.C:
 			}
 		}
-		// With the daemon closing, sendGroups only drops the queue.
-		c.alerts.outbox.sendGroups(c.ctx, ch.ID, func(group []apitypes.AlertNotification) {
+		// With the daemon closing, sendGroups only hands back the queue.
+		left := c.alerts.outbox.sendGroups(c.ctx, ch.ID, func(group []apitypes.AlertNotification) int {
 			// A panic drops this group; the queue goes on.
-			c.safely("sending alert notifications", func() { c.sendGroup(ch, group) })
+			done := len(group)
+			c.safely("sending alert notifications", func() { done = c.sendGroup(ch, group) })
+			return done
 		})
+		c.safely("sending alert notifications", func() { c.flushGroup(ch, left) })
 	})
+}
+
+// flushGroup is a stopping daemon's last attempt at what channel ch still
+// has queued: once, without retries, within closeFlush, to Slack as one
+// message and to a webhook one POST each. Without it a restart inside the
+// grouping window lost every alert of the group, and the channels heard
+// of them again only with a reminder. What can't be sent is logged and
+// noted on the channel.
+func (c *Core) flushGroup(ch store.AlertChannel, left []apitypes.AlertNotification) {
+	if len(left) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(c.ctx), closeFlush)
+	defer cancel()
+	cur, err := c.store.GetAlertChannelByID(ctx, ch.ID)
+	if store.IsNotFound(err) {
+		return // removed meanwhile
+	}
+	sent := 0
+	switch {
+	case err != nil:
+	case apitypes.AlertChannelKind(cur.Kind) == apitypes.ChannelSlack:
+		var cfg channelConfig
+		if cfg, err = c.openChannel(cur); err == nil {
+			if err = c.postSlack(ctx, cur, cfg, left); err == nil {
+				sent = len(left)
+			}
+		}
+	default:
+		for _, n := range left {
+			if err = c.send(ctx, cur, n); err != nil {
+				break
+			}
+			sent++
+		}
+	}
+	if err == nil {
+		return
+	}
+	c.log.Warn("alerts: not sent before stopping", "channel", ch.Name, "notifications", len(left)-sent, "err", err)
+	// As text, not wrapped: this isn't the receiver's final answer, which
+	// channelFailed would open the channel's broken alert for.
+	c.channelFailed(ctx, ch.ID, fmt.Errorf("%d notifications weren't sent, because Dock stopped: %s", len(left)-sent, err.Error()))
 }
 
 // sendGroup sends a channel's queued notifications: to Slack as one
 // message, retried as one delivery; to a webhook one POST each, in order,
 // each with its own retries, since receivers parse one alert per body.
-func (c *Core) sendGroup(ch store.AlertChannel, group []apitypes.AlertNotification) {
+// It returns how many of the group it is done with: all of them, unless
+// the daemon stopped before a delivery came through (unsent).
+func (c *Core) sendGroup(ch store.AlertChannel, group []apitypes.AlertNotification) (done int) {
 	if apitypes.AlertChannelKind(ch.Kind) != apitypes.ChannelSlack {
-		for _, n := range group {
-			c.sendWithRetries(ch.ID, n)
+		for i, n := range group {
+			if c.unsent(c.sendWithRetries(ch.ID, n)) {
+				return i
+			}
 		}
-		return
+		return len(group)
 	}
-	c.recordDelivery(ch.ID, group[0].Alert.Title, c.withRetries(func() error {
+	err := c.withRetries(func() error {
 		cur, err := c.store.GetAlertChannelByID(c.ctx, ch.ID)
 		if err != nil {
 			return errGone // removed, or the daemon is closing
@@ -360,20 +421,32 @@ func (c *Core) sendGroup(ch store.AlertChannel, group []apitypes.AlertNotificati
 		ctx, cancel := context.WithTimeout(c.ctx, deliveryTimeout)
 		defer cancel()
 		return c.postSlack(ctx, cur, cfg, group)
-	}))
+	})
+	c.recordDelivery(ch.ID, group[0].Alert.Title, err)
+	if c.unsent(err) {
+		return 0
+	}
+	return len(group)
 }
 
+// unsent reports whether a delivery that ended with err (withRetries')
+// was cut short by the daemon stopping, not sent and not failed for
+// good: it stays queued for flushGroup.
+func (c *Core) unsent(err error) bool { return err != nil && c.ctx.Err() != nil }
+
 // sendWithRetries makes up to len(deliveryBackoff) attempts at one
-// notification and records the outcome on the channel. A channel removed
-// meanwhile isn't sent to.
-func (c *Core) sendWithRetries(id int64, n apitypes.AlertNotification) {
-	c.recordDelivery(id, n.Alert.Title, c.withRetries(func() error {
+// notification, records the outcome on the channel and returns it. A
+// channel removed meanwhile isn't sent to.
+func (c *Core) sendWithRetries(id int64, n apitypes.AlertNotification) error {
+	err := c.withRetries(func() error {
 		ch, err := c.store.GetAlertChannelByID(c.ctx, id)
 		if err != nil {
 			return errGone // removed, or the daemon is closing
 		}
 		return c.send(c.ctx, ch, n)
-	}))
+	})
+	c.recordDelivery(id, n.Alert.Title, err)
+	return err
 }
 
 // recordDelivery records a delivery's outcome (withRetries' error) on

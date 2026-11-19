@@ -78,7 +78,9 @@ and one when it has been quiet, saying how many times it happened. A
 deploy or backup that fails again while its alert is open sends
 `repeated` with the count. A webhook or Slack channel waits 10 seconds
 and sends what arrived together: Slack gets one message listing each
-alert, a webhook one POST per notification. A backed-up channel drops
+alert, a webhook one POST per notification. A Dock that restarts or
+updates meanwhile sends what a channel still holds before it stops, once
+and without retries. A backed-up channel drops
 new alerts past 32 waiting, never a resolution. Email channels aren't
 grouped yet: one mail per notification.
 
