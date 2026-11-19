@@ -81,6 +81,16 @@ func (c *Core) planToTime(ctx context.Context, ss svcScope, target time.Time) (p
 			return pitrPlan{}, invalid("%s can't be restored to %s: it wasn't archived from %s to %s (point-in-time restore was off or started over); %s",
 				ss, target.UTC().Format(time.RFC3339), cov.Through.UTC().Format(time.RFC3339), next.UTC().Format(time.RFC3339), c.restorableText(ctx, ss, set, bases))
 		}
+		// The same without a later base backup: the archive started over
+		// and the base backup that opens the new one isn't there yet (it
+		// runs, waits for the storage, or failed). Waiting for archiving
+		// doesn't help; that backup does.
+		if cov, cerr := ix.Cover(base.WalStart, base.WalSegmentBytes); cerr == nil && cov.Last != "" {
+			if row, rerr := c.store.GetPITR(ctx, ss.svc.ID); rerr == nil && row.Enabled && !c.isLeaving(ss.svc.ID) && row.Generation != base.WalGeneration {
+				return pitrPlan{}, invalid("%s can't be restored to %s: its archive started over after %s (an in-place restore, or point-in-time restore off and on) and the base backup that opens the new one hasn't succeeded yet (`dock backup list` shows it); until it has, %s",
+					ss, target.UTC().Format(time.RFC3339), cov.Through.UTC().Format(time.RFC3339), c.restorableText(ctx, ss, set, bases))
+			}
+		}
 		return pitrPlan{}, invalid("%s can't be restored to %s: %v", ss, target.UTC().Format(time.RFC3339), err)
 	}
 	return pitrPlan{base: *base, cfg: cfg, target: target}, nil

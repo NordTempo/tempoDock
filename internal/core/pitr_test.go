@@ -360,6 +360,96 @@ func TestPITROffRestartFails(t *testing.T) {
 	}
 }
 
+// TestPITRWindowBeforeTheNewArchivesBase: after the archive started over
+// (off and on here), until the base backup that opens the new one
+// succeeded, the window is the old archive's range alone, whatever the
+// archiver has archived since, and a later time is refused saying which
+// backup it waits for and what restores meanwhile.
+func TestPITRWindowBeforeTheNewArchivesBase(t *testing.T) {
+	h := newHarness(t)
+	db := h.templateDB("db", apitypes.TemplatePostgres)
+	var failBase atomic.Bool
+	var failed atomic.Int32
+	h.rt.OnJob(func(spec node.JobSpec) (node.JobResult, error) {
+		switch {
+		case !strings.Contains(spec.Name, "_base"):
+			return node.JobResult{}, nil
+		case failBase.Load():
+			failed.Add(1)
+			return node.JobResult{}, errors.New("the storage doesn't answer")
+		}
+		base := walarchive.Base{Start: "000000010000000000000003", SegmentBytes: walarchive.DefaultSegmentBytes, Consistent: time.Now()}
+		return node.JobResult{Output: resticOutput("base0000snap0", 4096, "base0000snap0") + base.String() + "\n"}, nil
+	})
+	var keys atomic.Pointer[[]string] // the bucket's objects
+	keys.Store(&[]string{})
+	bucket := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `<ListBucketResult><IsTruncated>false</IsTruncated>`)
+		for _, k := range *keys.Load() {
+			if strings.HasPrefix(k, r.URL.Query().Get("prefix")) {
+				_, _ = io.WriteString(w, `<Contents><Key>`+k+`</Key><Size>1</Size></Contents>`)
+			}
+		}
+		_, _ = io.WriteString(w, `</ListBucketResult>`)
+	}))
+	t.Cleanup(bucket.Close)
+	h.offBoxBackupsAt(bucket.URL)
+	turn := func(on bool, release int64) {
+		t.Helper()
+		if _, err := h.c.SetPITR(h.ctx, testSystem, db, setPITR(on, 7)); err != nil {
+			t.Fatal(err)
+		}
+		if rel := h.wait(db, release); rel.Status != apitypes.ReleaseActive {
+			t.Fatalf("release %d: %s (%s)", release, rel.Status, rel.Error)
+		}
+	}
+	window := func() *apitypes.PITR {
+		t.Helper()
+		b, err := h.c.ServiceBackups(h.ctx, testSystem, db)
+		if err != nil || b.PITR == nil {
+			t.Fatalf("backups: %+v, %v", b.PITR, err)
+		}
+		return b.PITR
+	}
+	turn(true, 2)
+	h.until("the first base backup", func() bool { return window().BaseBackups == 1 })
+	ss, err := h.c.loadService(h.ctx, 1, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bases, err := h.c.store.ListPITRBases(h.ctx, ss.svc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := h.c.walConfig(h.ctx, ss.svc.ID, bases[0].WalGeneration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	end := bases[0].ConsistentAt.Add(time.Millisecond).Truncate(time.Millisecond)
+	keys.Store(&[]string{walarchive.Key(cfg.Prefix, bases[0].WalStart, end)})
+
+	// Off and on with the storage failing the new archive's base backup,
+	// while its archiver archives on.
+	failBase.Store(true)
+	turn(false, 3)
+	turn(true, 4)
+	h.until("the new archive's base backup to fail", func() bool { return failed.Load() > 0 })
+	archived := time.Now().Add(time.Second)
+	archiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(walarchive.Status{Healthy: true, Through: &archived})
+	}))
+	defer archiver.Close()
+	h.rt.DialTo(strings.TrimPrefix(archiver.URL, "http://"))
+	if w := window(); len(w.Ranges) != 1 || !w.Ranges[0].Through.Equal(end) || w.Through == nil || !w.Through.Equal(end) {
+		t.Fatalf("the window is %+v ending at %v, want one range to the old archive's end %v", w.Ranges, w.Through, end)
+	}
+	_, err = h.c.planToTime(h.ctx, ss, time.Now())
+	if CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), "the base backup that opens the new one hasn't succeeded yet") ||
+		!strings.Contains(err.Error(), "until it has, it restores from "+bases[0].ConsistentAt.UTC().Format(time.RFC3339)+" to "+end.UTC().Format(time.RFC3339)) {
+		t.Fatalf("a time in the new archive: %v", err)
+	}
+}
+
 // TestStalledArchiverAlerts: an archiver whose health check fails opens
 // the database's alert with what it says (how much WAL waits and how
 // long), and its recovery resolves it.
