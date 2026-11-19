@@ -249,7 +249,8 @@ A daily dump loses up to a day. A Postgres template database (`postgres`,
 `pgvector`) with **point-in-time restore** on restores to any moment of the
 last days instead: Postgres hands each finished piece of its write-ahead
 log (WAL) to a small archiver next to the database, which stores it,
-encrypted, beside the backups; a base backup joins each daily dump. It
+encrypted, beside the backups; a base backup joins each daily dump (a
+`dock backup run` by hand takes the dump alone). It
 needs backups on a storage connection ([Where backups go](#where-backups-go)),
 and an operator turns it on per database ([ADR 0093](../decisions/0093-point-in-time-restore.md)):
 
@@ -279,7 +280,9 @@ dock backup pitr off db             # restarts db without archiving
   window starts over with a new base backup.
 - **Refusals** name what is possible: a time before the oldest base
   backup, or past what the archive holds, or a lost WAL segment, says the
-  latest time it can reach.
+  latest time it can reach. A quiet database's last minute may not be
+  archived yet: wait a minute and ask again. While the storage can't be
+  reached nothing restores to a time, and the refusal says so.
 - **Storage**: base backups deduplicate from day to day, so they cost
   about the database's size; WAL costs about the database's writes for
   the days kept, compressed. Retention runs with the daily backup. A
