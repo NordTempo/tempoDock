@@ -2,15 +2,19 @@ import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
 import { loadProject } from "../features/overview/load";
 import { ProjectView } from "../features/overview/ProjectView";
 
-// An environment's page: its services, problems, lock and activity, under
-// the project. Its shared variables and log drains are in the project's
-// settings (ADR 0059), and ?service=web, what one service sees, is the
-// service's Variables tab.
+// An environment's address: the project's page with this environment
+// picked, on its Services tab, or Activity with ?tab=activity. Its shared
+// variables, log drains and placement are in the project's Settings
+// (ADR 0059), and ?service=web, what one service sees, is the service's
+// Variables tab.
 export const Route = createFileRoute("/_app/$org/$project/$environment/")({
-  validateSearch: (search: Record<string, unknown>): { service?: string } =>
-    typeof search.service === "string" && search.service
-      ? { service: search.service }
-      : {},
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { service?: string; tab?: "activity" } => ({
+    ...(typeof search.service === "string" &&
+      search.service && { service: search.service }),
+    ...(search.tab === "activity" && { tab: "activity" as const }),
+  }),
   beforeLoad: ({ params, search }) => {
     if (search.service) {
       throw redirect({
@@ -32,5 +36,12 @@ export const Route = createFileRoute("/_app/$org/$project/$environment/")({
 
 function Environment() {
   const { project, environment } = Route.useParams();
-  return <ProjectView project={project} environment={environment} />;
+  const { tab } = Route.useSearch();
+  return (
+    <ProjectView
+      project={project}
+      environment={environment}
+      tab={tab ?? "services"}
+    />
+  );
 }

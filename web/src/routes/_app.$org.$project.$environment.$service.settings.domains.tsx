@@ -1,25 +1,16 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { servicePath } from "../data/queries";
-import { sitesQuery } from "../features/analytics/loaders";
-import { Hostnames } from "../features/analytics/ServiceSite";
-import { DomainsPanel } from "../features/service/DomainsPanel";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-// Settings' Domains view (ADR 0076): who can open them, the domains, then
-// which of them Dock Analytics counts, with the switch.
+// The older address of Settings' Domains section (ADR 0076): the Settings
+// tab is one page now (ADR 0099), so it opens there at #domains.
 export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/settings/domains",
 )({
-  loader: ({ context: { queryClient }, params }) =>
-    queryClient.ensureQueryData(sitesQuery(params.project)),
-  component: Domains,
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: "/$org/$project/$environment/$service/settings",
+      params,
+      hash: "domains",
+      replace: true,
+    });
+  },
 });
-
-function Domains() {
-  const ref = servicePath(Route.useParams());
-  return (
-    <>
-      <DomainsPanel serviceRef={ref} />
-      <Hostnames serviceRef={ref} />
-    </>
-  );
-}

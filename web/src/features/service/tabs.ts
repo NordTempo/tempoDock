@@ -3,12 +3,14 @@ import type { ServiceView } from "../../data/types";
 
 /**
  * A service's tabs: label, route, G-sequence key and group (watching it,
- * operating it, configuring it, its history; the strip draws a line
- * between groups). Tabs every service has come first in each group, so
- * they keep their place from one service to the next. The tab strip, the
- * palette's "Logs · web production" commands and the ? help all read
- * this list, so a new tab shows up everywhere. Kept out of
- * ServiceHeader so the shell chunk doesn't pull the header in.
+ * working with it, its record; the strip draws a line between groups).
+ * Settings is always the last tab, at every level (project, service), so
+ * "to change something, open its Settings" has one place to look. Tabs
+ * every service has come first in each group, so they keep their place
+ * from one service to the next. The tab strip, the palette's "Logs · web
+ * production" commands and the ? help all read this list, so a new tab
+ * shows up everywhere. Kept out of ServiceHeader so the shell chunk
+ * doesn't pull the header in.
  */
 export const serviceTabs = [
   {
@@ -67,23 +69,24 @@ export const serviceTabs = [
     label: "Variables",
     to: "/$org/$project/$environment/$service/variables",
     key: "g v",
-    group: "configure",
-  },
-  // Everything that configures it, on one page with an index: how it
-  // builds and runs, its domains and, when stateful, its backups
-  // (ADR 0076). G S, settings everywhere.
-  {
-    label: "Settings",
-    to: "/$org/$project/$environment/$service/settings",
-    key: "g s",
-    group: "configure",
+    group: "operate",
   },
   // Releases and the audit trail; a release opens under it (ADR 0076).
+  // History and Settings are the service's record and its configuration.
   {
     label: "History",
     to: "/$org/$project/$environment/$service/history",
     key: "g h",
-    group: "history",
+    group: "record",
+  },
+  // Everything that configures it, on one page with a list of sections:
+  // source, running, deploys, health and uptime, domains and, when
+  // stateful, backups. Last, as on every level. G S, settings everywhere.
+  {
+    label: "Settings",
+    to: "/$org/$project/$environment/$service/settings",
+    key: "g s",
+    group: "record",
   },
 ] as const;
 

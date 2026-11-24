@@ -8,7 +8,7 @@ import { type ReactNode, useState } from "react";
 import { setOrg } from "../../api/client";
 import { queries, useIsAdmin, useSession } from "../../data/queries";
 import { CliHint } from "../../ui/CliHint";
-import { ago, day, plural } from "../../ui/format";
+import { day, plural } from "../../ui/format";
 import {
   Act,
   Button,
@@ -19,7 +19,6 @@ import {
   Panel,
 } from "../../ui/kit";
 import { nameProblem, Saved, toName, useValidation } from "../create/form";
-import { ArchivedActions } from "../overview/ArchivedActions";
 import {
   orgQueries,
   useDeleteOrg,
@@ -34,8 +33,8 @@ import { OrgSettingsBar } from "./SettingsBar";
  * The organization itself: its name, address (slug, which admins may
  * change), whether members
  * must sign in with a second factor or single sign-on, locked
- * environments (admins), archived projects to rename or delete (admins),
- * leaving it, and deleting it while it has no projects.
+ * environments (admins), leaving it, and deleting it while it has no
+ * projects. Archived projects have their own section (ArchivedPage).
  */
 export function GeneralPage() {
   const org = useSuspenseQuery(orgQueries.org()).data;
@@ -147,7 +146,6 @@ export function GeneralPage() {
           </table>
         </Panel>
         {admin && <LockSettings />}
-        {admin && <ArchivedProjects />}
         {(user || admin) && (
           <section
             aria-label="Leave or delete"
@@ -445,46 +443,6 @@ function RequireTwoFactor({ on, admin }: { on: boolean; admin: boolean }) {
       </span>
       <ErrorText error={set.error} />
     </span>
-  );
-}
-
-/**
- * Archived projects (`dock project list --all`), each with Rename and
- * Delete permanently (ADR 0078): the way to free an archived project's
- * name. Hidden while there are none.
- */
-function ArchivedProjects() {
-  const archived = useQuery(queries.archivedProjects());
-  if (!archived.error && !archived.data?.length) return null;
-  return (
-    <section aria-labelledby="archived" className="flex flex-col gap-2">
-      <h2 id="archived" className="text-md font-semibold">
-        Archived projects
-      </h2>
-      {archived.error ? (
-        <ErrorText error={archived.error} />
-      ) : (
-        <Panel>
-          <table>
-            <tbody>
-              {archived.data?.map((p) => (
-                <tr key={p.id}>
-                  <td className="py-2.5 font-mono">{p.name}</td>
-                  <td className="py-2.5 text-xs text-mut" title={p.archived_at}>
-                    {p.archived_at && `archived ${ago(p.archived_at)}`}
-                  </td>
-                  <td className="py-1.5">
-                    <div className="flex justify-end">
-                      <ArchivedActions project={p} />
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Panel>
-      )}
-    </section>
   );
 }
 

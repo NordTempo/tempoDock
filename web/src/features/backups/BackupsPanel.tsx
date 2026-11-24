@@ -21,10 +21,13 @@ import {
   Check,
   Confirm,
   ErrorText,
-  Panel,
-  SectionHead,
+  MoreItem,
+  MoreMenu,
+  MoreSeparator,
+  Scroll,
   StateText,
 } from "../../ui/kit";
+import { SettingsSection } from "../../ui/sections";
 import type { State } from "../../ui/status";
 import { Saved } from "../create/form";
 import { backupWhat, hourLabel } from "./backups";
@@ -65,60 +68,36 @@ type Open =
   | { what: "time"; at?: number }
   | { what: "pitr"; mode: PitrMode };
 
-/** One kind of restore point in the list, under its own heading row. */
-type Group = {
-  kind: RestorePoint["kind"];
-  title: string;
-  points: RestorePoint[];
-  /** The newest point of the kind that restores something. */
-  latest?: string;
-  /** The newest backup or snapshot, whatever its state: Retry is its. */
-  newest?: string;
-};
-
-/** What the dumps group is called, by the kind of backup. */
-const backupTitle: Record<ServiceBackups["kind"], string> = {
-  postgres: "Database dumps",
-  mysql: "Database dumps",
-  redis: "Redis dumps",
-  volume: "File backups",
+/** What one of the service's backups is, in the list's Kind column. */
+const backupKind: Record<ServiceBackups["kind"], string> = {
+  postgres: "dump",
+  mysql: "dump",
+  redis: "dump",
+  volume: "file backup",
 };
 
 /**
- * A stateful service's restore points (ADR 0061): how backups and
- * snapshots are made, then one table with a group per kind, newest first,
- * one point marked latest: the newest usable dump, else snapshot (never a
- * failed or empty one; two "latest" read as a choice), and failed runs
- * secondary. A restore of a backup is a row of its group too. One Restore
- * per point: a template database's opens one dialog (into a new service),
- * any other service's asks under the point's row and restores in place
- * (ADR 0095);
- * the latest restores into new services offer Use. A Postgres database
- * also has point in time (ADR 0093): its settings row, and its window
- * over the table, whose "Restore to a time…" then leads instead.
+ * Settings' Backups section for a stateful service (ADR 0061, ADR 0099):
+ * first how its backups stand (schedule and the last good one, where they
+ * are kept with the way to fix "this server only", the weekly check that
+ * they restore, point in time), then what a restore does, in one line,
+ * and one list of restore points, newest first, with a kind column. One
+ * point is marked latest: the newest usable dump, else snapshot (never a
+ * failed or empty one; two "latest" read as a choice). Restore shows on
+ * every point that restores, Retry on the newest failed one; View log and
+ * Delete are in each row's menu. A template database's Restore opens one
+ * dialog (into a new service); any other service's asks under the
+ * point's row and restores in place (ADR 0095). A Postgres database with
+ * point in time on (ADR 0093) has its window over the list.
  */
 export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const backups = useBackups(ref);
   const snaps = useSnapshots(ref);
   const canDeploy = useCanDeploy(ref);
   const run = useRunBackup();
-  const take = useTakeSnapshot();
-  const [note, setNote] = useState("");
   const [open, setOpen] = useState<Open | null>(null);
-  const { environment } = useEnvironment(ref);
-  // Taking a snapshot pauses the service: production asks first.
-  const production = environment.kind === "production";
   const [askSnapshot, setAskSnapshot] = useState(false);
-  const takeNow = () =>
-    take.mutate(
-      { ref, note: note.trim() },
-      {
-        onSuccess: () => {
-          setNote("");
-          setAskSnapshot(false);
-        },
-      },
-    );
+  const { environment } = useEnvironment(ref);
   const close = () => setOpen(null);
   const flags = `-s ${ref.service} -e ${ref.environment}`;
   // A template database restores into a new service, from either kind.
@@ -148,21 +127,30 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const now = Date.now();
   const window = pitr && windowOf(pitr, now);
   const marks = pitr && stripMarks(pitr, backups.runs, snaps.snapshots, now);
-  const groups = (["backup", "snapshot"] as const).map((kind): Group => {
-    const of = points.filter((p) => p.kind === kind);
-    return {
-      kind,
-      title: kind === "backup" ? backupTitle[backups.kind] : "Volume snapshots",
-      points: of,
-      latest: of.find((p) => restorable(p) && !isEmpty(p))?.key,
-      newest: of.find((p) => !isRestoreRun(p))?.key,
-    };
-  });
-  // The one latest point, and the Restore to lead with: the latest dump,
-  // else the latest snapshot. It leads only into a new service, which
-  // changes nothing live, and gives way to a restore to a time.
-  const latest = groups.find((g) => g.latest)?.latest;
+  // The newest usable point of each kind, and the newest of each kind
+  // whatever its state (Retry is its). The one latest is the dump's, else
+  // the snapshot's.
+  const newestOf = (kind: RestorePoint["kind"], usable: boolean) =>
+    points.find(
+      (p) =>
+        p.kind === kind &&
+        (usable ? restorable(p) && !isEmpty(p) : !isRestoreRun(p)),
+    )?.key;
+  const latest = newestOf("backup", true) ?? newestOf("snapshot", true);
+  const newest = new Set([
+    newestOf("backup", false),
+    newestOf("snapshot", false),
+  ]);
+  const lastGood = points.find(
+    (p) => p.kind === "backup" && restorable(p) && !isEmpty(p),
+  );
+  // The Restore to lead with: the latest point. It leads only into a new
+  // service, which changes nothing live, and gives way to a restore to a
+  // time.
   const lead = intoNew && !window ? latest : undefined;
+  // The place column only when points are kept in more than one place.
+  const places = new Set(points.map((p) => p.where).filter(Boolean));
+  const showWhere = places.size > 1;
   // #backup-<id> (a failed backup's alert links there): scroll to its row
   // and open its log, once per hash.
   const hash = useLocation({ select: (l) => l.hash });
@@ -178,174 +166,150 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   }, [hash]);
 
   return (
-    <section aria-labelledby="restore-points" className="flex flex-col gap-3">
-      <SectionHead
-        id="restore-points"
-        right={
-          <form
-            aria-label="Take snapshot"
-            className="flex flex-wrap items-center gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (production) setAskSnapshot(true);
-              else takeNow();
-            }}
+    <SettingsSection
+      id="backups"
+      title="Backups"
+      actions={
+        <>
+          <Act
+            cli={`dock volume snapshot ${flags}`}
+            disabled={!!why}
+            title={`${ref.service} pauses while its volume is copied`}
+            onClick={() => setAskSnapshot(true)}
           >
-            <input
-              aria-label="Snapshot note"
-              placeholder="Note (optional)"
-              maxLength={200}
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              className="field w-48 py-[3px] text-fg"
-            />
-            <Act
-              small
-              type="submit"
-              cli={`dock volume snapshot ${flags}${note.trim() ? ` --note ${JSON.stringify(note.trim())}` : ""}`}
-              disabled={!!why || take.isPending}
-              reason={why}
-              title={`${ref.service} pauses while its volume is copied`}
-            >
-              Snapshot the volume
-            </Act>
-            <Act
-              small
-              cli={`dock backup run ${flags}`}
-              disabled={!!why || run.isPending}
-              onClick={() => run.mutate(ref)}
-            >
-              Back up now
-            </Act>
-            <ErrorText error={take.error ?? run.error} />
-          </form>
-        }
-      >
-        Restore points
-      </SectionHead>
-      <dl className="props [grid-template-columns:200px_minmax(0,1fr)]">
-        <dt>Backups</dt>
-        <dd>
-          {backupWhat[backups.kind]}, <Where backups={backups} />
-          {backups.warning && (
-            <span className="block text-warn">{backups.warning}</span>
+            Snapshot the volume
+          </Act>
+          <Act
+            primary
+            cli={`dock backup run ${flags}`}
+            disabled={!!why || run.isPending}
+            reason={why}
+            onClick={() => run.mutate(ref)}
+          >
+            Back up now
+          </Act>
+          <ErrorText error={run.error} />
+        </>
+      }
+    >
+      <div className="flex flex-col gap-3">
+        <dl className="props [grid-template-columns:200px_minmax(0,1fr)]">
+          {/* On the middle line of the row's controls (the 28px hour
+              select, or the 24px checkbox alone), not a 34px field's (the
+              .props rule matches the select). */}
+          <dt className={backups.schedule.enabled ? "pt-[13px]" : "pt-[11px]"}>
+            Schedule
+          </dt>
+          <dd className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <Schedule serviceRef={ref} backups={backups} />
+            {lastGood ? (
+              <span className="text-ok">last good {ago(lastGood.at)}</span>
+            ) : (
+              <span className="text-warn">no good backup yet</span>
+            )}
+          </dd>
+          <dt>Kept</dt>
+          <dd>
+            {backupWhat[backups.kind]}, <Where backups={backups} />
+            {backups.warning && (
+              <span className="block text-warn">{backups.warning}</span>
+            )}
+          </dd>
+          <dt>Snapshots</dt>
+          <dd>
+            Copies of its volumes on this server; {ref.service} pauses while one
+            is taken. Keeps {plural(snaps.keep, "snapshot")} for{" "}
+            {plural(snaps.keep_days, "day")}.
+          </dd>
+          <CheckedLine serviceRef={ref} backups={backups} />
+          {pitr && (
+            <>
+              <dt>Point in time</dt>
+              <dd>
+                <PitrRow
+                  serviceRef={ref}
+                  pitr={pitr}
+                  onSettings={(mode) => setOpen({ what: "pitr", mode })}
+                />
+              </dd>
+            </>
           )}
-        </dd>
-        {/* On the middle line of the row's controls (the 28px hour select,
-            or the 24px checkbox alone), not a 34px field's (the .props rule
-            matches the select). */}
-        <dt className={backups.schedule.enabled ? "pt-[13px]" : "pt-[11px]"}>
-          Schedule
-        </dt>
-        <dd>
-          <Schedule serviceRef={ref} backups={backups} />
-        </dd>
-        <dt>Snapshots</dt>
-        <dd>
-          Volume copies on this server, the service paused while copied; keeps{" "}
-          {plural(snaps.keep, "snapshot")} for {plural(snaps.keep_days, "day")}
-        </dd>
-        {pitr && (
-          <>
-            <dt>Point in time</dt>
-            <dd>
-              <PitrRow
-                serviceRef={ref}
-                pitr={pitr}
-                onSettings={(mode) => setOpen({ what: "pitr", mode })}
-              />
-            </dd>
-          </>
+        </dl>
+        {askSnapshot && (
+          <TakeSnapshot
+            serviceRef={ref}
+            production={environment.kind === "production"}
+            onDone={() => setAskSnapshot(false)}
+          />
         )}
-        <dt>Restoring</dt>
-        <dd>
-          {intoNew
-            ? `Into a new service beside ${ref.service}; ${ref.service} itself is not changed`
-            : `In place: ${ref.service} stops, a safety snapshot keeps what it holds now, then the copy goes in`}
-        </dd>
-      </dl>
-      {askSnapshot && (
-        <Confirm
-          title={`Take a snapshot of ${ref.service} in ${ref.environment}?`}
-          action="Take snapshot"
-          cli={`dock volume snapshot ${flags}${note.trim() ? ` --note ${JSON.stringify(note.trim())}` : ""}`}
-          pending={take.isPending}
-          error={take.error}
-          onConfirm={takeNow}
-          onCancel={() => {
-            take.reset();
-            setAskSnapshot(false);
-          }}
-        >
-          <b>
-            {ref.service} pauses while its volume is copied, usually a few
-            seconds.
-          </b>{" "}
-          Requests to it wait meanwhile.
-        </Confirm>
-      )}
-      {records[0] && (
-        <RestoreStatus
-          key={records[0].key}
-          serviceRef={ref}
-          record={records[0]}
-          canSwitch={canDeploy}
-          onUse={(to) =>
-            setOpen({ what: "switch", to, since: records[0]?.pointAt })
-          }
-        />
-      )}
-      {pitr && marks && (
-        <PitrSection
-          serviceRef={ref}
-          pitr={pitr}
-          runs={backups.runs}
-          marks={marks}
-          window={window}
-          why={why}
-          onRestore={(at) => setOpen({ what: "time", at })}
-          onSettings={(mode) => setOpen({ what: "pitr", mode })}
-        />
-      )}
-      <CheckedLine serviceRef={ref} backups={backups} />
-      <Panel>
-        <table>
-          <thead>
-            <tr>
-              <th>Taken</th>
-              <th>Restore point</th>
-              <th>Trigger</th>
-              <th>Size</th>
-              <th>Where</th>
-              <th className="w-full">Detail</th>
-              <th colSpan={4}>
-                <span className="sr-only">Actions</span>
-              </th>
-            </tr>
-          </thead>
-          {groups.map((g) => (
-            <tbody key={g.kind}>
+        {records[0] && (
+          <RestoreStatus
+            key={records[0].key}
+            serviceRef={ref}
+            record={records[0]}
+            canSwitch={canDeploy}
+            onUse={(to) =>
+              setOpen({ what: "switch", to, since: records[0]?.pointAt })
+            }
+          />
+        )}
+        {pitr?.enabled && marks && (
+          <PitrSection
+            serviceRef={ref}
+            pitr={pitr}
+            runs={backups.runs}
+            marks={marks}
+            window={window}
+            why={why}
+            onRestore={(at) => setOpen({ what: "time", at })}
+          />
+        )}
+        <h3 className="mt-3 flex flex-wrap items-baseline gap-x-3 font-semibold">
+          Restore points
+          <span className="font-normal text-mut">
+            {intoNew
+              ? `A restore goes into a new service beside ${ref.service}; ${ref.service} keeps running.`
+              : `A restore goes in place: ${ref.service} stops, a safety snapshot keeps what it holds now, then the copy goes in.`}
+          </span>
+        </h3>
+        <Scroll>
+          <table>
+            <thead>
               <tr>
-                <th
-                  scope="rowgroup"
-                  colSpan={columns}
-                  className="pt-4 text-left font-semibold text-fg"
-                >
-                  {g.title}
+                <th>Taken</th>
+                <th>Kind</th>
+                <th>Restore point</th>
+                <th>Trigger</th>
+                <th className="text-right">Size</th>
+                {showWhere && <th>Where</th>}
+                <th className="w-full">Detail</th>
+                <th>
+                  <span className="sr-only">Actions</span>
                 </th>
               </tr>
-              {g.points.length === 0 && (
+            </thead>
+            <tbody>
+              {points.length === 0 && (
                 <tr>
                   <td colSpan={columns} className="text-mut">
-                    None yet
+                    None yet. The first daily backup runs at{" "}
+                    {hourLabel(backups.schedule.hour)}, or Back up now.
                   </td>
                 </tr>
               )}
-              {g.points.map((p) => (
+              {points.map((p) => (
                 <PointRow
                   key={p.key}
                   serviceRef={ref}
                   point={p}
+                  kind={
+                    isRestoreRun(p)
+                      ? "restore"
+                      : p.kind === "snapshot"
+                        ? "snapshot"
+                        : backupKind[backups.kind]
+                  }
+                  showWhere={showWhere}
                   latest={p.key === latest}
                   lead={p.key === lead}
                   restore={
@@ -380,11 +344,11 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                   }
                   onRetry={
                     // On the newest point of a kind only, when it failed.
-                    p.state === "failed" && p.key === g.newest && !why
+                    p.state === "failed" && newest.has(p.key) && !why
                       ? () =>
                           p.kind === "backup"
                             ? run.mutate(ref)
-                            : take.mutate({ ref, note: p.snapshot.note ?? "" })
+                            : setAskSnapshot(true)
                       : undefined
                   }
                   onDelete={
@@ -395,9 +359,9 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                 />
               ))}
             </tbody>
-          ))}
-        </table>
-      </Panel>
+          </table>
+        </Scroll>
+      </div>
       <Suspense fallback={null}>
         {open?.what === "restore" && !inPlace(open.point) && (
           <RestoreDialog
@@ -447,7 +411,63 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           onDone={close}
         />
       )}
-    </section>
+    </SettingsSection>
+  );
+}
+
+/**
+ * Asks before taking a snapshot, with its note: the service pauses while
+ * its volume is copied, which production says first and loudest.
+ */
+function TakeSnapshot({
+  serviceRef: ref,
+  production,
+  onDone,
+}: {
+  serviceRef: ServiceRef;
+  production: boolean;
+  onDone: () => void;
+}) {
+  const take = useTakeSnapshot();
+  const [note, setNote] = useState("");
+  const cli = `dock volume snapshot -s ${ref.service} -e ${ref.environment}${note.trim() ? ` --note ${JSON.stringify(note.trim())}` : ""}`;
+  return (
+    <Confirm
+      title={`Take a snapshot of ${ref.service} in ${ref.environment}?`}
+      action="Take snapshot"
+      cli={cli}
+      pending={take.isPending}
+      error={take.error}
+      onConfirm={() =>
+        take.mutate({ ref, note: note.trim() }, { onSuccess: onDone })
+      }
+      onCancel={() => {
+        take.reset();
+        onDone();
+      }}
+    >
+      <span className="flex flex-col gap-3">
+        <span>
+          {production ? (
+            <b>
+              {ref.service} pauses while its volume is copied, usually a few
+              seconds.
+            </b>
+          ) : (
+            `${ref.service} pauses while its volume is copied, usually a few seconds.`
+          )}{" "}
+          Requests to it wait meanwhile.
+        </span>
+        <input
+          aria-label="Snapshot note"
+          placeholder="Note (optional), like: before the migration"
+          maxLength={200}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          className="field w-full text-fg"
+        />
+      </span>
+    </Confirm>
   );
 }
 
@@ -558,8 +578,8 @@ const restoreDone: State = { tone: "ok", glyph: "●", label: "done" };
 /** An empty cell's hyphen, so a missing value reads as missing. */
 const none = <span className="text-faint">-</span>;
 
-/** The table's columns: six of text, then one per action. */
-const columns = 10;
+/** The table's most columns (with Where), for rows that span them. */
+const columns = 8;
 
 /**
  * One row of the list: when, what (a backup or snapshot by id, or a
@@ -572,6 +592,8 @@ const columns = 10;
 function PointRow({
   serviceRef: ref,
   point: p,
+  kind,
+  showWhere,
   latest,
   lead,
   restore,
@@ -586,6 +608,9 @@ function PointRow({
 }: {
   serviceRef: ServiceRef;
   point: RestorePoint;
+  /** What it is, in the Kind column: dump, file backup, snapshot, restore. */
+  kind: string;
+  showWhere: boolean;
   latest: boolean;
   /** The Restore to lead with: its button is the primary one. */
   lead: boolean;
@@ -611,51 +636,67 @@ function PointRow({
     <>
       <PointCells
         point={p}
+        kind={kind}
+        showWhere={showWhere}
         good={good}
         restored={restored}
         latest={latest}
         asking={asking}
         undo={undo}
       >
-        {/* One cell per action, so each sits at the same x on every row. */}
-        <td className="pr-1.5 text-right">
-          {onLog && (
-            <Button small onClick={onLog}>
-              View log
-            </Button>
-          )}
-        </td>
-        <td className="pr-1.5 text-right">
-          {onRetry && (
-            <Button small onClick={onRetry}>
-              Retry
-            </Button>
-          )}
-        </td>
-        <td className="pr-1.5 text-right">
-          {onDelete && (
-            <Button small danger onClick={onDelete}>
-              Delete
-            </Button>
-          )}
-        </td>
-        <td className="text-right">
-          {restore &&
-            (asking ? (
-              <Button small onClick={onClose}>
-                Close
-              </Button>
+        {/* Its one visible action (Restore, else Retry), then its menu. */}
+        <td className="py-1 text-right whitespace-nowrap">
+          <span className="inline-flex items-center gap-2">
+            {restore ? (
+              asking ? (
+                <Button small onClick={onClose}>
+                  Close
+                </Button>
+              ) : (
+                <Button
+                  small
+                  primary={lead && !why}
+                  disabled={!!why}
+                  title={why}
+                  onClick={restore}
+                >
+                  Restore
+                </Button>
+              )
             ) : (
-              <Button
-                small
-                primary={lead && !why}
-                disabled={!!why}
-                reason={why}
-                onClick={restore}
-              >
-                Restore
-              </Button>
-            ))}
+              onRetry && (
+                <Button small onClick={onRetry}>
+                  Retry
+                </Button>
+              )
+            )}
+            {(onLog || onDelete || (restore && onRetry)) && (
+              <MoreMenu label={`${pointName(p)} actions`}>
+                {(close) => (
+                  <>
+                    {onLog && (
+                      <MoreItem close={close} onClick={onLog}>
+                        View log
+                      </MoreItem>
+                    )}
+                    {restore && onRetry && (
+                      <MoreItem close={close} onClick={onRetry}>
+                        Retry
+                      </MoreItem>
+                    )}
+                    {onDelete && (
+                      <>
+                        {onLog && <MoreSeparator />}
+                        <MoreItem close={close} danger onClick={onDelete}>
+                          Delete {pointName(p)}…
+                        </MoreItem>
+                      </>
+                    )}
+                  </>
+                )}
+              </MoreMenu>
+            )}
+          </span>
         </td>
       </PointCells>
       {asking && (
@@ -678,6 +719,8 @@ function PointRow({
 /** A row's text cells, then its action cells (`children`). */
 function PointCells({
   point: p,
+  kind,
+  showWhere,
   good,
   restored,
   latest,
@@ -686,6 +729,8 @@ function PointCells({
   children,
 }: {
   point: RestorePoint;
+  kind: string;
+  showWhere: boolean;
   good: boolean;
   /** A restore of a backup, not a point. */
   restored: boolean;
@@ -706,6 +751,7 @@ function PointCells({
         {ago(p.at)}
         {latest && <span className="text-ok"> latest</span>}
       </td>
+      <td className="whitespace-nowrap">{kind}</td>
       {/* A restore's name is long and it has no size or place: it wraps. */}
       <td
         className={
@@ -735,7 +781,7 @@ function PointCells({
             .join(" ") || none}
         </span>
       </td>
-      <td className="font-mono">
+      <td className="text-right font-mono">
         {isEmpty(p) ? (
           <span className="font-sans text-warn" title="It holds no data">
             empty
@@ -746,13 +792,16 @@ function PointCells({
           none
         )}
       </td>
-      {/* Plain: "kept on this server only" above says the risk once. */}
-      <td
-        className="whitespace-nowrap"
-        title={p.server ? `Kept on server ${p.server}` : undefined}
-      >
-        {p.where || none}
-      </td>
+      {/* Only when points are kept in more than one place: "kept on this
+          server only" above says the risk once. */}
+      {showWhere && (
+        <td
+          className="whitespace-nowrap"
+          title={p.server ? `Kept on server ${p.server}` : undefined}
+        >
+          {p.where || none}
+        </td>
+      )}
       {/* A floor, so long names beside it never squeeze an error to a word a line. */}
       <td className="max-w-[420px] min-w-[180px] whitespace-normal">
         {p.detail ? (

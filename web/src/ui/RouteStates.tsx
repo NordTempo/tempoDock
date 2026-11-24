@@ -25,8 +25,28 @@ const orgPages: Record<string, string> = {
   images: "Images",
   inbox: "Inbox",
   requests: "Requests",
-  settings: "Organization settings",
+  settings: "Settings",
   "status-pages": "Status pages",
+};
+
+// The org Settings sections' titles, by the word after /settings/, for
+// a section's loading frame (features/org/SettingsBar.tsx has the list).
+const settingsTitles: Record<string, string> = {
+  general: "General",
+  variables: "Variables",
+  activity: "Activity",
+  members: "Members",
+  groups: "Groups",
+  roles: "Roles",
+  agents: "Agent rules",
+  tokens: "Tokens",
+  alerts: "Alerts",
+  github: "GitHub",
+  cloudflare: "Cloudflare",
+  registries: "Registries",
+  "data-access": "Data access",
+  analytics: "Analytics defaults",
+  archived: "Archived projects",
 };
 
 type Crumb = { label: string; href: string };
@@ -133,8 +153,10 @@ function shapeOf(path: string): {
   if (!org || org === "console" || org === "account") return {};
   if (!second) return { title: "Overview" };
   const area = orgPages[second];
-  // Organization settings keeps its title over every section.
-  if (area) return !third || second === "settings" ? { title: area } : {};
+  // A settings section's frame is titled with the section's name.
+  if (second === "settings" && third)
+    return { title: settingsTitles[third] ?? area };
+  if (area) return !third ? { title: area } : {};
   if (!third) return { title: second };
   const page = projectPages[third];
   if (page) return { parent: second, title: page };

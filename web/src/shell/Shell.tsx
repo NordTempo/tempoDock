@@ -25,10 +25,10 @@ import {
 
 /**
  * Everything behind login: the sidebar and the page (which brings its own
- * PageBar). One command surface, the palette (Cmd+K or the sidebar's
- * search), finds pages and runs commands; ? opens help for the page,
- * with its keys. The platform
- * console gets an amber bar across the top. A person whose org needs a
+ * PageBar). One command surface, the palette (Cmd+K or the top bar's
+ * search), finds pages, settings and commands; ? opens help for the page,
+ * with its keys. The platform console has no top bar: its sidebar says
+ * where you are and has the way back. A person whose org needs a
  * second factor (ADR 0057) or single sign-on (ADR 0058) they didn't sign
  * in with acts in none: they get their account page alone, with the way
  * back.
@@ -43,6 +43,9 @@ function OrgShell() {
   useLiveUpdates();
   const mode = useShellMode();
   const demo = useSession()?.demo === true;
+  // A page with its own menu (Settings, an analytics site) has that list
+  // as its only left column.
+  const ownMenu = useOwnMenu();
   return (
     <PaletteProvider>
       <a
@@ -55,13 +58,12 @@ function OrgShell() {
           instead of sticking over them (index.css counts it in --shell-top). */}
       <div className="sticky top-0 z-30">
         {demo && <DemoBar />}
-        {mode === "console" && <ConsoleBar />}
         {mode === "app" && <TopBar />}
         <NotLive />
       </div>
       {mode === "console" && <DrainStrip />}
       <div className="flex min-h-screen flex-col lg:flex-row">
-        <Sidebar mode={mode} />
+        {(mode === "console" || !ownMenu) && <Sidebar mode={mode} />}
         <main id="main" className="flex min-w-0 flex-1 flex-col">
           <TwoFactorNotice />
           <div className="flex flex-1 flex-col">
@@ -85,66 +87,69 @@ export const RoutePending = PagePending;
 
 /**
  * The shell as it will look, while its first data loads (a cold start,
- * _app's pendingComponent): the top bar's fixed parts (or the console's
- * bar), the left column at the width it will have (the saved tree or
- * rail choice; the rail beside a page with its own menu) and the page's
- * frame. Nothing here reads a query; the org is the address's slug.
+ * _app's pendingComponent): the top bar's fixed parts (none on the
+ * console), the left column at the width it will have (the saved tree or
+ * rail choice) and the page's
+ * frame. Nothing here reads a query; the org is the address's slug. A
+ * page with its own menu gets no column, as in the shell.
  */
 export function ShellPending() {
   const path = useRouterState({ select: (s) => s.location.pathname });
   const inConsole = path === "/console" || path.startsWith("/console/");
   const [saved] = useTreeOpen();
   const ownMenu = useOwnMenu();
-  const wide = inConsole || (saved && !ownMenu);
+  const wide = inConsole || saved;
   return (
     <>
       <div className="sticky top-0 z-30">
-        {inConsole ? <ConsoleBar /> : <TopBarFrame path={path} />}
+        {!inConsole && <TopBarFrame path={path} />}
       </div>
       <div className="flex min-h-screen flex-col lg:flex-row">
-        <div className={columnClass(wide)}>
-          <span className="nav-row text-mut lg:hidden">
-            <Icon name="list" />
-            Navigation
-          </span>
-          <div className="hidden flex-col gap-0.5 lg:flex">
-            {wide ? (
-              <>
-                {/* ConsoleNav's heading, or AppNav's row over the tree. */}
-                {inConsole ? (
-                  <span className="px-2.5 pt-1 pb-2 font-semibold">
-                    Platform
-                  </span>
-                ) : (
-                  <span className="nav-row text-2xs font-medium text-faint">
-                    Projects
-                  </span>
-                )}
-                {["w-24", "w-20", "w-28"].map((w) => (
-                  <span key={w} className="nav-row">
-                    <span
-                      className={`block h-[10px] rounded-tag bg-dash ${w}`}
-                    />
-                  </span>
-                ))}
-              </>
-            ) : (
-              <>
-                <span className="nav-row justify-center px-0 text-mut">
-                  <Icon name="chevronRight" size={14} />
-                </span>
-                <span className="flex flex-col items-center gap-1">
-                  {[0, 1, 2].map((i) => (
-                    <span
-                      key={i}
-                      className="block size-9 rounded-ctl border border-edge"
-                    />
+        {(inConsole || !ownMenu) && (
+          <div className={columnClass(wide)}>
+            <span className="nav-row text-mut lg:hidden">
+              <Icon name="list" />
+              Navigation
+            </span>
+            <div className="hidden flex-col gap-0.5 lg:flex">
+              {wide ? (
+                <>
+                  {/* ConsoleNav's heading, or AppNav's row over the tree. */}
+                  {inConsole ? (
+                    <span className="px-2.5 pt-1 pb-2 font-semibold">
+                      Platform
+                    </span>
+                  ) : (
+                    <span className="nav-row text-2xs font-medium text-faint">
+                      Projects
+                    </span>
+                  )}
+                  {["w-24", "w-20", "w-28"].map((w) => (
+                    <span key={w} className="nav-row">
+                      <span
+                        className={`block h-[10px] rounded-tag bg-dash ${w}`}
+                      />
+                    </span>
                   ))}
-                </span>
-              </>
-            )}
+                </>
+              ) : (
+                <>
+                  <span className="nav-row justify-center px-0 text-mut">
+                    <Icon name="chevronRight" size={14} />
+                  </span>
+                  <span className="flex flex-col items-center gap-1">
+                    {[0, 1, 2].map((i) => (
+                      <span
+                        key={i}
+                        className="block size-9 rounded-ctl border border-edge"
+                      />
+                    ))}
+                  </span>
+                </>
+              )}
+            </div>
           </div>
-        </div>
+        )}
         <main id="main" className="flex min-w-0 flex-1 flex-col">
           <PagePending />
         </main>
@@ -156,7 +161,7 @@ export function ShellPending() {
 /**
  * TopBar's fixed parts in their places, for ShellPending: the org's
  * badge and slug (its name isn't loaded yet), its views as links, Search,
- * Inbox, Organization settings, ? and the account's circle.
+ * Inbox, Settings, ? and the account's circle.
  */
 function TopBarFrame({ path }: { path: string }) {
   const [org = "", area] = path.split("/").filter(Boolean);
@@ -198,7 +203,7 @@ function TopBarFrame({ path }: { path: string }) {
         Inbox
       </Link>
       <Link to="/$org/settings" params={{ org }} className={topLinkClass}>
-        Organization settings
+        Settings
       </Link>
       <span
         aria-hidden
@@ -212,31 +217,6 @@ function TopBarFrame({ path }: { path: string }) {
 }
 
 /**
- * The console's reminder that changes here reach every project. One line
- * of a fixed 32px, which index.css counts in --shell-top (`console-shell`);
- * narrow windows drop the sentence so it never wraps.
- */
-function ConsoleBar() {
-  return (
-    <div className="console-shell flex h-[32px] items-center gap-x-2.5 overflow-hidden border-b border-warn-edge bg-warn-bg px-4 text-xs whitespace-nowrap">
-      <Icon name="console" size={13} className="text-warn" />
-      <span className="font-semibold text-warn">Platform console</span>
-      <span className="hidden text-warn-text sm:inline">
-        Changes here affect every project on this Dock.
-      </span>
-      {/* No preload: it would read the org's projects from inside the
-          console, which sends no organization (api/client.ts). */}
-      <Link
-        to="/"
-        preload={false}
-        className="ml-auto inline-flex min-h-[24px] items-center text-warn-text underline"
-      >
-        Back to projects
-      </Link>
-    </div>
-  );
-}
-
 /**
  * The public demo's strip (ADR 0100), above every page: why changes
  * don't last, and where to get Dock. A fixed 30px, which index.css

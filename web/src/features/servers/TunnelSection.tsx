@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import type { Server } from "../../data/types";
 import { ago } from "../../ui/format";
-import { Act, ErrorText, Panel, SectionHead, StateText } from "../../ui/kit";
+import { Act, ErrorText, Panel, StateText } from "../../ui/kit";
 import type { State } from "../../ui/status";
 import { cloudflareQuery, useSetServerTunnel } from "../cloudflare/data";
 
@@ -34,12 +34,12 @@ export function TunnelSection({ server: s }: { server: Server }) {
   const t = s.tunnel;
   return (
     <section aria-labelledby="tunnel" className="flex flex-col gap-2">
-      <SectionHead
-        id="tunnel"
-        aside={t ? `Cloudflare, connection ${t.connection}` : "Cloudflare"}
-      >
-        Tunnel
-      </SectionHead>
+      <h3 id="tunnel" className="font-semibold">
+        Tunnel{" "}
+        <span className="font-normal text-mut">
+          {t ? `Cloudflare, connection ${t.connection}` : "Cloudflare"}
+        </span>
+      </h3>
       {t ? <Managed server={s} tunnel={t} /> : <Unmanaged server={s} />}
     </section>
   );

@@ -61,6 +61,7 @@ import { Route as AppOrgSettingsActivityRouteImport } from './routes/_app.$org.s
 import { Route as AppOrgSettingsAgentsRouteImport } from './routes/_app.$org.settings.agents'
 import { Route as AppOrgSettingsAlertsRouteImport } from './routes/_app.$org.settings.alerts'
 import { Route as AppOrgSettingsAnalyticsRouteImport } from './routes/_app.$org.settings.analytics'
+import { Route as AppOrgSettingsArchivedRouteImport } from './routes/_app.$org.settings.archived'
 import { Route as AppOrgSettingsCloudflareRouteImport } from './routes/_app.$org.settings.cloudflare'
 import { Route as AppOrgSettingsDataAccessRouteImport } from './routes/_app.$org.settings.data-access'
 import { Route as AppOrgSettingsGeneralRouteImport } from './routes/_app.$org.settings.general'
@@ -379,6 +380,11 @@ const AppOrgSettingsAlertsRoute = AppOrgSettingsAlertsRouteImport.update({
 const AppOrgSettingsAnalyticsRoute = AppOrgSettingsAnalyticsRouteImport.update({
   id: '/analytics',
   path: '/analytics',
+  getParentRoute: () => AppOrgSettingsRoute,
+} as any)
+const AppOrgSettingsArchivedRoute = AppOrgSettingsArchivedRouteImport.update({
+  id: '/archived',
+  path: '/archived',
   getParentRoute: () => AppOrgSettingsRoute,
 } as any)
 const AppOrgSettingsCloudflareRoute =
@@ -778,6 +784,7 @@ export interface FileRoutesByFullPath {
   '/$org/settings/agents': typeof AppOrgSettingsAgentsRoute
   '/$org/settings/alerts': typeof AppOrgSettingsAlertsRoute
   '/$org/settings/analytics': typeof AppOrgSettingsAnalyticsRoute
+  '/$org/settings/archived': typeof AppOrgSettingsArchivedRoute
   '/$org/settings/cloudflare': typeof AppOrgSettingsCloudflareRoute
   '/$org/settings/data-access': typeof AppOrgSettingsDataAccessRoute
   '/$org/settings/general': typeof AppOrgSettingsGeneralRoute
@@ -886,6 +893,7 @@ export interface FileRoutesByTo {
   '/$org/settings/agents': typeof AppOrgSettingsAgentsRoute
   '/$org/settings/alerts': typeof AppOrgSettingsAlertsRoute
   '/$org/settings/analytics': typeof AppOrgSettingsAnalyticsRoute
+  '/$org/settings/archived': typeof AppOrgSettingsArchivedRoute
   '/$org/settings/cloudflare': typeof AppOrgSettingsCloudflareRoute
   '/$org/settings/data-access': typeof AppOrgSettingsDataAccessRoute
   '/$org/settings/general': typeof AppOrgSettingsGeneralRoute
@@ -997,6 +1005,7 @@ export interface FileRoutesById {
   '/_app/$org/settings/agents': typeof AppOrgSettingsAgentsRoute
   '/_app/$org/settings/alerts': typeof AppOrgSettingsAlertsRoute
   '/_app/$org/settings/analytics': typeof AppOrgSettingsAnalyticsRoute
+  '/_app/$org/settings/archived': typeof AppOrgSettingsArchivedRoute
   '/_app/$org/settings/cloudflare': typeof AppOrgSettingsCloudflareRoute
   '/_app/$org/settings/data-access': typeof AppOrgSettingsDataAccessRoute
   '/_app/$org/settings/general': typeof AppOrgSettingsGeneralRoute
@@ -1112,6 +1121,7 @@ export interface FileRouteTypes {
     | '/$org/settings/agents'
     | '/$org/settings/alerts'
     | '/$org/settings/analytics'
+    | '/$org/settings/archived'
     | '/$org/settings/cloudflare'
     | '/$org/settings/data-access'
     | '/$org/settings/general'
@@ -1220,6 +1230,7 @@ export interface FileRouteTypes {
     | '/$org/settings/agents'
     | '/$org/settings/alerts'
     | '/$org/settings/analytics'
+    | '/$org/settings/archived'
     | '/$org/settings/cloudflare'
     | '/$org/settings/data-access'
     | '/$org/settings/general'
@@ -1330,6 +1341,7 @@ export interface FileRouteTypes {
     | '/_app/$org/settings/agents'
     | '/_app/$org/settings/alerts'
     | '/_app/$org/settings/analytics'
+    | '/_app/$org/settings/archived'
     | '/_app/$org/settings/cloudflare'
     | '/_app/$org/settings/data-access'
     | '/_app/$org/settings/general'
@@ -1772,6 +1784,13 @@ declare module '@tanstack/react-router' {
       path: '/analytics'
       fullPath: '/$org/settings/analytics'
       preLoaderRoute: typeof AppOrgSettingsAnalyticsRouteImport
+      parentRoute: typeof AppOrgSettingsRoute
+    }
+    '/_app/$org/settings/archived': {
+      id: '/_app/$org/settings/archived'
+      path: '/archived'
+      fullPath: '/$org/settings/archived'
+      preLoaderRoute: typeof AppOrgSettingsArchivedRouteImport
       parentRoute: typeof AppOrgSettingsRoute
     }
     '/_app/$org/settings/cloudflare': {
@@ -2218,6 +2237,7 @@ interface AppOrgSettingsRouteChildren {
   AppOrgSettingsAgentsRoute: typeof AppOrgSettingsAgentsRoute
   AppOrgSettingsAlertsRoute: typeof AppOrgSettingsAlertsRoute
   AppOrgSettingsAnalyticsRoute: typeof AppOrgSettingsAnalyticsRoute
+  AppOrgSettingsArchivedRoute: typeof AppOrgSettingsArchivedRoute
   AppOrgSettingsCloudflareRoute: typeof AppOrgSettingsCloudflareRoute
   AppOrgSettingsDataAccessRoute: typeof AppOrgSettingsDataAccessRoute
   AppOrgSettingsGeneralRoute: typeof AppOrgSettingsGeneralRoute
@@ -2236,6 +2256,7 @@ const AppOrgSettingsRouteChildren: AppOrgSettingsRouteChildren = {
   AppOrgSettingsAgentsRoute: AppOrgSettingsAgentsRoute,
   AppOrgSettingsAlertsRoute: AppOrgSettingsAlertsRoute,
   AppOrgSettingsAnalyticsRoute: AppOrgSettingsAnalyticsRoute,
+  AppOrgSettingsArchivedRoute: AppOrgSettingsArchivedRoute,
   AppOrgSettingsCloudflareRoute: AppOrgSettingsCloudflareRoute,
   AppOrgSettingsDataAccessRoute: AppOrgSettingsDataAccessRoute,
   AppOrgSettingsGeneralRoute: AppOrgSettingsGeneralRoute,

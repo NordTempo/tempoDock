@@ -2,7 +2,8 @@
  * The screens a help topic's "Do" rows link to, by scope: a service's
  * tabs need a service in view, a project's pages a project, the
  * organization's pages only the org. Topics name them as `{ s: "logs" }`,
- * `{ p: "previews" }` or `{ o: "inbox" }`.
+ * `{ p: "previews" }` or `{ o: "inbox" }`. A `hash` is a section of a
+ * Settings page (features/settings/sections.ts, overview/sections.ts).
  */
 export const servicePlaces = {
   overview: { to: "/$org/$project/$environment/$service", label: "Overview" },
@@ -37,12 +38,19 @@ export const servicePlaces = {
     to: "/$org/$project/$environment/$service/settings",
     label: "Settings",
   },
+  health: {
+    to: "/$org/$project/$environment/$service/settings",
+    hash: "health",
+    label: "Health and uptime",
+  },
   domains: {
-    to: "/$org/$project/$environment/$service/settings/domains",
+    to: "/$org/$project/$environment/$service/settings",
+    hash: "domains",
     label: "Domains",
   },
   backups: {
-    to: "/$org/$project/$environment/$service/settings/backups",
+    to: "/$org/$project/$environment/$service/settings",
+    hash: "backups",
     label: "Backups",
   },
   history: {
@@ -53,10 +61,19 @@ export const servicePlaces = {
 
 export const projectPlaces = {
   compare: { to: "/$org/$project/compare", label: "Compare" },
-  previews: { to: "/$org/$project/settings/previews", label: "Previews" },
-  drains: { to: "/$org/$project/settings/log-drains", label: "Log drains" },
+  previews: {
+    to: "/$org/$project/settings",
+    hash: "previews",
+    label: "Previews",
+  },
+  drains: {
+    to: "/$org/$project/settings",
+    hash: "log-drains",
+    label: "Log drains",
+  },
   shared: {
-    to: "/$org/$project/settings/variables",
+    to: "/$org/$project/settings",
+    hash: "variables",
     label: "Shared variables",
   },
 } as const;
@@ -68,7 +85,7 @@ export const orgPlaces = {
   images: { to: "/$org/images", label: "Images" },
   statusPages: { to: "/$org/status-pages", label: "Status pages" },
   inbox: { to: "/$org/inbox", label: "Inbox" },
-  alerts: { to: "/$org/settings/alerts", label: "Alert channels" },
+  alerts: { to: "/$org/settings/alerts", label: "Alerts settings" },
   members: { to: "/$org/settings/members", label: "Members" },
   groups: { to: "/$org/settings/groups", label: "Groups" },
   tokens: { to: "/$org/settings/tokens", label: "Tokens" },
@@ -77,6 +94,7 @@ export const orgPlaces = {
   cloudflare: { to: "/$org/settings/cloudflare", label: "Cloudflare" },
   registries: { to: "/$org/settings/registries", label: "Registries" },
   activity: { to: "/$org/settings/activity", label: "Activity" },
+  archived: { to: "/$org/settings/archived", label: "Archived projects" },
 } as const;
 
 /** Where a "Do" row's link goes. */

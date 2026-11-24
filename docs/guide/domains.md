@@ -148,7 +148,7 @@ A redirect belongs to the level its connection is on: an organization's
 
 ## Domains from Cloudflare
 
-With a Cloudflare connection (`dock cloudflare add`, Organization settings
+With a Cloudflare connection (`dock cloudflare add`, Settings › Cloudflare
 or the console, [ADR 0036](../decisions/0036-cloudflare-api.md)), a
 hostname in one of its zones needs no DNS work:
 
@@ -234,8 +234,8 @@ probe could reach it. Removing the domain removes its check; you can
 remove an auto check like any other (Dock doesn't add it again) or replace
 it with your own. Uptime checks aren't part of `dock.toml`, so `dock apply`
 and `dock project export` leave them alone. For domains verified before
-this, **Check all domains** on its Metrics tab (or `dock uptime domains`)
-adds the missing checks.
+this, **Check all domains** in its Settings › Health and uptime (or
+`dock uptime domains`) adds the missing checks.
 
 - A probe is one `GET`, redirects not followed. Up means the expected
   status (a code, or `2xx`/`3xx` for any of the class) within the timeout.
@@ -255,8 +255,8 @@ adds the missing checks.
 - An organization has at most 50 checks; a server runs at most 8 probes
   at once and 2 per organization, and skips a probe rather than queue it.
 - Project admins add and remove checks; everyone who can read the service
-  sees them: the service's Metrics tab (checks, a 24-hour strip, uptime
-  over 24 hours, 7 and 30 days, the last incidents, and next to them
+  sees them: the service's Settings › Health and uptime (checks, a
+  24-hour strip, uptime over 24 hours, 7 and 30 days, the last incidents, and next to them
   Dock's own health check of the container, the view from inside), the
   service's Overview (up or down and the last incident) and `dock status`.
 

@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { CloudflarePage } from "../features/cloudflare/CloudflarePage";
 import { cloudflareQuery, redirectsQuery } from "../features/cloudflare/data";
+import { ConsoleTabs } from "../features/console/ConsoleTabs";
 
 // The platform's Cloudflare connections (ADR 0036, 0062): Dock's address,
 // server tunnels, and zones shared with organizations; ?tab=redirects
@@ -15,6 +16,10 @@ export const Route = createFileRoute("/_app/console/cloudflare")({
     ]),
   component: function Cloudflare() {
     const { tab = "connections" } = Route.useSearch();
-    return <CloudflarePage scope="platform" tab={tab} />;
+    return (
+      <ConsoleTabs>
+        <CloudflarePage scope="platform" tab={tab} />
+      </ConsoleTabs>
+    );
   },
 });

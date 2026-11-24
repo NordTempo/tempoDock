@@ -6,86 +6,87 @@ import { useOrg } from "../../shell/location";
 import { ago, elapsed } from "../../ui/format";
 import { orgSitesQuery } from "../analytics/loaders";
 import { uptimeChecks } from "../uptime/data";
+import { Chevron, FactLabel } from "./facts";
 
-// The service Overview's lines on how it does from outside (ADR 0059):
-// its uptime and last incident, and its site's visitors with a link to
-// the site in the Analytics area. Each shows only when there is one.
+// How the service does from outside (ADR 0059), as two of the Overview's
+// fact rows: its uptime and last incident (opens Metrics, where the
+// result is; the checks are set up in Settings › Health and uptime), and
+// its site's visitors (opens Requests' Visitors). Each shows only when
+// there is one.
 
 const compact = new Intl.NumberFormat("en-US", {
   notation: "compact",
   maximumFractionDigits: 1,
 });
 
-/** A link at least 24px tall (WCAG 2.5.8), on the line's text. */
-const target = "inline-flex min-h-[24px] items-center";
-
-const stateWord = {
-  up: "Up",
-  down: "Down",
-  unknown: "waiting for the first check",
-};
-const stateClass = { up: "text-ok", down: "text-fail", unknown: "text-sec" };
-
-export function Signals({ serviceRef: ref }: { serviceRef: ServiceRef }) {
-  const { uptime, domains } = useService(ref);
-  if (!uptime && domains.length === 0) return null;
-  return (
-    <div className="flex flex-col gap-1 text-xs">
-      {uptime && <UptimeLine serviceRef={ref} />}
-      {domains.length > 0 && <VisitorsLine serviceRef={ref} />}
-    </div>
-  );
-}
+const stateWord = { up: "up", down: "down", unknown: "first check pending" };
+const stateClass = { up: "text-ok", down: "text-fail", unknown: "text-mut" };
 
 /** Up or down, the last day's uptime and the latest incident. */
-function UptimeLine({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+export function UptimeFact({
+  serviceRef: ref,
+  className,
+}: {
+  serviceRef: ServiceRef;
+  className: string;
+}) {
   const org = useOrg();
   const { uptime } = useService(ref);
-  // The checks carry the incidents; the Uptime tab shares the query.
-  const checks = useQuery(uptimeChecks(ref)).data ?? [];
-  const last = checks
+  // The checks carry the incidents; Metrics and Settings share the query.
+  const checks = useQuery({ ...uptimeChecks(ref), enabled: !!uptime }).data;
+  const last = (checks ?? [])
     .flatMap((c) => c.incidents)
     .sort((a, b) => b.opened_at.localeCompare(a.opened_at))[0];
   if (!uptime) return null;
   return (
-    <p className="flex flex-wrap items-center gap-x-1.5">
-      <span className="text-faint">Uptime</span>
-      <span className={stateClass[uptime.state]}>
-        {stateWord[uptime.state]}
+    <Link
+      to="/$org/$project/$environment/$service/metrics"
+      params={{ org, ...ref }}
+      hash="uptime"
+      className={className}
+    >
+      <FactLabel>Uptime</FactLabel>
+      <span className="truncate">
+        <span className={stateClass[uptime.state]}>
+          {stateWord[uptime.state]}
+        </span>
+        {uptime.uptime_24h !== undefined && (
+          <span className="tabular-nums">
+            {" "}
+            · {Math.min(uptime.uptime_24h, 99.99).toFixed(2)}% in 24h
+          </span>
+        )}
+        {last && (
+          <span className="text-mut">
+            {" "}
+            ·{" "}
+            {last.resolved_at
+              ? `last incident ${ago(last.opened_at)}, down ${elapsed(Date.parse(last.resolved_at) - Date.parse(last.opened_at))}`
+              : `down since ${ago(last.opened_at)}`}
+          </span>
+        )}
       </span>
-      {uptime.uptime_24h !== undefined && (
-        <span className="tabular-nums">
-          · {Math.min(uptime.uptime_24h, 99.99).toFixed(2)}% in 24 h
-        </span>
-      )}
-      {last && (
-        <span className="text-mut">
-          ·{" "}
-          {last.resolved_at
-            ? `last incident ${ago(last.opened_at)}, down ${elapsed(Date.parse(last.resolved_at) - Date.parse(last.opened_at))}`
-            : `down since ${ago(last.opened_at)}`}
-        </span>
-      )}
-      <Link
-        to="/$org/$project/$environment/$service/metrics"
-        params={{ org, ...ref }}
-        hash="uptime"
-        className={target}
-      >
-        Uptime checks in Metrics →
-      </Link>
-    </p>
+      <Chevron />
+    </Link>
   );
 }
 
 /**
- * The site the service's hostnames count for: visitors in 24 hours, a way
- * to Requests' Visitors view.
+ * The site the service's hostnames count for: visitors in 24 hours,
+ * opening Requests' Visitors view.
  */
-function VisitorsLine({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+export function VisitorsFact({
+  serviceRef: ref,
+  className,
+}: {
+  serviceRef: ServiceRef;
+  className: string;
+}) {
   const org = useOrg();
+  const { domains } = useService(ref);
   const found = useQuery({
     ...orgSitesQuery(),
+    enabled: domains.length > 0,
     select: (all) =>
       all.find(
         (s) =>
@@ -96,19 +97,19 @@ function VisitorsLine({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   }).data;
   if (!found) return null;
   return (
-    <p className="flex flex-wrap items-center gap-x-1.5">
-      <span className="text-faint">Visitors</span>
-      <Link
-        to="/$org/$project/$environment/$service/requests/visitors"
-        params={{ org, ...ref }}
-        search={{ site: found.site.name }}
-        className={target}
-      >
+    <Link
+      to="/$org/$project/$environment/$service/requests/visitors"
+      params={{ org, ...ref }}
+      search={{ site: found.site.name }}
+      className={className}
+    >
+      <FactLabel>Visitors</FactLabel>
+      <span className="truncate">
         {found.overview
-          ? `${compact.format(found.overview.visitors)} visitors in 24 h`
-          : found.site.name}{" "}
-        →
-      </Link>
-    </p>
+          ? `${compact.format(found.overview.visitors)} in 24h`
+          : found.site.name}
+      </span>
+      <Chevron />
+    </Link>
   );
 }

@@ -1,8 +1,8 @@
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, type RefObject, useRef, useState } from "react";
 import { useDiscardChanges, useStageVariables } from "../../data/mutations";
 import {
-  useEnvironment,
   useIsAdmin,
   useRevealedChanges,
   useRevealedVariables,
@@ -18,10 +18,12 @@ import {
   Button,
   Check,
   ErrorText,
-  Glyph,
+  MoreItem,
+  MoreMenu,
+  Page,
   SectionHead,
 } from "../../ui/kit";
-import { serviceState } from "../../ui/status";
+import { orgQueries } from "../org/data";
 import { ApplyBox } from "./ApplyBox";
 import { parseDotenv } from "./dotenv";
 import { hasReference, maskUrlPasswords, resolve } from "./references";
@@ -52,14 +54,48 @@ const idOf = (v: { key: string; scope: string; service?: string }) =>
   `${v.scope}:${v.service ?? ""}:${v.key}`;
 
 /**
- * An environment's variables as an .env-like editor: pick what to look at
- * (the environment's shared lines, or what one service sees at runtime),
- * edit lines in place, paste a .env, and apply staged lines together.
- * Values stay masked until an admin reveals them. footer goes under
- * them: the environment's other settings (log drains). It sits under
- * another page's header: the project's settings for the shared lines, a
- * service's for its Variables tab (ADR 0059); the scope list switches
- * between them.
+ * The values a list shows: what this session revealed (one line, or all
+ * of them), with the staged old and new values of revealed lines, and the
+ * values this session typed. Shared by both views.
+ */
+function useShownValues(env: EnvRef, revealAll: boolean) {
+  const [revealedIds, setRevealedIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
+  const reveal = revealAll || revealedIds.size > 0;
+  const revealed = useRevealedVariables(env, null, reveal);
+  const revealedChanges = useRevealedChanges(env, reveal);
+  const values = new Map<
+    string,
+    { live?: string; old?: string; new?: string }
+  >();
+  for (const v of revealed.data ?? []) values.set(idOf(v), { live: v.value });
+  for (const c of revealedChanges.data?.variables ?? []) {
+    values.set(idOf(c), { ...values.get(idOf(c)), old: c.old, new: c.new });
+  }
+  const shown = (v: Parameters<typeof idOf>[0]) =>
+    revealAll || revealedIds.has(idOf(v));
+  return {
+    /** Whether a line's values show: in the list, and in ApplyBox. */
+    shown,
+    valuesOf: (v: Variable) =>
+      shown(v) ? values.get(idOf(v)) : typedOnly(env, v),
+    show: (v: Variable) => setRevealedIds(new Set([...revealedIds, idOf(v)])),
+    all: revealed.data ?? [],
+    error: revealed.error ?? revealedChanges.error,
+  };
+}
+
+/**
+ * An environment's variables as an .env-like editor. With a service, its
+ * Variables tab: what that service sees, in the order they apply (its
+ * own, editable here; the environment's shared ones; the organization's,
+ * used by name), each group saying where it is edited. Without, the
+ * project Settings' shared lines of one environment, with their apply
+ * panel (there is no service header to hold Apply). Lines are edited in
+ * place, a .env pastes in, and staged lines go live together with Apply.
+ * Values stay masked until an admin shows them. `footer` goes under the
+ * shared lines.
  */
 export function VariablesEditor({
   env,
@@ -71,124 +107,124 @@ export function VariablesEditor({
   service: string | null;
   footer?: ReactNode;
 }) {
-  const org = useOrg();
+  if (service) return <ServiceVariables env={env} service={service} />;
+  return <SharedVariables env={env} footer={footer} />;
+}
+
+/** The project Settings' editor of one environment's shared lines. */
+function SharedVariables({ env, footer }: { env: EnvRef; footer?: ReactNode }) {
   const all = useVariables(env, null);
-  const { services } = useEnvironment(env);
   const isAdmin = useIsAdmin();
   const [revealAll, setRevealAll] = useState(false);
-  const [revealedIds, setRevealedIds] = useState<ReadonlySet<string>>(
-    new Set(),
-  );
   const [pasting, setPasting] = useState(false);
   const newLine = useRef<HTMLInputElement>(null);
-  // The add line is the list's last: bring it into view, then type.
-  const focusNewLine = () => {
-    newLine.current?.scrollIntoView({ block: "center", behavior: "smooth" });
-    newLine.current?.focus({ preventScroll: true });
-  };
-  const reveal = revealAll || revealedIds.size > 0;
-  const revealed = useRevealedVariables(env, null, reveal);
-  const revealedChanges = useRevealedChanges(env, reveal);
-
+  const values = useShownValues(env, revealAll);
+  const shared = all
+    .filter((v) => v.scope === "environment")
+    .sort((a, b) => a.key.localeCompare(b.key));
+  const focusNewLine = useFocusNewLine(newLine);
   useShortcuts([
     { key: "v", label: "paste .env", run: () => setPasting(true) },
-    { key: "n", label: "add variable", run: () => focusNewLine() },
+    { key: "n", label: "add variable", run: focusNewLine },
   ]);
-
-  const shared = all.filter((v) => v.scope === "environment");
-  const own = service
-    ? all.filter((v) => v.scope === "service" && v.service === service)
-    : [];
-  const ownKeys = new Set(own.map((v) => v.key));
-  const byKey = (a: Variable, b: Variable) => a.key.localeCompare(b.key);
-  const rows = [...shared.sort(byKey), ...own.sort(byKey)];
-
-  const values = new Map<
-    string,
-    { live?: string; old?: string; new?: string }
-  >();
-  for (const v of revealed.data ?? []) values.set(idOf(v), { live: v.value });
-  for (const c of revealedChanges.data?.variables ?? []) {
-    values.set(idOf(c), { ...values.get(idOf(c)), old: c.old, new: c.new });
-  }
-  // Whether a line's values show: in the table, and in ApplyBox below.
-  const shown = (v: Parameters<typeof idOf>[0]) =>
-    revealAll || revealedIds.has(idOf(v));
-
-  const sharedCount = shared.length;
-  const actions = (
-    <>
-      {isAdmin && (
-        <Button onClick={() => setRevealAll(!revealAll)}>
-          {revealAll ? "Hide values" : "Reveal values"}
-        </Button>
-      )}
-      <Button onClick={() => setPasting(!pasting)}>
-        Paste .env <kbd>V</kbd>
-      </Button>
-      <Button onClick={focusNewLine}>
-        Add variable <kbd>N</kbd>
-      </Button>
-    </>
-  );
   return (
-    <div className="flex flex-1 flex-col md:flex-row">
-      <nav
-        aria-label="Applies to"
-        className="flex flex-col gap-0.5 border-b border-line px-3 pt-4 pb-3 md:w-[220px] md:flex-none md:border-r md:border-b-0"
+    <div className="flex min-w-0 flex-col gap-4">
+      <SectionHead
+        id="vars"
+        aside="every service here sees them, unless it sets the same name"
+        right={
+          <Actions
+            isAdmin={isAdmin}
+            revealAll={revealAll}
+            onReveal={() => setRevealAll(!revealAll)}
+            onPaste={() => setPasting(!pasting)}
+            onAdd={focusNewLine}
+          />
+        }
       >
-        <div className="px-2 pb-1 text-xs text-faint">Applies to</div>
-        <Link
-          to="/$org/$project/settings/variables/$environment"
-          params={{ org, ...env }}
-          activeOptions={{ exact: true }}
-          className="nav-row"
+        Shared with every service in {env.environment}
+      </SectionHead>
+      {pasting && (
+        <PasteEnv env={env} service={null} onDone={() => setPasting(false)} />
+      )}
+      <ErrorText error={values.error} />
+      <Lines labelledBy="vars">
+        {shared.map((v, i) => (
+          <Line
+            key={idOf(v)}
+            n={i + 1}
+            env={env}
+            variable={v}
+            values={values.valuesOf(v)}
+            all={values.all}
+            canReveal={isAdmin && !values.shown(v)}
+            onReveal={() => values.show(v)}
+          />
+        ))}
+        <NewLine
+          n={shared.length + 1}
+          env={env}
+          service={null}
+          inputRef={newLine}
+        />
+      </Lines>
+      <ApplyBox env={env} shows={values.shown} variables={all} />
+      {footer}
+    </div>
+  );
+}
+
+/**
+ * A service's Variables tab: what it sees at runtime, in three groups.
+ * Its own lines are edited here; the environment's shared lines and the
+ * organization's variables are listed with where they are edited. Apply
+ * is the service header's.
+ */
+function ServiceVariables({ env, service }: { env: EnvRef; service: string }) {
+  const org = useOrg();
+  const all = useVariables(env, null);
+  const isAdmin = useIsAdmin();
+  const orgVars = useQuery(orgQueries.variables()).data ?? [];
+  const [revealAll, setRevealAll] = useState(false);
+  const [pasting, setPasting] = useState(false);
+  const newLine = useRef<HTMLInputElement>(null);
+  const values = useShownValues(env, revealAll);
+  const byKey = (a: Variable, b: Variable) => a.key.localeCompare(b.key);
+  const own = all
+    .filter((v) => v.scope === "service" && v.service === service)
+    .sort(byKey);
+  const ownKeys = new Set(own.map((v) => v.key));
+  const shared = all.filter((v) => v.scope === "environment").sort(byKey);
+  const focusNewLine = useFocusNewLine(newLine);
+  useShortcuts([
+    { key: "v", label: "paste .env", run: () => setPasting(true) },
+    { key: "n", label: "add variable", run: focusNewLine },
+  ]);
+  const usedHere = (v: (typeof orgVars)[number]) =>
+    (v.used_by ?? []).some(
+      (u) =>
+        u.project === env.project &&
+        u.environment === env.environment &&
+        (!u.service || u.service === service),
+    );
+  return (
+    <Page>
+      <section aria-labelledby="own" className="flex flex-col gap-3">
+        <SectionHead
+          id="own"
+          aside={own.length}
+          right={
+            <Actions
+              isAdmin={isAdmin}
+              revealAll={revealAll}
+              onReveal={() => setRevealAll(!revealAll)}
+              onPaste={() => setPasting(!pasting)}
+              onAdd={focusNewLine}
+            />
+          }
         >
-          <span className="flex-1">Shared · every service</span>
-          <span className="text-2xs text-faint">{sharedCount}</span>
-        </Link>
-        {services.map((s) => {
-          const state = serviceState(s);
-          const name = s.service.name;
-          const ownCount = all.filter(
-            (v) => v.scope === "service" && v.service === name,
-          ).length;
-          return (
-            <Link
-              key={s.service.id}
-              to="/$org/$project/$environment/$service/variables"
-              params={{ org, ...env, service: name }}
-              activeOptions={{ exact: true }}
-              className="nav-row"
-            >
-              {state.tone === "fail" && state.glyph && (
-                <span className="text-fail">
-                  <Glyph char={state.glyph} />
-                </span>
-              )}
-              <span className="flex-1 truncate">{name}</span>
-              <span
-                className="text-2xs text-faint"
-                title={`${ownCount} of its own, and the ${sharedCount} shared`}
-              >
-                {ownCount}
-              </span>
-            </Link>
-          );
-        })}
-        <p className="px-2 pt-3 text-2xs leading-relaxed text-faint">
-          Numbers count each one's own variables. Every service also sees
-          Shared's, in grey; its own line with the same name wins.
-        </p>
-      </nav>
-
-      <div className="flex w-full max-w-[1400px] min-w-0 flex-1 flex-col gap-4 px-4 pt-6 pb-10 sm:px-7">
-        <SectionHead id="vars" right={actions}>
-          {service
-            ? `${service} sees at runtime`
-            : `Shared with every service in ${env.environment}`}
+          {service}'s own
         </SectionHead>
-
         {pasting && (
           <PasteEnv
             env={env}
@@ -196,58 +232,178 @@ export function VariablesEditor({
             onDone={() => setPasting(false)}
           />
         )}
-        <ErrorText error={revealed.error ?? revealedChanges.error} />
+        <ErrorText error={values.error} />
+        <Lines labelledBy="own">
+          {own.map((v, i) => (
+            <Line
+              key={idOf(v)}
+              n={i + 1}
+              env={env}
+              variable={v}
+              values={values.valuesOf(v)}
+              all={values.all}
+              canReveal={isAdmin && !values.shown(v)}
+              onReveal={() => values.show(v)}
+            />
+          ))}
+          <NewLine
+            n={own.length + 1}
+            env={env}
+            service={service}
+            inputRef={newLine}
+          />
+        </Lines>
+      </section>
 
-        <section
-          aria-labelledby="vars"
-          className="-mt-2.5 overflow-x-auto rounded-panel border border-line font-mono text-xs"
+      <section aria-labelledby="shared" className="flex flex-col gap-3">
+        <SectionHead
+          id="shared"
+          aside={shared.length}
+          right={
+            <Link
+              to="/$org/$project/settings"
+              params={{ org, project: env.project }}
+              hash="variables"
+            >
+              Edit in {env.project} › Settings
+            </Link>
+          }
         >
-          <div className="min-w-[640px]">
-            {rows.map((v, i) => (
+          Shared with every service in {env.environment}
+        </SectionHead>
+        {shared.length === 0 ? (
+          <p className="text-mut">
+            None. A shared variable applies to every service here unless the
+            service sets the same name.
+          </p>
+        ) : (
+          <Lines labelledBy="shared">
+            {shared.map((v, i) => (
               <Line
                 key={idOf(v)}
                 n={i + 1}
                 env={env}
                 variable={v}
-                inherited={!!service && v.scope === "environment"}
-                overridden={
-                  !!service && v.scope === "environment" && ownKeys.has(v.key)
-                }
-                values={shown(v) ? values.get(idOf(v)) : typedOnly(env, v)}
-                all={revealed.data ?? []}
-                canReveal={isAdmin && !shown(v)}
-                onReveal={() =>
-                  setRevealedIds(new Set([...revealedIds, idOf(v)]))
-                }
+                readOnly
+                overridden={ownKeys.has(v.key) ? service : undefined}
+                values={values.valuesOf(v)}
+                all={values.all}
+                canReveal={isAdmin && !values.shown(v)}
+                onReveal={() => values.show(v)}
               />
             ))}
-            <NewLine
-              n={rows.length + 1}
-              env={env}
-              service={service}
-              inputRef={newLine}
-            />
-          </div>
-        </section>
-        <p className="-mt-1 text-2xs text-faint">
-          <span className="text-ok">+</span> added ·{" "}
-          <span className="text-warn">~</span> changed ·{" "}
-          <span className="text-fail">−</span> removed ·{" "}
-          <span className="font-mono text-info">
-            {"$"}
-            {"{{db.DATABASE_URL}}"}
-          </span>{" "}
-          reads db's DATABASE_URL
-        </p>
-
-        {/* A service's tab has the strip in its header; shared variables
-            (no service header) get the panel here. */}
-        {service === null && (
-          <ApplyBox env={env} shows={shown} variables={all} />
+          </Lines>
         )}
-        {footer}
-      </div>
-    </div>
+      </section>
+
+      {orgVars.length > 0 && (
+        <section aria-labelledby="org-vars" className="flex flex-col gap-3">
+          <SectionHead
+            id="org-vars"
+            aside={orgVars.length}
+            right={
+              <Link to="/$org/settings/variables" params={{ org }}>
+                Edit in Settings › Variables
+              </Link>
+            }
+          >
+            Organization
+          </SectionHead>
+          <p className="-mt-1 text-mut">
+            Used by name: a value like{" "}
+            <span className="font-mono text-info">
+              {"${{org."}
+              {orgVars[0]?.key}
+              {"}}"}
+            </span>{" "}
+            above reads it.
+          </p>
+          <Lines labelledBy="org-vars">
+            {orgVars.map((v) => (
+              <div key={v.key} className={`${grid} hover:bg-hover`}>
+                <span />
+                <span />
+                <span className="truncate" title={v.key}>
+                  {v.key}
+                </span>
+                <span className="font-sans text-mut">
+                  {usedHere(v)
+                    ? `used in ${env.environment}`
+                    : `not used by ${service}`}
+                </span>
+                <span />
+              </div>
+            ))}
+          </Lines>
+        </section>
+      )}
+    </Page>
+  );
+}
+
+/** Brings the add line into view, then focuses it (Add variable, N). */
+function useFocusNewLine(newLine: RefObject<HTMLInputElement | null>) {
+  return () => {
+    newLine.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    newLine.current?.focus({ preventScroll: true });
+  };
+}
+
+/**
+ * A list's actions: Add variable (N), and Paste .env (V) and showing every
+ * value (admins) in its menu.
+ */
+function Actions({
+  isAdmin,
+  revealAll,
+  onReveal,
+  onPaste,
+  onAdd,
+}: {
+  isAdmin: boolean;
+  revealAll: boolean;
+  onReveal: () => void;
+  onPaste: () => void;
+  onAdd: () => void;
+}) {
+  return (
+    <span className="flex items-center gap-2">
+      <Button onClick={onAdd}>
+        Add variable <kbd>N</kbd>
+      </Button>
+      <MoreMenu label="More variable actions">
+        {(close) => (
+          <>
+            <MoreItem close={close} keyHint="V" onClick={onPaste}>
+              Paste .env
+            </MoreItem>
+            {isAdmin && (
+              <MoreItem close={close} onClick={onReveal}>
+                {revealAll ? "Hide values" : "Show every value"}
+              </MoreItem>
+            )}
+          </>
+        )}
+      </MoreMenu>
+    </span>
+  );
+}
+
+/** The lines of one group, as one .env-like block. */
+function Lines({
+  labelledBy,
+  children,
+}: {
+  labelledBy: string;
+  children: ReactNode;
+}) {
+  return (
+    <fieldset
+      aria-labelledby={labelledBy}
+      className="m-0 min-w-0 overflow-x-auto rounded-panel border border-line p-0 font-mono text-xs"
+    >
+      <div className="min-w-[640px]">{children}</div>
+    </fieldset>
   );
 }
 
@@ -265,17 +421,30 @@ const pendingRow = {
   remove: "bg-remove-bg",
 } satisfies Record<NonNullable<Variable["pending"]>, string>;
 
+/** What a staged mark means, for its tooltip. */
+const pendingWord = {
+  add: "added, waits for Apply",
+  update: "changed, waits for Apply",
+  remove: "removed, waits for Apply",
+} satisfies Record<NonNullable<Variable["pending"]>, string>;
+
 const pendingText = {
   add: "text-ok",
   update: "text-warn",
   remove: "text-fail",
 } satisfies Record<NonNullable<Variable["pending"]>, string>;
 
+/**
+ * One variable: its staged mark (+ added, ~ changed, − removed), name and
+ * value, Show while masked, and Edit (Enter stages the new value) with
+ * Remove or Discard in its menu. `readOnly` lists a line edited
+ * elsewhere (a shared line on a service's tab).
+ */
 function Line({
   n,
   env,
   variable: v,
-  inherited,
+  readOnly = false,
   overridden,
   values,
   all,
@@ -285,10 +454,9 @@ function Line({
   n: number;
   env: EnvRef;
   variable: Variable;
-  /** A shared line on a service's view: grey. */
-  inherited: boolean;
-  /** A shared line this service replaces with its own. */
-  overridden: boolean;
+  readOnly?: boolean;
+  /** The service whose own line of the same name replaces this one. */
+  overridden?: string;
   values: { live?: string; old?: string; new?: string } | undefined;
   /** Every revealed variable, to resolve references. */
   all: Variable[];
@@ -315,11 +483,14 @@ function Line({
       className={`${grid} group ${v.pending ? pendingRow[v.pending] : "hover:bg-hover"}`}
     >
       <span className="text-right text-faint">{n}</span>
-      <span className={v.pending && pendingText[v.pending]}>
+      <span
+        className={v.pending && pendingText[v.pending]}
+        title={v.pending && pendingWord[v.pending]}
+      >
         {v.pending && pendingMark[v.pending]}
       </span>
       <span
-        className={`truncate ${inherited ? "text-mut" : ""} ${overridden || v.pending === "remove" ? "line-through" : ""}`}
+        className={`truncate ${overridden || v.pending === "remove" ? "line-through" : ""}`}
         title={v.key}
       >
         {v.key}
@@ -340,7 +511,7 @@ function Line({
         />
       ) : (
         <span
-          className={`min-w-0 break-all ${inherited ? "text-mut" : ""} ${overridden ? "line-through" : ""} ${current !== undefined && hasReference(current) ? "text-info" : ""}`}
+          className={`min-w-0 break-all ${overridden ? "line-through" : ""} ${current !== undefined && hasReference(current) ? "text-info" : ""}`}
         >
           <Value pending={v.pending} values={values} />
           {canReveal && (
@@ -349,44 +520,29 @@ function Line({
               className="lnk ml-2 font-sans text-2xs"
               onClick={onReveal}
             >
-              Reveal
+              Show
             </button>
           )}
         </span>
       )}
       <span className="flex items-baseline gap-3 font-sans text-2xs">
         <ErrorText error={stage.error ?? discard.error} />
-        {overridden ? (
-          <span className="text-faint">overridden</span>
-        ) : (
-          inherited && !v.pending && <span className="text-faint">shared</span>
+        {overridden && (
+          <span className="text-mut">{overridden} sets its own</span>
         )}
         {/* A staged add or change is edited like a live line: Enter
             stages the new value in its place. */}
-        {v.pending !== "remove" && !editing && (
-          <span className="flex gap-3 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
-            <button
-              type="button"
-              className="lnk"
-              title={`dock env set ${v.key}=… ${scopeFlags(env, service)}`}
-              onClick={() => setEditing(true)}
-            >
-              Edit
-            </button>
-            {!v.pending && (
-              <button
-                type="button"
-                className="lnk"
-                title={`dock env unset ${v.key} ${scopeFlags(env, service)}`}
-                disabled={stage.isPending}
-                onClick={() => stage.mutate({ env, service, unset: [v.key] })}
-              >
-                Remove
-              </button>
-            )}
-          </span>
+        {!readOnly && v.pending !== "remove" && !editing && (
+          <button
+            type="button"
+            className="lnk"
+            title={`dock env set ${v.key}=… ${scopeFlags(env, service)}`}
+            onClick={() => setEditing(true)}
+          >
+            Edit
+          </button>
         )}
-        {v.pending && (
+        {!readOnly && v.pending && (
           <button
             type="button"
             className="lnk"
@@ -403,6 +559,21 @@ function Line({
           >
             Discard
           </button>
+        )}
+        {!readOnly && !v.pending && (
+          <MoreMenu label={`${v.key} actions`}>
+            {(close) => (
+              <MoreItem
+                close={close}
+                danger
+                cli={`dock env unset ${v.key} ${scopeFlags(env, service)}`}
+                disabled={stage.isPending}
+                onClick={() => stage.mutate({ env, service, unset: [v.key] })}
+              >
+                Remove {v.key}
+              </MoreItem>
+            )}
+          </MoreMenu>
         )}
       </span>
       {resolved !== undefined && resolved !== current && (
@@ -505,8 +676,8 @@ function NewLine({
       {/* Always there (brighter while the row has focus), so nothing moves
           when focus leaves: a click on Apply right after typing lands. */}
       <span className="col-span-full pb-1 pl-[68px] font-sans text-xs text-faint group-focus-within:text-fg">
-        Type NAME=value, like LOG_LEVEL=debug, then Enter; paste several lines
-        to add several. They wait for Apply.
+        NAME=value, then Enter; several lines add several. Values like {"$"}
+        {"{{db.DATABASE_URL}}"} read another service's. They wait for Apply.
       </span>
     </div>
   );

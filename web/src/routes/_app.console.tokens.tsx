@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { ConsoleTabs } from "../features/console/ConsoleTabs";
 import {
   PlatformTokensPage,
   platformTokensQuery,
@@ -9,5 +10,14 @@ import {
 export const Route = createFileRoute("/_app/console/tokens")({
   loader: ({ context: { queryClient } }) =>
     queryClient.ensureQueryData(platformTokensQuery()),
-  component: PlatformTokensPage,
+  component: Tabbed,
 });
+
+/** The page under its sidebar entry's tab row (ConsoleTabs). */
+function Tabbed() {
+  return (
+    <ConsoleTabs>
+      <PlatformTokensPage />
+    </ConsoleTabs>
+  );
+}

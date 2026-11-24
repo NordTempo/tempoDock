@@ -79,9 +79,9 @@ export function NeedsAttention({
           tone="fail"
           action={
             <Link
-              to="/$org/$project/$environment/$service/metrics"
+              to="/$org/$project/$environment/$service/settings"
               params={{ org, ...ref }}
-              hash="uptime"
+              hash="health"
               className="btn sm"
             >
               Uptime checks
@@ -96,8 +96,9 @@ export function NeedsAttention({
           tone="warn"
           action={
             <Link
-              to="/$org/$project/$environment/$service/settings/domains"
+              to="/$org/$project/$environment/$service/settings"
               params={{ org, ...ref }}
+              hash="domains"
               className="btn sm"
             >
               {domains[0].status === "waiting_for_dns"

@@ -7,7 +7,7 @@ import type { EnvironmentView, Problem } from "../../data/types";
 import { useShortcuts } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
 import { plural, since } from "../../ui/format";
-import { Button, ErrorText, Glyph, SectionHead } from "../../ui/kit";
+import { Button, ErrorText, Glyph } from "../../ui/kit";
 import {
   failurePhrase,
   type GlyphChar,
@@ -49,7 +49,7 @@ function useAllProblems(project: string): Problem[] {
  * The environment a problem is in; "" for servers and for alerts about
  * no one environment.
  */
-function problemEnvironment(p: Problem): string {
+export function problemEnvironment(p: Problem): string {
   if ("service" in p) return serviceRef(p.service.service).environment;
   if (p.kind === "staged") return p.environment.environment.name;
   if (p.kind === "alert") return p.alert.environment ?? "";
@@ -57,21 +57,43 @@ function problemEnvironment(p: Problem): string {
 }
 
 /**
- * The overview's numbered "needs a human" list, worst first. Keys 1 to 9
- * open (or focus) a problem's action.
+ * The worst tone of each environment's problems, for the marks on the
+ * project page's environment switch: a problem in staging shows while
+ * production is open.
+ */
+export function useProblemTones(project: string): Map<string, Tone> {
+  const tones = new Map<string, Tone>();
+  for (const p of useAllProblems(project)) {
+    const where = problemEnvironment(p);
+    if (!where) continue;
+    const tone: Tone =
+      p.kind === "staged" ||
+      (p.kind === "alert" && p.alert.severity !== "critical") ||
+      (p.kind === "domain" && p.domain.status !== "error")
+        ? "warn"
+        : "fail";
+    if (tones.get(where) !== "fail") tones.set(where, tone);
+  }
+  return tones;
+}
+
+/**
+ * What needs a human in one environment, worst first: a line each, what
+ * is wrong and the one action that helps. Problems of no one environment
+ * (servers, org-wide alerts) show in every environment. Keys 1 to 9 open
+ * (or focus) a problem's action.
  */
 export function Problems({
   project,
   environment,
 }: {
   project: string;
-  /** Only this environment's problems, and those of no one environment (servers, org-wide alerts). */
-  environment?: string;
+  environment: string;
 }) {
   const problems = fold(
     useAllProblems(project).filter((p) => {
       const where = problemEnvironment(p);
-      return !environment || where === environment || where === "";
+      return where === environment || where === "";
     }),
   );
   useShortcuts(
@@ -87,24 +109,23 @@ export function Problems({
     })),
   );
   if (problems.length === 0) return null;
-  const n = problems.length;
   return (
-    <section aria-labelledby="problems">
-      <SectionHead id="problems">{plural(n, "problem")}</SectionHead>
-      {/* One grid for every row (each row a subgrid), so the times and
-          actions line up whatever the width of each. */}
-      <ol className="panel grid grid-cols-[172px_150px_minmax(0,1fr)_auto_auto] gap-x-4">
-        {problems.map(({ problem, more }, i) => (
-          <ProblemRow
-            key={problemKey(problem)}
-            n={i + 1}
-            problem={problem}
-            more={more}
-            project={project}
-          />
-        ))}
-      </ol>
-    </section>
+    // One grid for every row (each row a subgrid), so the times and
+    // actions line up whatever the width of each.
+    <ol
+      aria-label={`Problems in ${environment}`}
+      className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] gap-x-3 border-t border-line"
+    >
+      {problems.map(({ problem, more }, i) => (
+        <ProblemRow
+          key={problemKey(problem)}
+          n={i + 1}
+          problem={problem}
+          more={more}
+          project={project}
+        />
+      ))}
+    </ol>
   );
 }
 
@@ -124,6 +145,7 @@ function problemKey(p: Problem) {
 }
 
 type RowProps = {
+  /** Its place in the list: keys 1 to 9 reach its action. */
   n: number;
   problem: Problem;
   /** How many more alerts like this one were folded into its row. */
@@ -157,25 +179,35 @@ function fold(problems: Problem[]) {
   return rows;
 }
 
+/**
+ * One problem as a sentence that starts with what it's about ("web r8
+ * failed its health check"), its age and its one action.
+ */
 function ProblemRow({ n, problem: p, more, project }: RowProps) {
   const org = useOrg();
-  const key = n <= 9 ? String(n) : undefined;
   switch (p.kind) {
     case "crashed": {
       const { status, active_release } = p.service.service;
       const ref = serviceRef(p.service.service);
-      const where = `${ref.environment}/${ref.service}`;
       const time = status.updated_at && since(status.updated_at);
       const staged = p.service.service.pending_changes > 0;
       const looping = isCrashLooping(status);
+      const logs = (
+        <Link
+          to="/$org/$project/$environment/$service/logs"
+          params={{ org, ...ref }}
+          className={actionClass}
+          data-problem={n}
+        >
+          Logs
+        </Link>
+      );
       if (looping || status.state === "crashed") {
         return (
           <Row
-            n={key}
             tone="fail"
             glyph={looping ? "↻" : "✕"}
-            title={looping ? "Crash loop" : "Crashed"}
-            where={where}
+            who={ref.service}
             time={time}
             action={
               staged ? (
@@ -185,21 +217,14 @@ function ProblemRow({ n, problem: p, more, project }: RowProps) {
                   environment={ref.environment}
                 />
               ) : (
-                <Link
-                  to="/$org/$project/$environment/$service/logs"
-                  params={{ org, ...ref }}
-                  className={actionClass}
-                  data-problem={n}
-                >
-                  Logs
-                </Link>
+                logs
               )
             }
           >
             <span className="font-mono">r{active_release}</span>{" "}
             {looping
-              ? `restarted ${status.restart_count} times, exit ${status.exit_code}${healthRestarts(status)}`
-              : `exited with ${status.exit_code}`}
+              ? `is in a crash loop: restarted ${status.restart_count} times, exit ${status.exit_code}${healthRestarts(status)}`
+              : `crashed, exit ${status.exit_code}`}
             {status.oom_killed && `, ${oomPhrase(status)}`}.{" "}
             {staged && (
               <span className="text-mut">Changes for it are staged.</span>
@@ -210,22 +235,11 @@ function ProblemRow({ n, problem: p, more, project }: RowProps) {
       if (isUnhealthy(status)) {
         return (
           <Row
-            n={key}
             tone="fail"
             glyph="✕"
-            title="Unhealthy"
-            where={where}
+            who={ref.service}
             time={time}
-            action={
-              <Link
-                to="/$org/$project/$environment/$service/logs"
-                params={{ org, ...ref }}
-                className={actionClass}
-                data-problem={n}
-              >
-                Logs
-              </Link>
-            }
+            action={logs}
           >
             <span className="font-mono">r{active_release}</span> runs but fails
             its health check{healthRestarts(status)}.{" "}
@@ -235,11 +249,9 @@ function ProblemRow({ n, problem: p, more, project }: RowProps) {
       }
       return (
         <Row
-          n={key}
           tone="fail"
           glyph="✕"
-          title="Not running"
-          where={where}
+          who={ref.service}
           time={time}
           action={
             <Link
@@ -263,11 +275,9 @@ function ProblemRow({ n, problem: p, more, project }: RowProps) {
       const serving = p.service.service.active_release;
       return (
         <Row
-          n={key}
           tone="fail"
           glyph="✕"
-          title="Deploy failed"
-          where={`${ref.environment}/${ref.service}`}
+          who={ref.service}
           time={since(p.release.created_at)}
           action={
             <Link
@@ -284,7 +294,7 @@ function ProblemRow({ n, problem: p, more, project }: RowProps) {
           {failurePhrase(p.release)}:{" "}
           <span className="font-mono">{errorSummary(p.release)}</span>.{" "}
           {serving && (
-            <span className="text-ok">r{serving} still serving.</span>
+            <span className="text-ok">r{serving} is still serving.</span>
           )}
         </Row>
       );
@@ -296,24 +306,23 @@ function ProblemRow({ n, problem: p, more, project }: RowProps) {
       const error = p.backup.error?.replace(/[\s:.]+$/, "");
       return (
         <Row
-          n={key}
           tone="fail"
           glyph="✕"
-          title="Backup failed"
-          where={`${ref.environment}/${ref.service}`}
+          who={ref.service}
           time={since(at)}
           action={
             <Link
-              to="/$org/$project/$environment/$service/settings/backups"
+              to="/$org/$project/$environment/$service/settings"
+              hash="backups"
               params={{ org, ...ref }}
               className={actionClass}
               data-problem={n}
             >
-              Backups
+              See why
             </Link>
           }
         >
-          The latest backup failed
+          its latest backup failed
           {error && (
             <>
               : <span className="font-mono">{error}</span>
@@ -329,15 +338,14 @@ function ProblemRow({ n, problem: p, more, project }: RowProps) {
       const error = p.domain.status === "error";
       return (
         <Row
-          n={key}
           tone={error ? "fail" : "warn"}
           glyph={error ? "✕" : "▲"}
-          title={error ? "Domain error" : "Waiting for DNS"}
-          where={`${ref.environment}/${ref.service}`}
+          who={p.domain.hostname}
           time={since(p.domain.created_at)}
           action={
             <Link
-              to="/$org/$project/$environment/$service/settings/domains"
+              to="/$org/$project/$environment/$service/settings"
+              hash="domains"
               params={{ org, ...ref }}
               className={actionClass}
               data-problem={n}
@@ -346,14 +354,17 @@ function ProblemRow({ n, problem: p, more, project }: RowProps) {
             </Link>
           }
         >
-          <span className="font-mono">{p.domain.hostname}</span>{" "}
           {!error && record ? (
             <>
-              needs {record.type === "A" ? "an A record" : "a CNAME"} to{" "}
-              <span className="font-mono">{record.value}</span>
+              waits for DNS: it needs{" "}
+              {record.type === "A" ? "an A record" : "a CNAME"} to{" "}
+              <span className="font-mono">{record.value}</span>.
             </>
           ) : (
-            (p.domain.status_reason ?? "")
+            <>
+              has an error
+              {p.domain.status_reason && `: ${p.domain.status_reason}`}.
+            </>
           )}
         </Row>
       );
@@ -366,15 +377,8 @@ function ProblemRow({ n, problem: p, more, project }: RowProps) {
       const { text, cli } = alertText(a);
       return (
         <Row
-          n={key}
           tone={critical ? "fail" : "warn"}
           glyph={critical ? "✕" : "▲"}
-          title={alertLabel(a)}
-          where={
-            a.environment && a.service
-              ? `${a.environment}/${a.service}`
-              : (a.environment ?? a.server ?? "")
-          }
           time={since(a.opened_at)}
           action={
             <AlertLink
@@ -395,11 +399,9 @@ function ProblemRow({ n, problem: p, more, project }: RowProps) {
     case "server_offline":
       return (
         <Row
-          n={key}
           tone="fail"
           glyph="✕"
-          title="Server offline"
-          where={p.environment.name}
+          who={p.environment.server ? `Server ${p.environment.server}` : ""}
           action={
             p.environment.server && (
               <Link
@@ -413,15 +415,14 @@ function ProblemRow({ n, problem: p, more, project }: RowProps) {
             )
           }
         >
-          {p.environment.server
-            ? `Server ${p.environment.server} is not reachable`
-            : "Its server is not reachable"}
-          . Its services keep running but can't be deployed.
+          {p.environment.server ? "is" : "Its server is"} not reachable. Its
+          services keep running but can't be deployed.
         </Row>
       );
   }
 }
 
+/** Changes saved in an environment and not applied yet, with Review. */
 function StagedRow({
   n,
   environment: env,
@@ -437,15 +438,14 @@ function StagedRow({
   const releases = affectedServices(changes, env.services).map(nextRelease);
   return (
     <Row
-      n={n <= 9 ? String(n) : undefined}
       tone="warn"
       glyph="▲"
-      title="Not applied"
-      where={env.environment.name}
       action={
         <Link
-          to="/$org/$project/settings/variables/$environment"
-          params={{ org, ...ref }}
+          to="/$org/$project/settings"
+          params={{ org, project }}
+          search={{ env: ref.environment }}
+          hash="variables"
           className={actionClass}
           data-problem={n}
         >
@@ -505,38 +505,36 @@ function ApplyStaged({
   );
 }
 
+/**
+ * A problem's line: a coloured mark, the sentence (led by `who`, the
+ * service, domain or server it is about), its age and its action.
+ */
 function Row({
-  n,
   tone,
   glyph,
-  title,
-  where,
+  who,
   time,
   action,
   children,
 }: {
-  n: string | undefined;
   tone: Tone;
   glyph: GlyphChar;
-  title: string;
-  where: string;
+  who?: string;
   time?: string | false;
   action: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <li className="col-span-full grid grid-cols-subgrid items-center border-b border-soft py-2.5 last:border-0">
-      <span className="flex items-baseline gap-2.5 whitespace-nowrap">
-        {n ? <kbd>{n}</kbd> : <span className="w-[15px]" />}
-        <span className={toneText[tone]}>
-          <Glyph char={glyph} /> {title}
-        </span>
+    <li className="col-span-full grid grid-cols-subgrid items-center border-b border-line py-2">
+      <span className={`pl-0.5 ${toneText[tone]}`}>
+        <Glyph char={glyph} />
       </span>
-      <span className="min-w-0 truncate font-mono" title={where}>
-        {where}
+      <span className="min-w-0">
+        {who && <span className="font-semibold">{who}</span>} {children}
       </span>
-      <span className="min-w-0">{children}</span>
-      <span className="text-right text-xs text-faint">{time}</span>
+      <span className="text-right text-xs whitespace-nowrap text-faint">
+        {time}
+      </span>
       <span className="justify-self-end">{action}</span>
     </li>
   );

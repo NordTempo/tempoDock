@@ -6,14 +6,17 @@ import { useIsAdmin, useSession } from "../../data/queries";
 import type { Project } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { ago } from "../../ui/format";
-import { Act, Button, Confirm, SectionHead } from "../../ui/kit";
+import { Act, Button, Confirm } from "../../ui/kit";
 
-// A project's General settings (ADR 0059): its name, its config file and
-// archiving it. They were on the project page before.
+// Pieces of a project's Settings tab (ADR 0059): its name, its config
+// file and archiving it.
 
 const RenameProject = lazy(() => import("./RenameProject"));
 
-/** The project's name, with Rename for admins of the whole project. */
+/**
+ * The project's name and address, with Rename for admins of the whole
+ * project: the General section of its Settings.
+ */
 export function ProjectName({ project }: { project: Project }) {
   const org = useOrg();
   const session = useSession();
@@ -23,32 +26,29 @@ export function ProjectName({ project }: { project: Project }) {
     (!session.project || session.project === project.name);
   const [renaming, setRenaming] = useState(false);
   return (
-    <section aria-labelledby="name" className="flex flex-col gap-1.5">
-      <SectionHead id="name">Name</SectionHead>
-      <p className="flex flex-wrap items-center gap-3">
-        <span className="font-mono">{project.name}</span>
-        {canRename && (
-          <Act
-            small
-            cli={`dock project rename ${project.name} <name>`}
-            onClick={() => setRenaming(true)}
-          >
-            Rename
-          </Act>
-        )}
-      </p>
-      <p className="text-xs text-mut">
-        Its address is /{org}/{project.name}; a rename moves every URL under it,
-        and open pages follow. ID{" "}
-        <span className="font-mono">{project.id}</span>, created{" "}
-        {ago(project.created_at)}.
-      </p>
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-y border-line py-2.5">
+      <span className="w-40 text-mut">Name</span>
+      <span className="min-w-0 flex-1">
+        <span className="font-mono">{project.name}</span>{" "}
+        <span className="text-mut">
+          at /{org}/{project.name}, created {ago(project.created_at)}
+        </span>
+      </span>
+      {canRename && (
+        <Act
+          small
+          cli={`dock project rename ${project.name} <name>`}
+          onClick={() => setRenaming(true)}
+        >
+          Rename
+        </Act>
+      )}
       {renaming && (
         <Suspense fallback={null}>
           <RenameProject project={project} onClose={() => setRenaming(false)} />
         </Suspense>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -112,15 +112,49 @@ export function Export({
   );
 }
 
+/**
+ * The confirmation that archives the whole project, from its Settings or
+ * its header's "···" menu; home once it's done.
+ */
+export function ArchiveConfirm({
+  project,
+  onClose,
+}: {
+  project: string;
+  onClose: () => void;
+}) {
+  const archive = useArchiveProject();
+  const navigate = useNavigate();
+  return (
+    <Confirm
+      danger
+      action={`Archive ${project}`}
+      cli={`dock project archive ${project}`}
+      pending={archive.isPending}
+      error={archive.error}
+      onConfirm={() =>
+        archive.mutate(project, { onSuccess: () => navigate({ to: "/" }) })
+      }
+      onCancel={() => {
+        archive.reset();
+        onClose();
+      }}
+    >
+      Every service in <b>{project}</b> stops and its routes are removed.
+      Volumes and history are kept.
+    </Confirm>
+  );
+}
+
 /** Admin only, behind a confirm: archive the whole project. */
 export function ArchiveProject({ project }: { project: string }) {
   const isAdmin = useIsAdmin();
-  const archive = useArchiveProject();
-  const navigate = useNavigate();
   const [confirming, setConfirming] = useState(false);
-  if (!isAdmin) return null;
+  if (!isAdmin) {
+    return <p className="text-mut">Only an admin can archive {project}.</p>;
+  }
   return (
-    <section className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-4">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-y border-line py-2.5">
       <span className="min-w-0 flex-1 text-mut">
         Archiving stops every service and removes its routes. Volumes and
         history are kept.
@@ -129,24 +163,11 @@ export function ArchiveProject({ project }: { project: string }) {
         Archive {project}
       </Button>
       {confirming && (
-        <Confirm
-          danger
-          action={`Archive ${project}`}
-          cli={`dock project archive ${project}`}
-          pending={archive.isPending}
-          error={archive.error}
-          onConfirm={() =>
-            archive.mutate(project, { onSuccess: () => navigate({ to: "/" }) })
-          }
-          onCancel={() => {
-            archive.reset();
-            setConfirming(false);
-          }}
-        >
-          Every service in <b>{project}</b> stops and its routes are removed.
-          Volumes and history are kept.
-        </Confirm>
+        <ArchiveConfirm
+          project={project}
+          onClose={() => setConfirming(false)}
+        />
       )}
-    </section>
+    </div>
   );
 }

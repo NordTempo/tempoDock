@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { api, body } from "../../api/client";
 import type { components } from "../../api/schema";
 import {
@@ -15,6 +15,7 @@ import {
   servicePath,
   useChanges,
   useEnvironment,
+  useIsAdmin,
   useReleases,
   useService,
   useSession,
@@ -29,12 +30,19 @@ import type {
 import { modKey } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
 import { CliHint } from "../../ui/CliHint";
-import { Act, Button, Check, ErrorText, SectionHead } from "../../ui/kit";
+import { Act, Button, Check, ErrorText } from "../../ui/kit";
+import { SectionsLayout, SettingsSection } from "../../ui/sections";
+import { BackupsPanel } from "../backups/BackupsPanel";
 import { SourceSection } from "../git/SourceSection";
 import { EnvServer } from "../servers/parts";
+import { ArchiveConfirm } from "../service/ArchiveConfirm";
 import { useDiagnosis } from "../service/Diagnosis";
+import { DomainsPanel } from "../service/DomainsPanel";
 import { imageSetting } from "../service/releases";
 import { limitText } from "../service/Usage";
+import { HealthOnServer, UptimeChecks } from "../uptime/UptimePanel";
+import { Folded, OpenValue } from "./OpenValue";
+import { serviceSettingSections } from "./sections";
 import {
   editPlaceholder,
   editText,
@@ -48,10 +56,30 @@ import {
 
 type KeyedChange = SettingChange & { key: SettingKey };
 
+/** A row of a settings section, and its summary when it folds away. */
+type RowItem = { key: string; node: ReactNode; folded?: string };
+
+/** The Settings section a setting's row is in, for ?edit=<setting>. */
+function sectionOf(key: TextSettingKey) {
+  if (key === "image" || key === "dockerfile_path" || key === "build_command")
+    return "source";
+  if (key.startsWith("health_check")) return "health";
+  if (key.startsWith("pre_deploy")) return "deploys";
+  return "running";
+}
+
+/** Whether a stored setting is the platform default: empty, zero, off. */
+const unset = (v: string | number | boolean) =>
+  v === "" || v === 0 || v === false;
+
 /**
- * Service settings, each editable in place. Edits are staged like
- * variables and go live together through the apply box, which stays in
- * view while anything is staged. `edit` opens one setting's editor.
+ * A service's Settings tab: every setting on one page, in sections named
+ * after what people come to change (serviceSettingSections), with the
+ * list of them on the left. Rows are a label and the value; the value
+ * opens its small editor. Settings left on their defaults fold into one
+ * row per section. Edits are staged like variables and go live together
+ * with Apply in the header. `edit` opens one setting's editor (a link
+ * that points at a fix, ?edit=port).
  */
 export function SettingsPanel({
   serviceRef: ref,
@@ -65,6 +93,8 @@ export function SettingsPanel({
   const volumes = useVolumes(ref);
   const pending = useChanges(ref);
   const discard = useDiscardChanges();
+  const isAdmin = useIsAdmin();
+  const [archiving, setArchiving] = useState(false);
   const changes = pending.settings.flatMap((c) =>
     c.service === ref.service && isSettingKey(c.field)
       ? [{ ...c, key: c.field }]
@@ -73,175 +103,305 @@ export function SettingsPanel({
 
   const change = (key: SettingKey) => changes.find((c) => c.key === key);
   const portFix = usePortFix(ref, service, change("port"));
-  // One row of settings: its fields edit together in one small form.
+  // ?edit=port (a failed release's fix) opens that editor: bring its
+  // section into view once.
+  useEffect(() => {
+    if (edit) document.getElementById(sectionOf(edit))?.scrollIntoView();
+  }, [edit]);
+  // One row of settings: its fields edit together in one small form. It
+  // folds away while every field is on its default, nothing is staged,
+  // and nothing points at it (?edit, a suggested fix).
   const row = (
     label: string,
     hint: string,
     parts: Part[],
     extra?: ReactNode,
     suggest?: Suggestion,
-  ) => (
-    <SettingRow
-      key={label}
-      serviceRef={ref}
-      label={label}
-      hint={hint}
-      parts={parts}
-      changes={changes}
-      service={service}
-      open={!!edit && parts.some((p) => p.key === edit)}
-      staged={pending.count > 0}
-      extra={extra}
-      suggest={suggest}
-    />
-  );
+    { fold = true, extraDefault = true } = {},
+  ): RowItem => {
+    const open = !!edit && parts.some((p) => p.key === edit);
+    const onDefault =
+      fold &&
+      extraDefault &&
+      !open &&
+      !suggest &&
+      parts.every((p) => !change(p.key) && unset(service[p.key]));
+    return {
+      key: label,
+      node: (
+        <SettingRow
+          key={label}
+          serviceRef={ref}
+          label={label}
+          hint={hint}
+          parts={parts}
+          changes={changes}
+          service={service}
+          open={open}
+          staged={pending.count > 0}
+          extra={extra}
+          suggest={suggest}
+        />
+      ),
+      folded: onDefault
+        ? `${label.toLowerCase()} (${parts
+            .map((p) =>
+              (p.shown ?? formatSetting(p.key, service[p.key])).replace(
+                / \(default\)$/,
+                "",
+              ),
+            )
+            .join(", ")})`
+        : undefined,
+    };
+  };
+  const item = (label: string, node: ReactNode): RowItem => ({
+    key: label,
+    node: (
+      <Item key={label} label={label}>
+        {node}
+      </Item>
+    ),
+  });
+  const sections = serviceSettingSections
+    .filter((s) => !("stateful" in s) || service.stateful)
+    .map((s) =>
+      s.id === "archive" ? { ...s, label: `Archive ${ref.service}` } : s,
+    );
 
   return (
-    <>
-      <section aria-labelledby="set-image">
-        <SectionHead id="set-image">Image and build</SectionHead>
-        <dl className="props [grid-template-columns:200px_minmax(0,1fr)]">
-          {row(
-            "Image",
-            "What Deploy runs.",
-            [{ key: "image" }],
-            <ImageNote serviceRef={ref} />,
-          )}
-          {row("Build", "For deploys from source.", [
-            { key: "dockerfile_path", word: "Dockerfile" },
-            { key: "build_command", word: "build command" },
-          ])}
-        </dl>
-      </section>
+    <SectionsLayout label={`${ref.service} settings`} sections={sections}>
+      <div className="flex flex-col gap-10 md:pl-8">
+        <SettingsSection id="source" title="Source">
+          <Rows
+            items={[
+              row(
+                "Image",
+                "What Deploy runs. Empty: it builds from source.",
+                [{ key: "image" }],
+                <ImageNote serviceRef={ref} />,
+                undefined,
+                { fold: false },
+              ),
+              row("Build", "For deploys from source.", [
+                { key: "dockerfile_path", word: "Dockerfile" },
+                { key: "build_command", word: "build command" },
+              ]),
+            ]}
+          />
+          <SourceSection serviceRef={ref} />
+        </SettingsSection>
 
-      <section aria-labelledby="set-run">
-        <SectionHead id="set-run">Running</SectionHead>
-        <dl className="props [grid-template-columns:200px_minmax(0,1fr)]">
-          {row(
-            "Port",
-            "Where the app listens.",
-            // Unset, it is the template's port (5432, 6379) or 8080.
-            [
-              {
-                key: "port",
-                shown: service.port
-                  ? String(service.port)
-                  : `${listenPort(service)} (default)`,
-              },
-            ],
-            <span className="font-mono text-xs text-mut">
-              private address {service.name}:{listenPort(service)}
-            </span>,
-            portFix,
-          )}
-          {row("Start command", "Instead of the image's own.", [
-            { key: "start_command" },
-          ])}
-          {row("Limits", "The most it may use.", [
-            { key: "cpus", word: "CPU", shown: limitText(service, "cpu") },
-            {
-              key: "memory_mb",
-              word: "memory",
-              shown: limitText(service, "memory"),
-            },
-          ])}
-          <Item label="Volumes" hint="Disk that outlives releases.">
-            {volumes.length === 0 ? (
-              <span className="mr-4 text-mut">none</span>
-            ) : (
-              volumes.map((v) => (
-                <span key={v.name} className="mr-4 font-mono">
-                  {v.name} at {v.mount_path}
-                  {v.pending && (
-                    <>
-                      <span className="text-warn"> saved, not applied</span>{" "}
-                      <button
-                        type="button"
-                        className="lnk font-sans"
-                        disabled={discard.isPending}
-                        onClick={() =>
-                          discard.mutate({
-                            env: envPath(ref),
-                            selection: {
-                              volumes: [{ service: ref.service, name: v.name }],
-                            },
-                          })
-                        }
-                      >
-                        Discard
-                      </button>
-                    </>
+        <SettingsSection id="running" title="Running">
+          <Rows
+            items={[
+              row(
+                "Port",
+                "Where the app listens.",
+                // Unset, it is the template's port (5432, 6379) or 8080.
+                [
+                  {
+                    key: "port",
+                    shown: service.port
+                      ? String(service.port)
+                      : `${listenPort(service)} (default)`,
+                  },
+                ],
+                <span className="font-mono text-xs text-mut">
+                  others reach it at {service.name}:{listenPort(service)}
+                </span>,
+                portFix,
+                { fold: false },
+              ),
+              row("Start command", "Instead of the image's own.", [
+                { key: "start_command" },
+              ]),
+              row("Limits", "The most it may use.", [
+                { key: "cpus", word: "CPU", shown: limitText(service, "cpu") },
+                {
+                  key: "memory_mb",
+                  word: "memory",
+                  shown: limitText(service, "memory"),
+                },
+              ]),
+              item(
+                "Volumes",
+                <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                  {volumes.length === 0 ? (
+                    <span className="text-mut">none</span>
+                  ) : (
+                    volumes.map((v) => (
+                      <span key={v.name} className="font-mono">
+                        {v.name} at {v.mount_path}
+                        {v.pending && (
+                          <>
+                            <span className="font-sans text-warn">
+                              {" "}
+                              saved, not applied
+                            </span>{" "}
+                            <button
+                              type="button"
+                              className="lnk font-sans"
+                              disabled={discard.isPending}
+                              onClick={() =>
+                                discard.mutate({
+                                  env: envPath(ref),
+                                  selection: {
+                                    volumes: [
+                                      { service: ref.service, name: v.name },
+                                    ],
+                                  },
+                                })
+                              }
+                            >
+                              Discard
+                            </button>
+                          </>
+                        )}
+                      </span>
+                    ))
                   )}
-                </span>
-              ))
+                  <AddVolume serviceRef={ref} />
+                </span>,
+              ),
+              ...(environment.server
+                ? [
+                    item(
+                      "Server",
+                      <>
+                        <EnvServer environment={environment} />{" "}
+                        <span className="text-mut">
+                          set by {environment.name}
+                        </span>
+                      </>,
+                    ),
+                  ]
+                : []),
+            ]}
+          />
+          {/* Only for databases: detected, or set here (so it can be undone). */}
+          {(service.data_engine || service.database !== "") && (
+            <DatabaseSettings serviceRef={ref} service={service} />
+          )}
+        </SettingsSection>
+
+        <SettingsSection id="deploys" title="Deploys">
+          <Rows
+            items={[
+              item(
+                "Downtime",
+                service.stateful
+                  ? "A few seconds: the old release stops before the new one starts, since only one copy can use the volume at a time."
+                  : "None: the new release starts beside the old one, then traffic moves over.",
+              ),
+              row(
+                "Before it goes live",
+                "Runs with the new image first, like migrations.",
+                [
+                  { key: "pre_deploy_command", word: "command" },
+                  { key: "pre_deploy_timeout_seconds", word: "timeout" },
+                ],
+                <PreDeploySnapshot
+                  serviceRef={ref}
+                  live={service.pre_deploy_snapshot}
+                  change={change("pre_deploy_snapshot")}
+                />,
+                undefined,
+                {
+                  extraDefault:
+                    !service.pre_deploy_snapshot &&
+                    !change("pre_deploy_snapshot"),
+                },
+              ),
+            ]}
+          />
+        </SettingsSection>
+
+        <SettingsSection id="health" title="Health and uptime">
+          <Rows
+            items={[
+              row(
+                "Health check",
+                "Traffic moves to a new release once this answers.",
+                [
+                  { key: "health_check_path", word: "path" },
+                  { key: "health_check_timeout_seconds", word: "timeout" },
+                ],
+                undefined,
+                undefined,
+                { fold: false },
+              ),
+              row(
+                "Checks while running",
+                "Restarts the service when every try fails.",
+                service.health_check_interval_seconds >= 0
+                  ? [
+                      { key: "health_check_interval_seconds", word: "every" },
+                      {
+                        key: "health_check_probe_timeout_seconds",
+                        word: "timeout",
+                      },
+                      { key: "health_check_retries", word: "tries" },
+                      {
+                        key: "health_check_start_period_seconds",
+                        word: "wait after start",
+                      },
+                    ]
+                  : [{ key: "health_check_interval_seconds", word: "every" }],
+              ),
+            ]}
+          />
+          <HealthOnServer serviceRef={ref} />
+          <UptimeChecks serviceRef={ref} />
+        </SettingsSection>
+
+        <DomainsPanel serviceRef={ref} />
+
+        {service.stateful && <BackupsPanel serviceRef={ref} />}
+
+        <SettingsSection id="archive" title={`Archive ${ref.service}`}>
+          <p className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sec">
+            <span>
+              Stops it and takes its domains down. Volumes, variables and
+              releases are kept, listed under Archived on the project.
+            </span>
+            {isAdmin ? (
+              <Button danger onClick={() => setArchiving(true)}>
+                Archive {ref.service}…
+              </Button>
+            ) : (
+              <span className="text-mut">An admin can archive it.</span>
             )}
-            <AddVolume serviceRef={ref} />
-          </Item>
-          {environment.server && (
-            <Item label="Server" hint="Set by the environment.">
-              <EnvServer environment={environment} />{" "}
-              <span className="text-mut">from {environment.name}</span>
-            </Item>
-          )}
-        </dl>
-      </section>
-
-      <section aria-labelledby="set-release">
-        <SectionHead id="set-release">
-          {/* Plain names chosen in a blind trial (2026-11). */}
-          Going live
-        </SectionHead>
-        <dl className="props [grid-template-columns:200px_minmax(0,1fr)]">
-          {row(
-            "Before it goes live",
-            "Runs with the new image first, like migrations.",
-            [
-              { key: "pre_deploy_command", word: "command" },
-              { key: "pre_deploy_timeout_seconds", word: "timeout" },
-            ],
-            <PreDeploySnapshot
+          </p>
+          {archiving && (
+            <ArchiveConfirm
               serviceRef={ref}
-              live={service.pre_deploy_snapshot}
-              change={change("pre_deploy_snapshot")}
-            />,
+              onCancel={() => setArchiving(false)}
+            />
           )}
-          {row("Health check", "Traffic moves once this answers.", [
-            { key: "health_check_path", word: "path" },
-            { key: "health_check_timeout_seconds", word: "timeout" },
-          ])}
-          {row(
-            "Checks while running",
-            "Restarts the service when every try fails.",
-            service.health_check_interval_seconds >= 0
-              ? [
-                  { key: "health_check_interval_seconds", word: "every" },
-                  {
-                    key: "health_check_probe_timeout_seconds",
-                    word: "timeout",
-                  },
-                  { key: "health_check_retries", word: "tries" },
-                  {
-                    key: "health_check_start_period_seconds",
-                    word: "wait after start",
-                  },
-                ]
-              : [{ key: "health_check_interval_seconds", word: "every" }],
-          )}
-          <Item label="Downtime" hint="When a new release takes over.">
-            {service.stateful
-              ? "A few seconds: the old release stops before the new one starts, since only one copy can use the volume at a time."
-              : "None: the new release starts beside the old one, then traffic moves over."}
-          </Item>
-        </dl>
-      </section>
+        </SettingsSection>
+      </div>
+    </SectionsLayout>
+  );
+}
 
-      <SourceSection serviceRef={ref} />
-
-      {/* Only for databases: detected, or set here (so it can be undone). */}
-      {(service.data_engine || service.database !== "") && (
-        <DatabaseSettings serviceRef={ref} service={service} />
-      )}
-    </>
+/**
+ * A section's rows: the set ones, then the ones on their defaults folded
+ * into one "N on defaults" row that opens them in place.
+ */
+function Rows({ items }: { items: RowItem[] }) {
+  const [open, setOpen] = useState(false);
+  const folded = items.filter((i) => i.folded);
+  return (
+    <dl className="props [grid-template-columns:200px_minmax(0,1fr)]">
+      {items.filter((i) => !i.folded).map((i) => i.node)}
+      <Folded
+        summary={folded.map((i) => i.folded)}
+        open={open}
+        onToggle={() => setOpen(!open)}
+      />
+      {open && folded.map((i) => i.node)}
+    </dl>
   );
 }
 
@@ -344,21 +504,12 @@ function AddVolume({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   );
 }
 
-/** A settings row's label, with a short line under it saying what it is. */
-function Item({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: ReactNode;
-}) {
+/** A settings row: its label, and the value (or what opens its editor). */
+function Item({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
       <dt>
         <span className="block text-sec">{label}</span>
-        {hint && <span className="block text-2xs text-faint">{hint}</span>}
       </dt>
       <dd>{children}</dd>
     </>
@@ -500,8 +651,9 @@ function usePortFix(
 }
 
 /**
- * A row of settings that edit together: the values as text, and Edit,
- * which opens a small form with one field per setting. Save stages the
+ * A row of settings that edit together: the values as text; a click on
+ * them opens a small form with one field per setting, and `hint` (what
+ * the setting does) over it. Save stages the
  * change (it goes live with Apply in the bar under the page, like
  * variables); Cancel or Esc leaves it. Saved values show old → new until
  * applied, with Discard. `open` starts in the form (?edit=port). The
@@ -598,7 +750,7 @@ function SettingRow({
   );
 
   return (
-    <Item label={label} hint={hint}>
+    <Item label={label}>
       {draft ? (
         <form
           aria-label={`Edit ${label.toLowerCase()}`}
@@ -609,6 +761,7 @@ function SettingRow({
           }}
           onKeyDown={(e) => e.key === "Escape" && cancel()}
         >
+          <span className="text-xs text-mut">{hint}</span>
           <span className="flex flex-wrap items-end gap-x-3 gap-y-2">
             {parts.map(({ key, word }, i) => (
               <label key={key} className="flex min-w-0 flex-col gap-1">
@@ -648,10 +801,14 @@ function SettingRow({
           <ErrorText error={error ?? stage.error} />
         </form>
       ) : (
-        // Edit sits at the end of a 760px line, not the far edge of a wide
-        // window, so it stays near what it edits.
-        <span className="flex max-w-[760px] items-start gap-3">
-          <span className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="flex flex-col gap-1">
+          <OpenValue
+            label={`Edit ${label.toLowerCase()}`}
+            onOpen={() => {
+              setError(null);
+              setDraft(start());
+            }}
+          >
             <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1 font-mono break-all">
               {parts.map((part) => (
                 <span key={part.key}>
@@ -662,44 +819,32 @@ function SettingRow({
                 </span>
               ))}
             </span>
-            {saved.length > 0 && (
-              <span className="text-xs text-mut">
-                Saved: Apply in the header puts it live.
-              </span>
-            )}
-            {suggestion}
-            {extra}
-          </span>
+          </OpenValue>
           {saved.length > 0 && (
-            <button
-              type="button"
-              className="lnk"
-              disabled={discard.isPending}
-              onClick={() =>
-                discard.mutate({
-                  env: envPath(ref),
-                  selection: {
-                    settings: saved.map(({ key }) => ({
-                      service: ref.service,
-                      field: key,
-                    })),
-                  },
-                })
-              }
-            >
-              Discard
-            </button>
+            <span className="flex flex-wrap items-baseline gap-3 text-xs text-mut">
+              Saved: Apply in the header puts it live.
+              <button
+                type="button"
+                className="lnk"
+                disabled={discard.isPending}
+                onClick={() =>
+                  discard.mutate({
+                    env: envPath(ref),
+                    selection: {
+                      settings: saved.map(({ key }) => ({
+                        service: ref.service,
+                        field: key,
+                      })),
+                    },
+                  })
+                }
+              >
+                Discard
+              </button>
+            </span>
           )}
-          <Button
-            small
-            aria-label={`Edit ${label.toLowerCase()}`}
-            onClick={() => {
-              setError(null);
-              setDraft(start());
-            }}
-          >
-            Edit
-          </Button>
+          {suggestion}
+          {extra}
           <ErrorText error={discard.error} />
         </span>
       )}
@@ -735,10 +880,10 @@ function detectedText(service: Service) {
 }
 
 /**
- * Dock-side database settings (ADR 0016 section 1): the detection override
- * and the variable with the connection URL. They apply at once, never
- * staged and never a release. Changing them needs scope deploy; others see
- * them read-only.
+ * Dock-side database settings (ADR 0016 section 1), as rows under
+ * Running: the detection override and the variable with the connection
+ * URL. They apply at once, never staged and never a release. Changing
+ * them needs scope deploy; others see them read-only.
  */
 function DatabaseSettings({
   serviceRef: ref,
@@ -771,10 +916,9 @@ function DatabaseSettings({
     .join(" ");
 
   return (
-    <section aria-labelledby="database" className="flex flex-col">
-      <SectionHead id="database">Database</SectionHead>
-      <dl className="props [grid-template-columns:200px_minmax(0,1fr)]">
-        <Item label="Detection">
+    <div className="flex flex-col">
+      <dl className="props border-t-0 [grid-template-columns:200px_minmax(0,1fr)]">
+        <Item label="Database">
           <span className="inline-flex flex-wrap items-baseline gap-3">
             {canEdit ? (
               <span className="seg">
@@ -819,42 +963,30 @@ function DatabaseSettings({
               onBlur={() => setDraft(null)}
               className="field min-h-[24px] w-56 py-0.5 font-mono text-xs"
             />
-          ) : canEdit ? (
-            <span className="flex max-w-[760px] items-start gap-3">
-              <span className="min-w-0 flex-1 font-mono">
+          ) : (
+            <OpenValue
+              label="Edit the database URL variable"
+              onOpen={canEdit ? () => setDraft(urlVariable) : undefined}
+            >
+              <span className="font-mono">
                 {urlVariable || (
                   <span className="font-sans text-mut">
                     default: DATABASE_URL, then POSTGRES_*
                   </span>
                 )}
               </span>
-              <Button
-                small
-                aria-label="Edit the database URL variable"
-                onClick={() => setDraft(urlVariable)}
-              >
-                Edit
-              </Button>
-            </span>
-          ) : (
-            <span className="font-mono">
-              {urlVariable || (
-                <span className="font-sans text-mut">
-                  default: DATABASE_URL, then POSTGRES_*
-                </span>
-              )}
-            </span>
+            </OpenValue>
           )}
         </Item>
       </dl>
-      <p className="flex flex-wrap gap-x-4 text-xs text-mut">
+      <p className="flex flex-wrap gap-x-4 pt-2 text-xs text-mut">
         <span>
-          These apply at once, with no release. The Data tab reads credentials
-          from the active release's variables.
+          Database settings apply at once, with no release. The Data tab reads
+          credentials from the active release's variables.
         </span>
         <span className="font-mono">{cli}</span>
         <ErrorText error={save.error} />
       </p>
-    </section>
+    </div>
   );
 }

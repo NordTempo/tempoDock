@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { ConsoleTabs } from "../features/console/ConsoleTabs";
 import { SignInPage } from "../features/console/SignInPage";
 import {
   signInSettingsQuery,
@@ -13,5 +14,14 @@ export const Route = createFileRoute("/_app/console/sign-in")({
       queryClient.ensureQueryData(ssoProvidersQuery()),
       queryClient.ensureQueryData(signInSettingsQuery()),
     ]),
-  component: SignInPage,
+  component: Tabbed,
 });
+
+/** The page under its sidebar entry's tab row (ConsoleTabs). */
+function Tabbed() {
+  return (
+    <ConsoleTabs>
+      <SignInPage />
+    </ConsoleTabs>
+  );
+}

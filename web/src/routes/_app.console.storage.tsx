@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { ConsoleTabs } from "../features/console/ConsoleTabs";
 import { storageQuery } from "../features/storage/data";
 import { StoragePage } from "../features/storage/StoragePage";
 
@@ -6,5 +7,14 @@ import { StoragePage } from "../features/storage/StoragePage";
 export const Route = createFileRoute("/_app/console/storage")({
   loader: ({ context: { queryClient } }) =>
     queryClient.ensureQueryData(storageQuery()),
-  component: StoragePage,
+  component: Tabbed,
 });
+
+/** The page under its sidebar entry's tab row (ConsoleTabs). */
+function Tabbed() {
+  return (
+    <ConsoleTabs>
+      <StoragePage />
+    </ConsoleTabs>
+  );
+}

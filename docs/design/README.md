@@ -117,13 +117,14 @@ for everything.
 
 ## Structure (2026-11 redesign)
 
-- **Navigation** (ADR 0076, option 3). A top bar across every page: the
-  organization switcher (the Platform console in it for operators), the
-  organization's views (Overview, Errors, Analytics, Images, Status
-  pages), one search (the palette, Cmd+K: pages, `dock` commands and help
-  topics in one list), Inbox with its count, Organization settings
-  (Members, Activity and where alerts go are inside), Help (`?`) and the
-  account menu (account, Help, Log out).
+- **Navigation** (ADR 0076, option 3; ADR 0099). A top bar across every
+  page: the organization switcher (the Platform console in it for
+  operators), the organization's views (Overview, Errors, Analytics,
+  Images, Status pages), one search (the palette, Cmd+K: pages, settings
+  sections, actions, `dock` commands and help topics in one list), Inbox
+  with its count, Settings (the organization's: Members, Activity and
+  where alerts go are inside), Help (`?`) and the account menu (account,
+  Help, Log out).
 - **Help.** `?` (the key or the top bar's button) opens a panel at the
   right edge, beside the page, on the topic for where you are: one line
   on what it is, the things to do there with their `dock` commands, what
@@ -133,28 +134,43 @@ for everything.
   `/$org/help/guide/$page` give a topic and a guide page an address.
   On the left the projects: a rail of tiles (initials and a health dot)
   that expands into the tree and stays expanded until collapsed (`[`).
-  Pages with a menu of their own on the left (an analytics site,
-  Organization settings) show the rail beside it, never the tree too.
-  Sticky bars sit under the top bar (`--shell-top`). There is no second
-  command bar.
-- **Pages.** An organization's home is its Overview (what needs someone,
-  its projects, errors, recent deploys, status pages); a project page shows its
-  problems, one table per environment and its activity; an environment's
-  address (`/org/project/env`) is that environment's own page. A service
-  has one header (name, environment, state, actions) and its tabs in four
-  groups with a line between them (ADR 0076): watching it (Overview,
-  Logs, Requests, Errors, Metrics), operating it (Jobs, Data), configuring
-  it (Variables, Settings), its history (History). Pages that answer one
-  question are one tab: Metrics is Resources and Uptime, Jobs is one-off
-  commands and scheduled jobs, Settings has Build & run, Domains and
-  Backups views, History is releases and activity, and a
-  release opens under it in the shell. A tab's views (Requests' Traffic
-  and Visitors, Settings' Build & run, Domains and Backups) are underlined
-  links under it, each with its own URL. The
-  list is `web/src/features/service/tabs.ts`.
-- **Overview.** One column: status, what needs attention, facts, uptime
-  and visitors, how to connect, the deploy in flight, the newest releases.
-  Logs have their own tab; all releases are on History.
+  A Settings page's left column is its list of sections instead, never
+  the tree or the rail beside it. Sticky bars sit under the top bar
+  (`--shell-top`). There is no second command bar.
+- **One shape at every level** (ADR 0099). Org, project, service and
+  server pages: a header with the name, its state, one primary button
+  (plus at most one everyday action beside it, Restart on a service) and
+  a `···` menu (`MoreMenu` in `ui/kit.tsx`) holding every other action in
+  one order: operate, run, connect, then archive or delete in red. Then
+  tabs, with Settings always last.
+- **Pages.** An organization's home is its Overview (one "needs you"
+  line into the Inbox, its projects, recent deploys); a project page
+  shows one environment at a time (the switch beside its name) in three
+  tabs: Services (its problems, then its services and where each is
+  reached), Activity and Settings; an environment's address
+  (`/org/project/env`) is that page with the environment picked. A
+  service's tabs come in three groups with a line between them: watching
+  it (Overview, Logs, Requests, Errors, Metrics), operating it (Jobs,
+  Data, Variables), its record (History, Settings). Metrics shows
+  resources and the uptime result; uptime checks are set up in Settings.
+  Jobs is one-off commands and scheduled jobs; History is releases and
+  activity, and a release opens under it in the shell. Requests' views
+  (Traffic, Visitors, Traces) are underlined links under it, each with
+  its own URL. The list is `web/src/features/service/tabs.ts`.
+- **Settings** (ADR 0099). Every Settings page (service, project,
+  organization) is one page with its sections listed on the left
+  (`ui/sections.tsx`), named after the job: a service's Source, Running,
+  Deploys, Health and uptime, Domains, Backups, Archive; a project's
+  General, Variables, Previews, Placement, Log drains, Config file,
+  Archive. Each section has an anchor (`settings#domains`) that links
+  and search use. A setting has one home, at the level it applies to; a
+  service's Variables tab shows what it sees, grouped by where each is
+  set.
+- **Overview.** One column: status, what needs attention, facts (each a
+  row into its home in Settings, Metrics or Requests), the deploy in
+  flight, the three newest releases. Logs have their own tab; all
+  releases are on History; Connect from your machine is in the header's
+  `···`.
 - **Width.** Every page uses the one content width. Below 1400px, side
   columns (members' roles, analytics' side panel) move under the main one.
 - **Help.** `/org/help` explains Dock's words; "What's this?" links point
@@ -177,8 +193,13 @@ for everything.
   Where applying stops a service for a moment, Apply opens the review
   first. Shared variables, with no service header, keep the review as a
   panel on the page.
-- **Settings rows.** A label with a short line under it, the values as
-  text, and one Edit per row that opens a small form; Save, Cancel, Esc.
+- **Settings rows.** A label and the value as text; the whole row opens
+  a small form (with the explanation in it); Save, Cancel, Esc. Values
+  left on their defaults fold into one row per section ("2 on defaults:
+  start command, limits", Show).
+- **Row actions.** The action a list exists for (Restore, Show, Retry)
+  stays visible on every row; rare and destructive ones go in the row's
+  `···`.
 - **Tables and lists** sit on the page under a hairline, with no box; status in tables and headers is a tinted chip; the page header is two lines, the way up over the title (chosen in blind direction trials, 2026-11).
 - **Rows that open something** show a pointer, a hover and a chevron in
   their last cell; the whole row is the target.
@@ -203,8 +224,8 @@ for everything.
 - **Fields** (inputs, selects, checkboxes) have a 3:1 edge on black.
 - **Targets** are at least 24px: buttons, inputs, selects and standalone
   links (by padding taken back with a negative margin).
-- **Defaults** are said where they are chosen (Build & run reads "1 CPU
-  (default)"); in tables the value alone, dimmer, with a tooltip.
+- **Defaults** fold away on settings pages (see Settings rows) and say
+  "default" once shown; in tables the value alone, dimmer, with a tooltip.
 - **Words.** Plain words over product terms ("Going live", "Before it goes
   live", "Checks while running"): replaced (not superseded),
   traffic moved, downtime, waiting to apply, reached at, memory reserved,

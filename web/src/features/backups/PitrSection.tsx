@@ -26,8 +26,9 @@ import {
 } from "./pitr";
 
 /**
- * The Backups tab's "Point in time" settings row (ADR 0093): on with its
- * days and Edit, or off. Operators change it, like the schedule.
+ * The Backups section's "Point in time" row (ADR 0093): on with its days
+ * and Edit, or off with why it can't be turned on or, for operators,
+ * Turn on. Operators change it, like the schedule.
  */
 export function PitrRow({
   serviceRef: ref,
@@ -39,8 +40,32 @@ export function PitrRow({
   onSettings: (mode: PitrMode) => void;
 }) {
   const operator = useIsOperator();
-  if (!pitr.enabled)
-    return <>Off: restores reach the daily dumps and snapshots only</>;
+  if (!pitr.enabled) {
+    return (
+      <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="text-mut">
+          Off: restores reach the daily dumps and snapshots only
+          {pitr.unavailable && (
+            <>
+              . It can't be turned on yet: <Code text={pitr.unavailable} />
+            </>
+          )}
+        </span>
+        {!pitr.unavailable &&
+          (operator ? (
+            <Act
+              small
+              cli={`dock backup pitr on ${ref.service} --days ${pitr.days} -e ${ref.environment}`}
+              onClick={() => onSettings("on")}
+            >
+              Turn on…
+            </Act>
+          ) : (
+            <span className="text-mut">An operator can turn it on.</span>
+          ))}
+      </span>
+    );
+  }
   return (
     <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
       <span>
@@ -68,12 +93,11 @@ const archiveStates: Record<ArchiveState, State> = {
 };
 
 /**
- * A database's restorable moments over the restore points (mock A): on,
- * the window with "Restore to a time…" as the page's primary, how
- * archiving does (a box with what the archiver says while it is behind or
- * failing), and the strip, where a click opens the dialog at that moment.
- * Off, the strip shows the ticks that restore today and operators get
- * Turn on (or why it can't be).
+ * A database's restorable moments over the restore points (mock A), while
+ * point in time is on: the window with "Restore to a time…" as the page's
+ * primary, how archiving does (a box with what the archiver says while it
+ * is behind or failing), and the strip, where a click opens the dialog at
+ * that moment. Off, PitrRow says so in one line.
  */
 export function PitrSection({
   serviceRef: ref,
@@ -83,7 +107,6 @@ export function PitrSection({
   window: w,
   why,
   onRestore,
-  onSettings,
 }: {
   serviceRef: ServiceRef;
   pitr: PITR;
@@ -93,9 +116,7 @@ export function PitrSection({
   /** Why restoring waits, when it does. */
   why?: string;
   onRestore: (at?: number) => void;
-  onSettings: (mode: PitrMode) => void;
 }) {
-  const operator = useIsOperator();
   const db = ref.service;
   const now = marks.span.end;
   const state = archiveState(pitr);
@@ -111,43 +132,6 @@ export function PitrSection({
       />
     </div>
   );
-
-  if (!pitr.enabled) {
-    return (
-      <div className="flex flex-col gap-1">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h3 className="text-md font-semibold text-fg">Restorable moments</h3>
-          {!pitr.unavailable && (
-            <span className="ml-auto text-xs">
-              {operator ? (
-                <Act
-                  small
-                  cli={`dock backup pitr on ${db} --days ${pitr.days} -e ${ref.environment}`}
-                  onClick={() => onSettings("on")}
-                >
-                  Turn on point in time…
-                </Act>
-              ) : (
-                <span className="text-mut">
-                  An operator can turn on point in time
-                </span>
-              )}
-            </span>
-          )}
-        </div>
-        {pitr.unavailable && (
-          <p className="text-xs text-mut">
-            Point in time can't be turned on: <Code text={pitr.unavailable} />
-          </p>
-        )}
-        {strip}
-        <p className="text-xs text-mut">
-          Only the ticks restore. Point in time makes every second between them
-          restorable.
-        </p>
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-col gap-2">

@@ -11,6 +11,8 @@ import {
   CopyButton,
   ErrorText,
   Glyph,
+  MoreItem,
+  MoreMenu,
   Page,
   PageBar,
   Panel,
@@ -38,6 +40,7 @@ import {
 } from "./data";
 import { Heartbeat } from "./Heartbeat";
 import { AlertLink, alertText } from "./source";
+import { type AlertGroup, groupAlerts, groupTitle } from "./summary";
 
 // Alerts (ADR 0062): open alerts (worst first), recent history, and the
 // channels alerts are sent to, for both scopes: an org's, for its members
@@ -85,21 +88,27 @@ export function AlertsPage({ scope }: { scope: AlertScope }) {
 }
 
 /**
- * Open alerts (worst first) and the last resolved ones. `skip` leaves
- * some out: the Inbox's access request alerts, which its own section
- * lists for admins.
+ * Open alerts, worst first, one row each, except error alerts about one
+ * site or service, which are one row ("3 new errors on shop.example.com");
+ * each row has the button that leads to the fix. Resolved ones fold under
+ * a line that shows them, only when there are some. `skip` leaves some
+ * out: the Inbox's access request alerts, which its own section lists for
+ * admins. `title` heads the open ones ("Alerts" in the Inbox).
  */
 export function AlertLists({
   scope,
   skip,
+  title = "Open",
 }: {
   scope: AlertScope;
   skip?: (a: Alert) => boolean;
+  title?: string;
 }) {
   const kept = (alerts: Alert[]) =>
     skip ? alerts.filter((a) => !skip(a)) : alerts;
   const open = kept(useOpenAlerts(scope));
   const recent = useAllAlerts(scope);
+  const [shown, setShown] = useState(false);
   const [more, setMore] = useState(false);
   const older = useOlderAlerts(scope, more);
   const resolved = kept(older.data ?? recent)
@@ -109,45 +118,55 @@ export function AlertLists({
     <Scope.Provider value={scope}>
       <section aria-labelledby="open">
         <SectionHead id="open" aside={open.length > 0 && open.length}>
-          Open
+          {title}
         </SectionHead>
         {open.length > 0 ? (
-          <AlertTable alerts={open} resolvable />
+          <AlertTable groups={groupAlerts(open)} resolvable />
         ) : (
-          <p className="py-2 text-mut">Nothing open.</p>
+          <p className="py-2 text-mut">No open alerts.</p>
         )}
       </section>
-      <section aria-labelledby="history">
-        <SectionHead
-          id="history"
-          right={
-            !more &&
-            resolved.length === HISTORY && (
-              <Act
-                small
-                cli={`dock alerts --all --limit ${MAX}${flag(scope)}`}
-                onClick={() => setMore(true)}
-              >
-                Show up to {MAX}
-              </Act>
-            )
-          }
-        >
-          {/* "Last 50" only once the list is cut there. */}
-          {more || resolved.length === HISTORY
-            ? `Last ${more ? MAX : HISTORY} resolved`
-            : "Resolved"}
-        </SectionHead>
-        {resolved.length > 0 ? (
-          <AlertTable alerts={resolved} />
-        ) : (
-          <p className="py-2 text-mut">None yet.</p>
-        )}
-        {older.error && (
-          <ErrorBlock error={older.error} onRetry={() => older.refetch()} />
-        )}
-      </section>
-      <p className="font-mono text-2xs text-mut">dock alerts{flag(scope)}</p>
+      {resolved.length > 0 && (
+        <section aria-labelledby="history">
+          <SectionHead
+            id="history"
+            aside={!shown && resolved.length}
+            right={
+              <>
+                {shown && !more && resolved.length === HISTORY && (
+                  <Act
+                    small
+                    cli={`dock alerts --all --limit ${MAX}${flag(scope)}`}
+                    onClick={() => setMore(true)}
+                  >
+                    Show up to {MAX}
+                  </Act>
+                )}
+                <Button
+                  small
+                  aria-expanded={shown}
+                  onClick={() => setShown(!shown)}
+                >
+                  {shown ? "Hide" : "Show"}
+                </Button>
+              </>
+            }
+          >
+            {/* "Last 50" only once the list is cut there. */}
+            {shown && (more || resolved.length === HISTORY)
+              ? `Last ${more ? MAX : HISTORY} resolved`
+              : "Resolved"}
+          </SectionHead>
+          {shown && (
+            <AlertTable
+              groups={resolved.map((a) => ({ lead: a, alerts: [a] }))}
+            />
+          )}
+          {older.error && (
+            <ErrorBlock error={older.error} onRetry={() => older.refetch()} />
+          )}
+        </section>
+      )}
     </Scope.Provider>
   );
 }
@@ -250,28 +269,29 @@ function where(a: Alert) {
   return a.server ?? a.project ?? "";
 }
 
+/** Alert rows: what, where, for how long and the button to the fix. */
 function AlertTable({
-  alerts,
+  groups,
   resolvable,
 }: {
-  alerts: Alert[];
+  groups: AlertGroup[];
   resolvable?: boolean;
 }) {
   return (
     <Panel>
       <table>
-        <thead>
+        <thead className="sr-only">
           <tr>
             <th>Severity</th>
             <th>Alert</th>
-            <th className="pr-7">Where</th>
+            <th>Where</th>
             <th>{resolvable ? "Open for" : "Resolved"}</th>
-            <th />
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          {alerts.map((a) => (
-            <AlertRow key={a.id} alert={a} resolvable={resolvable} />
+          {groups.map((g) => (
+            <AlertRow key={g.lead.id} group={g} resolvable={resolvable} />
           ))}
         </tbody>
       </table>
@@ -279,26 +299,52 @@ function AlertTable({
   );
 }
 
+/**
+ * One row: the severity's mark, the alert (or how many like it), where,
+ * how long, then its fixing link and a ··· with Resolve. A group's link
+ * opens all of its errors, and Resolve closes every alert in it.
+ */
 function AlertRow({
-  alert: a,
+  group,
   resolvable,
 }: {
-  alert: Alert;
+  group: AlertGroup;
   resolvable?: boolean;
 }) {
   const resolve = useResolveAlert();
   const scope = useContext(Scope);
+  const { lead: a, alerts } = group;
+  const many = alerts.length > 1;
   const tone = a.resolved_at ? "text-mut" : toneText[severityTone[a.severity]];
   const { text, cli } = alertText(a);
+  // A group's link goes to the site's (or service's) errors, not one issue.
+  const linked = many
+    ? { ...a, target: { ...a.target, error_group: undefined } }
+    : a;
+  const opened = alerts.reduce(
+    (first, x) => (x.opened_at < first ? x.opened_at : first),
+    a.opened_at,
+  );
+  // One at a time; a failure stops there and shows as resolve.error.
+  const resolveAll = async () => {
+    try {
+      for (const x of alerts) await resolve.mutateAsync(x.id);
+    } catch {
+      return;
+    }
+  };
   return (
     <tr>
-      <td className={`py-2 whitespace-nowrap ${tone}`}>
-        <Glyph char={a.severity === "critical" ? "✕" : "▲"} /> {a.severity}
+      <td className={`w-0 py-2 whitespace-nowrap ${tone}`} title={a.severity}>
+        <Glyph char={a.severity === "critical" ? "✕" : "▲"} />
+        <span className="sr-only">{a.severity}</span>
       </td>
       <td className="w-full min-w-[240px] py-2 whitespace-normal">
-        {a.title}
-        {a.count > 1 && <span className="text-mut"> {a.count} times</span>}
-        {text && <span className="block text-mut">{text}</span>}
+        {groupTitle(group)}
+        {!many && a.count > 1 && (
+          <span className="text-mut"> {a.count} times</span>
+        )}
+        {!many && text && <span className="block text-mut">{text}</span>}
         {/* Settling (ADR 0097): the condition cleared, and the alert
             resolves once it has stayed clear. */}
         {a.cleared_at && !a.resolved_at && (
@@ -307,24 +353,36 @@ function AlertRow({
           </span>
         )}
       </td>
-      <td className="py-2 pr-7 font-mono">{where(a)}</td>
+      <td className="py-2 pr-7 font-mono text-mut">{where(a)}</td>
       <td className="py-2 whitespace-nowrap text-mut">
-        {a.resolved_at ? `${since(a.resolved_at)} ago` : since(a.opened_at)}
+        {a.resolved_at ? `${since(a.resolved_at)} ago` : since(opened)}
       </td>
       <td className="py-1.5 text-right">
         <span className="inline-flex items-center gap-2 whitespace-nowrap">
           <ErrorText error={resolve.error} />
-          <AlertLink alert={a} className="btn sm no-underline" title={cli} />
+          <AlertLink
+            alert={linked}
+            className="btn sm no-underline"
+            title={cli}
+          />
           {resolvable && (
-            <Act
-              small
-              cli={`dock alerts resolve ${a.id}${flag(scope)}`}
-              disabled={resolve.isPending}
-              title="Close it by hand; it opens again if the condition is still there"
-              onClick={() => resolve.mutate(a.id)}
-            >
-              Resolve
-            </Act>
+            <MoreMenu label={`More for: ${groupTitle(group)}`}>
+              {(close) => (
+                <MoreItem
+                  close={close}
+                  disabled={resolve.isPending}
+                  cli={alerts
+                    .map((x) => `dock alerts resolve ${x.id}${flag(scope)}`)
+                    .join("; ")}
+                  onClick={() => void resolveAll()}
+                >
+                  {many ? `Resolve all ${alerts.length}` : "Resolve"}
+                  <span className="block text-2xs text-faint">
+                    Opens again if it's still happening
+                  </span>
+                </MoreItem>
+              )}
+            </MoreMenu>
           )}
         </span>
       </td>

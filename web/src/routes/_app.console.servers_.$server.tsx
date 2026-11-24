@@ -10,9 +10,14 @@ import type {
   ServerUsage,
   StatsRange,
 } from "../data/types";
-import { DiskBreakdown } from "../features/servers/DiskBreakdown";
+import {
+  DiskBreakdown,
+  DiskSummary,
+  PruneAction,
+} from "../features/servers/DiskBreakdown";
 import { DrainSection } from "../features/servers/DrainSection";
 import { drainQuery } from "../features/servers/drain";
+import { Fold } from "../features/servers/Fold";
 import { LinkSection } from "../features/servers/LinkSection";
 import { MemoryBreakdown } from "../features/servers/MemoryBreakdown";
 import { useServerSwitches } from "../features/servers/switches";
@@ -23,7 +28,6 @@ import { useLiveServer } from "../features/stats/live";
 import { LiveNote, RangeSwitch, Stat } from "../features/stats/parts";
 import {
   type Point,
-  rangeLabel,
   rangeMs,
   ranges,
   validateRange,
@@ -34,18 +38,20 @@ import {
   Act,
   ErrorText,
   Glyph,
+  MoreItem,
+  MoreMenu,
   Page,
   PageBar,
   Panel,
-  SectionHead,
   StateText,
 } from "../ui/kit";
-import { containerState, kindLabel } from "../ui/status";
+import { containerState, kindLabel, serverState } from "../ui/status";
 
 const RenameServer = lazy(() => import("../features/servers/RenameServer"));
 
-// One server: live usage, history, what is placed on it, where its memory
-// goes and the services there by memory. /console/servers/homelab?range=24h
+// One server: live usage and history, then a row per section (placement,
+// services, memory, disk, network, drain) that opens in place (ADR 0099).
+// /console/servers/homelab?range=24h
 export const Route = createFileRoute("/_app/console/servers_/$server")({
   validateSearch: validateRange,
   loaderDeps: ({ search }) => ({ range: search.range ?? "1h" }),
@@ -94,6 +100,12 @@ function ServerNotFound() {
   );
 }
 
+/**
+ * One server (ADR 0099): its state and what it runs in a sentence, live
+ * usage with the range's lines, then one row per section that says its
+ * state and opens in place. Drain is a button in the bar, since moving
+ * everything off a server is the big thing done here; Rename is in "···".
+ */
 function ServerPage() {
   const { server: name } = Route.useParams();
   const range = Route.useSearch().range ?? "1h";
@@ -104,6 +116,14 @@ function ServerPage() {
   const { accepts, placement, builder, confirm, error } =
     useServerSwitches(server);
   const [renaming, setRenaming] = useState(false);
+  // The rows opened by hand; Drain opens from the bar's button too.
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
+  const toggle = (id: string) =>
+    setOpen((was) => {
+      const next = new Set(was);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
   // Renamed elsewhere: the list has the new name (by ID); follow it.
   const listed = useServers().find((s) => s.id === server.id)?.name;
   useEffect(() => {
@@ -119,6 +139,13 @@ function ServerPage() {
   ]
     .filter(Boolean)
     .join(" · ");
+  const canDrain = server.status !== "joining";
+  const openDrain = () => {
+    setOpen((was) => new Set(was).add("drain"));
+    requestAnimationFrame(() =>
+      document.getElementById("drain")?.scrollIntoView({ block: "start" }),
+    );
+  };
 
   return (
     <>
@@ -129,17 +156,33 @@ function ServerPage() {
           </Link>
         }
         title={<span className="font-mono">{name}</span>}
+        after={<StateText state={serverState(server.status)} />}
         actions={
-          // A joining server has no row to rename yet.
-          server.id > 0 && (
-            <Act
-              small
-              cli={`dock server rename ${name} <name>`}
-              onClick={() => setRenaming(true)}
-            >
-              Rename
-            </Act>
-          )
+          <>
+            {canDrain && (
+              <Act
+                cli={`dock server drain ${name}`}
+                disabled={!!server.drain}
+                onClick={openDrain}
+              >
+                {server.drain ? "Draining" : "Drain"}
+              </Act>
+            )}
+            {/* A joining server has no row to rename yet. */}
+            {server.id > 0 && (
+              <MoreMenu>
+                {(close) => (
+                  <MoreItem
+                    close={close}
+                    cli={`dock server rename ${name} <name>`}
+                    onClick={() => setRenaming(true)}
+                  >
+                    Rename…
+                  </MoreItem>
+                )}
+              </MoreMenu>
+            )}
+          </>
         }
       />
       {renaming && (
@@ -153,21 +196,10 @@ function ServerPage() {
           {facts && <p className="text-mut">{facts}</p>}
         </div>
 
-        <LinkSection server={server} />
-        {(server.tunnel || server.tunnel_port > 0) && (
-          <TunnelSection server={server} />
-        )}
-
-        <section aria-label="Now" className="flex flex-col gap-2">
-          <Now usage={server.usage} server={server} />
-          <LiveNote state={server.status === "online" ? live : "lost"} />
-        </section>
-
-        <section aria-labelledby="history">
-          <SectionHead
-            id="history"
-            aside={rangeLabel[range]}
-            right={
+        <section aria-label="Usage" className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-start gap-x-6 gap-y-2">
+            <Now usage={server.usage} server={server} />
+            <span className="ml-auto">
               <RangeSwitch
                 value={range}
                 options={ranges}
@@ -178,46 +210,166 @@ function ServerPage() {
                   })
                 }
               />
-            }
-          >
-            History
-          </SectionHead>
+            </span>
+          </div>
           <History
             name={name}
             range={range}
             usage={server.usage}
             server={server}
           />
+          <LiveNote state={server.status === "online" ? live : "lost"} />
         </section>
 
-        <section aria-labelledby="placement" className="flex flex-col gap-2">
-          <SectionHead id="placement">Placement</SectionHead>
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-            <span>
-              <span className="text-mut">Accepts</span> {accepts}
-            </span>
-            {placement}
-            {builder}
-          </div>
-          {confirm}
-          <ErrorText error={error} />
-          <p className="font-mono text-2xs text-mut">
-            dock server update {name} --production | --no-production |
-            --non-production | --no-non-production | --disable-placement |
-            --enable-placement | --builder | --no-builder
-          </p>
-          <Placements detail={detail} />
-        </section>
-
-        {server.status !== "joining" && <DrainSection detail={detail} />}
-
-        <MemoryBreakdown usage={server.usage} />
-        {server.status === "online" && <DiskBreakdown server={name} />}
-
-        <Services name={name} services={detail.services} />
+        <div>
+          <Fold
+            id="placement"
+            label="Placement"
+            summary={placementSummary(detail)}
+            open={open.has("placement")}
+            onToggle={() => toggle("placement")}
+          >
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+              <span>
+                <span className="text-mut">Accepts</span> {accepts}
+              </span>
+              {placement}
+              {builder}
+            </div>
+            {confirm}
+            <ErrorText error={error} />
+            <Placements detail={detail} />
+          </Fold>
+          <Fold
+            id="services"
+            label="Services"
+            summary={servicesSummary(detail.services)}
+            open={open.has("services")}
+            onToggle={() => toggle("services")}
+          >
+            <Services services={detail.services} />
+          </Fold>
+          <Fold
+            id="memory"
+            label="Memory"
+            summary={memorySummary(server)}
+            open={open.has("memory")}
+            onToggle={() => toggle("memory")}
+          >
+            {server.usage?.memory_parts?.length ? (
+              <MemoryBreakdown usage={server.usage} />
+            ) : (
+              <p className="text-mut">
+                No breakdown from this server yet: it needs cgroup v2 and a dock
+                that reports one.
+              </p>
+            )}
+          </Fold>
+          {server.status === "online" && (
+            <Fold
+              id="disk"
+              label="Disk"
+              summary={<DiskSummary server={name} />}
+              action={<PruneAction server={name} />}
+              open={open.has("disk")}
+              onToggle={() => toggle("disk")}
+            >
+              <DiskBreakdown server={name} />
+            </Fold>
+          )}
+          <Fold
+            id="network"
+            label="Network"
+            summary={networkSummary(server)}
+            open={open.has("network")}
+            onToggle={() => toggle("network")}
+          >
+            <LinkSection server={server} />
+            {(server.tunnel || server.tunnel_port > 0) && (
+              <TunnelSection server={server} />
+            )}
+          </Fold>
+          {canDrain && (
+            <Fold
+              id="drain"
+              label="Drain"
+              summary={
+                server.drain
+                  ? "draining now"
+                  : "move everything off this server without downtime"
+              }
+              open={open.has("drain")}
+              onToggle={() => toggle("drain")}
+            >
+              <DrainSection detail={detail} />
+            </Fold>
+          )}
+        </div>
       </Page>
     </>
   );
+}
+
+/** Placement's few words: "production, non-production and builds · 5 environments, 1 pinned". */
+function placementSummary({ server: s, placements }: ServerDetail) {
+  const kinds = [
+    s.accepts_production && "production",
+    s.accepts_non_production && "non-production",
+  ].filter(Boolean);
+  const takes = s.disabled_for_placement
+    ? "takes nothing new"
+    : kinds.length
+      ? `takes ${kinds.join(" and ")}${s.builder ? ", builds images" : ""}`
+      : "takes no environment kinds";
+  const envs = placements.reduce(
+    (n, p) => n + (p.environments?.length ?? 0),
+    0,
+  );
+  const pinned = placements.filter((p) => p.pinned).length;
+  return `${takes} · ${plural(envs, "environment")} placed${pinned ? `, ${pinned} pinned` : ""}`;
+}
+
+/** Services' few words: "11: 7 running, 1 stopped, 3 not deployed". */
+function servicesSummary(services: ServerService[]) {
+  if (services.length === 0) return "none run here";
+  const counts = new Map<string, number>();
+  for (const s of services) {
+    const label = containerState(s).label;
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  return `${services.length}: ${[...counts].map(([l, n]) => `${n} ${l}`).join(", ")}`;
+}
+
+/** Memory's few words: used of total, and what is reserved for services. */
+function memorySummary(s: Server) {
+  const u = s.usage;
+  const total = u?.memory_total_bytes || s.memory_bytes;
+  const parts = [
+    u && total ? `${size(u.memory_used_bytes)} of ${size(total)} used` : "",
+    s.memory_bytes
+      ? `${size(s.reserved_memory_bytes)} reserved for services`
+      : "",
+  ].filter(Boolean);
+  return parts.join(" · ") || "no sample yet";
+}
+
+/** Network's few words: how traffic reaches it, its base domain, a tunnel. */
+function networkSummary(s: Server) {
+  const ingress =
+    s.status === "joining"
+      ? "reported when it connects"
+      : s.ingress === "cloudflare_tunnel"
+        ? "Cloudflare tunnel"
+        : `direct${s.public_ips?.length ? `, DNS at ${s.public_ips.join(", ")}` : ""}`;
+  return [
+    ingress,
+    s.base_domain && `hostnames under ${s.base_domain}`,
+    s.tunnel
+      ? "tunnel set up"
+      : s.ingress !== "cloudflare_tunnel" && "no tunnel",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /** What the server is doing, in a sentence. */
@@ -445,49 +597,38 @@ const memoryOf = (s: ServerService) => s.usage?.memory_bytes ?? -1;
 
 /**
  * Every service on the server, the biggest memory users first (again
- * after usage events patch them).
+ * after usage events patch them): the Services row, opened.
  */
-function Services({
-  name,
-  services: all,
-}: {
-  name: string;
-  services: ServerService[];
-}) {
+function Services({ services: all }: { services: ServerService[] }) {
   const services = useMemo(
     () => all.toSorted((a, b) => memoryOf(b) - memoryOf(a)),
     [all],
   );
+  if (services.length === 0) {
+    return <p className="text-mut">No services run here.</p>;
+  }
   return (
-    <section aria-labelledby="services">
-      {/* Sorted by memory, from the latest minute's sample. */}
-      <SectionHead id="services">Services on {name}</SectionHead>
-      {services.length === 0 ? (
-        <p className="text-mut">No services run here.</p>
-      ) : (
-        <Panel>
-          <table>
-            <thead>
-              <tr>
-                <th>Service</th>
-                <th>Environment</th>
-                <th>State</th>
-                <th>Memory</th>
-                <th>CPU</th>
-              </tr>
-            </thead>
-            <tbody>
-              {services.map((s) => (
-                <ServiceRow
-                  key={`${s.project}/${s.environment}/${s.name}`}
-                  service={s}
-                />
-              ))}
-            </tbody>
-          </table>
-        </Panel>
-      )}
-    </section>
+    <Panel>
+      <table>
+        <thead>
+          <tr>
+            <th>Service</th>
+            <th>Environment</th>
+            <th>State</th>
+            <th>Memory</th>
+            <th>CPU</th>
+          </tr>
+        </thead>
+        <tbody>
+          {services.map((s) => (
+            <ServiceRow
+              key={`${s.project}/${s.environment}/${s.name}`}
+              service={s}
+            />
+          ))}
+        </tbody>
+      </table>
+    </Panel>
   );
 }
 

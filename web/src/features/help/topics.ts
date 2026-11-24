@@ -390,9 +390,8 @@ export const topics: Record<TopicId, Topic> = {
         cli: "dock service create db --template postgres -e {env}",
       },
       {
-        what: "Connect from your machine",
+        what: "Connect from your machine (the service's ··· menu)",
         cli: "dock connect -s {service} -e {env}",
-        at: { s: "overview" },
       },
       {
         what: "Browse tables",
@@ -575,7 +574,7 @@ export const topics: Record<TopicId, Topic> = {
   metrics: {
     title: "Metrics",
     group: "Watch",
-    what: "CPU and memory, uptime checks, and the metrics your app sends over OpenTelemetry.",
+    what: "CPU and memory, uptime, and the metrics your app sends over OpenTelemetry.",
     do: [
       {
         what: "Set a CPU or memory limit",
@@ -585,7 +584,7 @@ export const topics: Record<TopicId, Topic> = {
       {
         what: "Check a URL every minute",
         cli: "dock uptime add https://shop.example.com/health -s {service} -e {env}",
-        at: { s: "metrics" },
+        at: { s: "health" },
       },
       {
         what: "Read your app's metrics",
@@ -813,6 +812,11 @@ export const topics: Record<TopicId, Topic> = {
         what: "See who changed what",
         cli: "dock audit",
         at: { o: "activity" },
+      },
+      {
+        what: "Find an archived project",
+        cli: "dock project list --all",
+        at: { o: "archived" },
       },
     ],
     watch: [

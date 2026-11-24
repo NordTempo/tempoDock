@@ -914,7 +914,7 @@ the audit log) says what was left:
 ## Deleting an archived project
 
 An archived project keeps its volumes, history and name until it is
-deleted. On its page, or in Organization settings, General, choose
+deleted. On its page, or in Settings › Archived projects, choose
 **Delete permanently** and type its name, or run:
 
 ```sh
@@ -941,7 +941,7 @@ dock project rename shop storefront
 
 This needs admin access to the whole project. Use the same lowercase name rules
 as project creation. An archived project can be renamed too (its page, or
-Organization settings), which frees its name for a new project.
+Settings › Archived projects), which frees its name for a new project.
 
 The project's ID, services, containers, volumes, domains, tokens and release
 history stay unchanged. Renaming does not redeploy anything, even if a deployment

@@ -557,9 +557,13 @@ export function Prop({
   );
 }
 
-/** A table that scrolls sideways instead of squeezing on narrow screens. */
+/**
+ * A table that scrolls sideways instead of squeezing on narrow screens.
+ * `relative` keeps absolutely placed children (an `sr-only` label) inside
+ * the scroll box; without it they stretch the whole page sideways.
+ */
 export function Scroll({ children }: { children: ReactNode }) {
-  return <div className="overflow-x-auto">{children}</div>;
+  return <div className="relative overflow-x-auto">{children}</div>;
 }
 
 /** A bordered, rounded panel around a table or list; scrolls sideways. */
@@ -572,7 +576,7 @@ export function Panel({
 }) {
   return (
     <div className={`panel ${className}`}>
-      <div className="overflow-x-auto">{children}</div>
+      <div className="relative overflow-x-auto">{children}</div>
     </div>
   );
 }
@@ -707,3 +711,79 @@ export function Menu({
 /** A row in a Menu. */
 export const menuItem =
   "flex items-center gap-2 rounded-tag px-2.5 py-1.5 text-left text-sec no-underline hover:bg-sel hover:text-fg aria-[current=page]:font-medium aria-[current=page]:text-fg";
+
+/**
+ * A page's or row's "···" menu: every action that isn't on a button,
+ * in one fixed order (operate, run, connect, then archive or delete in
+ * red at the end, after a separator). A header holds one primary action,
+ * at most one everyday one beside it, and this menu; a row holds the
+ * action its list exists for and this menu.
+ */
+export function MoreMenu({
+  label = "More actions",
+  children,
+}: {
+  label?: string;
+  children: (close: () => void) => ReactNode;
+}) {
+  return (
+    // inline-flex: sized to its button, so a row's menu sits at the end of
+    // a right-aligned cell instead of stretching across it.
+    <Menu
+      label={label}
+      right
+      className="inline-flex"
+      button={
+        <span className="btn px-2.5" title={label} aria-hidden>
+          ···
+        </span>
+      }
+    >
+      {children}
+    </Menu>
+  );
+}
+
+/**
+ * One action in a MoreMenu: its words, its key (shown on the right), its
+ * `dock` equivalent as the tooltip, red when it removes something.
+ */
+export function MoreItem({
+  close,
+  onClick,
+  keyHint,
+  cli,
+  danger,
+  disabled,
+  children,
+}: {
+  close: () => void;
+  onClick: () => void;
+  keyHint?: string;
+  cli?: string;
+  danger?: boolean;
+  disabled?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      disabled={disabled}
+      title={cli}
+      className={`${menuItem} disabled:text-off ${danger ? "text-fail hover:text-fail" : ""}`}
+      onClick={() => {
+        close();
+        onClick();
+      }}
+    >
+      <span className="flex-1">{children}</span>
+      {keyHint && <kbd>{keyHint}</kbd>}
+    </button>
+  );
+}
+
+/** A line between groups in a MoreMenu. */
+export function MoreSeparator() {
+  return <hr className="my-1 border-line" />;
+}

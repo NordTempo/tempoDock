@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
 import { api, body } from "../../api/client";
 import { servicePath, useEnvironment } from "../../data/queries";
 import type { ServiceRef } from "../../data/types";
@@ -18,38 +17,12 @@ export const connectCli = (ref: ServiceRef, production: boolean) =>
   }`;
 
 /**
- * How to reach the service from your machine. Folded (a service's
- * Overview, where it would repeat on every service) it is one quiet row
- * that opens to the lines, and asks the server only once opened; open
- * (the Data tab, where connecting is the point) it shows them at once.
+ * How to reach the service from your machine: the Data tab, where
+ * connecting is the point, and the service header's "···" › Connect from
+ * your machine, in a dialog.
  */
-export function ConnectHint({
-  serviceRef,
-  folded,
-}: {
-  serviceRef: ServiceRef;
-  folded?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  if (!folded) return <ConnectLines serviceRef={serviceRef} />;
-  return (
-    <details
-      className="group text-xs"
-      onToggle={(e) => setOpen(e.currentTarget.open)}
-    >
-      <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 text-mut hover:text-fg [&::-webkit-details-marker]:hidden">
-        <span aria-hidden className="group-open:rotate-90">
-          ›
-        </span>
-        Connect from your machine
-      </summary>
-      {open && (
-        <div className="pt-2">
-          <ConnectLines serviceRef={serviceRef} />
-        </div>
-      )}
-    </details>
-  );
+export function ConnectHint({ serviceRef }: { serviceRef: ServiceRef }) {
+  return <ConnectLines serviceRef={serviceRef} />;
 }
 
 /**

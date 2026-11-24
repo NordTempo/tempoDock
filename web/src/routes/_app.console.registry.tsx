@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { ConsoleTabs } from "../features/console/ConsoleTabs";
 import { registryQuery } from "../features/registry/data";
 import { RegistryPage } from "../features/registry/RegistryPage";
 
@@ -6,5 +7,14 @@ import { RegistryPage } from "../features/registry/RegistryPage";
 export const Route = createFileRoute("/_app/console/registry")({
   loader: ({ context: { queryClient } }) =>
     queryClient.ensureQueryData(registryQuery()),
-  component: RegistryPage,
+  component: Tabbed,
 });
+
+/** The page under its sidebar entry's tab row (ConsoleTabs). */
+function Tabbed() {
+  return (
+    <ConsoleTabs>
+      <RegistryPage />
+    </ConsoleTabs>
+  );
+}

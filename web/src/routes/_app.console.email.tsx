@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { ConsoleTabs } from "../features/console/ConsoleTabs";
 import { EmailPage } from "../features/console/EmailPage";
 import { emailQuery, outboxQuery } from "../features/console/email";
 
@@ -10,5 +11,14 @@ export const Route = createFileRoute("/_app/console/email")({
       queryClient.ensureQueryData(emailQuery()),
       queryClient.ensureQueryData(outboxQuery()),
     ]),
-  component: EmailPage,
+  component: Tabbed,
 });
+
+/** The page under its sidebar entry's tab row (ConsoleTabs). */
+function Tabbed() {
+  return (
+    <ConsoleTabs>
+      <EmailPage />
+    </ConsoleTabs>
+  );
+}

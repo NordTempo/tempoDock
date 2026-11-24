@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useIsAdmin } from "../../data/queries";
 import type { EnvRef } from "../../data/types";
 import { since } from "../../ui/format";
-import { Act, Button, ErrorText, Panel, SectionHead } from "../../ui/kit";
+import { Act, Button, ErrorText, Panel } from "../../ui/kit";
 import {
   type LogDrain,
   type NewLogDrain,
@@ -25,33 +25,27 @@ const placeholders: Record<Kind, string> = {
 };
 
 /**
- * One environment's log drains, as a section of the project settings'
- * Log drains tab (one per environment, headed by its name).
+ * One environment's log drains: the Log drains section of a project's
+ * Settings, for the environment its header has picked.
  */
 export function LogDrains({ env }: { env: EnvRef }) {
   const drains = useLogDrains(env);
   const isAdmin = useIsAdmin();
   const [adding, setAdding] = useState(false);
-  const head = `drains-${env.environment}-head`;
   return (
-    <section
-      aria-labelledby={head}
-      id={`drains-${env.environment}`}
-      className="scroll-mt-[64px]"
-    >
-      <SectionHead
-        id={head}
-        right={
-          isAdmin &&
-          !adding && (
-            <Button small onClick={() => setAdding(true)}>
-              Add drain
-            </Button>
-          )
-        }
-      >
-        {env.environment}
-      </SectionHead>
+    <div className="flex flex-col gap-2.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <p className="min-w-0 flex-1 text-xs text-mut">
+          Drains send every service's output in {env.environment} to another log
+          store. Without one, output stays on the server, in{" "}
+          <span className="font-mono">dock logs</span>.
+        </p>
+        {isAdmin && !adding && (
+          <Button small onClick={() => setAdding(true)}>
+            Add drain
+          </Button>
+        )}
+      </div>
       {drains.length > 0 ? (
         <Panel>
           <table className="w-full">
@@ -78,7 +72,7 @@ export function LogDrains({ env }: { env: EnvRef }) {
         !adding && <p className="py-1 text-mut">No drains.</p>
       )}
       {adding && <AddDrain env={env} onClose={() => setAdding(false)} />}
-    </section>
+    </div>
   );
 }
 

@@ -110,8 +110,9 @@ function WithoutAnalytics({ counted }: { counted: Set<string> }) {
                   <td className="text-right">
                     {withDomain ? (
                       <Link
-                        to="/$org/$project/$environment/$service/settings/domains"
+                        to="/$org/$project/$environment/$service/settings"
                         params={{ org, ...serviceRef(withDomain.service) }}
+                        hash="domains"
                         className="btn sm"
                         title={`Opens the domains of ${withDomain.service.name}, ${p.name}'s service with a domain; turn counting on there`}
                       >

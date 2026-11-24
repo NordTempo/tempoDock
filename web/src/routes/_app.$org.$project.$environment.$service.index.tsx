@@ -2,7 +2,6 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { servicePath, useRelease, useService } from "../data/queries";
 import type { ServiceRef } from "../data/types";
 import { RestoredFrom } from "../features/backups/Restored";
-import { ConnectHint } from "../features/connect/ConnectHint";
 import { NeedsAttention } from "../features/service/Attention";
 import { ReleaseHistory } from "../features/service/ReleaseHistory";
 import { imageLabel } from "../features/service/releases";
@@ -10,7 +9,6 @@ import {
   ServiceFacts,
   StatusSentence,
 } from "../features/service/ServiceHeader";
-import { Signals } from "../features/service/Signals";
 import { deploySteps, StepTable } from "../features/service/Steps";
 import { useOrg } from "../shell/location";
 import { useNow } from "../ui/clock";
@@ -18,9 +16,10 @@ import { elapsed } from "../ui/format";
 import { Actor, actorKind, SectionHead } from "../ui/kit";
 import { inFlight } from "../ui/status";
 
-// A service at a glance (A2): status, what needs attention, facts, uptime
-// and visitors, the deploy in flight and the newest releases (all of them
-// on History, ADR 0076).
+// A service at a glance (A2, ADR 0099): status, what needs attention,
+// facts that each open their one home (uptime and visitors among them),
+// the deploy in flight and the three newest releases (all of them on
+// History). Connecting from your machine is in the header's "···" menu.
 export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/",
 )({
@@ -32,9 +31,9 @@ function ServiceOverview() {
   const service = useService(ref);
   const current = service.deploying;
 
-  // One column: status, facts, signals, the deploy in flight and the
-  // release history. Logs have their own tab; a database's connection
-  // lines are on its Data tab.
+  // One column: status, facts, the deploy in flight and the newest
+  // releases. Logs have their own tab; a database's connection lines are
+  // on its Data tab.
   return (
     <div className="@container flex min-w-0 flex-col gap-7">
       {/* What serves, then what needs a look, said once (ADR 0076). */}
@@ -44,13 +43,6 @@ function ServiceOverview() {
       </div>
       <ServiceFacts serviceRef={ref} />
       {service.service.template && <RestoredFrom serviceRef={ref} />}
-      <Signals serviceRef={ref} />
-      {/* `dock connect` reaches an app's set port, once it was deployed
-          (before that, the status says "Not deployed yet." once). Folded:
-          it is the same on every service and few need it. */}
-      {service.service.port > 0 &&
-        !service.service.template &&
-        service.latest_release && <ConnectHint serviceRef={ref} folded />}
       {current && (
         <DeployProgress
           key={current.number}

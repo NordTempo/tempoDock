@@ -51,12 +51,16 @@ import {
   Confirm,
   ErrorText,
   Glyph,
+  MoreItem,
+  MoreMenu,
   Prop,
   SectionHead,
 } from "../ui/kit";
 import { failurePhrase, inFlight, releaseWhat } from "../ui/status";
 
-// One release: why it failed (or how far it got), its steps, its last lines.
+// One release: why it failed (or how far it got) and its steps first,
+// then the fix that fits with its buttons (the rest in "···"), then who
+// and what as reference, the evidence and its last lines (ADR 0099).
 // Outside the service layout, like a document of its own: /shop/staging/web/releases/61.
 export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/history/$number",
@@ -135,24 +139,24 @@ function ReleasePage() {
 
   const older = releases.find((x) => x.number < release.number);
   const newer = [...releases].reverse().find((x) => x.number > release.number);
-  const buildLog = { release: release.number, build: true };
+  // A build that failed is read in its build log; anything later in the
+  // release's own.
+  const buildFailed =
+    release.error_code === "build_failed" || release.status === "building";
+  const openLogs = (build: boolean) =>
+    navigate({
+      to: "/$org/$project/$environment/$service/logs",
+      params: { org, ...ref },
+      search: build
+        ? { release: release.number, build: true }
+        : { release: release.number },
+    });
   const toService = () =>
     navigate({
       to: "/$org/$project/$environment/$service",
       params: { org, ...ref },
     });
-  useShortcuts([
-    {
-      key: "l",
-      label: "build log",
-      run: () =>
-        navigate({
-          to: "/$org/$project/$environment/$service/logs",
-          params: { org, ...ref },
-          search: buildLog,
-        }),
-    },
-  ]);
+  useShortcuts([{ key: "l", label: "build log", run: () => openLogs(true) }]);
 
   return (
     <>
@@ -221,34 +225,27 @@ function ReleasePage() {
             )}
           </p>
         )}
-        <dl className="props grid-cols-[140px_minmax(0,1fr)]">
-          <Prop label="Service">
-            <span className="font-mono">{ref.service}</span> in{" "}
-            {ref.environment}
-          </Prop>
-          <Prop label="Deployed by">
-            <Actor
-              name={release.created_by}
-              kind={actorKind(release.created_by)}
-            />{" "}
-            · {ago(release.created_at)}
-          </Prop>
-          <Prop label="What">
-            {releaseWhat(release)}{" "}
-            <span className="font-mono">{release.image_ref}</span>
-          </Prop>
-          {release.scan && (
-            <Prop label="Vulnerabilities">
-              <ScanLine scan={release.scan} />
-            </Prop>
-          )}
-          {previous && !diagnosed?.changes && (
-            <Prop label={`Changed since r${previous.number}`}>
-              <Changes from={previous} to={release} />
-            </Prop>
-          )}
-        </dl>
         {diagnosed && <Cause d={diagnosed} />}
+      </section>
+
+      {/* What failed comes first (ADR 0099), then the fix that fits it. */}
+      <section aria-labelledby="steps" className="flex flex-col gap-2">
+        <SectionHead id="steps">{failed ? "What failed" : "Steps"}</SectionHead>
+        {/* What served when it ran, not what serves now. */}
+        <ReleaseSteps
+          release={release}
+          serving={previous?.number ?? null}
+          stateful={service.stateful}
+        />
+      </section>
+
+      <section aria-label="Next steps" className="flex flex-col gap-3">
+        {refused && (
+          <p>
+            Nothing answered on <code>:{service.port}</code>. If the app listens
+            on another port, change the port.
+          </p>
+        )}
         {fix && fixing && (
           <FixAndDeploy
             release={release}
@@ -257,7 +254,9 @@ function ReleasePage() {
             onDeployed={toService}
           />
         )}
-        <div className="mt-1 flex flex-wrap items-start gap-2.5">
+        <div className="flex flex-wrap items-start gap-2.5">
+          {/* The fix that fits this failure first; secondary like every
+              action here, since the header's Deploy is the view's primary. */}
           {fix &&
             !fixing &&
             (mayDeploy ? (
@@ -297,19 +296,23 @@ function ReleasePage() {
               Change port
             </Link>
           )}
-          {/* Secondary like every action here: the header's Deploy is the
-              view's one primary. */}
+          {/* The log that shows this failure: the build's for a build
+              that failed, the release's own otherwise. */}
           <Act
-            cli={`dock logs --build -r ${release.number} -s ${ref.service} -e ${ref.environment}`}
-            onClick={() =>
-              navigate({
-                to: "/$org/$project/$environment/$service/logs",
-                params: { org, ...ref },
-                search: buildLog,
-              })
+            cli={
+              buildFailed
+                ? `dock logs --build -r ${release.number} -s ${ref.service} -e ${ref.environment}`
+                : `dock logs -r ${release.number} -s ${ref.service} -e ${ref.environment}`
             }
+            onClick={() => openLogs(buildFailed)}
           >
-            Open build log <kbd>L</kbd>
+            {buildFailed ? (
+              <>
+                Open build log <kbd>L</kbd>
+              </>
+            ) : (
+              "Open logs"
+            )}
           </Act>
           {inFlight(release.status) && mayDeploy && (
             <CancelDeploy serviceRef={ref} number={release.number} />
@@ -337,37 +340,6 @@ function ReleasePage() {
               onOpen={() => openDeploy(ref)}
             />
           )}
-          {/* The traces this release served (ADR 0075). */}
-          <Link
-            to="/$org/$project/$environment/$service/requests/traces"
-            params={{ org, ...ref }}
-            search={{ release: release.number }}
-            className="btn"
-          >
-            Traces of r{release.number}
-          </Link>
-          <Act
-            cli={`dock env set -s ${ref.service} -e ${ref.environment}`}
-            onClick={() =>
-              navigate({
-                to: "/$org/$project/$environment/$service/variables",
-                params: { org, ...ref },
-              })
-            }
-          >
-            Variables of {ref.service}
-          </Act>
-          <Act
-            cli={`dock service show ${ref.service} -e ${ref.environment}`}
-            onClick={() =>
-              navigate({
-                to: "/$org/$project/$environment/$service/settings",
-                params: { org, ...ref },
-              })
-            }
-          >
-            Settings of {ref.service}
-          </Act>
           {release.status === "superseded" && mayDeploy && !rollingBack && (
             <Act
               cli={`dock rollback ${release.number} -s ${ref.service} -e ${ref.environment}`}
@@ -385,6 +357,34 @@ function ReleasePage() {
               Roll back to {r}
             </Act>
           )}
+          {/* The rest are ways to other places: one menu. */}
+          <MoreMenu>
+            {(close) => (
+              <>
+                <MoreItem
+                  close={close}
+                  keyHint={buildFailed ? undefined : "L"}
+                  onClick={() => openLogs(!buildFailed)}
+                >
+                  {buildFailed ? "Open logs" : "Open build log"}
+                </MoreItem>
+                {view.domains.length > 0 && (
+                  <MoreItem
+                    close={close}
+                    onClick={() =>
+                      navigate({
+                        to: "/$org/$project/$environment/$service/requests/traces",
+                        params: { org, ...ref },
+                        search: { release: release.number },
+                      })
+                    }
+                  >
+                    Traces of {r}
+                  </MoreItem>
+                )}
+              </>
+            )}
+          </MoreMenu>
           <span className="self-center">
             {failed && mayDeploy && blocked && (
               <span className="text-fail">Disabled: {blocked}. </span>
@@ -403,17 +403,36 @@ function ReleasePage() {
         )}
       </section>
 
-      {diagnosed && <Evidence d={diagnosed} ref={ref} />}
-
-      <section aria-labelledby="steps" className="flex flex-col gap-2">
-        <SectionHead id="steps">{failed ? "What failed" : "Steps"}</SectionHead>
-        {/* What served when it ran, not what serves now. */}
-        <ReleaseSteps
-          release={release}
-          serving={previous?.number ?? null}
-          stateful={service.stateful}
-        />
+      {/* Reference: who, what and what changed, under the steps. The
+          service and environment are the header's. */}
+      <section aria-labelledby="details" className="flex flex-col gap-2">
+        <SectionHead id="details">Details</SectionHead>
+        <dl className="props grid-cols-[140px_minmax(0,1fr)]">
+          <Prop label="Deployed by">
+            <Actor
+              name={release.created_by}
+              kind={actorKind(release.created_by)}
+            />{" "}
+            · {ago(release.created_at)}
+          </Prop>
+          <Prop label="What">
+            {releaseWhat(release)}{" "}
+            <span className="font-mono">{release.image_ref}</span>
+          </Prop>
+          {release.scan && (
+            <Prop label="Vulnerabilities">
+              <ScanLine scan={release.scan} />
+            </Prop>
+          )}
+          {previous && !diagnosed?.changes && (
+            <Prop label={`Changed since r${previous.number}`}>
+              <Changes from={previous} to={release} />
+            </Prop>
+          )}
+        </dl>
       </section>
+
+      {diagnosed && <Evidence d={diagnosed} ref={ref} />}
 
       <LastLines release={release} />
     </>

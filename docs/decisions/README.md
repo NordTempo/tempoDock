@@ -89,7 +89,7 @@ line means a later record added to it without changing what it decided.
 | [0073](0073-public-status-pages.md) | Public status pages | accepted; phases 1 to 5; amended by [0087](0087-unguessable-generated-hostnames.md) (names per organization, random part in addresses) |
 | [0074](0074-image-vulnerability-scanning.md) | Image vulnerability scanning | accepted |
 | [0075](0075-tracing-over-otlp.md) | Tracing over OTLP | accepted; phases 1 to 6 built |
-| [0076](0076-service-page-in-nine-tabs.md) | The service page in nine tabs, one save model, a failure said once | accepted; Requests built |
+| [0076](0076-service-page-in-nine-tabs.md) | The service page in nine tabs, one save model, a failure said once | accepted; Requests built; amended by [0099](0099-one-obvious-place-for-each-feature.md) (settings as one page, tab order) |
 | [0077](0077-previews-belong-to-services.md) | Previews belong to services | accepted; amended by [0092](0092-preview-database-copies.md) (database copies) |
 | [0078](0078-deleting-archived-projects.md) | Renaming and deleting archived projects | accepted |
 | [0079](0079-dock-sends-its-own-email.md) | Dock sends its own email: the platform's SMTP server, an outbox, invites first | accepted; built, except the rows marked Later |
@@ -110,7 +110,9 @@ line means a later record added to it without changing what it decided.
 | [0094](0094-deploying-from-github-actions.md) | Deploying from GitHub Actions: an official composite action with the server's CLI, signature checked, `--json-file` for logs with results; GitHub OIDC trust for org agents designed | accepted; OIDC not built |
 | [0095](0095-restore-volume-backups.md) | Volume backups restore from Dock, in place after a safety snapshot; manual backups keep their own last 5; Postgres roles in backups; restore targets unusable until loaded | accepted; in-place restore and manual retention built, the rest in progress |
 | [0096](0096-checked-backups.md) | Checked backups: a weekly `restic check` reading 1 GB of each repository and a restore drill of every template database into a throwaway service, on the backup scheduler's pass; the result on the Backups tab, an alert on failure | accepted |
+| [0097](0097-outside-heartbeat-and-calmer-alerts.md) | An outside heartbeat (Dock requests a URL while it runs, so a dead server is noticed) and calmer alerts: settling, counts, repeats, grouping per channel | accepted; email channels not grouped |
 | [0098](0098-recovering-a-lost-server.md) | Recovering a lost server: `install.sh --restore-from-bucket` fetches the control plane from the bucket, recovery mode holds backups back, `dock admin recover` plans and restores volumes before services start | accepted |
+| [0099](0099-one-obvious-place-for-each-feature.md) | One obvious place for each feature: the same page shape at every level, one Settings layout with sections, one home per setting, `···` in one order, search finds settings | accepted |
 | [0100](0100-public-demo.md) | The public demo: `dock serve` on the fake runtime behind `[demo] user`, every visitor signed in to one shared operator account, account and outbound changes refused, seeded by `dock-demo` and reset every hour | accepted |
 
 ## Template
@@ -132,4 +134,3 @@ What we do.
 ## Consequences
 What gets easier, what gets harder.
 ```
-| [0097](0097-outside-heartbeat-and-calmer-alerts.md) | An outside heartbeat (Dock requests a URL while it runs, so a dead server is noticed) and calmer alerts: settling, counts, repeats, grouping per channel | accepted; email channels not grouped |

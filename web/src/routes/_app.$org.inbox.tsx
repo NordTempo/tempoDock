@@ -6,10 +6,12 @@ import { AccessRequests } from "../features/requests/AccessRequests";
 import { requestQueries } from "../features/requests/data";
 import { Page, PageBar } from "../ui/kit";
 
-// The organization's Inbox (ADR 0076): what waits on someone, in one
-// list. Access requests to decide (ADR 0044, admins; ?request= opens one),
-// then open alerts and the last resolved (ADR 0062). Where alerts go is
-// under Settings, Alerts.
+// The organization's Inbox (ADR 0076): what waits on someone, the one
+// list of it (the Overview says it in a line). Two groups by what you do
+// with them: access requests waiting for your answer (ADR 0044, admins;
+// ?request= opens one), then alerts, each with the button to its fix
+// (ADR 0062); resolved ones fold under them. Where alerts go is under
+// Settings, Alerts.
 export const Route = createFileRoute("/_app/$org/inbox")({
   validateSearch: (s: Record<string, unknown>): { request?: number } => {
     const id = Number(s.request);
@@ -39,6 +41,7 @@ function Inbox() {
         {/* Admins decide access requests above; their alerts would repeat them. */}
         <AlertLists
           scope="org"
+          title="Alerts"
           skip={admin ? (a) => a.kind === "access_request" : undefined}
         />
       </Page>

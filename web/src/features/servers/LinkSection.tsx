@@ -8,14 +8,7 @@ import {
 } from "../../data/mutations";
 import type { Server } from "../../data/types";
 import { ago, plural, until } from "../../ui/format";
-import {
-  Act,
-  Button,
-  Confirm,
-  ErrorText,
-  SectionHead,
-  StateText,
-} from "../../ui/kit";
+import { Act, Button, Confirm, ErrorText, StateText } from "../../ui/kit";
 import { serverState } from "../../ui/status";
 import { Version } from "./parts";
 
@@ -32,13 +25,13 @@ const none = (text: string) => <span className="text-mut">{text}</span>;
 
 /**
  * How a server is connected to the control plane (status, versions,
- * ingress, key), its base domain, and the admin's revoke and remove.
+ * ingress, key), its base domain, and the admin's revoke and remove: the
+ * server page's Network row, opened.
  */
 export function LinkSection({ server: s }: { server: Server }) {
   const ips = s.public_ips ?? [];
   return (
-    <section aria-labelledby="link" className="flex flex-col gap-2">
-      <SectionHead id="link">Link</SectionHead>
+    <div className="flex flex-col gap-2">
       <dl className="props max-w-[960px] grid-cols-[140px_minmax(0,1fr)]">
         <Fact label="Status">
           <StateText state={serverState(s.status)} />{" "}
@@ -104,7 +97,7 @@ export function LinkSection({ server: s }: { server: Server }) {
         </Fact>
       </dl>
       {!s.local && <Actions server={s} />}
-    </section>
+    </div>
   );
 }
 

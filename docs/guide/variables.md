@@ -47,7 +47,7 @@ applying fails as a whole. `shared` and `org` can't be used as service names.
 ### Organization variables
 
 Values every project needs, like an error tracker's DSN, live once in the
-organization (Organization settings, Variables, or `dock org env`) and are
+organization (Settings › Variables, or `dock org env`) and are
 used where a variable says `${{org.KEY}}`. They are never added to
 services by themselves. Admins set and reveal them; everyone sees which
 services use each.
