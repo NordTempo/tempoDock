@@ -107,8 +107,11 @@ function useSectionInView(sections: SectionItem[]) {
           if (e.isIntersecting) visible.add(e.target.id);
           else visible.delete(e.target.id);
         }
-        const first = elements.find((e) => visible.has(e.id));
-        if (first) setCurrent(first.id);
+        // The lowest one in the top third: its heading passed the line
+        // last, so it's the one being read (and a #hash jump's target,
+        // not the end of the section above it).
+        const last = elements.findLast((e) => visible.has(e.id));
+        if (last) setCurrent(last.id);
       },
       { rootMargin: "0px 0px -66% 0px" },
     );
