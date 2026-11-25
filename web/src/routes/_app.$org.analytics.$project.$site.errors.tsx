@@ -17,7 +17,7 @@ export const Route = createFileRoute(
 )({
   validateSearch: (s: Record<string, unknown>): Search => ({
     ...analyticsSearch(s),
-    ...(typeof s.g === "string" && /^[0-9a-f]{16}$/.test(s.g) && { g: s.g }),
+    g: typeof s.g === "string" && /^[0-9a-f]{16}$/.test(s.g) ? s.g : undefined,
   }),
   component: Errors,
 });

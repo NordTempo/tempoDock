@@ -17,10 +17,12 @@ import { uptimeChecks } from "../features/uptime/data";
 export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/settings/",
 )({
-  validateSearch: (s: Record<string, unknown>): { edit?: TextSettingKey } =>
-    typeof s.edit === "string" && isTextSettingKey(s.edit)
-      ? { edit: s.edit }
-      : {},
+  validateSearch: (s: Record<string, unknown>): { edit?: TextSettingKey } => ({
+    edit:
+      typeof s.edit === "string" && isTextSettingKey(s.edit)
+        ? s.edit
+        : undefined,
+  }),
   loader: async ({ context: { queryClient }, params }) => {
     const ref = servicePath(params);
     const overview = await queryClient.ensureQueryData(

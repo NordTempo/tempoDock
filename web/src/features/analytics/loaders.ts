@@ -101,21 +101,30 @@ export type AnalyticsSearch = {
   f?: string[];
 };
 
-/** Reads the shared search from a URL's, dropping what isn't valid. */
+/**
+ * Reads the shared search from a URL's, dropping what isn't valid. Every
+ * key is named, undefined when dropped: a route's search is its
+ * validateSearch's result laid over the raw parameters, so a key left out
+ * keeps its raw value.
+ */
 export const analyticsSearch = (
   s: Record<string, unknown>,
 ): AnalyticsSearch => ({
-  ...(typeof s.site === "string" && { site: s.site }),
-  ...(statsRanges.includes(s.range as StatsRange) && {
-    range: s.range as StatsRange,
-  }),
+  site: typeof s.site === "string" ? s.site : undefined,
+  range: statsRanges.includes(s.range as StatsRange)
+    ? (s.range as StatsRange)
+    : undefined,
   // One filter may come as a plain string (?f=country:is:NO), more as a list.
-  ...((Array.isArray(s.f) || typeof s.f === "string") && {
-    f: [s.f]
-      .flat()
-      .filter((f): f is string => typeof f === "string" && !!parseFilter(f)),
-  }),
+  f:
+    Array.isArray(s.f) || typeof s.f === "string"
+      ? [s.f]
+          .flat()
+          .filter((f): f is string => typeof f === "string" && !!parseFilter(f))
+      : undefined,
 });
+
+/** The device classes a view can narrow to (?device=). */
+export const devices: readonly string[] = ["desktop", "mobile", "tablet"];
 
 /** The vitals a view charts. */
 export const vitals = ["lcp", "inp", "cls", "fcp", "ttfb"] as const;

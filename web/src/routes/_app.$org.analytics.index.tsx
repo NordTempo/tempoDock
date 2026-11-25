@@ -24,10 +24,11 @@ import { Page, PageBar, Panel, SectionHead } from "../ui/kit";
 // are listed too, with the way to turn analytics on: a domain's switch on
 // its service's Domains tab.
 export const Route = createFileRoute("/_app/$org/analytics/")({
-  validateSearch: (s: Record<string, unknown>): { range?: OrgSitesRange } =>
-    orgSitesRanges.includes(s.range as OrgSitesRange)
-      ? { range: s.range as OrgSitesRange }
-      : {},
+  validateSearch: (s: Record<string, unknown>): { range?: OrgSitesRange } => ({
+    range: orgSitesRanges.includes(s.range as OrgSitesRange)
+      ? (s.range as OrgSitesRange)
+      : undefined,
+  }),
   loaderDeps: ({ search: { range } }) => ({
     range: range ?? sitesRange.get(),
   }),

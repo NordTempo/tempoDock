@@ -15,7 +15,7 @@ export const Route = createFileRoute(
 )({
   validateSearch: (s: Record<string, unknown>): Search => ({
     ...analyticsSearch(s),
-    ...(typeof s.funnel === "string" && s.funnel && { funnel: s.funnel }),
+    funnel: typeof s.funnel === "string" && s.funnel ? s.funnel : undefined,
   }),
   component: Funnels,
 });

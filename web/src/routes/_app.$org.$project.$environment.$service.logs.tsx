@@ -16,7 +16,25 @@ type LogSearch = {
   /** Backlog lines, when not the default 500; 0 for all. */
   tail?: number;
   since?: string;
+  /** A range picked on the chart, in ms; both or neither. */
+  from?: number;
+  to?: number;
 };
+
+/** A time a Date can hold, in ms (ECMAScript's ±8.64e15). */
+const isTime = (ms: unknown): ms is number =>
+  typeof ms === "number" && Number.isFinite(ms) && Math.abs(ms) <= 8.64e15;
+
+/**
+ * A chart range from the address, when both ends are times and in order.
+ * Both keys always: a route's search is its validateSearch's result laid
+ * over the raw parameters, so one left out keeps its raw value.
+ */
+function rangeOf({ from, to }: Record<string, unknown>) {
+  return isTime(from) && isTime(to) && from < to
+    ? { from, to }
+    : { from: undefined, to: undefined };
+}
 
 // Full-height logs. Filters live in the URL so a filtered view can be shared.
 export const Route = createFileRoute(
@@ -44,6 +62,7 @@ export const Route = createFileRoute(
       typeof search.since === "string" && search.since
         ? search.since
         : undefined,
+    ...rangeOf(search),
   }),
   component: LogsTab,
 });
@@ -61,6 +80,10 @@ function LogsTab() {
     follow: search.follow ?? true,
     tail: search.tail ?? noFilter.tail,
     since: search.since ?? "",
+    range:
+      search.from !== undefined && search.to !== undefined
+        ? [search.from, search.to]
+        : null,
   };
 
   // The same view from a terminal.
@@ -91,6 +114,8 @@ function LogsTab() {
             follow: next.follow ? undefined : false,
             tail: next.tail === noFilter.tail ? undefined : next.tail,
             since: next.since || undefined,
+            from: next.range?.[0],
+            to: next.range?.[1],
           },
           replace: true,
           // The window scrolls the log: a filter change keeps its place.

@@ -9,8 +9,9 @@ import { rememberProject } from "../shell/location";
 // then the settings of one environment, the one ?env= names (the
 // header's switch). The project's own are on Project settings.
 export const Route = createFileRoute("/_app/$org/$project/settings")({
-  validateSearch: (search: Record<string, unknown>): { env?: string } =>
-    typeof search.env === "string" && search.env ? { env: search.env } : {},
+  validateSearch: (search: Record<string, unknown>): { env?: string } => ({
+    env: typeof search.env === "string" && search.env ? search.env : undefined,
+  }),
   loader: ({ context: { queryClient }, params }) =>
     queryClient.ensureQueryData(queries.overview(params.project)),
   component: ProjectSettings,

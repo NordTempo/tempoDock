@@ -7,8 +7,9 @@ import { ConsoleTabs } from "../features/console/ConsoleTabs";
 // server tunnels, and zones shared with organizations; ?tab=redirects
 // holds the platform's redirects (ADR 0068).
 export const Route = createFileRoute("/_app/console/cloudflare")({
-  validateSearch: (s: Record<string, unknown>): { tab?: "redirects" } =>
-    s.tab === "redirects" ? { tab: "redirects" } : {},
+  validateSearch: (s: Record<string, unknown>): { tab?: "redirects" } => ({
+    tab: s.tab === "redirects" ? "redirects" : undefined,
+  }),
   loader: ({ context: { queryClient } }) =>
     Promise.all([
       queryClient.ensureQueryData(cloudflareQuery("platform")),

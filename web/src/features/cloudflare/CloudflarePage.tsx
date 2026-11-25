@@ -183,7 +183,7 @@ function Tabs() {
   return (
     <nav
       aria-label="Cloudflare"
-      className="tabs flex gap-0.5 border-b border-line px-4 py-2 sm:px-7"
+      className="tabs flex gap-0.5 overflow-x-auto border-b border-line px-4 py-2 whitespace-nowrap sm:px-7"
     >
       {tabs.map((t) =>
         scope === "platform" ? (

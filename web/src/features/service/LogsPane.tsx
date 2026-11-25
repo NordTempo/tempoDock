@@ -37,6 +37,11 @@ export type LogFilter = {
   tail: number;
   /** Only lines newer than this: 10m, 1h, 24h (`dock logs --since`). */
   since: string;
+  /**
+   * Only the loaded lines in this window (ms, the end exclusive), picked
+   * by dragging over the chart; null for all of them.
+   */
+  range: readonly [from: number, to: number] | null;
 };
 
 export const noFilter: LogFilter = {
@@ -47,6 +52,7 @@ export const noFilter: LogFilter = {
   follow: true,
   tail: 500,
   since: "",
+  range: null,
 };
 
 const tails = [100, 500, 2000, 0];
@@ -66,12 +72,14 @@ const OPEN_CAP = 20;
 /** Fields the time column already shows, left out of the row (not its details). */
 const timeKeys = new Set(["time", "ts", "timestamp", "@timestamp"]);
 
-// The column widths, shared by the header and the rows so they line up.
+// The column widths, shared by the header and the rows so they line up:
+// in the rows' mono font, so ch is the same width in both tables. Phones
+// leave the fields out (cells hidden below sm) for the message's room.
 const cols = (
   <colgroup>
-    <col className="w-[calc(9ch+2.5rem)]" />
-    <col className="w-[8ch]" />
-    <col className="w-[45%]" />
+    <col className="w-[calc(9ch+2.5rem)] font-mono text-xs" />
+    <col className="w-[8ch] font-mono text-xs" />
+    <col className="w-full sm:w-[45%]" />
     <col />
   </colgroup>
 );
@@ -177,7 +185,10 @@ export function LogsPane({
   );
   const build = useBuildLog(ref, filter.build ? release : null);
   const stream: LogStream = filter.build ? build : app;
-  const followable = live || filter.build;
+  // The build has no chart, so no range; a range ends in the past, so
+  // there's nothing to follow while it's set.
+  const range = filter.build ? null : filter.range;
+  const followable = (live || filter.build) && !range;
 
   useShortcuts([
     {
@@ -195,6 +206,8 @@ export function LogsPane({
     for (const line of stream.lines) {
       if (matches && !matches(line.text)) continue;
       const row = rowOf(line);
+      if (range && (row.at === null || row.at < range[0] || row.at >= range[1]))
+        continue;
       counts.all++;
       if (row.level) counts[row.level]++;
       if (filter.level && row.level !== filter.level) continue;
@@ -202,15 +215,20 @@ export function LogsPane({
     }
     // The stream is newest first; read top to bottom like a terminal.
     return { shown: out.reverse(), counts };
-  }, [stream.lines, filter.level, filter.query]);
+  }, [stream.lines, filter.level, filter.query, range]);
 
   // Following keeps the newest line in view.
   const newest = shown.at(-1)?.line.key;
   useEffect(() => {
-    if (filter.follow && newest) {
+    if (filter.follow && followable && newest) {
       window.scrollTo({ top: document.documentElement.scrollHeight });
     }
-  }, [filter.follow, newest]);
+  }, [filter.follow, followable, newest]);
+  // A new range reads from its start.
+  const [from, to] = range ?? [];
+  useEffect(() => {
+    if (from !== undefined) window.scrollTo({ top: 0 });
+  }, [from, to]);
 
   // The stream's newest line when following stopped, to count what came
   // since. The whole stream, not the shown lines, so a filter changed
@@ -334,7 +352,7 @@ export function LogsPane({
         ? "Not deployed yet."
         : stream.live
           ? "Waiting for output."
-          : filter.query || filter.level
+          : filter.query || filter.level || range
             ? "No lines match."
             : "No output."}
     </div>
@@ -425,6 +443,18 @@ export function LogsPane({
               </button>
             ))}
           </fieldset>
+          {range && (
+            <button
+              type="button"
+              aria-label={`Lines from ${clockSec(new Date(range[0]).toISOString())} to ${clockSec(new Date(range[1]).toISOString())}: show every line again`}
+              title="Show every line again"
+              onClick={() => onFilter({ ...filter, range: null, follow: true })}
+              className="btn sm font-mono"
+            >
+              {clockSec(new Date(range[0]).toISOString())} to{" "}
+              {clockSec(new Date(range[1]).toISOString())} ×
+            </button>
+          )}
           {!filter.build && (
             <span className="flex items-center gap-1.5 text-xs text-sec">
               <select
@@ -471,7 +501,14 @@ export function LogsPane({
         </div>
         {!filter.build && (
           <>
-            <LogChart lines={shown} seen={seen} onJump={jump} />
+            <LogChart
+              lines={shown}
+              seen={seen}
+              onJump={jump}
+              onRange={(from, to) =>
+                onFilter({ ...filter, range: [from, to], follow: false })
+              }
+            />
             {shown.length > 0 && (
               <table className="-mx-4 w-[calc(100%+2rem)] table-fixed sm:-mx-7 sm:w-[calc(100%+3.5rem)]">
                 {cols}
@@ -480,7 +517,9 @@ export function LogsPane({
                     <th className="border-0 py-1.5 pl-4 sm:pl-7">Time</th>
                     <th className="border-0 py-1.5">Level</th>
                     <th className="border-0 py-1.5">Message</th>
-                    <th className="border-0 py-1.5">Fields</th>
+                    <th className="hidden border-0 py-1.5 sm:table-cell">
+                      Fields
+                    </th>
                   </tr>
                 </thead>
               </table>
@@ -621,7 +660,9 @@ const LogTableRow = memo(function LogTableRow({
         {structured ? (
           <>
             <td className={`${cell} truncate text-fg`}>{log.msg}</td>
-            <td className={`${cell} truncate pr-4 sm:pr-7`}>
+            <td
+              className={`${cell} hidden truncate pr-4 sm:table-cell sm:pr-7`}
+            >
               {log.fields
                 .filter(([key]) => !timeKeys.has(key))
                 .map(([key, value], i) => (

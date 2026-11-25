@@ -15,7 +15,7 @@ import { Page, PageBar } from "../ui/kit";
 export const Route = createFileRoute("/_app/$org/inbox")({
   validateSearch: (s: Record<string, unknown>): { request?: number } => {
     const id = Number(s.request);
-    return Number.isInteger(id) && id > 0 ? { request: id } : {};
+    return { request: Number.isInteger(id) && id > 0 ? id : undefined };
   },
   loader: async ({ context: { queryClient } }) => {
     // Admins' access requests load with the alerts, not after them.

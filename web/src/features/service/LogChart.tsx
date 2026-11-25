@@ -1,5 +1,11 @@
-import { type KeyboardEvent, useMemo, useState } from "react";
-import { clock } from "../../ui/format";
+import {
+  type KeyboardEvent,
+  type PointerEvent,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { clock, clockSec } from "../../ui/format";
 import type { LogLevel } from "./logLevel";
 
 const BARS = 60;
@@ -7,22 +13,40 @@ const BARS = 60;
 /** A line as the chart needs it: when, and how logLevel reads it. */
 export type ChartLine = { at: number | null; level: LogLevel };
 
+/** One bar's time, from inclusive to exclusive, in ms. */
+type Slice = readonly [from: number, to: number];
+
+/**
+ * The bars a drag (or Shift and arrows) has covered so far, as times: new
+ * lines rescale the bars, and the pick keeps the times it was made on.
+ */
+type Pick = {
+  anchor: Slice;
+  head: Slice;
+  /** The pointer dragging it; none for a keyboard pick. */
+  pointer?: number;
+};
+
 /**
  * The logs tab's volume over time: a bar per slice of the lines' span,
  * warnings and errors stacked on top in their colors. `seen` outlines the
- * time range on screen; a click on a bar jumps the list to its first line.
- * From the keyboard the bars are one stop: arrows move between them,
- * Enter jumps.
+ * time range on screen. A click on a bar jumps the list to its first line;
+ * a drag across bars zooms into that range. From the keyboard the bars
+ * are one stop: arrows move between them, Shift and arrows pick a range,
+ * Enter jumps or zooms, Escape drops the pick.
  */
 export function LogChart({
   lines,
   seen,
   onJump,
+  onRange,
 }: {
   /** Oldest first. */
   lines: readonly ChartLine[];
   seen: readonly [from: number, to: number] | null;
   onJump: (at: number) => void;
+  /** From inclusive, to exclusive, in ms. */
+  onRange: (from: number, to: number) => void;
 }) {
   const chart = useMemo(() => {
     let start = Number.POSITIVE_INFINITY;
@@ -49,11 +73,45 @@ export function LogChart({
   }, [lines]);
   // The bar the keyboard is on; the newest until it moves.
   const [current, setCurrent] = useState(BARS - 1);
+  const [pick, setPick] = useState<Pick | null>(null);
+  // Bars that go away take their pointer handlers with them: drop the
+  // pick, or a drag cut short would block the next one.
+  useEffect(() => {
+    if (!chart) setPick(null);
+  }, [chart]);
   if (!chart) return null;
   const { start, span, bars, most } = chart;
   const height = (n: number) => `${(n / most) * 100}%`;
   const at = (i: number) => start + (span * i) / BARS;
+  const slice = (i: number): Slice => [at(i), at(i + 1)];
+  // Seconds once the chart covers less than ten minutes (a zoomed range).
+  const time = (ms: number) =>
+    (span < 600_000 ? clockSec : clock)(new Date(ms).toISOString());
+
+  // A pick of one bar jumps to it; a wider one zooms into its bars.
+  const finish = (p: Pick) => {
+    setPick(null);
+    if (p.anchor[0] === p.head[0]) return onJump(p.anchor[0]);
+    // Whole ms, rounded up at both ends so no line from the bar before
+    // gets in.
+    onRange(
+      Math.ceil(Math.min(p.anchor[0], p.head[0])),
+      Math.ceil(Math.max(p.anchor[1], p.head[1])),
+    );
+  };
+  // The bar under the pointer, wherever the drag has wandered.
+  const barAt = (e: PointerEvent<HTMLButtonElement>) => {
+    const box = e.currentTarget.parentElement?.getBoundingClientRect();
+    if (!box) return 0;
+    const i = Math.floor(((e.clientX - box.left) / box.width) * BARS);
+    return Math.min(BARS - 1, Math.max(0, i));
+  };
   const step = (e: KeyboardEvent<HTMLButtonElement>, i: number) => {
+    if (e.key === "Escape" && pick) {
+      e.preventDefault();
+      setPick(null);
+      return;
+    }
     const next =
       e.key === "ArrowLeft"
         ? i - 1
@@ -66,6 +124,11 @@ export function LogChart({
               : null;
     if (next === null || next < 0 || next >= BARS) return;
     e.preventDefault();
+    setPick(
+      e.shiftKey
+        ? { anchor: pick?.anchor ?? slice(i), head: slice(next) }
+        : null,
+    );
     setCurrent(next);
     const bar = e.currentTarget.parentElement?.children[next];
     if (bar instanceof HTMLElement) bar.focus();
@@ -74,14 +137,21 @@ export function LogChart({
     left: `${((seen[0] - start) / span) * 100}%`,
     width: `max(4px, ${((seen[1] - seen[0]) / span) * 100}%)`,
   };
+  const pickFrom = pick && Math.min(pick.anchor[0], pick.head[0]);
+  const pickTo = pick && Math.max(pick.anchor[1], pick.head[1]);
+  const picked = pickFrom !== null &&
+    pickTo !== null && {
+      left: `${((pickFrom - start) / span) * 100}%`,
+      width: `${((pickTo - pickFrom) / span) * 100}%`,
+    };
   return (
     <div className="pt-2.5 pb-1.5">
       <fieldset
         aria-label="Lines over time"
-        className="relative flex h-11 min-w-0 items-end gap-px"
+        className="relative flex h-11 min-w-0 select-none items-end gap-px"
       >
         {bars.map((b, i) => {
-          const label = `${clock(new Date(at(i)).toISOString())}: ${b.other + b.warn + b.error} lines${b.warn ? `, ${b.warn} warn` : ""}${b.error ? `, ${b.error} error` : ""}`;
+          const label = `${time(at(i))}: ${b.other + b.warn + b.error} lines${b.warn ? `, ${b.warn} warn` : ""}${b.error ? `, ${b.error} error` : ""}`;
           return (
             <button
               // Bars are positions in time, never reordered.
@@ -89,10 +159,36 @@ export function LogChart({
               type="button"
               tabIndex={i === current ? 0 : -1}
               aria-label={label}
-              title={label}
+              title={`${label}. Click to jump, drag to zoom.`}
               onKeyDown={(e) => step(e, i)}
               onFocus={() => setCurrent(i)}
-              onClick={() => onJump(at(i))}
+              onPointerDown={(e) => {
+                // A second finger can't take over a drag; a drag can
+                // replace a keyboard pick.
+                if (e.button !== 0 || pick?.pointer !== undefined) return;
+                // Moves outside the bar still reach it until release.
+                e.currentTarget.setPointerCapture(e.pointerId);
+                const bar = slice(i);
+                setPick({ anchor: bar, head: bar, pointer: e.pointerId });
+              }}
+              onPointerMove={(e) => {
+                // Only the drag's own pointer: a hover leaves a pick alone.
+                if (pick?.pointer !== e.pointerId) return;
+                const head = slice(barAt(e));
+                if (head[0] !== pick.head[0]) setPick({ ...pick, head });
+              }}
+              onPointerUp={(e) => {
+                if (pick?.pointer === e.pointerId) finish(pick);
+              }}
+              onPointerCancel={(e) => {
+                if (pick?.pointer === e.pointerId) setPick(null);
+              }}
+              // A pointer finishes on release; this is Enter and Space.
+              onClick={(e) => {
+                if (e.detail === 0) {
+                  finish(pick ?? { anchor: slice(i), head: slice(i) });
+                }
+              }}
               className="flex h-full min-w-0 flex-1 flex-col-reverse hover:bg-hover"
             >
               <span className="bg-edge" style={{ height: height(b.other) }} />
@@ -101,19 +197,24 @@ export function LogChart({
             </button>
           );
         })}
-        {frame && (
+        {frame && !pick && (
           <span
             aria-hidden
             className="pointer-events-none absolute -top-1 -bottom-0.5 rounded-ctl border border-mut"
             style={frame}
           />
         )}
+        {picked && (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute -top-1 -bottom-0.5 rounded-ctl border border-fg bg-fg/10"
+            style={picked}
+          />
+        )}
       </fieldset>
       <div className="mt-1 flex justify-between font-mono text-tag text-mut">
         {[0, 1, 2, 3, 4].map((k) => (
-          <span key={k}>
-            {clock(new Date(start + (span * k) / 4).toISOString())}
-          </span>
+          <span key={k}>{time(start + (span * k) / 4)}</span>
         ))}
       </div>
     </div>

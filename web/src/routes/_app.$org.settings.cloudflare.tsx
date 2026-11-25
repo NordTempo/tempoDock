@@ -6,8 +6,9 @@ import { cloudflareQuery, redirectsQuery } from "../features/cloudflare/data";
 // zones, and its redirects (ADR 0068, ?tab=redirects). The platform's
 // are the console's.
 export const Route = createFileRoute("/_app/$org/settings/cloudflare")({
-  validateSearch: (s: Record<string, unknown>): { tab?: "redirects" } =>
-    s.tab === "redirects" ? { tab: "redirects" } : {},
+  validateSearch: (s: Record<string, unknown>): { tab?: "redirects" } => ({
+    tab: s.tab === "redirects" ? "redirects" : undefined,
+  }),
   loader: ({ context: { queryClient } }) =>
     Promise.all([
       queryClient.ensureQueryData(cloudflareQuery("org")),
