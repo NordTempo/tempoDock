@@ -260,18 +260,20 @@ func TestRepoEnvAddressing(t *testing.T) {
 }
 
 // The prelude fails a job whose repository doesn't answer with
-// UnreachableExit and a message naming the endpoint, and lets one that
-// answers (even "doesn't exist", restic's exit 10) go on to init. restic
-// is a stub; the probe's deadline is cut to a second.
+// UnreachableExit and a message naming the endpoint, lets one that
+// answers (even "doesn't exist", restic's exit 10) go on to init, and
+// removes an existing one's stale locks, going on when that fails.
+// restic is a stub; the probe's deadline is cut to a second.
 func TestPreludeReach(t *testing.T) {
 	for name, tc := range map[string]struct {
 		stub     string
 		wantExit int
 		wantOut  string
 	}{
-		"unreachable": {stub: "sleep 30", wantExit: UnreachableExit, wantOut: "can't reach the backup storage at http://127.0.0.1:9000/bucket from a backup job"},
-		"new":         {stub: `[ "$1" = cat ] && exit 10; echo "ran $1" >&2`, wantOut: "ran init"},
-		"exists":      {stub: `[ "$1" = cat ] && exit 0; echo "ran $1" >&2`},
+		"unreachable":   {stub: "sleep 30", wantExit: UnreachableExit, wantOut: "can't reach the backup storage at http://127.0.0.1:9000/bucket from a backup job"},
+		"new":           {stub: `[ "$1" = cat ] && exit 10; echo "ran $1" >&2`, wantOut: "ran init\n"},
+		"exists":        {stub: `[ "$1" = cat ] && exit 0; echo "ran $1" >&2`, wantOut: "ran unlock\n"},
+		"unlock failed": {stub: `[ "$1" = cat ] && exit 0; echo "ran $1" >&2; exit 1`, wantOut: "ran unlock\n"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -288,7 +290,7 @@ func TestPreludeReach(t *testing.T) {
 			} else if err != nil {
 				t.Fatal(err)
 			}
-			if code != tc.wantExit || strconv.Itoa(UnreachableExit) != unreachableExit || !strings.Contains(string(out), tc.wantOut) || (tc.wantOut == "" && len(out) > 0) {
+			if code != tc.wantExit || strconv.Itoa(UnreachableExit) != unreachableExit || !strings.Contains(string(out), tc.wantOut) || (tc.wantExit == 0 && string(out) != tc.wantOut) {
 				t.Fatalf("exit %d, output %q; want exit %d with %q", code, out, tc.wantExit, tc.wantOut)
 			}
 		})
