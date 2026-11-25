@@ -195,8 +195,9 @@ there: `internal/core`, `internal/store`, `internal/node`, `internal/cli`,
 - CodeRabbit reviews every PR (`.coderabbit.yaml`). Its `CodeRabbit`
   check shows up about a minute after a push, so `gh pr checks --watch`
   started right away can end without it. Only a check titled
-  `Finished` means a review happened: skipped, paused and rate-limited
-  reviews pass without one, and its PR comment says why. Comment
+  `Finished` (or a `Review completed` status) means a review happened:
+  skipped, paused and rate-limited reviews pass without one, and its PR
+  comment says why. Comment
   `@coderabbitai full review` (or `resume`) once it can run, or if no
   check appears within a few minutes; a PR that only touches files the
   config excludes has nothing to review. Then read its inline comments
