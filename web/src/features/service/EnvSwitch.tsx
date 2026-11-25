@@ -39,7 +39,8 @@ export function EnvSwitch({
   const link = (
     { env, view }: { env: Environment; view: ServiceView },
     className: string,
-    onClick?: () => void,
+    /** Set inside the previews menu: closes it, and makes the link an item. */
+    close?: () => void,
   ) => {
     const here = env.name === environment;
     const { tone } = serviceState(view);
@@ -49,7 +50,8 @@ export function EnvSwitch({
         to={tabsFor(view).includes(tab) ? tab.to : serviceTabs[0].to}
         params={{ org, project, environment: env.name, service }}
         aria-current={here ? "page" : undefined}
-        onClick={onClick}
+        onClick={close}
+        role={close ? "menuitem" : undefined}
         className={className}
       >
         {env.name}
