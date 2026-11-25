@@ -142,10 +142,11 @@ there: `internal/core`, `internal/store`, `internal/node`, `internal/cli`,
   permission its work needs in `internal/mcp/perms.go`.
 - Changing the API: types in `internal/apitypes`, handlers in
   `internal/api`, then `make generate` so `web/openapi.json` and
-  `web/src/api/schema.d.ts` stay in sync (CI checks). An operation that
-  makes the daemon connect to an address a user gives, changes how
-  people sign in, or takes in a user's files, gets a line in `demoRefused` (internal/api/demo.go):
-  the public demo (ADR 0100) must not do it for strangers.
+  `web/src/api/schema.d.ts` stay in sync (CI checks). The public demo
+  (ADR 0100) is view-only: it refuses every operation but GETs and
+  `demoAllowed` (internal/api/demo.go). So a GET never changes anything
+  or connects to an address a user gives, and a read sent as POST goes
+  in `demoAllowed`.
 
 ## Go conventions
 

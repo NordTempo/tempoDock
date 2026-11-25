@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-// A misspelled operation in demoRefused would let the demo do it: every
-// one must be an operation of the API.
-func TestDemoRefusesRealOperations(t *testing.T) {
+// demoAllowed names the writes the view-only demo lets through: each must
+// be an API operation, and not a GET (GETs need no entry).
+func TestDemoAllowsRealOperations(t *testing.T) {
 	spec, err := Spec()
 	if err != nil {
 		t.Fatal(err)
@@ -20,15 +20,18 @@ func TestDemoRefusesRealOperations(t *testing.T) {
 	if err := json.Unmarshal(spec, &doc); err != nil {
 		t.Fatal(err)
 	}
-	ops := map[string]bool{}
+	method := map[string]string{}
 	for _, item := range doc.Paths {
-		for _, op := range item {
-			ops[op.OperationID] = true
+		for m, op := range item {
+			method[op.OperationID] = m
 		}
 	}
-	for id := range demoRefused {
-		if !ops[id] {
-			t.Errorf("demoRefused names %q, which isn't an API operation", id)
+	for id := range demoAllowed {
+		switch method[id] {
+		case "":
+			t.Errorf("demoAllowed names %q, which isn't an API operation", id)
+		case "get":
+			t.Errorf("demoAllowed names %q, a GET: the demo allows GETs anyway", id)
 		}
 	}
 }

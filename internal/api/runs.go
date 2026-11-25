@@ -62,7 +62,7 @@ func registerRuns(s *Server, a huma.API, mux *http.ServeMux) {
 	}) (*out[apitypes.CommandRun], error) {
 		return reply(s.core.GetRun(ctx, actor, in.ref(), in.ID))
 	})
-	mux.HandleFunc("GET "+servicePathT+"/run", s.streamRun)
+	mux.HandleFunc("GET "+servicePathT+"/run", s.demoOff(s.streamRun))
 }
 
 // streamRun serves one streamed command: authenticate, open the run in

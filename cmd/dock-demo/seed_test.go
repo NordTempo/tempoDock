@@ -26,7 +26,7 @@ import (
 
 // The seed runs through the real API on the fake runtime, as in the demo,
 // so a change to the API it calls fails here. Once seeded the demo signs
-// visitors in and refuses what demoRefused lists.
+// visitors in, shows them everything and lets them change nothing.
 func TestSeed(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -108,15 +108,11 @@ func TestSeed(t *testing.T) {
 	if err := v.do(ctx, http.MethodGet, "/projects", nil, &projects); err != nil || len(projects) != 3 {
 		t.Fatalf("projects: %v %v", projects, err)
 	}
-	// The shared account stays as it is; nothing goes to other hosts.
-	if got := status(v.do(ctx, http.MethodPost, "/me/password", apitypes.ChangePasswordRequest{NewPassword: "another long password"}, nil)); got != http.StatusForbidden {
-		t.Fatalf("password change: %d, want 403", got)
+	// View-only: nothing changes, and signing out still works.
+	if got := status(v.do(ctx, http.MethodPost, "/projects", apitypes.CreateProjectRequest{Name: "mine"}, nil)); got != http.StatusForbidden {
+		t.Fatalf("create a project: %d, want 403", got)
 	}
-	if got := status(v.do(ctx, http.MethodPost, "/alerts/channels", apitypes.CreateAlertChannelRequest{Name: "hook", Kind: apitypes.ChannelWebhook, URL: "https://hooks.example.com/x"}, nil)); got != http.StatusForbidden {
-		t.Fatalf("webhook channel: %d, want 403", got)
-	}
-	// Everything else works.
-	if err := v.do(ctx, http.MethodPost, "/projects", apitypes.CreateProjectRequest{Name: "mine"}, nil); err != nil {
+	if err := v.do(ctx, http.MethodPost, "/auth/logout", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 }
