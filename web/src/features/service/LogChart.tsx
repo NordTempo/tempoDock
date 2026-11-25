@@ -12,8 +12,14 @@ const BARS = 60;
 /** A line as the chart needs it: when, and how logLevel reads it. */
 export type ChartLine = { at: number | null; level: LogLevel };
 
-/** The bars a drag (or Shift and arrows) has covered so far. */
-type Pick = { anchor: number; head: number };
+/** One bar's time, from inclusive to exclusive, in ms. */
+type Slice = readonly [from: number, to: number];
+
+/**
+ * The bars a drag (or Shift and arrows) has covered so far, as times: new
+ * lines rescale the bars, and the pick keeps the times it was made on.
+ */
+type Pick = { anchor: Slice; head: Slice };
 
 /**
  * The logs tab's volume over time: a bar per slice of the lines' span,
@@ -66,6 +72,7 @@ export function LogChart({
   const { start, span, bars, most } = chart;
   const height = (n: number) => `${(n / most) * 100}%`;
   const at = (i: number) => start + (span * i) / BARS;
+  const slice = (i: number): Slice => [at(i), at(i + 1)];
   // Seconds once the chart covers less than ten minutes (a zoomed range).
   const time = (ms: number) =>
     (span < 600_000 ? clockSec : clock)(new Date(ms).toISOString());
@@ -73,10 +80,12 @@ export function LogChart({
   // A pick of one bar jumps to it; a wider one zooms into its bars.
   const finish = (p: Pick) => {
     setPick(null);
-    if (p.anchor === p.head) return onJump(at(p.anchor));
+    if (p.anchor[0] === p.head[0]) return onJump(p.anchor[0]);
+    // Whole ms, rounded up at both ends so no line from the bar before
+    // gets in.
     onRange(
-      Math.floor(at(Math.min(p.anchor, p.head))),
-      Math.ceil(at(Math.max(p.anchor, p.head) + 1)),
+      Math.ceil(Math.min(p.anchor[0], p.head[0])),
+      Math.ceil(Math.max(p.anchor[1], p.head[1])),
     );
   };
   // The bar under the pointer, wherever the drag has wandered.
@@ -104,7 +113,11 @@ export function LogChart({
               : null;
     if (next === null || next < 0 || next >= BARS) return;
     e.preventDefault();
-    setPick(e.shiftKey ? { anchor: pick?.anchor ?? i, head: next } : null);
+    setPick(
+      e.shiftKey
+        ? { anchor: pick?.anchor ?? slice(i), head: slice(next) }
+        : null,
+    );
     setCurrent(next);
     const bar = e.currentTarget.parentElement?.children[next];
     if (bar instanceof HTMLElement) bar.focus();
@@ -113,10 +126,13 @@ export function LogChart({
     left: `${((seen[0] - start) / span) * 100}%`,
     width: `max(4px, ${((seen[1] - seen[0]) / span) * 100}%)`,
   };
-  const picked = pick && {
-    left: `${(Math.min(pick.anchor, pick.head) / BARS) * 100}%`,
-    width: `${((Math.abs(pick.anchor - pick.head) + 1) / BARS) * 100}%`,
-  };
+  const pickFrom = pick && Math.min(pick.anchor[0], pick.head[0]);
+  const pickTo = pick && Math.max(pick.anchor[1], pick.head[1]);
+  const picked = pickFrom !== null &&
+    pickTo !== null && {
+      left: `${((pickFrom - start) / span) * 100}%`,
+      width: `${((pickTo - pickFrom) / span) * 100}%`,
+    };
   return (
     <div className="pt-2.5 pb-1.5">
       <fieldset
@@ -139,19 +155,21 @@ export function LogChart({
                 if (e.button !== 0) return;
                 // Moves outside the bar still reach it until release.
                 e.currentTarget.setPointerCapture(e.pointerId);
-                setPick({ anchor: i, head: i });
+                const bar = slice(i);
+                setPick({ anchor: bar, head: bar });
               }}
               onPointerMove={(e) => {
-                const head = pick && barAt(e);
-                if (pick && head !== null && head !== pick.head) {
-                  setPick({ ...pick, head });
-                }
+                if (!pick) return;
+                const head = slice(barAt(e));
+                if (head[0] !== pick.head[0]) setPick({ ...pick, head });
               }}
               onPointerUp={() => pick && finish(pick)}
               onPointerCancel={() => setPick(null)}
               // A pointer finishes on release; this is Enter and Space.
               onClick={(e) => {
-                if (e.detail === 0) finish(pick ?? { anchor: i, head: i });
+                if (e.detail === 0) {
+                  finish(pick ?? { anchor: slice(i), head: slice(i) });
+                }
               }}
               className="flex h-full min-w-0 flex-1 flex-col-reverse hover:bg-hover"
             >

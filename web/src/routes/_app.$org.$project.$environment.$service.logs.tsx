@@ -21,11 +21,19 @@ type LogSearch = {
   to?: number;
 };
 
-/** A chart range from the address, when both ends are there and in order. */
+/** A time a Date can hold, in ms (ECMAScript's ±8.64e15). */
+const isTime = (ms: unknown): ms is number =>
+  typeof ms === "number" && Number.isFinite(ms) && Math.abs(ms) <= 8.64e15;
+
+/**
+ * A chart range from the address, when both ends are times and in order.
+ * Both keys are always returned: the router keeps raw parameters a route
+ * leaves out, so a dropped one must be set to undefined.
+ */
 function rangeOf({ from, to }: Record<string, unknown>) {
-  return typeof from === "number" && typeof to === "number" && from < to
+  return isTime(from) && isTime(to) && from < to
     ? { from, to }
-    : {};
+    : { from: undefined, to: undefined };
 }
 
 // Full-height logs. Filters live in the URL so a filtered view can be shared.
