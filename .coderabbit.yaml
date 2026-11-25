@@ -17,6 +17,8 @@ reviews:
   estimate_code_review_effort: false
   suggested_labels: false
   suggested_reviewers: false
+  # A review that errors fails its check instead of passing silently.
+  fail_commit_status: true
   auto_review:
     enabled: true
     drafts: false
