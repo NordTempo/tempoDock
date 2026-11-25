@@ -40,8 +40,10 @@ Both are on by default; one install-level switch turns them off
   An offline server's check waits for the pass after it reconnects.
 - Checks run one at a time inside the scheduler's pass, like backups, in
   the restic image with the backup jobs' limits (one core, the job
-  memory cap). restic's check takes a shared lock, so a manual backup
-  meanwhile still runs.
+  memory cap). restic's check takes an exclusive lock, so a manual
+  backup meanwhile waits for it (up to ten minutes). Every job first
+  removes the repository's stale locks (`restic unlock`): restic never
+  ignores one, so a job killed mid-run would fail every check after it.
 - Due when the last attempt on that repository started six and a half
   days ago or more, at the first backup hour after that. A repository
   never checked is due at the first backup hour after the daemon

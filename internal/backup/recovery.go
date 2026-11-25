@@ -14,12 +14,14 @@ const NewestMarker = "dock-newest-snapshots:"
 // NewestScript lists the newest snapshot of every set of tags in the
 // job's repository after NewestMarker, as "time", "tags" and "id" tokens
 // (ParseNewest): what a recovery restores (ADR 0098). It reads without a
-// lock: the server that held one may be gone, and nothing is written. A
+// lock and leaves the old server's locks alone (shell, not prelude):
+// that server may be gone, and nothing is written. A
 // repository that can't be opened fails the job with restic's own words.
 // Kept this small, a repository of well over a thousand services fits in
 // a job's output (node.MaxJobOutput), which the full JSON doesn't. It
 // runs in the restic image.
-const NewestScript = prelude + `[ "$rc" = 0 ] || $R cat config --no-lock >/dev/null
+const NewestScript = shell + `reach "$RESTIC_REPOSITORY" "$RESTIC_PASSWORD"
+[ "$rc" = 0 ] || $R cat config --no-lock >/dev/null
 echo ` + NewestMarker + `
 $R snapshots --json --no-lock --latest 1 --group-by tags | grep -oE '"(time|id)":"[^"]*"|"tags":\[[^]]*\]' || true
 `

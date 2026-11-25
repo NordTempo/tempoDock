@@ -281,14 +281,26 @@ const (
 	unreachableExit = "75"
 )
 
-// prelude sets up the shell (pipefail where it has it) and checks the
-// job's repository answers, leaving restic's exit code of reading its
-// config in $rc (0: it exists). $R is restic with the repository's
-// options (DOCK_RESTIC_OPTS: the bucket addressing), unquoted on use so
-// they split into arguments. reach REPOSITORY PASSWORD fails the job with
-// UnreachableExit when the probe is cut off: timeout's 124, or the
-// killed restic's 137 where busybox's timeout execs it in place.
-const prelude = `set -eu
+// shell sets up a job's shell (pipefail where it has it) and its two
+// functions. $R is restic with the repository's options
+// (DOCK_RESTIC_OPTS: the bucket addressing), unquoted on use so they
+// split into arguments.
+//
+// reach REPOSITORY PASSWORD checks the repository answers, leaving
+// restic's exit code of reading its config in $rc (0: it exists), and
+// fails the job with UnreachableExit when the probe is cut off: timeout's
+// 124, or the killed restic's 137 where busybox's timeout execs it in
+// place.
+//
+// unstale REPOSITORY PASSWORD removes the stale locks of a repository
+// that exists: those of a restic that ended without releasing them (a
+// job container removed while it ran, as RunJob does when its caller
+// gives up), which restic never ignores, so one left behind fails every
+// exclusive lock (check, prune) until removed. restic's unlock removes
+// only a lock nothing refreshed for 30 minutes (or of a dead process on
+// the same host), so a live job's lock stays. A failure is logged, not
+// fatal: the job's own lock then says what holds it.
+const shell = `set -eu
 if (set -o pipefail) 2>/dev/null; then set -o pipefail; fi
 R="` + BinDir + `/restic ${DOCK_RESTIC_OPTS:-}"
 T=""
@@ -301,7 +313,16 @@ reach() {
     exit ` + unreachableExit + ` ;;
   esac
 }
-reach "$RESTIC_REPOSITORY" "$RESTIC_PASSWORD"
+unstale() {
+  [ "$rc" = 0 ] || return 0
+  RESTIC_REPOSITORY="$1" RESTIC_PASSWORD="$2" $R unlock </dev/null >&2 || true
+}
+`
+
+// prelude starts every job that works on its repository: the shell,
+// then reach and unstale on the job's repository.
+const prelude = shell + `reach "$RESTIC_REPOSITORY" "$RESTIC_PASSWORD"
+unstale "$RESTIC_REPOSITORY" "$RESTIC_PASSWORD"
 `
 
 // initRepo creates the repository if its config couldn't be read (the
@@ -615,6 +636,7 @@ $R snapshots --json --retry-lock ` + RetryLock + ` | grep -oE '"(original|id)":"
 // Snapshots already copied are skipped. It runs in the restic image.
 const CopyScript = prelude + `target=$rc
 reach "$RESTIC_FROM_REPOSITORY" "$RESTIC_FROM_PASSWORD"
+unstale "$RESTIC_FROM_REPOSITORY" "$RESTIC_FROM_PASSWORD"
 if [ "$target" != 0 ]; then
   $R init --from-repo "$RESTIC_FROM_REPOSITORY" --copy-chunker-params >/dev/null
 fi
@@ -634,8 +656,9 @@ const CheckScript = prelude + `$R check --retry-lock ` + RetryLock + ` >&2
 const VerifySubset = "1G"
 
 // VerifyScript is the weekly repository check (ADR 0096): the whole
-// structure and VerifySubset of the data. restic's check takes a shared
-// lock, so a backup meanwhile still runs. It runs in the restic image.
+// structure and VerifySubset of the data. restic's check takes an
+// exclusive lock, so a backup meanwhile waits for it (RetryLock). It runs
+// in the restic image.
 const VerifyScript = prelude + `$R check --retry-lock ` + RetryLock + ` --read-data-subset=` + VerifySubset + `
 `
 
