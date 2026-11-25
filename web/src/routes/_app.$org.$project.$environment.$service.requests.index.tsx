@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { queries, servicePath, useService } from "../data/queries";
 import type { ServiceRef, ServiceTraffic } from "../data/types";
+import { RequestsTools } from "../features/service/RequestsTools";
 import { RangeSwitch, Stat } from "../features/stats/parts";
 import { BarChart } from "../features/traffic/BarChart";
 import {
@@ -68,25 +69,23 @@ function TrafficTab() {
   }
   return (
     <>
-      <section aria-labelledby="traffic" className="flex flex-col gap-5">
-        <SectionHead
-          id="traffic"
-          right={
-            <RangeSwitch
-              value={range}
-              options={trafficRanges}
-              onChange={(r) => {
-                trafficRange.set(r);
-                navigate({
-                  search: { range: r },
-                  replace: true,
-                });
-              }}
-            />
-          }
-        >
-          {trafficRangeLabel[range]}
-        </SectionHead>
+      <RequestsTools>
+        <RangeSwitch
+          value={range}
+          options={trafficRanges}
+          onChange={(r) => {
+            trafficRange.set(r);
+            navigate({
+              search: { range: r },
+              replace: true,
+            });
+          }}
+        />
+      </RequestsTools>
+      <section
+        aria-label={trafficRangeLabel[range]}
+        className="flex flex-col gap-5"
+      >
         <Totals traffic={traffic} />
         <Chart traffic={traffic} to={dataUpdatedAt} />
       </section>
