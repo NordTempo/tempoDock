@@ -19,7 +19,12 @@ type Slice = readonly [from: number, to: number];
  * The bars a drag (or Shift and arrows) has covered so far, as times: new
  * lines rescale the bars, and the pick keeps the times it was made on.
  */
-type Pick = { anchor: Slice; head: Slice };
+type Pick = {
+  anchor: Slice;
+  head: Slice;
+  /** The pointer dragging it; none for a keyboard pick. */
+  pointer?: number;
+};
 
 /**
  * The logs tab's volume over time: a bar per slice of the lines' span,
@@ -156,15 +161,20 @@ export function LogChart({
                 // Moves outside the bar still reach it until release.
                 e.currentTarget.setPointerCapture(e.pointerId);
                 const bar = slice(i);
-                setPick({ anchor: bar, head: bar });
+                setPick({ anchor: bar, head: bar, pointer: e.pointerId });
               }}
               onPointerMove={(e) => {
-                if (!pick) return;
+                // Only the drag's own pointer: a hover leaves a pick alone.
+                if (pick?.pointer !== e.pointerId) return;
                 const head = slice(barAt(e));
                 if (head[0] !== pick.head[0]) setPick({ ...pick, head });
               }}
-              onPointerUp={() => pick && finish(pick)}
-              onPointerCancel={() => setPick(null)}
+              onPointerUp={(e) => {
+                if (pick?.pointer === e.pointerId) finish(pick);
+              }}
+              onPointerCancel={(e) => {
+                if (pick?.pointer === e.pointerId) setPick(null);
+              }}
               // A pointer finishes on release; this is Enter and Space.
               onClick={(e) => {
                 if (e.detail === 0) {
