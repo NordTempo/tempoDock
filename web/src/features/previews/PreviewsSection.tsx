@@ -23,9 +23,9 @@ export const canAdmin = (s: Session | null, env: EnvRef) =>
   s?.scope === "admin" && canDeploy(s, env);
 
 /**
- * The project's Previews (ADR 0056, 0077), a summary: the services that
- * build pull requests (their switch is in each service's Settings ›
- * Source), the numbers of each environment previews are cloned from,
+ * The project's Previews (ADR 0056, 0077), the row of its Project
+ * settings: each service that builds pull requests (its switch is in its
+ * Settings › Source), the numbers of each environment previews copy,
  * edited here, and the open previews.
  */
 export function PreviewsSection({ project }: { project: string }) {
@@ -33,150 +33,132 @@ export function PreviewsSection({ project }: { project: string }) {
   const settings = useQuery(previewQueries.settings(project));
   const s = settings.data;
   return (
-    <div className="flex flex-col gap-5">
-      <section aria-labelledby="preview-services" className="flex flex-col">
-        <h3 id="preview-services" className="mb-1.5 font-semibold">
-          Services that build pull requests
-        </h3>
-        {settings.error && <ErrorText error={settings.error} />}
-        {s && s.services.length === 0 && (
-          <>
-            <p className="text-mut">
-              None. Turn previews on for a service connected to GitHub in its
-              Settings › Source, or with:
-            </p>
-            <code className="mt-1 font-mono text-xs text-sec">
-              dock service previews on -s web -e staging
-            </code>
-          </>
-        )}
-        {s && s.services.length > 0 && (
-          <ul className="border-line border-t">
-            {s.services.map((sp) => (
-              <li
-                key={`${sp.environment}/${sp.service}`}
-                className="border-soft border-b"
+    <div className="flex flex-col gap-3">
+      {settings.error && <ErrorText error={settings.error} />}
+      {s && s.services.length === 0 && (
+        <p className="text-mut">
+          off: turn them on for a service connected to GitHub, in its Settings ›
+          Source
+        </p>
+      )}
+      {s && s.services.length > 0 && (
+        <ul>
+          {s.services.map((sp) => (
+            <li key={`${sp.environment}/${sp.service}`}>
+              <Link
+                to="/$org/$project/$environment/$service/settings"
+                params={{
+                  org,
+                  project,
+                  environment: sp.environment,
+                  service: sp.service,
+                }}
+                hash="source"
+                className="flex items-baseline gap-2 py-0.5 text-sec no-underline hover:text-fg"
               >
-                <Link
-                  to="/$org/$project/$environment/$service/settings"
-                  params={{
-                    org,
-                    project,
-                    environment: sp.environment,
-                    service: sp.service,
-                  }}
-                  className="grid grid-cols-[110px_110px_minmax(0,1fr)_130px_minmax(0,160px)_14px] items-baseline gap-3 px-1 py-2 text-sec no-underline hover:bg-hover"
-                >
-                  <span className="truncate font-mono text-fg">
-                    {sp.service}
-                  </span>
-                  <span className="truncate text-mut">{sp.environment}</span>
-                  <span className="truncate font-mono">
-                    {sp.repo ? (
-                      <>
-                        {sp.repo} <span className="text-faint">·</span>{" "}
-                        {sp.branch}
-                        {sp.dir && (
-                          <>
-                            {" "}
-                            <span className="text-faint">·</span> {sp.dir}
-                          </>
-                        )}
-                      </>
-                    ) : sp.data !== "empty" ? (
-                      <span className="font-sans">
-                        starts with its {previewDataText(sp.data)}
+                <span className="min-w-0 flex-1">
+                  <span className="font-mono text-fg">{sp.service}</span>{" "}
+                  {sp.repo && sp.build ? (
+                    <>
+                      builds each pull request from{" "}
+                      <span className="font-mono">
+                        {sp.repo} · {sp.branch}
+                        {sp.dir && ` · ${sp.dir}`}
                       </span>
-                    ) : (
-                      <span className="font-sans text-mut">
-                        runs its current image
+                      {sp.allow_forks && ", forks too"}
+                    </>
+                  ) : sp.data !== "empty" ? (
+                    `starts with its ${previewDataText(sp.data)}`
+                  ) : (
+                    "runs its current image"
+                  )}
+                  <span className="text-mut">
+                    , as a copy of {sp.environment}
+                  </span>
+                  {sp.copy_variables.length > 0 && (
+                    <span className="text-mut">
+                      {" "}
+                      · copies{" "}
+                      <span className="font-mono">
+                        {sp.copy_variables.join(", ")}
                       </span>
-                    )}
-                  </span>
-                  <span className={sp.build ? "text-fg" : "text-mut"}>
-                    {sp.build
-                      ? sp.allow_forks
-                        ? "builds, forks too"
-                        : "builds"
-                      : "doesn't build"}
-                  </span>
-                  <span className="truncate font-mono text-mut text-xs">
-                    {sp.copy_variables.join(", ")}
-                  </span>
-                  <span aria-hidden className="text-faint">
-                    ›
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-        {s?.environments.map((e) => (
-          <EnvironmentPreviewsRow
-            key={e.environment}
-            env={{ project, environment: e.environment }}
-            numbers={e}
-          />
-        ))}
-      </section>
-
-      <section aria-labelledby="preview-open" className="flex flex-col">
-        <h3 id="preview-open" className="mb-1.5 font-semibold">
-          Open previews
-        </h3>
-        {s && s.previews.length === 0 && (
-          <p className="text-mut">No open previews.</p>
-        )}
-        {s && s.previews.length > 0 && (
-          <ul className="border-line border-t">
-            {s.previews.map((pv) => (
-              <li
-                key={pv.environment}
-                className="grid grid-cols-[80px_minmax(0,1fr)_90px_100px_minmax(0,1fr)_60px] items-baseline gap-3 border-soft border-b px-1 py-2"
-              >
-                <Link
-                  to="/$org/$project/$environment"
-                  params={{ org, project, environment: pv.environment }}
-                  className="font-mono"
-                >
-                  {pv.environment}
-                </Link>
-                <a
-                  href={httpsHref(pv.pull_url)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="truncate text-sec no-underline hover:text-fg"
-                >
-                  <span className="font-mono text-info">#{pv.number}</span>{" "}
-                  {pv.title}
-                </a>
-                <span className="truncate text-mut">{pv.author}</span>
-                <StateText state={previewStates[pv.status]} />
-                <span className="truncate font-mono text-xs">
-                  {pv.urls[0] && (
-                    <a
-                      href={pv.urls[0].url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-info"
-                    >
-                      {pv.urls[0].url.replace(/^https?:\/\//, "")}
-                    </a>
+                    </span>
                   )}
                 </span>
-                <span className="text-faint text-xs">{ago(pv.updated_at)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+                <span aria-hidden className="text-faint">
+                  ›
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      {s?.environments.map((e) => (
+        <EnvironmentPreviewsRow
+          key={e.environment}
+          env={{ project, environment: e.environment }}
+          numbers={e}
+        />
+      ))}
+      {s && s.services.length > 0 && (
+        <section aria-labelledby="preview-open" className="flex flex-col">
+          <h3 id="preview-open" className="mb-1 text-xs text-mut">
+            {s.previews.length === 0 ? "None open" : "Open"}
+          </h3>
+          {s.previews.length > 0 && (
+            <ul className="border-line border-t">
+              {s.previews.map((pv) => (
+                <li
+                  key={pv.environment}
+                  className="grid grid-cols-[80px_minmax(0,1fr)_90px_100px_minmax(0,1fr)_60px] items-baseline gap-3 border-soft border-b px-1 py-2"
+                >
+                  <Link
+                    to="/$org/$project/$environment"
+                    params={{ org, project, environment: pv.environment }}
+                    className="font-mono"
+                  >
+                    {pv.environment}
+                  </Link>
+                  <a
+                    href={httpsHref(pv.pull_url)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="truncate text-sec no-underline hover:text-fg"
+                  >
+                    <span className="font-mono text-info">#{pv.number}</span>{" "}
+                    {pv.title}
+                  </a>
+                  <span className="truncate text-mut">{pv.author}</span>
+                  <StateText state={previewStates[pv.status]} />
+                  <span className="truncate font-mono text-xs">
+                    {pv.urls[0] && (
+                      <a
+                        href={pv.urls[0].url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-info"
+                      >
+                        {pv.urls[0].url.replace(/^https?:\/\//, "")}
+                      </a>
+                    )}
+                  </span>
+                  <span className="text-faint text-xs">
+                    {ago(pv.updated_at)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
     </div>
   );
 }
 
 /**
  * One base environment's numbers on a line, with Edit: how many previews
- * may be open, when they sleep, and the shared values they copy.
+ * may be open, when they sleep, and the shared variables they copy
+ * (none, by default: a preview gets no secret nobody chose to give it).
  */
 function EnvironmentPreviewsRow({
   env,
@@ -197,12 +179,13 @@ function EnvironmentPreviewsRow({
     );
   }
   return (
-    <p className="mt-2.5 flex max-w-[860px] flex-wrap items-center gap-x-3 gap-y-1">
+    <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
       <span className="min-w-0 flex-1">
+        <span className="text-mut">Copies of </span>
         <span className="font-mono">{env.environment}</span>
-        <span className="text-mut"> · at most </span>
+        <span className="text-mut">: </span>
         {numbers.max_previews}
-        <span className="text-mut"> open · </span>
+        <span className="text-mut"> open at most · </span>
         {numbers.sleep_after_minutes > 0 ? (
           <>
             <span className="text-mut">sleep after </span>
@@ -211,11 +194,11 @@ function EnvironmentPreviewsRow({
         ) : (
           <span className="text-mut">never sleep</span>
         )}
-        {numbers.copy_shared.length > 0 && (
-          <>
-            <span className="text-mut"> · copies shared </span>
-            <span className="font-mono">{numbers.copy_shared.join(", ")}</span>
-          </>
+        <span className="text-mut"> · shared variables copied: </span>
+        {numbers.copy_shared.length > 0 ? (
+          <span className="font-mono">{numbers.copy_shared.join(", ")}</span>
+        ) : (
+          <span className="text-mut">none</span>
         )}
       </span>
       {admin && (
@@ -276,7 +259,7 @@ function EnvironmentPreviewsForm({
       aria-label={`Previews cloned from ${env.environment}`}
       onSubmit={submit}
       onKeyDown={(e) => e.key === "Escape" && onDone()}
-      className="mt-2.5 flex max-w-[860px] flex-col gap-2.5 border-line border-y py-3"
+      className="flex max-w-[860px] flex-col gap-2.5 border-line border-y py-3"
     >
       <span className="font-mono">{env.environment}</span>
       <div className="grid grid-cols-[140px_minmax(0,1fr)] items-center gap-x-3 gap-y-2">
@@ -313,7 +296,7 @@ function EnvironmentPreviewsForm({
           <span className="text-faint text-xs">without requests</span>
         </span>
         <label htmlFor="pv-copy" className="text-mut">
-          Shared values copied
+          Shared variables copied
         </label>
         <input
           id="pv-copy"

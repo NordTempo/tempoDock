@@ -18,6 +18,7 @@ const helpAt = {
   "/_app/$org": "start",
   "/_app/$org/$project/compare": "deploying",
   "/_app/$org/$project/settings": "services",
+  "/_app/$org/$project/project-settings": "services",
   "/_app/$org/$project/$environment/$service": "services",
   "/_app/$org/$project/$environment/$service/logs": "logs",
   "/_app/$org/$project/$environment/$service/requests": "requests",

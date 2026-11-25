@@ -1144,7 +1144,7 @@ function PreviewsEdit({
             : "never sleep"}{" "}
           ·{" "}
           <Link
-            to="/$org/$project/settings"
+            to="/$org/$project/project-settings"
             params={{ org, project: ref.project }}
             hash="previews"
           >

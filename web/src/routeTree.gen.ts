@@ -49,6 +49,7 @@ import { Route as AppConsoleUpdatesRouteImport } from './routes/_app.console.upd
 import { Route as AppConsoleUsersRouteImport } from './routes/_app.console.users'
 import { Route as AppOrgProjectIndexRouteImport } from './routes/_app.$org.$project.index'
 import { Route as AppOrgProjectCompareRouteImport } from './routes/_app.$org.$project.compare'
+import { Route as AppOrgProjectProjectSettingsRouteImport } from './routes/_app.$org.$project.project-settings'
 import { Route as AppOrgProjectSettingsRouteImport } from './routes/_app.$org.$project.settings'
 import { Route as AppOrgAnalyticsIndexRouteImport } from './routes/_app.$org.analytics.index'
 import { Route as AppOrgHelpIndexRouteImport } from './routes/_app.$org.help.index'
@@ -322,6 +323,12 @@ const AppOrgProjectCompareRoute = AppOrgProjectCompareRouteImport.update({
   path: '/$project/compare',
   getParentRoute: () => AppOrgRoute,
 } as any)
+const AppOrgProjectProjectSettingsRoute =
+  AppOrgProjectProjectSettingsRouteImport.update({
+    id: '/$project/project-settings',
+    path: '/$project/project-settings',
+    getParentRoute: () => AppOrgRoute,
+  } as any)
 const AppOrgProjectSettingsRoute = AppOrgProjectSettingsRouteImport.update({
   id: '/$project/settings',
   path: '/$project/settings',
@@ -776,6 +783,7 @@ export interface FileRoutesByFullPath {
   '/$org/': typeof AppOrgIndexRoute
   '/console/': typeof AppConsoleIndexRoute
   '/$org/$project/compare': typeof AppOrgProjectCompareRoute
+  '/$org/$project/project-settings': typeof AppOrgProjectProjectSettingsRoute
   '/$org/$project/settings': typeof AppOrgProjectSettingsRouteWithChildren
   '/$org/help/$topic': typeof AppOrgHelpTopicRoute
   '/$org/images/$id': typeof AppOrgImagesIdRoute
@@ -886,6 +894,7 @@ export interface FileRoutesByTo {
   '/$org': typeof AppOrgIndexRoute
   '/console': typeof AppConsoleIndexRoute
   '/$org/$project/compare': typeof AppOrgProjectCompareRoute
+  '/$org/$project/project-settings': typeof AppOrgProjectProjectSettingsRoute
   '/$org/help/$topic': typeof AppOrgHelpTopicRoute
   '/$org/images/$id': typeof AppOrgImagesIdRoute
   '/$org/images/ignores': typeof AppOrgImagesIgnoresRoute
@@ -997,6 +1006,7 @@ export interface FileRoutesById {
   '/_app/$org/': typeof AppOrgIndexRoute
   '/_app/console/': typeof AppConsoleIndexRoute
   '/_app/$org/$project/compare': typeof AppOrgProjectCompareRoute
+  '/_app/$org/$project/project-settings': typeof AppOrgProjectProjectSettingsRoute
   '/_app/$org/$project/settings': typeof AppOrgProjectSettingsRouteWithChildren
   '/_app/$org/help/$topic': typeof AppOrgHelpTopicRoute
   '/_app/$org/images/$id': typeof AppOrgImagesIdRoute
@@ -1113,6 +1123,7 @@ export interface FileRouteTypes {
     | '/$org/'
     | '/console/'
     | '/$org/$project/compare'
+    | '/$org/$project/project-settings'
     | '/$org/$project/settings'
     | '/$org/help/$topic'
     | '/$org/images/$id'
@@ -1223,6 +1234,7 @@ export interface FileRouteTypes {
     | '/$org'
     | '/console'
     | '/$org/$project/compare'
+    | '/$org/$project/project-settings'
     | '/$org/help/$topic'
     | '/$org/images/$id'
     | '/$org/images/ignores'
@@ -1333,6 +1345,7 @@ export interface FileRouteTypes {
     | '/_app/$org/'
     | '/_app/console/'
     | '/_app/$org/$project/compare'
+    | '/_app/$org/$project/project-settings'
     | '/_app/$org/$project/settings'
     | '/_app/$org/help/$topic'
     | '/_app/$org/images/$id'
@@ -1700,6 +1713,13 @@ declare module '@tanstack/react-router' {
       path: '/$project/compare'
       fullPath: '/$org/$project/compare'
       preLoaderRoute: typeof AppOrgProjectCompareRouteImport
+      parentRoute: typeof AppOrgRoute
+    }
+    '/_app/$org/$project/project-settings': {
+      id: '/_app/$org/$project/project-settings'
+      path: '/$project/project-settings'
+      fullPath: '/$org/$project/project-settings'
+      preLoaderRoute: typeof AppOrgProjectProjectSettingsRouteImport
       parentRoute: typeof AppOrgRoute
     }
     '/_app/$org/$project/settings': {
@@ -2462,6 +2482,7 @@ interface AppOrgRouteChildren {
   AppOrgSettingsRoute: typeof AppOrgSettingsRouteWithChildren
   AppOrgIndexRoute: typeof AppOrgIndexRoute
   AppOrgProjectCompareRoute: typeof AppOrgProjectCompareRoute
+  AppOrgProjectProjectSettingsRoute: typeof AppOrgProjectProjectSettingsRoute
   AppOrgProjectSettingsRoute: typeof AppOrgProjectSettingsRouteWithChildren
   AppOrgImagesIdRoute: typeof AppOrgImagesIdRoute
   AppOrgImagesIgnoresRoute: typeof AppOrgImagesIgnoresRoute
@@ -2487,6 +2508,7 @@ const AppOrgRouteChildren: AppOrgRouteChildren = {
   AppOrgSettingsRoute: AppOrgSettingsRouteWithChildren,
   AppOrgIndexRoute: AppOrgIndexRoute,
   AppOrgProjectCompareRoute: AppOrgProjectCompareRoute,
+  AppOrgProjectProjectSettingsRoute: AppOrgProjectProjectSettingsRoute,
   AppOrgProjectSettingsRoute: AppOrgProjectSettingsRouteWithChildren,
   AppOrgImagesIdRoute: AppOrgImagesIdRoute,
   AppOrgImagesIgnoresRoute: AppOrgImagesIgnoresRoute,

@@ -43,15 +43,20 @@ import { ArchiveConfirm } from "./ProjectSettings";
 
 const MovePanel = lazy(() => import("../move/MovePanel"));
 
-/** A project page's three tabs; Settings is last, as on every page. */
-export type ProjectTab = "services" | "activity" | "settings";
+/**
+ * A project page's tabs: Services, Activity and Settings for the picked
+ * environment, then Project settings for every environment (ADR 0099).
+ */
+export type ProjectTab = "services" | "activity" | "settings" | "project";
 
 /**
- * The header every project page shares (Services, Activity, Settings):
- * the name, the environment switch, the lock, New service and a "···"
- * menu with everything else, then the tabs. Under it, whatever the
- * picked environment needs said or asked: its lock, a running move, and
- * the forms its menu opens.
+ * The header every project page shares (Services, Activity, Settings,
+ * Project settings): the name, the environment switch, the lock, New
+ * service and a "···" menu with everything else, then the tabs. Under
+ * it, whatever the picked environment needs said or asked: its lock, a
+ * running move, and the forms its menu opens. On Project settings, which
+ * no environment scopes, the switch is greyed out and the environment's
+ * lock and strips stay away.
  */
 export function ProjectHeader({
   project,
@@ -139,6 +144,7 @@ export function ProjectHeader({
   const canSetSleep = admin && e?.kind === "non_production" && !pr;
   const envCli = (args: string) => `dock environment ${args} -p ${project}`;
   const locked = e?.lock && lockHolds(e.lock);
+  const projectWide = tab === "project";
 
   return (
     <>
@@ -155,6 +161,7 @@ export function ProjectHeader({
                 canNew={canNewEnv}
               />
               {e &&
+                !projectWide &&
                 (e.lock ? (
                   <span className="inline-flex items-center gap-1.5 rounded-tag border border-warn-edge bg-stage-bg px-2 py-0.5 text-xs text-warn-text">
                     <Icon name="lock" size={12} />
@@ -290,7 +297,7 @@ export function ProjectHeader({
         />
         <ProjectTabs project={project} environment={environment} tab={tab} />
       </div>
-      {e && (
+      {e && !projectWide && (
         <EnvironmentStrips env={env} open={open} onClose={() => setOpen(null)}>
           {e.moving && open !== "move" && (
             <MoveStrip
@@ -375,6 +382,7 @@ function EnvironmentSwitch({
   const navigate = useNavigate();
   const { environments } = useSuspenseQuery(queries.overview(project)).data;
   const tones = useProblemTones(project);
+  const off = tab === "project";
   const go = (name: string) =>
     tab === "settings"
       ? navigate({
@@ -395,12 +403,14 @@ function EnvironmentSwitch({
   return (
     <nav
       aria-label="Environment"
-      className="inline-flex overflow-hidden rounded-ctl border border-edge"
+      title={off ? "Project settings apply to every environment" : undefined}
+      className={`inline-flex overflow-hidden rounded-ctl border border-edge ${off ? "opacity-40" : ""}`}
     >
       {regular.map((e) => (
         <button
           key={e.environment.id}
           type="button"
+          disabled={off}
           aria-current={e.environment.name === environment}
           onClick={() => go(e.environment.name)}
           className={`${segment} not-first:border-l not-first:border-edge`}
@@ -409,7 +419,7 @@ function EnvironmentSwitch({
           <ToneDot tone={tones.get(e.environment.name)} />
         </button>
       ))}
-      {previews.length > 0 && (
+      {previews.length > 0 && !off && (
         <Menu
           label="Previews"
           className="border-l border-edge"
@@ -440,7 +450,7 @@ function EnvironmentSwitch({
           }
         </Menu>
       )}
-      {canNew && (
+      {canNew && !off && (
         <button
           type="button"
           aria-label="New environment"
@@ -467,7 +477,10 @@ function ToneDot({ tone }: { tone: Tone | undefined }) {
   );
 }
 
-/** Services, Activity and Settings, for the picked environment. */
+/**
+ * Services, Activity and Settings, for the picked environment; Project
+ * settings, for every environment, apart at the end.
+ */
 function ProjectTabs({
   project,
   environment,
@@ -514,7 +527,7 @@ function ProjectTabs({
           to="/$org/$project"
           params={{ org, project }}
           activeOptions={exact}
-          {...(tab !== "settings" && here)}
+          {...(tab === "services" && here)}
         >
           Services
         </Link>
@@ -538,6 +551,16 @@ function ProjectTabs({
             <span className="dot" />
           </span>
         )}
+      </Link>
+      <Link
+        to="/$org/$project/project-settings"
+        params={{ org, project }}
+        search={environment ? { env: environment } : {}}
+        activeOptions={exact}
+        className="ml-auto"
+        {...(tab === "project" && here)}
+      >
+        Project settings
       </Link>
     </nav>
   );

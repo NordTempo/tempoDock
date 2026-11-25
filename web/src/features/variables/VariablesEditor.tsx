@@ -129,10 +129,16 @@ function SharedVariables({ env, footer }: { env: EnvRef; footer?: ReactNode }) {
   ]);
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <SectionHead
-        id="vars"
-        aside="every service here sees them, unless it sets the same name"
-        right={
+      {/* The row's name (Settings › Shared variables) is the heading;
+          this line says how many and how they apply. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span id="vars" className="min-w-0 flex-1 text-sec">
+          {shared.length === 0
+            ? "none yet"
+            : `${shared.length}, for every service in ${env.environment}`}
+          <span className="text-mut"> · a service's own value wins</span>
+        </span>
+        <span className="flex gap-4 text-xs text-mut">
           <Actions
             isAdmin={isAdmin}
             revealAll={revealAll}
@@ -140,10 +146,8 @@ function SharedVariables({ env, footer }: { env: EnvRef; footer?: ReactNode }) {
             onPaste={() => setPasting(!pasting)}
             onAdd={focusNewLine}
           />
-        }
-      >
-        Shared with every service in {env.environment}
-      </SectionHead>
+        </span>
+      </div>
       {pasting && (
         <PasteEnv env={env} service={null} onDone={() => setPasting(false)} />
       )}

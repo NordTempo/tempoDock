@@ -163,13 +163,17 @@ for everything.
   activity, and a release opens under it in the shell. Requests' views
   (Traffic, Visitors, Traces) are underlined links under it, each with
   its own URL. The list is `web/src/features/service/tabs.ts`.
-- **Settings** (ADR 0099). Every Settings page (service, project,
-  organization) is one page with its sections listed on the left
+- **Settings** (ADR 0099). A service's and the organization's Settings
+  are one page with their sections listed on the left
   (`ui/sections.tsx`), named after the job: a service's Source, Running,
-  Deploys, Health and uptime, Domains, Backups, Archive; a project's
-  General, Variables, Previews, Placement, Log drains, Config file,
-  Archive. Each section has an anchor (`settings#domains`) that links
-  and search use. A setting has one home, at the level it applies to; a
+  Deploys, Health and uptime, Domains, Backups, Archive. A project's
+  are one row per setting (`SettingRow`), split by scope: the Settings
+  tab shows the environment picked in the header and nothing else
+  (Shared variables, Server, Log drains); Project settings, the last
+  tab, apart at the end of the row, holds what applies to every
+  environment (Name, Previews, New environments, Config file, Archive)
+  and greys the environment switch out. Each section has an anchor
+  (`settings#domains`) that links and search use. A setting has one home, at the level it applies to; a
   service's Variables tab shows what it sees, grouped by where each is
   set.
 - **Overview.** One column: status, the service in its other

@@ -62,7 +62,7 @@ export const servicePlaces = {
 export const projectPlaces = {
   compare: { to: "/$org/$project/compare", label: "Compare" },
   previews: {
-    to: "/$org/$project/settings",
+    to: "/$org/$project/project-settings",
     hash: "previews",
     label: "Previews",
   },

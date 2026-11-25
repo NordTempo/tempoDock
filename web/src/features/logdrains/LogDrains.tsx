@@ -35,10 +35,10 @@ export function LogDrains({ env }: { env: EnvRef }) {
   return (
     <div className="flex flex-col gap-2.5">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <p className="min-w-0 flex-1 text-xs text-mut">
-          Drains send every service's output in {env.environment} to another log
-          store. Without one, output stays on the server, in{" "}
-          <span className="font-mono">dock logs</span>.
+        <p className="min-w-0 flex-1 text-mut">
+          {drains.length === 0 && !adding
+            ? "none: output stays on the server"
+            : `every service's output in ${env.environment} goes to these too`}
         </p>
         {isAdmin && !adding && (
           <Button small onClick={() => setAdding(true)}>
@@ -68,9 +68,7 @@ export function LogDrains({ env }: { env: EnvRef }) {
             </tbody>
           </table>
         </Panel>
-      ) : (
-        !adding && <p className="py-1 text-mut">No drains.</p>
-      )}
+      ) : null}
       {adding && <AddDrain env={env} onClose={() => setAdding(false)} />}
     </div>
   );
