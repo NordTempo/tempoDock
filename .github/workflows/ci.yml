@@ -358,7 +358,8 @@ jobs:
       - run: pnpm check
       - run: pnpm build
 
-  # The landing page (site/): types, Biome and a static build.
+  # The landing page (site/): types, Biome, a static build, and the image
+  # Dock deploys it from, so a base image bump that breaks it fails here.
   site:
     needs: changes
     if: needs.changes.outputs.site == 'true'
@@ -379,4 +380,5 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
       - run: pnpm build
+      - run: docker build .
 

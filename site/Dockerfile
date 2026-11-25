@@ -11,7 +11,9 @@ ADD https://github.com/NordTempo/tempoDock/archive/refs/heads/main.tar.gz /tmp/r
 RUN tar -xzf /tmp/repo.tar.gz -C / --strip-components=1 tempoDock-main/docs/guide && rm /tmp/repo.tar.gz
 ENV GUIDE_DIR=/docs/guide
 WORKDIR /site
-RUN corepack enable
+# Node 25 and later don't bundle corepack; it comes from npm, and it
+# installs the pnpm that package.json's packageManager names.
+RUN npm install -g corepack@0.36.0 && corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY astro.config.ts tsconfig.json ./
