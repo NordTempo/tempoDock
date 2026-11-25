@@ -157,7 +157,9 @@ export function LogChart({
               onKeyDown={(e) => step(e, i)}
               onFocus={() => setCurrent(i)}
               onPointerDown={(e) => {
-                if (e.button !== 0) return;
+                // A second finger can't take over a drag; a drag can
+                // replace a keyboard pick.
+                if (e.button !== 0 || pick?.pointer !== undefined) return;
                 // Moves outside the bar still reach it until release.
                 e.currentTarget.setPointerCapture(e.pointerId);
                 const bar = slice(i);
