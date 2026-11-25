@@ -8,7 +8,7 @@
 # third_party holds patched copies of dependencies, not our code.
 set -euo pipefail
 
-budget=49
+budget=48
 
 cd "$(git rev-parse --show-toplevel)"
 pattern='//[[:space:]]*nolint|#nosec|//lint:ignore|biome-ignore|@ts-(ignore|expect-error|nocheck)|eslint-disable'
