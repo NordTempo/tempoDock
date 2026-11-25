@@ -4,7 +4,7 @@ import {
   Outlet,
   useMatches,
 } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import {
   findService,
   queries,
@@ -51,10 +51,28 @@ export const Route = createFileRoute(
 function ServiceLayout() {
   const ref = servicePath(Route.useParams());
   const tab = useMatches({ select: (matches) => matches.at(-1)?.routeId });
-  // Variables lays out its own columns: the scope list beside the table.
+  // Variables lays out its own columns (the scope list beside the table),
+  // Logs runs edge to edge with its controls stuck under the tabs.
   const ownLayout =
-    tab === "/_app/$org/$project/$environment/$service/variables";
+    tab === "/_app/$org/$project/$environment/$service/variables" ||
+    tab === "/_app/$org/$project/$environment/$service/logs";
   useEffect(() => rememberProject(ref.project), [ref.project]);
+  // The header's height as --service-top, so a tab's own sticky bar
+  // (Logs' controls) sits right under it however the header wraps.
+  const header = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = header.current;
+    if (!el) return;
+    const root = document.documentElement.style;
+    const observer = new ResizeObserver(() =>
+      root.setProperty("--service-top", `${el.offsetHeight}px`),
+    );
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      root.removeProperty("--service-top");
+    };
+  }, []);
   // Each drop opens a fresh Deploy window (hosted by the shell).
   const dragging = useDropTarget(useCanDeploy(ref), (dropped) =>
     openDeploy(ref, { dropped }),
@@ -62,7 +80,7 @@ function ServiceLayout() {
   return (
     <>
       {/* Header and tabs stick together, so the tabs never slide under it. */}
-      <div className="sticky top-(--shell-top) z-10 bg-page">
+      <div ref={header} className="sticky top-(--shell-top) z-10 bg-page">
         <ServiceBar serviceRef={ref} />
         <ServiceTabs serviceRef={ref} />
       </div>

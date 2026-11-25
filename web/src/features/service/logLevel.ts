@@ -41,7 +41,7 @@ const levels = new Map<string, LogLevel>(
  * read as failing. Go's errparse.LineLevel judges the Errors tab's lines
  * the same way. A line without a known level falls back to error
  * words. The stream (stdout or stderr) plays no part. Used by the logs
- * pane's row tint and its Errors only filter.
+ * table's level column and row rule, its level switch and the chart.
  */
 export function logLevel(text: string): LogLevel {
   const r = redis.exec(text);
