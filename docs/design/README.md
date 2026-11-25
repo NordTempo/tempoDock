@@ -163,10 +163,14 @@ for everything.
   activity, and a release opens under it in the shell. Requests' views
   (Traffic, Visitors, Traces) are underlined links under it, each with
   its own URL. The list is `web/src/features/service/tabs.ts`.
-- **Settings** (ADR 0099). A service's and the organization's Settings
-  are one page with their sections listed on the left
-  (`ui/sections.tsx`), named after the job: a service's Source, Running,
-  Deploys, Health and uptime, Domains, Backups, Archive. A project's
+- **Settings** (ADR 0099). A service's Settings is one page in one
+  column (860px at most, so a value and its chevron stay close), in
+  sections named after the job: Source, Running, Deploys, Health and
+  uptime, Domains, Backups, Archive (`SettingsSection` in
+  `ui/sections.tsx`). Source is one "Deploys from" row (repository ·
+  branch · path) when it has a repository; what pushes did is on
+  History, deploying a commit is in the header's Deploy. The
+  organization's Settings lists its pages on the left. A project's
   are one row per setting (`SettingRow`), split by scope: the Settings
   tab shows the environment picked in the header and nothing else
   (Shared variables, Server, Log drains); Project settings, the last
@@ -207,10 +211,12 @@ for everything.
   Where applying stops a service for a moment, Apply opens the review
   first. Shared variables, with no service header, keep the review as a
   panel on the page.
-- **Settings rows.** A label and the value as text; the whole row opens
-  a small form (with the explanation in it); Save, Cancel, Esc. Values
-  left on their defaults fold into one row per section ("2 on defaults:
-  start command, limits", Show).
+- **Settings rows.** One shape for every row: a label and the value as
+  text, a value left on its default marked "default" in faint text; the
+  whole value opens a small form (with the explanation in it); Save,
+  Cancel, Esc. A row that can't be changed here has no chevron. Links
+  and buttons go in the form, not beside the value. Only settings are
+  rows; events and actions live elsewhere.
 - **Row actions.** The action a list exists for (Restore, Show, Retry)
   stays visible on every row; rare and destructive ones go in the row's
   `···`.
