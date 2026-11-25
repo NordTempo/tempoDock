@@ -38,6 +38,49 @@ func TestBaseImageHint(t *testing.T) {
 	}
 }
 
+// A template database follows its image's tag: once the tag moves, its
+// scan offers the newer image, a new database starts on it, and a project
+// file that leaves the image out doesn't take an updated one back.
+func TestTagUpdate(t *testing.T) {
+	h := scanHarness(t)
+	newer := "sha256:" + strings.Repeat("f", 64)
+	pinned := templates[apitypes.TemplatePostgres].image
+	tag := imageTag(pinned)
+	if tag != "postgres:17-alpine" {
+		t.Fatalf("tag of %s = %q", pinned, tag)
+	}
+	db := h.service("db", apitypes.CreateServiceRequest{Template: apitypes.TemplatePostgres})
+	h.waitStatus(db, 1, apitypes.ReleaseActive)
+	scan := h.waitScan(db, apitypes.ScanScanned)
+	if b := scan.Base; b == nil || b.Image != tag || !b.Own || b.Moved || b.Latest != "" {
+		t.Fatalf("base = %+v", scan.Base)
+	}
+
+	h.rt.SetRemoteDigest(tag, newer)
+	h.dueRefresh()
+	eventually(t, "the tag check", func() bool {
+		d, err := h.c.ServiceVulnerabilities(h.ctx, testSystem, db, 0)
+		return err == nil && d.Scan.Base != nil && d.Scan.Base.Moved && d.Scan.Base.Latest == newer
+	})
+	db2 := h.service("db2", apitypes.CreateServiceRequest{Template: apitypes.TemplatePostgres})
+	if v, err := h.c.GetService(h.ctx, testSystem, db2); err != nil || v.Image != tag+"@"+newer {
+		t.Fatalf("a new database starts on %s (%v)", v.Image, err)
+	}
+
+	// Update, then apply the project's file without the image.
+	h.deploy(db, tag+"@"+newer)
+	h.waitStatus(db, 2, apitypes.ReleaseActive)
+	_, file := h.exportTOML("shop")
+	file = strings.ReplaceAll(file, "image = '"+tag+"@"+newer+"'", "")
+	plan, err := h.c.PlanProject(h.ctx, testSystem, "shop", apitypes.ApplyRequest{File: file})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Changes) != 0 {
+		t.Fatalf("plan: %q\n%s", lines(plan.Changes), file)
+	}
+}
+
 // An imported database reaches every builder as a scan step and the
 // live images are matched against it; offline builders never download.
 func TestImportScanDatabase(t *testing.T) {

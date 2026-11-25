@@ -540,7 +540,7 @@ func toImageScan(s store.ImageScan, name string) apitypes.ImageScan {
 		out.DatabaseBuilt = ptr(time.Unix(*s.DbBuiltAt, 0).UTC())
 	}
 	if s.BaseImage != "" {
-		out.Base = &apitypes.ImageBase{Image: s.BaseImage, Digest: s.BaseDigest, Moved: s.BaseMoved != 0}
+		out.Base = &apitypes.ImageBase{Image: s.BaseImage, Digest: s.BaseDigest, Moved: s.BaseMoved != 0, Latest: s.BaseLatest, Own: s.BaseDigest == s.ImageKey}
 		if s.BaseCheckedAt != nil {
 			out.Base.CheckedAt = ptr(time.Unix(*s.BaseCheckedAt, 0).UTC())
 		}

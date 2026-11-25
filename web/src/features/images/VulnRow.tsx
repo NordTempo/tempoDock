@@ -8,13 +8,15 @@ import { openDeploy } from "../deploy/start";
 import { Row } from "../service/Attention";
 import type { ImageScan } from "./data";
 import { Kev, total, WorstCounts, worstFixSentence } from "./parts";
+import { movedTag, UpdateImage } from "./UpdateImage";
 
 /**
  * The live image's critical or high vulnerabilities (ADR 0074) as a row
  * of the Overview's Needs attention list (ADR 0076): red with criticals,
  * amber with highs only. Redeploy (the Deploy window) when a rebuild
  * fixes the worst and Dock builds the image (one built in CI is rebuilt
- * there); See all (V) opens the image's page.
+ * there), Update when the image's tag has a newer image; See all (V)
+ * opens the image's page.
  */
 export function VulnRow({
   serviceRef: ref,
@@ -41,6 +43,7 @@ export function VulnRow({
     },
   ]);
   const flags = `-s ${ref.service} -e ${ref.environment}`;
+  const moved = movedTag(scan, view);
   return (
     <Row
       tone={scan.critical > 0 ? "fail" : "warn"}
@@ -60,6 +63,7 @@ export function VulnRow({
               Redeploy
             </Act>
           )}
+          {moved && <UpdateImage serviceRef={ref} view={view} base={moved} />}
           <Link
             to="/$org/images/$id"
             params={{ org, id: String(scan.id) }}

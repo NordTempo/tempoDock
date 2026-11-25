@@ -184,7 +184,9 @@ Dock scans the image of every live release for known vulnerabilities,
 after it went live and only while no build or deploy runs, so a scan
 never slows a deploy. **Images** lists them worst first; an image's page
 groups what it found by fix: rebuild on a newer base image, upgrade the
-app's dependencies, or no fix yet.
+app's dependencies, or no fix yet. An image deployed by tag, like a
+database template's, is checked daily for a newer image of its tag, which
+**Update** on the service deploys.
 
 ```sh
 dock images                       # every live image, worst first

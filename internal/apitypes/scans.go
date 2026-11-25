@@ -96,17 +96,23 @@ type ImageScan struct {
 	// Error says why it failed or can't be scanned, or what it waits for.
 	Error string `json:"error,omitempty"`
 	// Base is the image a Dockerfile build was built on, when Dock built
-	// it from one.
+	// it from one, or the tag an image deployed by tag follows (Own).
 	Base *ImageBase `json:"base,omitempty"`
 }
 
 // ImageBase is the image an image was built on, and whether its tag has
-// moved since: then a rebuild picks up a newer base image.
+// moved since: then a rebuild picks up a newer base image. For an image
+// deployed by tag (Own) it is that tag: deploying Latest updates it.
 type ImageBase struct {
 	Image  string `json:"image" example:"node:22-alpine"`
-	Digest string `json:"digest" doc:"What the tag pointed at when the image was built"`
+	Digest string `json:"digest" doc:"What the tag pointed at when the image was built or deployed"`
 	// Moved: the tag pointed at another image at the last daily check.
-	Moved     bool       `json:"moved,omitempty"`
+	Moved bool `json:"moved,omitempty"`
+	// Latest is what the tag pointed at at the last daily check.
+	Latest string `json:"latest,omitempty" example:"sha256:f9cf3e1f0066f0eb0c48707d864f0ac5941e9ff454a072077d97a4d278d07d73"`
+	// Own: the image is the tag's own image, deployed by tag, not built
+	// on it; a newer image is deployed (Image@Latest), not rebuilt.
+	Own       bool       `json:"own,omitempty"`
 	CheckedAt *time.Time `json:"checked_at,omitempty"`
 }
 

@@ -58,6 +58,7 @@ func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.
 			ID: r.ID, ImageKey: r.ImageKey, LocalRef: r.LocalRef, State: r.State, Distro: r.Distro, Packages: r.Packages,
 			MatchedAt: r.MatchedAt, DbBuiltAt: r.DbBuiltAt, Critical: r.Critical, High: r.High, Medium: r.Medium,
 			Low: r.Low, Other: r.Other, Fixable: r.Fixable, Kev: r.Kev, Truncated: r.Truncated, WorstFix: r.WorstFix, Error: r.Error,
+			BaseImage: r.BaseImage, BaseDigest: r.BaseDigest, BaseMoved: r.BaseMoved, BaseCheckedAt: r.BaseCheckedAt, BaseLatest: r.BaseLatest,
 		}
 	}
 	if err := c.netServiceScans(ctx, p, scanOf); err != nil {

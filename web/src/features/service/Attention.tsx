@@ -3,13 +3,16 @@ import type { ReactNode } from "react";
 import { domainNeedsAttention } from "../../data/problems";
 import type { Domain, ServiceRef, ServiceView } from "../../data/types";
 import { useOrg } from "../../shell/location";
+import { movedTag, UpdateImage } from "../images/UpdateImage";
 import { VulnRow } from "../images/VulnRow";
 
 /**
  * What needs a look on a service, said once (ADR 0076): under the
  * Overview's status, one list instead of stacked bands. A row each for
- * critical or high vulnerabilities in the live image, a down uptime check
- * and a domain that needs attention, each with its one way to act (a
+ * critical or high vulnerabilities in the live image, a template
+ * database whose image tag has a newer image (with vulnerabilities, Update
+ * sits in their row), a down uptime check and a domain that needs
+ * attention, each with its one way to act (a
  * failed deploy has its own block above, FailedDeploy). Elsewhere these are a dot, a chip or a count.
  * Nothing renders while nothing needs a look.
  */
@@ -24,9 +27,13 @@ export function NeedsAttention({
   const scan = view.scan;
   const vulnerable =
     scan?.state === "scanned" && (scan.critical > 0 || scan.high > 0);
+  // Only template databases get a row of their own: an app deployed by a
+  // tag CI moves (app:latest) would be offered every push.
+  const moved = movedTag(scan, view);
+  const update = !vulnerable && view.service.template ? moved : undefined;
   const down = view.uptime?.state === "down";
   const domains = view.domains.filter(domainNeedsAttention);
-  if (!vulnerable && !down && !domains.length) return null;
+  if (!vulnerable && !update && !down && !domains.length) return null;
   return (
     <section
       aria-label="Needs attention"
@@ -34,6 +41,14 @@ export function NeedsAttention({
     >
       {vulnerable && scan && (
         <VulnRow serviceRef={ref} view={view} scan={scan} />
+      )}
+      {update && (
+        <Row
+          tone="warn"
+          action={<UpdateImage serviceRef={ref} view={view} base={update} />}
+        >
+          <span className="font-mono">{update.image}</span> has a newer image
+        </Row>
       )}
       {down && (
         <Row
