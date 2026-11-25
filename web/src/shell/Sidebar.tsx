@@ -1068,8 +1068,8 @@ function ServiceLink({ view }: { view: ServiceView }) {
 }
 
 /**
- * The platform console's sidebar (ADR 0099): "Platform" with a quiet
- * console label and the way back to projects, then its nine entries by job
+ * The platform console's sidebar (ADR 0099): the way back to projects,
+ * "Platform" with a quiet console label, then its nine entries by job
  * (features/console/nav.ts), each marked on any of its pages, with Updates
  * by the account at the foot. Only operators reach it.
  */
@@ -1081,20 +1081,22 @@ function ConsoleNav() {
   return (
     <>
       {/* In place of the organization: the console has none (ADR 0062). */}
-      <div className="flex flex-col px-2.5 pt-1 pb-2">
-        <div className="flex items-baseline gap-2">
-          <span className="font-semibold">Platform</span>
-          <span className="text-2xs text-warn">console</span>
-        </div>
+      {/* The way back above the title, apart from it: right under it, it
+          read as part of the title (Saile). */}
+      <div className="flex flex-col gap-1.5 px-2.5 pb-2">
         {/* No preload: it would read the org's projects from inside the
             console, which sends no organization (api/client.ts). */}
         <Link
           to="/"
           preload={false}
-          className="inline-flex min-h-[24px] items-center text-xs text-mut hover:text-fg"
+          className="inline-flex min-h-[24px] items-center self-start text-xs text-mut hover:text-fg"
         >
           ← Back to projects
         </Link>
+        <div className="flex items-baseline gap-2">
+          <span className="font-semibold">Platform</span>
+          <span className="text-2xs text-warn">console</span>
+        </div>
       </div>
       {entries.map((e) => (
         <ConsoleLink key={e.label} entry={e} current={e === here}>
