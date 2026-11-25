@@ -11,7 +11,7 @@ import { ReleasesTable } from "./ReleasesTable";
 const MAX = 100;
 
 /**
- * The release history with rollback and diff: the newest 10, the 20 the
+ * The release history with rollback and diff: the newest 5, the 20 the
  * service's release query holds on request, then up to 100 (History).
  * `short`, on the Overview: the newest 3 and the way to History, and
  * nothing before the first release.
@@ -27,7 +27,7 @@ export function ReleaseHistory({
 }) {
   const org = useOrg();
   const newest = useReleases(ref);
-  const [shown, setShown] = useState(short ? 3 : 10);
+  const [shown, setShown] = useState(short ? 3 : 5);
   const all = useQuery({ ...queries.releases(ref, MAX), enabled: shown > 20 });
   const releases = (all.data ?? newest).slice(0, shown);
   const more = shown < newest.length || (!all.data && newest.length === 20);
