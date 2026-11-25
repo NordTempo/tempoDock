@@ -392,8 +392,17 @@ type Kind = NewAlertChannel["kind"];
 const kinds: Array<{ kind: Kind; note: string }> = [
   { kind: "webhook", note: "JSON, signed with HMAC-SHA256" },
   { kind: "slack", note: "a Slack-compatible incoming webhook" },
+  { kind: "discord", note: "a Discord webhook, mentions off" },
+  { kind: "pushover", note: "push to phones, critical at high priority" },
   { kind: "email", note: "through Dock's email server" },
 ];
+
+// Where each URL-based kind's webhook usually lives.
+const urlPlaceholders: Partial<Record<Kind, string>> = {
+  webhook: "https://hooks.example.com/dock",
+  slack: "https://hooks.slack.com/services/…",
+  discord: "https://discord.com/api/webhooks/…",
+};
 
 function AddChannel({ onClose }: { onClose: () => void }) {
   const scope = useContext(Scope);
@@ -409,6 +418,9 @@ function AddChannel({ onClose }: { onClose: () => void }) {
   const [hours, setHours] = useState("4");
   // An email channel's recipients, comma separated.
   const [to, setTo] = useState("");
+  // A Pushover channel's user (or group) key and application token.
+  const [user, setUser] = useState("");
+  const [token, setToken] = useState("");
   const [secret, setSecret] = useState<string>();
   // Why the new channel can't send yet: email while it isn't set up.
   const [warning, setWarning] = useState<string>();
@@ -456,7 +468,9 @@ function AddChannel({ onClose }: { onClose: () => void }) {
     `dock alerts channel add ${name.trim() || "<name>"}${flag(scope)}`,
     kind === "email"
       ? `--email ${to.replace(/\s/g, "") || "<to>"}`
-      : `--${kind} -`,
+      : kind === "pushover"
+        ? "--pushover <user key> --pushover-token -"
+        : `--${kind} -`,
     kind === "webhook" && signing && "--secret …",
     severity === "critical" && "--min-severity critical",
     hours !== "4" && `--renotify ${Number(hours) || 0}h`,
@@ -483,6 +497,9 @@ function AddChannel({ onClose }: { onClose: () => void }) {
             .split(",")
             .map((s) => s.trim())
             .filter(Boolean);
+        } else if (kind === "pushover") {
+          input.user = user.trim();
+          input.token = token.trim();
         } else {
           input.url = url.trim();
           if (kind === "webhook" && signing) input.secret = signing;
@@ -574,15 +591,49 @@ function AddChannel({ onClose }: { onClose: () => void }) {
             className="field font-mono"
           />
         </label>
+      ) : kind === "pushover" ? (
+        <div className="flex flex-wrap gap-3">
+          <label className="flex flex-[1_1_280px] flex-col gap-1.5">
+            <span>
+              User key{" "}
+              <span className="text-mut">
+                yours or a group's, from pushover.net
+              </span>
+            </span>
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={user}
+              onChange={(e) => setUser(e.target.value)}
+              className="field font-mono"
+            />
+          </label>
+          <label className="flex flex-[1_1_280px] flex-col gap-1.5">
+            <span>
+              API token{" "}
+              <span className="text-mut">
+                of an application at pushover.net/apps
+              </span>
+            </span>
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              className="field font-mono"
+            />
+          </label>
+        </div>
       ) : (
         <label className="flex flex-col gap-1.5">
           <span>
             URL <span className="text-mut">stored encrypted, never shown</span>
           </span>
           <input
+            autoComplete="off"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://hooks.slack.com/services/…"
+            placeholder={urlPlaceholders[kind]}
             className="field font-mono"
           />
         </label>

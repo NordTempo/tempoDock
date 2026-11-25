@@ -151,7 +151,7 @@ export interface paths {
         put?: never;
         /**
          * Add an alert channel
-         * @description A webhook (JSON, signed with HMAC-SHA256 in the Dock-Signature header), a Slack-compatible incoming webhook, or email over SMTP, for the organization's alerts (with platform, the platform's). A webhook's generated signing secret is returned once. Organization admins; operators for the platform's.
+         * @description A webhook (JSON, signed with HMAC-SHA256 in the Dock-Signature header), a Slack-compatible incoming webhook, a Discord webhook, Pushover (a user or group key and an application token), or email over SMTP, for the organization's alerts (with platform, the platform's). A webhook's generated signing secret is returned once. Organization admins; operators for the platform's.
          */
         post: operations["create-alert-channel"];
         delete?: never;
@@ -7262,7 +7262,7 @@ export interface components {
             /** Format: int64 */
             failures: number;
             /** @enum {string} */
-            kind: "webhook" | "slack" | "email";
+            kind: "webhook" | "slack" | "discord" | "pushover" | "email";
             last_error?: string;
             /** Format: date-time */
             last_error_at?: string;
@@ -7950,7 +7950,7 @@ export interface components {
         };
         CreateAlertChannelRequest: {
             /** @enum {string} */
-            kind: "webhook" | "slack" | "email";
+            kind: "webhook" | "slack" | "discord" | "pushover" | "email";
             /** @enum {string} */
             min_severity?: "warning" | "critical";
             name: string;
@@ -7963,8 +7963,12 @@ export interface components {
             secret?: string;
             /** @description email: the recipients; Dock's email server sends (dock email, ADR 0079) */
             to?: string[] | null;
-            /** @description webhook and slack: where to POST. Stored encrypted, never returned */
+            /** @description pushover: the application's API token. Stored encrypted, never returned */
+            token?: string;
+            /** @description webhook, slack and discord: where to POST. Stored encrypted, never returned */
             url?: string;
+            /** @description pushover: the user or group key. Stored encrypted, never returned */
+            user?: string;
         };
         CreateCloudflareRedirectRequest: {
             connection?: string;

@@ -53,6 +53,33 @@ func TestOrgAlertsMigration(t *testing.T) {
 	}
 }
 
+// Migration 0128 widens alert_channels' kinds and keeps every channel as
+// it was: its org, and the alerts it was told about (so their resolutions
+// still reach it).
+func TestDiscordPushoverChannelsMigration(t *testing.T) {
+	ctx := context.Background()
+	path := openBefore(t, "_discord_pushover_channels.sql",
+		`INSERT INTO orgs (id, slug, name) VALUES (1, 'one', 'One')`,
+		`INSERT INTO alerts (id, key, kind, severity, title, opened_at, updated_at, org_id) VALUES (1, 'disk:1', 'disk', 'warning', 'a', '2026-01-01', '2026-01-01', 1)`,
+		`INSERT INTO alert_channels (id, org_id, name, kind, target, config, min_severity, created_at) VALUES (7, 1, 'ops', 'slack', 'https://hooks', x'00', 'warning', '2026-01-01')`,
+		`INSERT INTO alert_notices (alert_id, channel_id, notified_at) VALUES (1, 7, 1)`,
+	)
+	s, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+
+	if chs, err := s.ListNoticedChannels(ctx, 1); err != nil || len(chs) != 1 || chs[0].ID != 7 || chs[0].OrgID == nil || *chs[0].OrgID != 1 {
+		t.Errorf("noticed channels = %+v, %v; want ops in org 1", chs, err)
+	}
+	for _, kind := range []string{"discord", "pushover"} {
+		if _, err := s.CreateAlertChannel(ctx, CreateAlertChannelParams{OrgID: new(int64(1)), Name: kind, Kind: kind, Target: "t", Config: []byte{0}, MinSeverity: "warning"}); err != nil {
+			t.Errorf("a %s channel: %v", kind, err)
+		}
+	}
+}
+
 // An org's alerts and channels are read through their indexes.
 func TestOrgAlertQueryPlans(t *testing.T) {
 	f := newDataFixture(t)

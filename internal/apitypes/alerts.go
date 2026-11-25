@@ -163,8 +163,14 @@ const (
 	// HMAC-SHA256 in the Dock-Signature header.
 	ChannelWebhook AlertChannelKind = "webhook"
 	// ChannelSlack POSTs {"text": ...} to a Slack-compatible incoming
-	// webhook (Slack, Mattermost, Discord's /slack endpoint).
+	// webhook (Slack, Mattermost).
 	ChannelSlack AlertChannelKind = "slack"
+	// ChannelDiscord POSTs {"content": ...} to a Discord webhook, with
+	// mentions turned off.
+	ChannelDiscord AlertChannelKind = "discord"
+	// ChannelPushover sends a push through Pushover's API to a user or
+	// group key, with an application's token.
+	ChannelPushover AlertChannelKind = "pushover"
 	// ChannelEmail sends mail through an SMTP server.
 	ChannelEmail AlertChannelKind = "email"
 )
@@ -173,7 +179,7 @@ const (
 // secret and SMTP password are stored encrypted and never returned.
 type AlertChannel struct {
 	Name string           `json:"name"`
-	Kind AlertChannelKind `json:"kind" enum:"webhook,slack,email"`
+	Kind AlertChannelKind `json:"kind" enum:"webhook,slack,discord,pushover,email"`
 	// Target is where it sends, without secrets: a URL's scheme and host,
 	// or the email recipients.
 	Target string `json:"target"`
@@ -195,13 +201,18 @@ type AlertChannel struct {
 // CreateAlertChannelRequest adds a channel.
 type CreateAlertChannelRequest struct {
 	Name string           `json:"name" pattern:"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$"`
-	Kind AlertChannelKind `json:"kind" enum:"webhook,slack,email"`
-	// URL is where webhook and slack channels POST (http or https).
-	URL string `json:"url,omitempty" maxLength:"2048" doc:"webhook and slack: where to POST. Stored encrypted, never returned"`
+	Kind AlertChannelKind `json:"kind" enum:"webhook,slack,discord,pushover,email"`
+	// URL is where webhook, slack and discord channels POST (http or
+	// https).
+	URL string `json:"url,omitempty" maxLength:"2048" doc:"webhook, slack and discord: where to POST. Stored encrypted, never returned"`
 	// Secret signs webhook deliveries; when empty one is generated and
 	// returned once in CreatedAlertChannel.
 	Secret string   `json:"secret,omitempty" maxLength:"256" doc:"webhook: HMAC-SHA256 signing key; generated when empty"`
 	To     []string `json:"to,omitempty" maxItems:"20" doc:"email: the recipients; Dock's email server sends (dock email, ADR 0079)"`
+	// User and Token are a pushover channel's user (or group) key and
+	// application token.
+	User  string `json:"user,omitempty" maxLength:"64" doc:"pushover: the user or group key. Stored encrypted, never returned"`
+	Token string `json:"token,omitempty" maxLength:"64" doc:"pushover: the application's API token. Stored encrypted, never returned"`
 	// MinSeverity defaults to warning (everything).
 	MinSeverity AlertSeverity `json:"min_severity,omitempty" enum:"warning,critical"`
 	// RenotifyMinutes defaults to 240; 0 sends each alert once.

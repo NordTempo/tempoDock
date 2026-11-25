@@ -64,11 +64,12 @@ traffic, an access request. Most resolve themselves once the cause goes away. Th
 **Inbox** in the top bar lists open alerts and the access requests that
 wait for an admin ([locked environments](agents.md#locked-environments-and-access-requests)).
 
-Alert channels send them on: a webhook, Slack or email, each with a
-minimum severity, when an alert opens, while it stays open (`--renotify`)
-and when it resolves. Admins add them under Settings › Alerts.
-Slack messages link to the alert's release or service in the UI once Dock
-has a public address or `[hooks] ui_url`. A delivery that fails is retried
+Alert channels send them on: a webhook, Slack, Discord, Pushover or
+email, each with a minimum severity, when an alert opens, while it stays
+open (`--renotify`) and when it resolves. Admins add them under Settings
+› Alerts. Slack, Discord and Pushover messages link to the alert's
+release or service in the UI once Dock has a public address or
+`[hooks] ui_url`. A delivery that fails is retried
 for about 20 minutes, waiting longer when Slack asks (`Retry-After`); an
 answer that can't change, like Slack's 404 for a removed webhook, isn't
 retried and marks the channel broken: its error says what Slack said,
@@ -80,9 +81,11 @@ once its condition has stayed clear for `[alerts] settle_minutes`
 (3 by default), so a service that flaps sends one message when it opens
 and one when it has been quiet, saying how many times it happened. A
 deploy or backup that fails again while its alert is open sends
-`repeated` with the count. A webhook or Slack channel waits 10 seconds
-and sends what arrived together: Slack gets one message listing each
-alert, a webhook one POST per notification. A Dock that restarts or
+`repeated` with the count. A webhook, Slack, Discord or Pushover channel
+waits 10 seconds and sends what arrived together: Slack, Discord and
+Pushover get one message listing each alert, a webhook one POST per
+notification. Pushover sends critical alerts at high priority, which
+gets past quiet hours. A Dock that restarts or
 updates meanwhile sends what a channel still holds before it stops, once
 and without retries. A backed-up channel drops
 new alerts past 32 waiting, never a resolution. Email channels aren't
@@ -91,6 +94,8 @@ grouped yet: one mail per notification.
 ```sh
 dock alerts                                                      # open ones
 dock alerts channel add team --slack https://hooks.slack.com/... # where they go
+dock alerts channel add chat --discord https://discord.com/api/webhooks/...
+dock alerts channel add phone --pushover <user key> --pushover-token -  # token on stdin
 dock alerts channel add pager --webhook https://hooks.example.com/dock --min-severity critical
 dock alerts channel test team
 dock alerts resolve 31                                           # by hand

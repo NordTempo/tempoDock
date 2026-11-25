@@ -68,7 +68,7 @@ func registerAlerts(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "create-alert-channel", Method: http.MethodPost, Path: Prefix + "/alerts/channels",
 		Summary: "Add an alert channel", Tags: tags, DefaultStatus: http.StatusCreated,
-		Description: "A webhook (JSON, signed with HMAC-SHA256 in the Dock-Signature header), a Slack-compatible incoming webhook, or email over SMTP, for the organization's alerts (with platform, the platform's). A webhook's generated signing secret is returned once. Organization admins; operators for the platform's.",
+		Description: "A webhook (JSON, signed with HMAC-SHA256 in the Dock-Signature header), a Slack-compatible incoming webhook, a Discord webhook, Pushover (a user or group key and an application token), or email over SMTP, for the organization's alerts (with platform, the platform's). A webhook's generated signing secret is returned once. Organization admins; operators for the platform's.",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		PlatformQuery
 		Body apitypes.CreateAlertChannelRequest

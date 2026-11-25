@@ -57,6 +57,15 @@ func TestAlertChannelCommands(t *testing.T) {
 	if code, _, stderr := exec(t, "alerts", "channel", "test", "mail"); code != int(output.ExitUnreachable) || !strings.Contains(stderr, "dock email set") || strings.Contains(stderr, "add it again") {
 		t.Fatalf("email channel test: exit %d %q", code, stderr)
 	}
+	// A Pushover channel takes the user key and the application's token.
+	key := strings.Repeat("k", 30)
+	if code, _, stderr := exec(t, "alerts", "channel", "add", "phone", "--pushover", key); code != int(output.ExitUsage) || !strings.Contains(stderr, "--pushover-token") {
+		t.Fatalf("pushover without a token: exit %d %q", code, stderr)
+	}
+	if ch := ok[apitypes.CreatedAlertChannel](t, "alerts", "channel", "add", "phone", "--pushover", key, "--pushover-token", key); ch.Channel.Kind != apitypes.ChannelPushover {
+		t.Fatalf("pushover channel = %+v", ch)
+	}
+	exec(t, "alerts", "channel", "remove", "phone", "--yes")
 	exec(t, "alerts", "channel", "remove", "mail", "--yes")
 	if code, _, stderr := exec(t, "alerts", "channel", "remove", "down"); code != int(output.ExitUsage) || !strings.Contains(stderr, "--yes") {
 		t.Fatalf("remove without --yes: exit %d %q", code, stderr)
