@@ -1,9 +1,8 @@
 /**
- * The sections of a service's Settings page, in order: the list on the
- * page (SectionsLayout) and the palette's search both read this, so a
- * section found by search is the one on the page. `words` are what
- * people type looking for it. Kept free of React so the palette can load
- * it cheaply.
+ * The sections of a service's Settings page, in order, for the palette's
+ * search: each id is a section's anchor on the page (settings#domains).
+ * `words` are what people type looking for it. Kept free of React so the
+ * palette can load it cheaply.
  */
 export const serviceSettingSections = [
   {
@@ -49,6 +48,5 @@ export const serviceSettingSections = [
     id: "archive",
     label: "Archive",
     words: ["archive", "delete", "remove service"],
-    danger: true,
   },
 ] as const;

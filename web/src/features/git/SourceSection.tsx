@@ -31,9 +31,7 @@ import { OpenValue } from "../settings/OpenValue";
 import {
   commitText,
   type GitConnection,
-  gitDeployCli,
   gitPath,
-  useGitDeploy,
   useGitHubBranches,
   useGitHubPaths,
   useGitHubRepos,
@@ -47,15 +45,30 @@ type ConnectRequest = Schemas["GitConnectRequest"];
 type ConnectResult = Schemas["GitConnectResult"];
 
 /**
- * The service's GitHub source (ADR 0018) as rows of Settings' Source
- * section, under the image and build (plan mock A):
- * repository, branch, path, previews (ADR 0077) and statuses each with
- * their own Edit; through Dock's GitHub App (ADR 0031) the repository,
- * branch and path are picked from lists, through a webhook they are
- * typed. Changing the source needs deploy; previews need admin. Others
- * see it read-only.
+ * Settings' Source section (ADR 0018): where the service comes from, as
+ * rows. Connected to GitHub, one "Deploys from" row (repository · branch
+ * · path) whose editor changes each of them or disconnects; through
+ * Dock's GitHub App (ADR 0031) they are picked from lists, through a
+ * webhook they are typed. Then the image (only if one is set: the
+ * repository is the source), the build, previews (ADR 0077) and commit
+ * statuses. Unconnected, the image and a Repository row that connects
+ * one. Changing the source needs deploy; previews need admin. Others see
+ * it read-only. What pushes did is on History (LastPush), and deploying
+ * a commit is in the header's Deploy.
  */
-export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+export function SourceSection({
+  serviceRef: ref,
+  image,
+  imageSet,
+  build,
+}: {
+  serviceRef: ServiceRef;
+  /** The Image row, and whether an image is set (or staged). */
+  image: ReactNode;
+  imageSet: boolean;
+  /** The Build row. */
+  build: ReactNode;
+}) {
   const client = useQueryClient();
   const session = useSession();
   const canEdit = session?.scope === "deploy" || session?.scope === "admin";
@@ -63,7 +76,6 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const source = useGitSource(ref);
   // The secret of a new or rotated webhook: shown until dismissed.
   const [created, setCreated] = useState<ConnectResult | null>(null);
-  const [connecting, setConnecting] = useState(false);
   const [confirming, setConfirming] = useState<"disconnect" | "rotate" | null>(
     null,
   );
@@ -79,7 +91,6 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     async (req: ConnectRequest) => {
       const res = await body(api.PUT(gitPath, { ...path, body: req }));
       setConnection(res.connection);
-      setConnecting(false);
       setConfirming(null);
       if (res.secret) setCreated(res);
       return res;
@@ -116,262 +127,234 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       { onSuccess: onDone },
     );
 
+  // Until the source is known, the image waits too, so it doesn't show
+  // and then leave for a repository.
+  const known = source.data !== undefined || source.error !== null;
   return (
     <div className="flex flex-col">
       {source.error && <ErrorText error={source.error} />}
-      {source.data && !conn && !connecting && (
-        <dl className="props border-t-0 [grid-template-columns:200px_minmax(0,1fr)]">
-          <dt>
-            <span className="block text-sec">Repository</span>
-          </dt>
-          <dd className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <span className="text-mut">none; it deploys what Deploy sends</span>
-            {canEdit && (
-              <Button small onClick={() => setConnecting(true)}>
-                Connect a repository
-              </Button>
+      <dl className="props">
+        {known && !conn && image}
+        {source.data && !conn && (
+          <Row
+            key="connect"
+            label="Repository"
+            hint="Connect one and every push to its branch deploys."
+            canEdit={canEdit}
+            value={
+              <span className="text-mut">
+                none, it deploys what Deploy sends
+              </span>
+            }
+            edit={(close) => (
+              <ConnectForm
+                appReady={appReady}
+                pending={connect.isPending}
+                error={connect.error}
+                connectCli={connectCli}
+                onSubmit={(req) => connect.mutate(req)}
+                onCancel={close}
+              />
             )}
-          </dd>
-        </dl>
-      )}
-      {source.data && !conn && connecting && (
-        <ConnectForm
-          appReady={appReady}
-          pending={connect.isPending}
-          error={connect.error}
-          connectCli={connectCli}
-          onSubmit={(req) => connect.mutate(req)}
-          onCancel={() => setConnecting(false)}
-        />
-      )}
-      {source.data && (
-        <dl className="props border-t-0 [grid-template-columns:200px_minmax(0,1fr)]">
-          {conn && (
-            <>
-              <Row
-                label="Repository"
-                hint="Pushes to its branch deploy."
-                canEdit={canEdit}
-                value={
-                  <>
-                    <span className="font-mono">{conn.repo}</span>{" "}
-                    <span className="text-faint">
-                      ·{" "}
-                      {conn.mode === "app"
-                        ? "through the GitHub App"
-                        : "through a webhook"}
-                    </span>
-                  </>
-                }
-                after={
-                  <a
-                    href={`https://github.com/${conn.repo}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs"
-                  >
-                    Open on GitHub ↗
-                  </a>
-                }
-                edit={(close) => (
-                  <RepoEdit
-                    conn={conn}
-                    appReady={appReady}
-                    pending={connect.isPending}
-                    error={connect.error}
-                    connectCli={connectCli}
-                    onSave={(req) => connect.mutate(req, { onSuccess: close })}
-                    onCancel={close}
-                  />
-                )}
-              />
-              <Row
-                label="Branch"
-                hint="Every push to it deploys."
-                canEdit={canEdit}
-                value={<span className="font-mono">{conn.branch}</span>}
-                edit={(close) =>
-                  conn.mode === "app" ? (
-                    <BranchPick
-                      repo={conn.repo}
-                      current={conn.branch}
-                      error={connect.error}
-                      onPick={(branch) => save({ branch }, close)}
-                      onCancel={close}
-                      cli={(b) => connectCli(conn.repo, b, conn.dir ?? "")}
-                    />
-                  ) : (
-                    <TextEdit
-                      label="Branch"
-                      initial={conn.branch}
-                      placeholder="main"
-                      error={connect.error}
+          />
+        )}
+        {conn && (
+          <Row
+            key="source"
+            label="Deploys from"
+            canEdit={canEdit}
+            value={
+              <span className="flex flex-col gap-0.5">
+                <span className="font-mono break-all">
+                  {conn.repo} <span className="text-faint">·</span>{" "}
+                  {conn.branch} <span className="text-faint">·</span>{" "}
+                  {conn.dir ? `${conn.dir}/` : "/"}
+                </span>
+                <span className="text-xs text-mut">
+                  every push to {conn.branch} deploys,{" "}
+                  {conn.mode === "app"
+                    ? "through the GitHub App"
+                    : "through a webhook"}
+                </span>
+              </span>
+            }
+            edit={(close) => (
+              <SourceEdit
+                conn={conn}
+                pending={connect.isPending}
+                onDisconnect={() => {
+                  close();
+                  setConfirming("disconnect");
+                }}
+                editors={{
+                  repository: (
+                    <RepoEdit
+                      conn={conn}
+                      appReady={appReady}
                       pending={connect.isPending}
-                      cli={(b) => connectCli(conn.repo, b, conn.dir ?? "")}
-                      onSave={(branch) => save({ branch }, close)}
-                      onCancel={close}
-                    />
-                  )
-                }
-              />
-              <Row
-                label="Path"
-                hint="Built; pushes that change nothing in it are skipped."
-                canEdit={canEdit}
-                value={
-                  conn.dir ? (
-                    <span className="font-mono">{conn.dir}/</span>
-                  ) : (
-                    <span>
-                      <span className="font-mono">/</span>{" "}
-                      <span className="text-faint">the repository root</span>
-                    </span>
-                  )
-                }
-                edit={(close) =>
-                  conn.mode === "app" ? (
-                    <PathPick
-                      repo={conn.repo}
-                      branch={conn.branch}
-                      current={conn.dir ?? ""}
                       error={connect.error}
-                      onPick={(dir) => save({ dir }, close)}
-                      onCancel={close}
-                      cli={(d) => connectCli(conn.repo, conn.branch, d)}
-                    />
-                  ) : (
-                    <TextEdit
-                      label="Path"
-                      initial={conn.dir ?? ""}
-                      placeholder="the repository root"
-                      error={connect.error}
-                      pending={connect.isPending}
-                      cli={(d) => connectCli(conn.repo, conn.branch, d)}
-                      onSave={(dir) => save({ dir }, close)}
+                      connectCli={connectCli}
+                      onSave={(req) =>
+                        connect.mutate(req, { onSuccess: close })
+                      }
                       onCancel={close}
                     />
-                  )
-                }
+                  ),
+                  branch:
+                    conn.mode === "app" ? (
+                      <BranchPick
+                        repo={conn.repo}
+                        current={conn.branch}
+                        error={connect.error}
+                        onPick={(branch) => save({ branch }, close)}
+                        onCancel={close}
+                        cli={(b) => connectCli(conn.repo, b, conn.dir ?? "")}
+                      />
+                    ) : (
+                      <TextEdit
+                        label="Branch"
+                        initial={conn.branch}
+                        placeholder="main"
+                        error={connect.error}
+                        pending={connect.isPending}
+                        cli={(b) => connectCli(conn.repo, b, conn.dir ?? "")}
+                        onSave={(branch) => save({ branch }, close)}
+                        onCancel={close}
+                      />
+                    ),
+                  path:
+                    conn.mode === "app" ? (
+                      <PathPick
+                        repo={conn.repo}
+                        branch={conn.branch}
+                        current={conn.dir ?? ""}
+                        error={connect.error}
+                        onPick={(dir) => save({ dir }, close)}
+                        onCancel={close}
+                        cli={(d) => connectCli(conn.repo, conn.branch, d)}
+                      />
+                    ) : (
+                      <TextEdit
+                        label="Path"
+                        initial={conn.dir ?? ""}
+                        placeholder="the repository root"
+                        error={connect.error}
+                        pending={connect.isPending}
+                        cli={(d) => connectCli(conn.repo, conn.branch, d)}
+                        onSave={(dir) => save({ dir }, close)}
+                        onCancel={close}
+                      />
+                    ),
+                }}
               />
-            </>
-          )}
+            )}
+          />
+        )}
+        {conn && imageSet && image}
+        {build}
+        {source.data && (
           <PreviewsRow
             serviceRef={ref}
             branch={conn?.branch}
             canEdit={canAdmin(session, ref)}
           />
-          {conn && (
-            <>
-              <Row
-                label="Statuses"
-                hint="Pending, success or failure on each commit."
-                value={
-                  canEdit ? (
-                    <Check
-                      label={conn.status ? "posted" : "not posted"}
-                      checked={conn.status}
-                      disabled={
-                        connect.isPending ||
-                        (conn.mode !== "app" && !conn.token_set)
-                      }
-                      reason="Needs a token with Commit statuses write"
-                      onChange={(status) => save({ status }, () => {})}
-                    />
-                  ) : (
-                    onOffText(conn.status)
-                  )
-                }
-              />
-              {conn.mode !== "app" && (
-                <Row
-                  label="Webhook"
-                  hint="GitHub sends pushes here."
-                  canEdit={canEdit}
-                  value={
-                    <span className="flex flex-col gap-1">
-                      {conn.webhook_url ? (
-                        <span className="break-all font-mono">
-                          {conn.webhook_url}
-                        </span>
-                      ) : (
-                        <span className="text-warn">no public address yet</span>
-                      )}
-                      <span className="text-mut text-xs">
-                        token {conn.token_set ? "set" : "not set"}
-                      </span>
+        )}
+        {conn && (
+          <>
+            <Row
+              label="Commit statuses"
+              hint="Pending, success or failure on each commit, shown on GitHub."
+              canEdit={canEdit}
+              value={
+                conn.status ? (
+                  "posted to GitHub"
+                ) : (
+                  <span className="text-mut">not posted</span>
+                )
+              }
+              edit={(close) =>
+                conn.mode !== "app" && !conn.token_set ? (
+                  <span className="flex flex-col">
+                    <span className="text-mut">
+                      Needs a token with Commit statuses write: set it on the
+                      Webhook row.
                     </span>
-                  }
-                  after={
-                    conn.webhook_url && <CopyButton text={conn.webhook_url} />
-                  }
-                  edit={(close) => (
-                    <TokenEdit
-                      conn={conn}
-                      pending={connect.isPending}
-                      error={connect.error}
-                      onSave={(token) => save({ token }, close)}
-                      onRotate={() => {
-                        close();
-                        setConfirming("rotate");
-                      }}
-                      onCancel={close}
-                    />
-                  )}
-                />
-              )}
+                    <EditFoot error={null} onCancel={close} />
+                  </span>
+                ) : (
+                  <form
+                    aria-label="Edit commit statuses"
+                    className="flex flex-col"
+                    onSubmit={(e) => e.preventDefault()}
+                    onKeyDown={(e) => e.key === "Escape" && close()}
+                  >
+                    {/* Like Deploys from: one connection save at a time. */}
+                    <fieldset disabled={connect.isPending} className="min-w-0">
+                      <Choice
+                        label="Commit statuses"
+                        name="git-status"
+                        value={conn.status ? "on" : "off"}
+                        options={[
+                          ["on", "posted"],
+                          ["off", "not posted"],
+                        ]}
+                        onChange={(v) => save({ status: v === "on" }, close)}
+                      />
+                    </fieldset>
+                    <EditFoot error={connect.error} onCancel={close} />
+                  </form>
+                )
+              }
+            />
+            {conn.mode !== "app" && (
               <Row
-                label="Last push"
+                label="Webhook"
+                hint="GitHub sends pushes here."
+                canEdit={canEdit}
                 value={
                   <span className="flex flex-col gap-1">
-                    {conn.last_event ? (
-                      <span>
-                        {conn.last_event}
-                        {conn.last_event_at && (
-                          <span className="text-faint">
-                            {" "}
-                            · {since(conn.last_event_at)}
-                          </span>
-                        )}
+                    {conn.webhook_url ? (
+                      <span className="break-all font-mono">
+                        {conn.webhook_url}
                       </span>
                     ) : (
-                      <span className="text-mut">nothing received yet</span>
+                      <span className="text-warn">no public address yet</span>
                     )}
-                    {conn.pending && (
-                      <span className="text-mut">
-                        queued {commitText(conn.pending)}, waits for the current
-                        deploy
-                      </span>
-                    )}
-                    <span className="text-faint text-xs">
-                      connected {ago(conn.created_at)} by {conn.created_by}
+                    <span className="text-mut text-xs">
+                      token {conn.token_set ? "set" : "not set"}
                     </span>
                   </span>
                 }
+                after={
+                  conn.webhook_url && <CopyButton text={conn.webhook_url} />
+                }
+                edit={(close) => (
+                  <TokenEdit
+                    conn={conn}
+                    pending={connect.isPending}
+                    error={connect.error}
+                    onSave={(token) => save({ token }, close)}
+                    onRotate={() => {
+                      close();
+                      setConfirming("rotate");
+                    }}
+                    onCancel={close}
+                  />
+                )}
               />
-              {source.data.same_repo && source.data.same_repo.length > 0 && (
-                <Row
-                  label="Same repository"
-                  hint="This environment's other services from it."
-                  value={
-                    <Siblings
-                      serviceRef={ref}
-                      siblings={source.data.same_repo}
-                    />
-                  }
-                />
-              )}
-              {canEdit && <DeployRow serviceRef={ref} branch={conn.branch} />}
-            </>
-          )}
-        </dl>
-      )}
-      {conn && canEdit && !confirming && (
-        <div className="mt-2.5">
-          <Button small danger onClick={() => setConfirming("disconnect")}>
-            Disconnect
-          </Button>
-        </div>
-      )}
+            )}
+            {source.data?.same_repo && source.data.same_repo.length > 0 && (
+              <Row
+                label="Same repository"
+                hint="This environment's other services from it."
+                value={
+                  <Siblings serviceRef={ref} siblings={source.data.same_repo} />
+                }
+              />
+            )}
+          </>
+        )}
+      </dl>
       {conn && confirming === "rotate" && (
         <Confirm
           action="New secret"
@@ -416,9 +399,6 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     </div>
   );
 }
-
-const onOffText = (on: boolean) =>
-  on ? "on" : <span className="text-mut">off</span>;
 
 /**
  * A settings row: the label, and the value, which opens `edit` (a small
@@ -896,53 +876,98 @@ function Siblings({
   );
 }
 
-/** Deploys the branch's head, or a commit, branch or tag, now. */
-function DeployRow({
-  serviceRef: ref,
-  branch,
+/** The parts of a repository source its editor changes, one at a time. */
+type SourcePart = "repository" | "branch" | "path";
+
+const sourceParts: readonly (readonly [SourcePart, string, string])[] = [
+  ["repository", "Repository", "Where pushes come from."],
+  ["branch", "Branch", "Every push to it deploys."],
+  [
+    "path",
+    "Path",
+    "What is built; pushes that change nothing in it are skipped.",
+  ],
+];
+
+/**
+ * The Deploys from row's editor: pick the repository, branch or path and
+ * change it with its own editor (branch first, the usual change); under
+ * them who connected it, a link to it on GitHub and Disconnect. While a
+ * save is `pending` the picks are disabled: each save sends the whole
+ * connection from the cache, so a second one would undo the first.
+ */
+function SourceEdit({
+  conn,
+  pending,
+  editors,
+  onDisconnect,
 }: {
-  serviceRef: ServiceRef;
-  branch: string;
+  conn: GitConnection;
+  pending: boolean;
+  editors: Record<SourcePart, ReactNode>;
+  onDisconnect: () => void;
 }) {
-  const deploy = useGitDeploy(ref);
-  const [gitRef, setGitRef] = useState("");
+  const [part, setPart] = useState<SourcePart>("branch");
+  const hint = sourceParts.find(([p]) => p === part)?.[2];
   return (
-    <Row
-      label="Deploy now"
-      hint="Also redeploys what is live."
-      value={
-        <form
-          aria-label="Deploy from GitHub"
-          className="flex flex-wrap items-center gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            deploy.mutate(gitRef.trim());
-          }}
+    <span className="flex flex-col gap-2">
+      <fieldset disabled={pending} className="flex min-w-0 flex-col gap-2">
+        <Choice
+          label="Change"
+          name="git-source-part"
+          value={part}
+          options={sourceParts.map(([p, label]) => [p, label] as const)}
+          onChange={setPart}
+        />
+        <span className="text-xs text-mut">{hint}</span>
+        <span key={part}>{editors[part]}</span>
+      </fieldset>
+      <span className="flex flex-wrap items-center gap-x-4 gap-y-2 border-soft border-t pt-2 text-xs text-mut">
+        <span>
+          connected {ago(conn.created_at)} by {conn.created_by}
+        </span>
+        <a
+          href={`https://github.com/${conn.repo}`}
+          target="_blank"
+          rel="noreferrer"
         >
-          <input
-            aria-label="Commit, branch or tag"
-            value={gitRef}
-            placeholder={`${branch} head`}
-            onChange={(e) => setGitRef(e.target.value)}
-            className={`${input} w-44 text-xs`}
-          />
-          <Act
-            small
-            type="submit"
-            disabled={deploy.isPending}
-            cli={gitDeployCli(ref, gitRef.trim())}
-          >
-            Deploy {gitRef.trim() || branch}
-          </Act>
-          {deploy.data && (
-            <span className="text-mut text-xs">
-              queued {commitText(deploy.data.commit)}
-            </span>
+          Open on GitHub ↗
+        </a>
+        <span className="flex-1" />
+        <Button small danger onClick={onDisconnect}>
+          Disconnect…
+        </Button>
+      </span>
+    </span>
+  );
+}
+
+/**
+ * What GitHub's last push did (deployed, ignored and why) and a commit
+ * queued behind the deploy in flight, for a service connected to a
+ * repository: a line on History, since it is a record, not a setting.
+ * Nothing until a push arrives.
+ */
+export function LastPush({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const conn = useGitSource(ref).data?.connection;
+  if (!conn || (!conn.last_event && !conn.pending)) return null;
+  return (
+    <p className="flex flex-wrap gap-x-3 text-mut">
+      {conn.last_event && (
+        <span>
+          Last push from GitHub:{" "}
+          <span className="text-sec">{conn.last_event}</span>
+          {conn.last_event_at && (
+            <span className="text-faint"> · {since(conn.last_event_at)}</span>
           )}
-          <ErrorText error={deploy.error} />
-        </form>
-      }
-    />
+        </span>
+      )}
+      {conn.pending && (
+        <span>
+          queued {commitText(conn.pending)}, waits for the current deploy
+        </span>
+      )}
+    </p>
   );
 }
 
@@ -1287,7 +1312,7 @@ function ConnectForm({
   const [dir, setDir] = useState("");
   const [token, setToken] = useState("");
   return (
-    <div className="mb-3 flex max-w-[760px] flex-col gap-2.5 border-line border-y py-3">
+    <div className="flex max-w-[760px] flex-col gap-2.5">
       {appReady && (
         <Choice
           label="Through"

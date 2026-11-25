@@ -26,12 +26,13 @@ import type {
   ServiceRef,
   SettingChange,
   SettingsPatch,
+  Volume,
 } from "../../data/types";
 import { modKey } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
 import { CliHint } from "../../ui/CliHint";
 import { Act, Button, Check, ErrorText } from "../../ui/kit";
-import { SectionsLayout, SettingsSection } from "../../ui/sections";
+import { SettingsSection } from "../../ui/sections";
 import { BackupsPanel } from "../backups/BackupsPanel";
 import { SourceSection } from "../git/SourceSection";
 import { EnvServer } from "../servers/parts";
@@ -41,8 +42,7 @@ import { DomainsPanel } from "../service/DomainsPanel";
 import { imageSetting } from "../service/releases";
 import { limitText } from "../service/Usage";
 import { HealthOnServer, UptimeChecks } from "../uptime/UptimePanel";
-import { Folded, OpenValue } from "./OpenValue";
-import { serviceSettingSections } from "./sections";
+import { OpenValue } from "./OpenValue";
 import {
   editPlaceholder,
   editText,
@@ -56,9 +56,6 @@ import {
 
 type KeyedChange = SettingChange & { key: SettingKey };
 
-/** A row of a settings section, and its summary when it folds away. */
-type RowItem = { key: string; node: ReactNode; folded?: string };
-
 /** The Settings section a setting's row is in, for ?edit=<setting>. */
 function sectionOf(key: TextSettingKey) {
   if (key === "image" || key === "dockerfile_path" || key === "build_command")
@@ -68,18 +65,14 @@ function sectionOf(key: TextSettingKey) {
   return "running";
 }
 
-/** Whether a stored setting is the platform default: empty, zero, off. */
-const unset = (v: string | number | boolean) =>
-  v === "" || v === 0 || v === false;
-
 /**
- * A service's Settings tab: every setting on one page, in sections named
- * after what people come to change (serviceSettingSections), with the
- * list of them on the left. Rows are a label and the value; the value
- * opens its small editor. Settings left on their defaults fold into one
- * row per section. Edits are staged like variables and go live together
- * with Apply in the header. `edit` opens one setting's editor (a link
- * that points at a fix, ?edit=port).
+ * A service's Settings tab: every setting on one page in one narrow
+ * column, in sections named after what people come to change
+ * (serviceSettingSections; each an anchor, settings#domains, that search
+ * links to). Every row has one shape: a label and the value, with
+ * defaults marked; the value opens its small editor. Edits are staged
+ * like variables and go live together with Apply in the header. `edit`
+ * opens one setting's editor (a link that points at a fix, ?edit=port).
  */
 export function SettingsPanel({
   serviceRef: ref,
@@ -92,7 +85,6 @@ export function SettingsPanel({
   const { environment } = useEnvironment(ref);
   const volumes = useVolumes(ref);
   const pending = useChanges(ref);
-  const discard = useDiscardChanges();
   const isAdmin = useIsAdmin();
   const [archiving, setArchiving] = useState(false);
   const changes = pending.settings.flatMap((c) =>
@@ -104,304 +96,199 @@ export function SettingsPanel({
   const change = (key: SettingKey) => changes.find((c) => c.key === key);
   const portFix = usePortFix(ref, service, change("port"));
   // ?edit=port (a failed release's fix) opens that editor: bring its
-  // section into view once.
+  // section into view once. Else the address's #hash (a search result)
+  // names the section, which only exists once the page has rendered.
   useEffect(() => {
-    if (edit) document.getElementById(sectionOf(edit))?.scrollIntoView();
+    const id = edit ? sectionOf(edit) : location.hash.slice(1);
+    if (id) document.getElementById(id)?.scrollIntoView();
   }, [edit]);
-  // One row of settings: its fields edit together in one small form. It
-  // folds away while every field is on its default, nothing is staged,
-  // and nothing points at it (?edit, a suggested fix).
+  // One row of settings: its fields edit together in one small form.
   const row = (
     label: string,
     hint: string,
     parts: Part[],
     extra?: ReactNode,
     suggest?: Suggestion,
-    { fold = true, extraDefault = true } = {},
-  ): RowItem => {
-    const open = !!edit && parts.some((p) => p.key === edit);
-    const onDefault =
-      fold &&
-      extraDefault &&
-      !open &&
-      !suggest &&
-      parts.every((p) => !change(p.key) && unset(service[p.key]));
-    return {
-      key: label,
-      node: (
-        <SettingRow
-          key={label}
-          serviceRef={ref}
-          label={label}
-          hint={hint}
-          parts={parts}
-          changes={changes}
-          service={service}
-          open={open}
-          staged={pending.count > 0}
-          extra={extra}
-          suggest={suggest}
-        />
-      ),
-      folded: onDefault
-        ? `${label.toLowerCase()} (${parts
-            .map((p) =>
-              (p.shown ?? formatSetting(p.key, service[p.key])).replace(
-                / \(default\)$/,
-                "",
-              ),
-            )
-            .join(", ")})`
-        : undefined,
-    };
-  };
-  const item = (label: string, node: ReactNode): RowItem => ({
-    key: label,
-    node: (
-      <Item key={label} label={label}>
-        {node}
-      </Item>
-    ),
-  });
-  const sections = serviceSettingSections
-    .filter((s) => !("stateful" in s) || service.stateful)
-    .map((s) =>
-      s.id === "archive" ? { ...s, label: `Archive ${ref.service}` } : s,
-    );
-
-  return (
-    <SectionsLayout label={`${ref.service} settings`} sections={sections}>
-      <div className="flex flex-col gap-10 md:pl-8">
-        <SettingsSection id="source" title="Source">
-          <Rows
-            items={[
-              row(
-                "Image",
-                "What Deploy runs. Empty: it builds from source.",
-                [{ key: "image" }],
-                <ImageNote serviceRef={ref} />,
-                undefined,
-                { fold: false },
-              ),
-              row("Build", "For deploys from source.", [
-                { key: "dockerfile_path", word: "Dockerfile" },
-                { key: "build_command", word: "build command" },
-              ]),
-            ]}
-          />
-          <SourceSection serviceRef={ref} />
-        </SettingsSection>
-
-        <SettingsSection id="running" title="Running">
-          <Rows
-            items={[
-              row(
-                "Port",
-                "Where the app listens.",
-                // Unset, it is the template's port (5432, 6379) or 8080.
-                [
-                  {
-                    key: "port",
-                    shown: service.port
-                      ? String(service.port)
-                      : `${listenPort(service)} (default)`,
-                  },
-                ],
-                <span className="font-mono text-xs text-mut">
-                  others reach it at {service.name}:{listenPort(service)}
-                </span>,
-                portFix,
-                { fold: false },
-              ),
-              row("Start command", "Instead of the image's own.", [
-                { key: "start_command" },
-              ]),
-              row("Limits", "The most it may use.", [
-                { key: "cpus", word: "CPU", shown: limitText(service, "cpu") },
-                {
-                  key: "memory_mb",
-                  word: "memory",
-                  shown: limitText(service, "memory"),
-                },
-              ]),
-              item(
-                "Volumes",
-                <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                  {volumes.length === 0 ? (
-                    <span className="text-mut">none</span>
-                  ) : (
-                    volumes.map((v) => (
-                      <span key={v.name} className="font-mono">
-                        {v.name} at {v.mount_path}
-                        {v.pending && (
-                          <>
-                            <span className="font-sans text-warn">
-                              {" "}
-                              saved, not applied
-                            </span>{" "}
-                            <button
-                              type="button"
-                              className="lnk font-sans"
-                              disabled={discard.isPending}
-                              onClick={() =>
-                                discard.mutate({
-                                  env: envPath(ref),
-                                  selection: {
-                                    volumes: [
-                                      { service: ref.service, name: v.name },
-                                    ],
-                                  },
-                                })
-                              }
-                            >
-                              Discard
-                            </button>
-                          </>
-                        )}
-                      </span>
-                    ))
-                  )}
-                  <AddVolume serviceRef={ref} />
-                </span>,
-              ),
-              ...(environment.server
-                ? [
-                    item(
-                      "Server",
-                      <>
-                        <EnvServer environment={environment} />{" "}
-                        <span className="text-mut">
-                          set by {environment.name}
-                        </span>
-                      </>,
-                    ),
-                  ]
-                : []),
-            ]}
-          />
-          {/* Only for databases: detected, or set here (so it can be undone). */}
-          {(service.data_engine || service.database !== "") && (
-            <DatabaseSettings serviceRef={ref} service={service} />
-          )}
-        </SettingsSection>
-
-        <SettingsSection id="deploys" title="Deploys">
-          <Rows
-            items={[
-              item(
-                "Downtime",
-                service.stateful
-                  ? "A few seconds: the old release stops before the new one starts, since only one copy can use the volume at a time."
-                  : "None: the new release starts beside the old one, then traffic moves over.",
-              ),
-              row(
-                "Before it goes live",
-                "Runs with the new image first, like migrations.",
-                [
-                  { key: "pre_deploy_command", word: "command" },
-                  { key: "pre_deploy_timeout_seconds", word: "timeout" },
-                ],
-                <PreDeploySnapshot
-                  serviceRef={ref}
-                  live={service.pre_deploy_snapshot}
-                  change={change("pre_deploy_snapshot")}
-                />,
-                undefined,
-                {
-                  extraDefault:
-                    !service.pre_deploy_snapshot &&
-                    !change("pre_deploy_snapshot"),
-                },
-              ),
-            ]}
-          />
-        </SettingsSection>
-
-        <SettingsSection id="health" title="Health and uptime">
-          <Rows
-            items={[
-              row(
-                "Health check",
-                "Traffic moves to a new release once this answers.",
-                [
-                  { key: "health_check_path", word: "path" },
-                  { key: "health_check_timeout_seconds", word: "timeout" },
-                ],
-                undefined,
-                undefined,
-                { fold: false },
-              ),
-              row(
-                "Checks while running",
-                "Restarts the service when every try fails.",
-                service.health_check_interval_seconds >= 0
-                  ? [
-                      { key: "health_check_interval_seconds", word: "every" },
-                      {
-                        key: "health_check_probe_timeout_seconds",
-                        word: "timeout",
-                      },
-                      { key: "health_check_retries", word: "tries" },
-                      {
-                        key: "health_check_start_period_seconds",
-                        word: "wait after start",
-                      },
-                    ]
-                  : [{ key: "health_check_interval_seconds", word: "every" }],
-              ),
-            ]}
-          />
-          <HealthOnServer serviceRef={ref} />
-          <UptimeChecks serviceRef={ref} />
-        </SettingsSection>
-
-        <DomainsPanel serviceRef={ref} />
-
-        {service.stateful && <BackupsPanel serviceRef={ref} />}
-
-        <SettingsSection id="archive" title={`Archive ${ref.service}`}>
-          <p className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sec">
-            <span>
-              Stops it and takes its domains down. Volumes, variables and
-              releases are kept, listed under Archived on the project.
-            </span>
-            {isAdmin ? (
-              <Button danger onClick={() => setArchiving(true)}>
-                Archive {ref.service}…
-              </Button>
-            ) : (
-              <span className="text-mut">An admin can archive it.</span>
-            )}
-          </p>
-          {archiving && (
-            <ArchiveConfirm
-              serviceRef={ref}
-              onCancel={() => setArchiving(false)}
-            />
-          )}
-        </SettingsSection>
-      </div>
-    </SectionsLayout>
+  ) => (
+    <SettingRow
+      key={label}
+      serviceRef={ref}
+      label={label}
+      hint={hint}
+      parts={parts}
+      changes={changes}
+      service={service}
+      open={!!edit && parts.some((p) => p.key === edit)}
+      staged={pending.count > 0}
+      extra={extra}
+      suggest={suggest}
+    />
   );
-}
+  const snapshot = change("pre_deploy_snapshot");
 
-/**
- * A section's rows: the set ones, then the ones on their defaults folded
- * into one "N on defaults" row that opens them in place.
- */
-function Rows({ items }: { items: RowItem[] }) {
-  const [open, setOpen] = useState(false);
-  const folded = items.filter((i) => i.folded);
   return (
-    <dl className="props [grid-template-columns:200px_minmax(0,1fr)]">
-      {items.filter((i) => !i.folded).map((i) => i.node)}
-      <Folded
-        summary={folded.map((i) => i.folded)}
-        open={open}
-        onToggle={() => setOpen(!open)}
-      />
-      {open && folded.map((i) => i.node)}
-    </dl>
+    <div className="flex max-w-[860px] flex-col gap-10">
+      <SettingsSection id="source" title="Source">
+        <SourceSection
+          serviceRef={ref}
+          image={row(
+            "Image",
+            "What Deploy runs. Empty: it builds from source.",
+            [{ key: "image" }],
+            <ImageNote serviceRef={ref} />,
+          )}
+          // ?edit=image (a fix for a failed deploy) needs the row too.
+          imageSet={
+            service.image !== "" || !!change("image") || edit === "image"
+          }
+          build={row("Build", "For deploys from source.", [
+            { key: "dockerfile_path", word: "Dockerfile" },
+            { key: "build_command", word: "build command" },
+          ])}
+        />
+      </SettingsSection>
+
+      <SettingsSection id="running" title="Running">
+        <dl className="props">
+          {row(
+            "Port",
+            "Where the app listens.",
+            // Unset, it is the template's port (5432, 6379) or 8080.
+            [
+              {
+                key: "port",
+                shown: service.port
+                  ? String(service.port)
+                  : `${listenPort(service)} (default)`,
+              },
+            ],
+            <span className="font-mono text-xs text-mut">
+              others reach it at {service.name}:{listenPort(service)}
+            </span>,
+            portFix,
+          )}
+          {row("Start command", "Instead of the image's own.", [
+            { key: "start_command" },
+          ])}
+          {row("Limits", "The most it may use.", [
+            {
+              key: "cpus",
+              // "1 CPU" says it; "CPU" only before "no limit".
+              word: service.effective_cpus ? undefined : "CPU",
+              shown: limitText(service, "cpu"),
+            },
+            {
+              key: "memory_mb",
+              word: "memory",
+              shown: limitText(service, "memory"),
+            },
+          ])}
+          <VolumesRow serviceRef={ref} volumes={volumes} />
+          {environment.server && (
+            <Item label="Server">
+              <EnvServer environment={environment} />{" "}
+              <span className="text-mut">set by {environment.name}</span>
+            </Item>
+          )}
+        </dl>
+        {/* Only for databases: detected, or set here (so it can be undone). */}
+        {(service.data_engine || service.database !== "") && (
+          <DatabaseSettings serviceRef={ref} service={service} />
+        )}
+      </SettingsSection>
+
+      <SettingsSection id="deploys" title="Deploys">
+        <dl className="props">
+          <Item label="Downtime">
+            {service.stateful
+              ? "A few seconds: the old release stops before the new one starts, since only one copy can use the volume at a time."
+              : "None: the new release starts beside the old one, then traffic moves over."}
+          </Item>
+          {row(
+            "Before it goes live",
+            "Runs with the new image first, like migrations.",
+            [
+              { key: "pre_deploy_command", word: "command" },
+              { key: "pre_deploy_timeout_seconds", word: "timeout" },
+            ],
+            // A snapshot is taken before the command, so it's offered
+            // once there is one (or while it is on).
+            (service.pre_deploy_command ||
+              change("pre_deploy_command") ||
+              service.pre_deploy_snapshot ||
+              snapshot) && (
+              <PreDeploySnapshot
+                serviceRef={ref}
+                live={service.pre_deploy_snapshot}
+                change={snapshot}
+              />
+            ),
+          )}
+        </dl>
+      </SettingsSection>
+
+      <SettingsSection id="health" title="Health and uptime">
+        <dl className="props">
+          {row(
+            "Health check",
+            "Traffic moves to a new release once this answers.",
+            [
+              { key: "health_check_path", word: "path" },
+              { key: "health_check_timeout_seconds", word: "timeout" },
+            ],
+          )}
+          {row(
+            "Checks while running",
+            "Restarts the service when every try fails.",
+            service.health_check_interval_seconds >= 0
+              ? [
+                  { key: "health_check_interval_seconds", word: "every" },
+                  {
+                    key: "health_check_probe_timeout_seconds",
+                    word: "timeout",
+                  },
+                  { key: "health_check_retries", word: "tries" },
+                  {
+                    key: "health_check_start_period_seconds",
+                    word: "wait after start",
+                  },
+                ]
+              : [{ key: "health_check_interval_seconds", word: "every" }],
+          )}
+        </dl>
+        <HealthOnServer serviceRef={ref} />
+        <UptimeChecks serviceRef={ref} />
+      </SettingsSection>
+
+      <DomainsPanel serviceRef={ref} />
+
+      {service.stateful && <BackupsPanel serviceRef={ref} />}
+
+      <SettingsSection
+        id="archive"
+        title={<span className="text-fail">Archive {ref.service}</span>}
+      >
+        <p className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sec">
+          <span>
+            Stops it and takes its domains down. Volumes, variables and releases
+            are kept, listed under Archived on the project.
+          </span>
+          {isAdmin ? (
+            <Button danger onClick={() => setArchiving(true)}>
+              Archive {ref.service}…
+            </Button>
+          ) : (
+            <span className="text-mut">An admin can archive it.</span>
+          )}
+        </p>
+        {archiving && (
+          <ArchiveConfirm
+            serviceRef={ref}
+            onCancel={() => setArchiving(false)}
+          />
+        )}
+      </SettingsSection>
+    </div>
   );
 }
 
@@ -430,77 +317,137 @@ const useAddVolume = () =>
     ({ ref }) => staging(ref),
   );
 
-/** "+ Add volume", then a name, a mount path and whether to apply now. */
-function AddVolume({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+/**
+ * The Volumes row: the service's volumes, a staged one with Discard
+ * under it, and the value opens a form to add one (a name, a mount path
+ * and whether to apply now).
+ */
+function VolumesRow({
+  serviceRef: ref,
+  volumes,
+}: {
+  serviceRef: ServiceRef;
+  volumes: Volume[];
+}) {
   const add = useAddVolume();
+  const discard = useDiscardChanges();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [path, setPath] = useState("");
   const [apply, setApply] = useState(false);
+  const list =
+    volumes.length === 0 ? (
+      <span className="text-mut">none</span>
+    ) : (
+      <span className="flex flex-wrap gap-x-4 gap-y-1 font-mono">
+        {volumes.map((v) => (
+          <span key={v.name}>
+            {v.name} <span className="font-sans text-mut">at</span>{" "}
+            {v.mount_path}
+          </span>
+        ))}
+      </span>
+    );
+  const staged = volumes.filter((v) => v.pending);
   if (!open) {
     return (
-      <Button small onClick={() => setOpen(true)}>
-        Add volume
-      </Button>
+      <Item label="Volumes">
+        <span className="flex flex-col gap-1">
+          <OpenValue label="Add a volume" onOpen={() => setOpen(true)}>
+            <span className="flex flex-wrap items-baseline justify-between gap-3">
+              {list}
+              <span className="text-xs text-mut">Add</span>
+            </span>
+          </OpenValue>
+          {staged.length > 0 && (
+            <span className="flex flex-wrap items-baseline gap-3 text-xs text-mut">
+              Saved {staged.map((v) => v.name).join(", ")}: Apply in the header
+              puts it live.
+              <button
+                type="button"
+                className="lnk"
+                disabled={discard.isPending}
+                onClick={() =>
+                  discard.mutate({
+                    env: envPath(ref),
+                    selection: {
+                      volumes: staged.map((v) => ({
+                        service: ref.service,
+                        name: v.name,
+                      })),
+                    },
+                  })
+                }
+              >
+                Discard
+              </button>
+            </span>
+          )}
+          <ErrorText error={discard.error} />
+        </span>
+      </Item>
     );
   }
   const cli = `dock volume add ${name.trim() || "<name>"} ${path.trim() || "<path>"}${apply ? " --deploy" : ""} -s ${ref.service} -e ${ref.environment}`;
   return (
-    <form
-      aria-label="Add volume"
-      className="mt-1.5 flex flex-wrap items-center gap-2"
-      onKeyDown={(e) => e.key === "Escape" && setOpen(false)}
-      onSubmit={(e) => {
-        e.preventDefault();
-        add.mutate(
-          { ref, name: name.trim(), mount_path: path.trim(), apply },
-          {
-            onSuccess: () => {
-              setOpen(false);
-              setName("");
-              setPath("");
+    <Item label="Volumes">
+      {volumes.length > 0 && list}
+      <form
+        aria-label="Add volume"
+        className="mt-1.5 flex flex-wrap items-center gap-2"
+        onKeyDown={(e) => e.key === "Escape" && setOpen(false)}
+        onSubmit={(e) => {
+          e.preventDefault();
+          add.mutate(
+            { ref, name: name.trim(), mount_path: path.trim(), apply },
+            {
+              onSuccess: () => {
+                setOpen(false);
+                setName("");
+                setPath("");
+              },
             },
-          },
-        );
-      }}
-    >
-      <input
-        // biome-ignore lint/a11y/noAutofocus: opened on request
-        autoFocus
-        aria-label="Volume name"
-        placeholder="data"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        className="field w-32 py-0.5 font-mono text-xs"
-      />
-      <span className="text-mut">at</span>
-      <input
-        aria-label="Mount path"
-        placeholder="/var/lib/data"
-        value={path}
-        onChange={(e) => setPath(e.target.value)}
-        className="field w-44 py-0.5 font-mono text-xs"
-      />
-      <Check label="apply now" checked={apply} onChange={setApply} />
-      <Act
-        small
-        primary
-        type="submit"
-        cli={cli}
-        disabled={add.isPending || !name.trim() || !path.startsWith("/")}
-        title={
-          path && !path.startsWith("/")
-            ? "The path must be absolute"
-            : undefined
-        }
+          );
+        }}
       >
-        {apply ? "Add and apply" : "Stage volume"}
-      </Act>
-      <Button small onClick={() => setOpen(false)}>
-        Cancel
-      </Button>
-      <ErrorText error={add.error} />
-    </form>
+        <input
+          // biome-ignore lint/a11y/noAutofocus: opened on request
+          autoFocus
+          aria-label="Volume name"
+          placeholder="data"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="field w-32 py-0.5 font-mono text-xs"
+        />
+        <span className="text-mut">at</span>
+        <input
+          aria-label="Mount path"
+          placeholder="/var/lib/data"
+          value={path}
+          onChange={(e) => setPath(e.target.value)}
+          className="field w-44 py-0.5 font-mono text-xs"
+        />
+        <Check label="apply now" checked={apply} onChange={setApply} />
+        <Act
+          small
+          primary
+          type="submit"
+          cli={cli}
+          disabled={add.isPending || !name.trim() || !path.startsWith("/")}
+          title={
+            path && !path.startsWith("/")
+              ? "The path must be absolute"
+              : undefined
+          }
+        >
+          {apply ? "Add and apply" : "Stage volume"}
+        </Act>
+        <Button small onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+        <ErrorText error={add.error} />
+      </form>
+    </Item>
   );
 }
 

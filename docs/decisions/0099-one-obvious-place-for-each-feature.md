@@ -98,6 +98,25 @@ changes wait, the review drawer.
 - Pages with a section list are longer than one view was; the list and
   the anchors keep them navigable, and search jumps straight to a
   section.
+
+## Amended 2026-11-25: a service's Settings in one column
+
+Saile found the service's Settings page hard to read: the list of
+sections on the left only repeated the headings beside it, rows behaved
+five ways (chevrons, a bare checkbox, inline buttons, a link outside the
+row, a loose Disconnect), and some rows were not settings at all (Last
+push, Deploy now). Of four mocks, Saile picked "one column, one row
+shape":
+
+- No section list. One column, 860px at most; the sections keep their
+  anchors for search and links.
+- Every row is a label and a value that opens its form. Defaults show in
+  place, marked "default", instead of folding into "N on defaults".
+- Source is one "Deploys from" row (repository · branch · path) whose
+  form changes each of them, links to GitHub and disconnects. The image
+  row shows only when no repository is connected or an image is set.
+- Last push moved to History; Deploy now is gone, since the header's
+  Deploy already deploys a commit, branch or tag.
 - Blind reviews earlier scored tab-only changes lower (0076's trials).
   This changes placement, not just tabs, and should be measured with
   "find X" tasks on the review kit.
