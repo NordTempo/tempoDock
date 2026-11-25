@@ -42,6 +42,7 @@ export function Shell() {
 function OrgShell() {
   useLiveUpdates();
   const mode = useShellMode();
+  const demo = useSession()?.demo === true;
   return (
     <PaletteProvider>
       <a
@@ -53,6 +54,7 @@ function OrgShell() {
       {/* One sticky stack, so the not-live strip sits under the bars
           instead of sticking over them (index.css counts it in --shell-top). */}
       <div className="sticky top-0 z-30">
+        {demo && <DemoBar />}
         {mode === "console" && <ConsoleBar />}
         {mode === "app" && <TopBar />}
         <NotLive />
@@ -232,6 +234,29 @@ function ConsoleBar() {
         Back to projects
       </Link>
     </div>
+  );
+}
+
+/**
+ * The public demo's strip (ADR 0100), above every page: why changes
+ * don't last, and where to get Dock. A fixed 30px, which index.css
+ * counts in --shell-top through the `demo-bar` class.
+ */
+function DemoBar() {
+  return (
+    <p className="demo-bar flex h-[30px] items-center gap-4 overflow-hidden border-b border-line bg-page px-4 text-xs whitespace-nowrap text-sec">
+      <span className="font-semibold text-fg">Demo</span>
+      <span className="min-w-0 truncate">
+        Everyone shares this account. It starts fresh every hour.
+      </span>
+      <a
+        href="https://dock.nordtempo.com/docs/install"
+        className="ml-auto inline-flex min-h-[24px] items-center text-fg underline underline-offset-[3px]"
+      >
+        <span className="hidden sm:inline">Install Dock on your server</span>
+        <span className="sm:hidden">Install Dock</span>
+      </a>
+    </p>
   );
 }
 

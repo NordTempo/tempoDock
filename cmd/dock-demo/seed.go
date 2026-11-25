@@ -109,12 +109,19 @@ func (s *seeder) deploy(path, image string) int64 {
 	return out.ID
 }
 
-// org names the org and the seed user.
+// org names the org, the seed user and the server.
 func (s *seeder) org() {
 	s.call(http.MethodPatch, "/me", apitypes.UpdateMeRequest{Name: "Ada Lovelace"}, nil)
 	s.call(http.MethodPatch, "/org", apitypes.UpdateOrgRequest{Name: "Acme", Slug: "acme"}, nil)
 	// Acme from now on, also once the seed user is in a second org.
 	s.c.org = "acme"
+	// The control plane is named after its host, a container ID here.
+	var servers []apitypes.Server
+	s.call(http.MethodGet, "/servers", nil, &servers)
+	if s.err == nil && len(servers) > 0 {
+		name := "acme-1"
+		s.call(http.MethodPatch, "/servers/"+url.PathEscape(servers[0].Name), apitypes.UpdateServerRequest{Name: &name}, nil)
+	}
 }
 
 // shop is the busiest project: five services in production with a
