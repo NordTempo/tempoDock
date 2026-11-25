@@ -16,7 +16,17 @@ type LogSearch = {
   /** Backlog lines, when not the default 500; 0 for all. */
   tail?: number;
   since?: string;
+  /** A range picked on the chart, in ms; both or neither. */
+  from?: number;
+  to?: number;
 };
+
+/** A chart range from the address, when both ends are there and in order. */
+function rangeOf({ from, to }: Record<string, unknown>) {
+  return typeof from === "number" && typeof to === "number" && from < to
+    ? { from, to }
+    : {};
+}
 
 // Full-height logs. Filters live in the URL so a filtered view can be shared.
 export const Route = createFileRoute(
@@ -44,6 +54,7 @@ export const Route = createFileRoute(
       typeof search.since === "string" && search.since
         ? search.since
         : undefined,
+    ...rangeOf(search),
   }),
   component: LogsTab,
 });
@@ -61,6 +72,10 @@ function LogsTab() {
     follow: search.follow ?? true,
     tail: search.tail ?? noFilter.tail,
     since: search.since ?? "",
+    range:
+      search.from !== undefined && search.to !== undefined
+        ? [search.from, search.to]
+        : null,
   };
 
   // The same view from a terminal.
@@ -91,6 +106,8 @@ function LogsTab() {
             follow: next.follow ? undefined : false,
             tail: next.tail === noFilter.tail ? undefined : next.tail,
             since: next.since || undefined,
+            from: next.range?.[0],
+            to: next.range?.[1],
           },
           replace: true,
           // The window scrolls the log: a filter change keeps its place.
