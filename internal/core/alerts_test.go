@@ -389,6 +389,9 @@ func TestJoinFitting(t *testing.T) {
 	if got := joinFitting([]string{strings.Repeat("x", 20)}, "\n", 10); utf8.RuneCountInString(got) != 10 {
 		t.Fatalf("one long text = %q, want 10 characters", got)
 	}
+	if got := joinFitting([]string{strings.Repeat("x", 40), "y"}, "\n", 30); utf8.RuneCountInString(got) != 30 || !strings.HasSuffix(got, "…\nand 1 more") {
+		t.Fatalf("a long first text = %q, want it cut to 30 characters saying 1 more", got)
+	}
 }
 
 // Discord and Pushover channels get their own bodies: Discord's content
@@ -399,17 +402,19 @@ func TestDiscordAndPushoverChannels(t *testing.T) {
 	h.c.AllowLoopbackAlertChannels(true)
 	var mu sync.Mutex
 	bodies := map[string][]string{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		mu.Lock()
-		bodies[r.URL.Path] = append(bodies[r.URL.Path], string(body))
+		bodies[r.URL.RequestURI()] = append(bodies[r.URL.RequestURI()], string(body))
 		mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	t.Cleanup(srv.Close)
+	// Discord's URL must be https: trust the receiver's certificate.
+	h.c.alerts.client.Transport.(*http.Transport).TLSClientConfig = srv.Client().Transport.(*http.Transport).TLSClientConfig
 	h.c.alerts.pushoverURL = srv.URL + "/pushover"
 	user, token := strings.Repeat("u", 30), strings.Repeat("t", 30)
-	h.platformChannel(apitypes.CreateAlertChannelRequest{Name: "discord", Kind: apitypes.ChannelDiscord, URL: srv.URL + "/discord"})
+	h.platformChannel(apitypes.CreateAlertChannelRequest{Name: "discord", Kind: apitypes.ChannelDiscord, URL: srv.URL + "/discord?thread_id=9"})
 	created := h.platformChannel(apitypes.CreateAlertChannelRequest{Name: "push", Kind: apitypes.ChannelPushover, User: user, Token: token})
 	if created.Channel.Target != "pushover.net" {
 		t.Fatalf("pushover target = %q", created.Channel.Target)
@@ -420,8 +425,10 @@ func TestDiscordAndPushoverChannels(t *testing.T) {
 	defer mu.Unlock()
 
 	var d discordMessage
-	if len(bodies["/discord"]) != 1 || json.Unmarshal([]byte(bodies["/discord"][0]), &d) != nil {
-		t.Fatalf("discord got %q", bodies["/discord"])
+	// wait=true: Discord answers once the message is saved.
+	discord := bodies["/discord?thread_id=9&wait=true"]
+	if len(discord) != 1 || json.Unmarshal([]byte(discord[0]), &d) != nil {
+		t.Fatalf("discord got %q", bodies)
 	}
 	if d.Content != "\\[critical\\] Server down\nNo answer for 5 minutes." || d.AllowedMentions.Parse == nil || len(d.AllowedMentions.Parse) != 0 {
 		t.Fatalf("discord message = %+v", d)
@@ -442,7 +449,7 @@ func TestAlertLinks(t *testing.T) {
 	h := newHarness(t)
 	org := int64(1)
 	deploy := apitypes.Alert{Project: "shop", Environment: "production", Service: "web", Target: &apitypes.AlertTarget{Release: 7}}
-	if got := h.c.alertLink(h.ctx, &org, deploy); got != "" {
+	if got := h.c.alertLinks(h.ctx, &org)(deploy); got != "" {
 		t.Fatalf("link without a UI address = %q", got)
 	}
 	h.opts.Config.Hooks.UIURL = "https://dock.example.com"
@@ -463,7 +470,7 @@ func TestAlertLinks(t *testing.T) {
 		{nil, apitypes.Alert{Server: "edge"}, ui + "/console/servers/edge"},
 		{nil, apitypes.Alert{Title: "Registry push failing"}, ui + "/console/alerts"},
 	} {
-		if got := h.c.alertLink(h.ctx, tc.org, tc.a); got != tc.want {
+		if got := h.c.alertLinks(h.ctx, tc.org)(tc.a); got != tc.want {
 			t.Errorf("link for %+v = %q, want %q", tc.a, got, tc.want)
 		}
 	}
@@ -800,6 +807,7 @@ func TestAlertPermissionsAndSecrets(t *testing.T) {
 		{Name: "e", Kind: apitypes.ChannelPushover, User: "short", Token: strings.Repeat("t", 30)},
 		{Name: "f", Kind: apitypes.ChannelPushover, User: strings.Repeat("u", 30), Token: strings.Repeat("t", 30), URL: "https://x"},
 		{Name: "g", Kind: apitypes.ChannelDiscord, URL: "https://x", User: strings.Repeat("u", 30)},
+		{Name: "h", Kind: apitypes.ChannelDiscord, URL: "http://discord.com/api/webhooks/1/x"},
 	} {
 		if _, err := h.c.CreateAlertChannel(h.ctx, testSystem, false, bad); err == nil {
 			t.Fatalf("channel %+v was accepted", bad)

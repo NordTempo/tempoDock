@@ -630,6 +630,7 @@ function AddChannel({ onClose }: { onClose: () => void }) {
             URL <span className="text-mut">stored encrypted, never shown</span>
           </span>
           <input
+            autoComplete="off"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder={urlPlaceholders[kind]}

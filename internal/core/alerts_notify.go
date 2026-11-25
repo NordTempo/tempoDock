@@ -600,8 +600,9 @@ func (c *Core) postSlack(ctx context.Context, ch store.AlertChannel, cfg channel
 	if len(group) > 1 {
 		texts = append(texts, strconv.Itoa(len(group))+" alerts")
 	}
+	link := c.alertLinks(ctx, ch.OrgID)
 	for _, n := range group {
-		texts = append(texts, slackText(n, c.alertLink(ctx, ch.OrgID, n.Alert)))
+		texts = append(texts, slackText(n, link(n.Alert)))
 	}
 	body, err := json.Marshal(map[string]string{"text": strings.Join(texts, "\n\n")})
 	if err != nil {
@@ -617,9 +618,10 @@ const discordLimit = 2000
 // laid out like Slack's (postSlack) and cut to fit discordLimit. Mentions
 // are off (allowed_mentions), so an alert quoting @everyone pings nobody.
 func (c *Core) postDiscord(ctx context.Context, ch store.AlertChannel, cfg channelConfig, group []apitypes.AlertNotification) error {
+	link := c.alertLinks(ctx, ch.OrgID)
 	texts := make([]string, len(group))
 	for i, n := range group {
-		texts[i] = discordText(n, c.alertLink(ctx, ch.OrgID, n.Alert))
+		texts[i] = discordText(n, link(n.Alert))
 	}
 	var msg discordMessage
 	msg.Content = joinFitting(texts, "\n\n", discordLimit)
@@ -628,7 +630,22 @@ func (c *Core) postDiscord(ctx context.Context, ch store.AlertChannel, cfg chann
 	if err != nil {
 		return err
 	}
-	return c.alerts.post(ctx, ch.OrgID != nil, cfg.URL, body, nil)
+	return c.alerts.post(ctx, ch.OrgID != nil, discordWait(cfg.URL), body, nil)
+}
+
+// discordWait asks Discord to answer only once the message is saved
+// (wait=true), keeping the URL's other parameters (thread_id): without
+// it, Discord may answer 204 for a message it then drops, and the
+// delivery isn't retried.
+func discordWait(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw // validated when added; post reports it
+	}
+	q := u.Query()
+	q.Set("wait", "true")
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 // discordMessage is the body of a Discord webhook's execute call.
@@ -717,7 +734,7 @@ func (c *Core) postPushover(ctx context.Context, ch store.AlertChannel, cfg chan
 			msg.Priority = 1
 		}
 	}
-	if link := c.alertLink(ctx, ch.OrgID, first.Alert); link != "" {
+	if link := c.alertLinks(ctx, ch.OrgID)(first.Alert); link != "" {
 		msg.URL, msg.URLTitle = link, "Open in Dock"
 	}
 	body, err := json.Marshal(msg)
@@ -729,18 +746,23 @@ func (c *Core) postPushover(ctx context.Context, ch store.AlertChannel, cfg chan
 
 // joinFitting joins texts with sep, keeping as many whole texts as fit in
 // limit characters and saying how many were left out; a first text too
-// long on its own is cut.
+// long on its own is cut, leaving room to say how many follow it.
 func joinFitting(texts []string, sep string, limit int) string {
 	if all := strings.Join(texts, sep); utf8.RuneCountInString(all) <= limit {
 		return all
 	}
+	more := func(kept int) string { return sep + "and " + strconv.Itoa(len(texts)-kept) + " more" }
 	for kept := len(texts) - 1; kept > 0; kept-- {
-		out := strings.Join(texts[:kept], sep) + sep + "and " + strconv.Itoa(len(texts)-kept) + " more"
+		out := strings.Join(texts[:kept], sep) + more(kept)
 		if utf8.RuneCountInString(out) <= limit {
 			return out
 		}
 	}
-	return clip(texts[0], limit-1) // clip adds an ellipsis
+	if len(texts) == 1 {
+		return clip(texts[0], limit-1) // clip adds an ellipsis
+	}
+	tail := more(1)
+	return clip(texts[0], limit-1-utf8.RuneCountInString(tail)) + tail
 }
 
 // signWebhook signs a webhook body: receivers recompute the HMAC-SHA256
@@ -871,25 +893,34 @@ func slackText(n apitypes.AlertNotification, link string) string {
 	return text
 }
 
-// alertLink is the UI page of alert a for a channel of org (nil: the
-// platform's): the release it names, else its service, else its server
-// in the console, else the alerts page; "" when Dock has no UI URL
-// (uiURL). An org channel's link costs one indexed read.
-func (c *Core) alertLink(ctx context.Context, org *int64, a apitypes.Alert) string {
+// alertLinks makes the links to alerts' UI pages for a channel of org
+// (nil: the platform's): the release an alert names, else its service,
+// else its server in the console, else the alerts page; "" when Dock has
+// no UI URL (uiURL). Made once per message, so a group's links cost one
+// indexed read of the org, not one per alert.
+func (c *Core) alertLinks(ctx context.Context, org *int64) func(apitypes.Alert) string {
 	ui := c.uiURL()
 	switch {
 	case ui == "":
-		return ""
-	case org == nil && a.Server != "":
-		return ui + "/console/servers/" + url.PathEscape(a.Server)
+		return func(apitypes.Alert) string { return "" }
 	case org == nil:
-		return ui + "/console/alerts"
+		return func(a apitypes.Alert) string {
+			if a.Server != "" {
+				return ui + "/console/servers/" + url.PathEscape(a.Server)
+			}
+			return ui + "/console/alerts"
+		}
 	}
 	o, err := c.store.GetOrg(ctx, *org)
 	if err != nil {
-		return ""
+		return func(apitypes.Alert) string { return "" }
 	}
-	base := ui + "/" + url.PathEscape(o.Slug)
+	return func(a apitypes.Alert) string { return orgAlertLink(ui+"/"+url.PathEscape(o.Slug), a) }
+}
+
+// orgAlertLink is the UI page of an org's alert a under base, the org's
+// address: its release, else its service, else the org's alerts page.
+func orgAlertLink(base string, a apitypes.Alert) string {
 	if a.Project == "" || a.Environment == "" || a.Service == "" {
 		return base + "/alerts"
 	}
@@ -1068,6 +1099,11 @@ func (e *alertEngine) channelSettings(req apitypes.CreateAlertChannelRequest, or
 		u, perr := url.Parse(req.URL)
 		if req.URL == "" || perr != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 			return cfg, "", "", invalid("a %s channel needs --url, an http:// or https:// URL", req.Kind)
+		}
+		// A Discord webhook's URL is its credential, and Discord serves
+		// only https.
+		if req.Kind == apitypes.ChannelDiscord && u.Scheme != "https" {
+			return cfg, "", "", invalid("a discord channel needs the webhook's https:// URL")
 		}
 		if len(req.To) > 0 {
 			return cfg, "", "", invalid("recipients are for email channels")

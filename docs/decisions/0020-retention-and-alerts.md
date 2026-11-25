@@ -248,7 +248,9 @@ Two more channel kinds, asked for by Saile. Both are grouped like Slack
   span and its link `[Open in Dock](<url>)`. A group longer than
   Discord's 2000 characters keeps whole alerts and says "and N more".
   Discord's 404 for a deleted webhook marks the channel broken in
-  Discord's words.
+  Discord's words. The URL must be https (it is the webhook's
+  credential), and posts add `wait=true`: without it Discord may answer
+  204 for a message it then drops, and nothing would retry it.
 - **`pushover`** posts to `api.pushover.net/1/messages.json` with a user
   (or group) key and an application token, both sealed like a URL; the
   list shows `pushover.net`. One alert's headline is the title and its
