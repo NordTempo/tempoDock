@@ -143,8 +143,8 @@ there: `internal/core`, `internal/store`, `internal/node`, `internal/cli`,
 - Changing the API: types in `internal/apitypes`, handlers in
   `internal/api`, then `make generate` so `web/openapi.json` and
   `web/src/api/schema.d.ts` stay in sync (CI checks). An operation that
-  makes the daemon connect to an address a user gives, or changes how
-  people sign in, gets a line in `demoRefused` (internal/api/demo.go):
+  makes the daemon connect to an address a user gives, changes how
+  people sign in, or keeps a large file on disk, gets a line in `demoRefused` (internal/api/demo.go):
   the public demo (ADR 0100) must not do it for strangers.
 
 ## Go conventions

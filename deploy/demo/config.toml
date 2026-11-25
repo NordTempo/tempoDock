@@ -6,6 +6,10 @@ data_dir = "/tmp/dock-demo"
 # The service's port; Dock's Caddy sends demo.nordtempo.com here.
 listen = "0.0.0.0:7070"
 public_ip = "203.0.113.10"
+# The fake runtime throws source uploads away after reading them; the cap
+# keeps visitors from parking large files on the server's disk (a token's
+# upload into a locked environment waits for its access request).
+max_upload_mb = 10
 base_domain = "apps.example.com"
 
 [demo]
