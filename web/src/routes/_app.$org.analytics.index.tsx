@@ -20,9 +20,10 @@ import { Page, PageBar, Panel, SectionHead } from "../ui/kit";
 // The Analytics area (ADR 0059, layout C): the organization's sites with
 // their visitors and page views over a range (?range=, else the one last
 // chosen on this browser, else 24h), as rows by project or as tiles. A
-// site opens its page on the same range. Projects that count nothing yet
-// are listed too, with the way to turn analytics on: a domain's switch on
-// its service's Domains tab.
+// site opens its page on the same range. Tiles fill the window's width,
+// so they line up with the controls on the bar above. Projects that count
+// nothing yet are listed too, with the way to turn analytics on: a
+// domain's switch on its service's Domains tab.
 export const Route = createFileRoute("/_app/$org/analytics/")({
   validateSearch: (s: Record<string, unknown>): { range?: OrgSitesRange } => ({
     range: orgSitesRanges.includes(s.range as OrgSitesRange)
@@ -62,7 +63,7 @@ function Sites() {
           )
         }
       />
-      <Page>
+      <Page width={view === "tiles" ? "max-w-none" : undefined}>
         {sites.length === 0 ? (
           <p className="text-mut">
             No site counts visits yet. Turn counting on for a domain on its
@@ -86,7 +87,8 @@ function Sites() {
 /**
  * Projects with no site: analytics is off for them. Turning it on is a
  * domain's switch, so each links to the first service with a domain of
- * its own (generated ones count too).
+ * its own (generated ones count too). The table keeps the default page
+ * width (1400px less its padding) when the tiles above run wider.
  */
 function WithoutAnalytics({ counted }: { counted: Set<string> }) {
   const org = useOrg();
@@ -96,7 +98,7 @@ function WithoutAnalytics({ counted }: { counted: Set<string> }) {
   const off = useProjects().filter((p) => !counted.has(p.name));
   if (off.length === 0) return null;
   return (
-    <section aria-labelledby="off">
+    <section aria-labelledby="off" className="max-w-[1344px]">
       <SectionHead id="off">Without analytics</SectionHead>
       <Panel>
         <table>
