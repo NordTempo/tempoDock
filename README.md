@@ -8,7 +8,11 @@ without being able to break or destroy things. Lightweight enough that the
 platform never competes with the apps it hosts.
 
 **[dock.nordtempo.com](https://dock.nordtempo.com)** ·
+**[Try the demo](https://demo.nordtempo.com)** ·
 [Install](docs/guide/install.md) · [Guide](docs/guide/README.md)
+
+The demo is the real UI and API on a pretend server: click around, deploy,
+roll back. Everyone shares one account and it starts fresh every hour.
 
 Built by NordTempo, for NordTempo first, and open source under the
 [AGPL-3.0](LICENSE) (see [vision](docs/vision.md)).
