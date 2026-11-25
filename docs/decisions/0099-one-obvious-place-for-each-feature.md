@@ -31,9 +31,10 @@ app turned up the reasons:
 
 The top bar for the organization and the sidebar for projects stay:
 Saile preferred them to one combined sidebar (round 1 of the mocks).
-The sidebar shows on the Projects page only (Saile, after the merge):
-inside a project the page has the full width, and the top bar's
-Projects leads back to the list.
+The sidebar shows in Projects only (Saile, after the merge): on the
+Projects page and every page inside a project, where Projects stays
+marked in the top bar. The organization's other views (Errors,
+Analytics, Images, Status pages, Inbox, Settings) have the full width.
 
 ## Decision
 
