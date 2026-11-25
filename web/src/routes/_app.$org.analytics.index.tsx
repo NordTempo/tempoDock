@@ -5,10 +5,9 @@ import {
   type OrgSitesRange,
   orgSitesQuery,
   orgSitesRanges,
+  sitesRange,
 } from "../features/analytics/loaders";
 import {
-  lastSitesRange,
-  rememberSitesRange,
   SiteRows,
   SiteTiles,
   useSiteView,
@@ -20,17 +19,17 @@ import { Page, PageBar, Panel, SectionHead } from "../ui/kit";
 
 // The Analytics area (ADR 0059, layout C): the organization's sites with
 // their visitors and page views over a range (?range=, else the one last
-// chosen on this browser, else 24h), as rows by project or as tiles. A site opens its page on
-// the same range. Projects that count nothing yet are listed too, with
-// the way to turn analytics on: a domain's switch on its service's
-// Domains tab.
+// chosen on this browser, else 24h), as rows by project or as tiles. A
+// site opens its page on the same range. Projects that count nothing yet
+// are listed too, with the way to turn analytics on: a domain's switch on
+// its service's Domains tab.
 export const Route = createFileRoute("/_app/$org/analytics/")({
   validateSearch: (s: Record<string, unknown>): { range?: OrgSitesRange } =>
     orgSitesRanges.includes(s.range as OrgSitesRange)
       ? { range: s.range as OrgSitesRange }
       : {},
   loaderDeps: ({ search: { range } }) => ({
-    range: range ?? lastSitesRange(),
+    range: range ?? sitesRange.get(),
   }),
   loader: ({ context: { queryClient }, deps: { range } }) =>
     queryClient.ensureQueryData(orgSitesQuery(range)),
@@ -38,7 +37,7 @@ export const Route = createFileRoute("/_app/$org/analytics/")({
 });
 
 function Sites() {
-  const { range = lastSitesRange() } = Route.useSearch();
+  const { range = sitesRange.get() } = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const [view, setView] = useSiteView();
   const sites = useSuspenseQuery(orgSitesQuery(range)).data;
@@ -53,8 +52,8 @@ function Sites() {
                 value={range}
                 options={orgSitesRanges}
                 onChange={(r) => {
-                  rememberSitesRange(r);
-                  navigate({ search: r === "24h" ? {} : { range: r } });
+                  sitesRange.set(r);
+                  navigate({ search: { range: r } });
                 }}
               />
               <ViewSwitch value={view} onChange={setView} />

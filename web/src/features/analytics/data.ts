@@ -33,6 +33,7 @@ export {
   orgAnalyticsDefaultsQuery,
   parseFilter,
   type StatsRange,
+  siteRange,
   sitesQuery,
   statsRanges,
   tracingStatusQuery,
@@ -319,15 +320,18 @@ export type AnalyticsChange = {
   filters?: Filter[];
 };
 
-/** s with change applied; defaults (30d, no filters) leave the URL. */
+/**
+ * s with change applied. A picked range stays in the URL, the default
+ * too, so a shared link shows it whatever the reader picked last; no
+ * filters leave it.
+ */
 export function applyChange<S extends AnalyticsSearch>(
   s: S,
   change: AnalyticsChange,
 ): S {
   const next = { ...s };
   if ("site" in change) next.site = change.site;
-  if (change.range)
-    next.range = change.range === "30d" ? undefined : change.range;
+  if (change.range) next.range = change.range;
   if (change.filters)
     next.f = change.filters.length
       ? change.filters.map(filterParam)

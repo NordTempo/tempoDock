@@ -9,6 +9,7 @@ import { LineChart } from "../features/stats/LineChart";
 import { useLiveService } from "../features/stats/live";
 import { LiveNote, RangeSwitch, Stat } from "../features/stats/parts";
 import {
+  metricsRange,
   type Point,
   rangeMs,
   ranges,
@@ -31,7 +32,9 @@ export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/metrics",
 )({
   validateSearch: validateRange,
-  loaderDeps: ({ search }) => ({ range: search.range ?? "1h" }),
+  loaderDeps: ({ search }) => ({
+    range: search.range ?? metricsRange.get(),
+  }),
   loader: ({ context: { queryClient }, params, deps }) => {
     // App metrics load beside the rest, but don't hold the tab up.
     void queryClient.prefetchQuery(
@@ -49,7 +52,7 @@ export const Route = createFileRoute(
 
 function MetricsTab() {
   const ref = servicePath(Route.useParams());
-  const range = Route.useSearch().range ?? "1h";
+  const range = Route.useSearch().range ?? metricsRange.get();
   const navigate = Route.useNavigate();
   const view = useService(ref);
   const { service } = view;
@@ -82,12 +85,13 @@ function MetricsTab() {
             <RangeSwitch
               value={range}
               options={ranges}
-              onChange={(r) =>
+              onChange={(r) => {
+                metricsRange.set(r);
                 navigate({
-                  search: r === "1h" ? {} : { range: r },
+                  search: { range: r },
                   replace: true,
-                })
-              }
+                });
+              }}
             />
           }
         >
