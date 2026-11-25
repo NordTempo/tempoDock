@@ -24,12 +24,12 @@ export const metricsRange = remembered("metrics.range", ranges, "1h");
 /** A server's page range last picked on this browser, 1h until one is. */
 export const serverRange = remembered("server.range", ranges, "1h");
 
-/** `?range=` for statistics pages; 1h or none shows the remembered range. */
+/** `?range=` for statistics pages; with none they show their remembered one. */
 export const validateRange = (
   search: Record<string, unknown>,
 ): { range?: StatsRange } => {
   const range = ranges.find((r) => r === search.range);
-  return range && range !== "1h" ? { range } : {};
+  return range ? { range } : {};
 };
 
 /** Most points a chart draws per series. */

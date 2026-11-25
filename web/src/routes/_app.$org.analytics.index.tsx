@@ -53,7 +53,7 @@ function Sites() {
                 options={orgSitesRanges}
                 onChange={(r) => {
                   sitesRange.set(r);
-                  navigate({ search: r === "24h" ? {} : { range: r } });
+                  navigate({ search: { range: r } });
                 }}
               />
               <ViewSwitch value={view} onChange={setView} />

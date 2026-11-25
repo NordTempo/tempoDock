@@ -78,7 +78,7 @@ function TrafficTab() {
               onChange={(r) => {
                 trafficRange.set(r);
                 navigate({
-                  search: r === "24h" ? {} : { range: r },
+                  search: { range: r },
                   replace: true,
                 });
               }}

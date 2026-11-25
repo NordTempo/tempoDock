@@ -67,7 +67,7 @@ function Traces() {
         if (f.range) traceRange.set(f.range);
         navigate({
           search: {
-            range: f.range === "24h" ? undefined : f.range,
+            range: f.range,
             slowest: f.slowest || undefined,
             errors: f.errors || undefined,
             route: f.route || undefined,

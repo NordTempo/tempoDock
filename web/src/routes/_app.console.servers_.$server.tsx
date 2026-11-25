@@ -209,7 +209,7 @@ function ServerPage() {
                 onChange={(r) => {
                   serverRange.set(r);
                   navigate({
-                    search: r === "1h" ? {} : { range: r },
+                    search: { range: r },
                     replace: true,
                   });
                 }}

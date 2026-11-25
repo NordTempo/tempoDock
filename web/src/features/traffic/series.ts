@@ -38,12 +38,12 @@ export const barLabel: Record<TrafficRange, string> = {
 /** Requests' Traffic range last picked on this browser, 24h until one is. */
 export const trafficRange = remembered("requests.range", trafficRanges, "24h");
 
-/** `?range=` for the traffic page; 24h or none shows trafficRange. */
+/** `?range=` for the traffic page; with none it shows trafficRange. */
 export const validateTrafficRange = (
   search: Record<string, unknown>,
 ): { range?: TrafficRange } => {
   const range = trafficRanges.find((r) => r === search.range);
-  return range && range !== "24h" ? { range } : {};
+  return range ? { range } : {};
 };
 
 /**
