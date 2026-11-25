@@ -151,3 +151,21 @@ func TestEventStreamsAreBounded(t *testing.T) {
 		t.Fatalf("streams still counted after all ended: %d, %v", h.c.streams.total, h.c.streams.by)
 	}
 }
+
+// On the demo every visitor is the same user: streams are bounded per
+// session there, so one visitor's tabs leave room for the next visitor's.
+func TestDemoStreamsAreBoundedPerSession(t *testing.T) {
+	s := streamCounts{perSession: true}
+	visitor := Actor{UserID: 1, SessionID: 1}
+	for i := range maxActorStreams {
+		if _, err := s.open(visitor); err != nil {
+			t.Fatalf("stream %d: %v", i+1, err)
+		}
+	}
+	if _, err := s.open(visitor); CodeOf(err) != apitypes.CodeRateLimited {
+		t.Fatalf("one stream more than the bound: %v", err)
+	}
+	if _, err := s.open(Actor{UserID: 1, SessionID: 2}); err != nil {
+		t.Fatalf("the next visitor's stream: %v", err)
+	}
+}
