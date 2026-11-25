@@ -8,7 +8,7 @@ import type {
 // release goes through them (previews apart, then the others, production
 // last), and for each service what lies between two of them: the same
 // image, a newer one to promote, a promote that failed, or settings that
-// differ. The Projects page's grid and a service's environment strip
+// differ. The Projects page's grid and a service's promote line
 // both read it; everything comes from the project overview, nothing more
 // is fetched.
 

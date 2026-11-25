@@ -18,7 +18,7 @@ import {
   useWhyNot,
 } from "../../data/queries";
 import type { ServiceRef, ServiceView } from "../../data/types";
-import { EnvSwitch } from "../../shell/context";
+
 import { type Shortcut, useShortcuts } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
 import { Dialog } from "../../ui/Dialog";
@@ -53,6 +53,7 @@ import { ApplyControl } from "../variables/ApplyBox";
 import { ArchiveConfirm } from "./ArchiveConfirm";
 import { CancelDeploy } from "./CancelDeploy";
 import { useRestartService, useStartService, useStopService } from "./data";
+import { EnvSwitch } from "./EnvSwitch";
 import { Chevron, FactLabel, factRow } from "./facts";
 import { RollbackConfirm } from "./ReleasesTable";
 import {

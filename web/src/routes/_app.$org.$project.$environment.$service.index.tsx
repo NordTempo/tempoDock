@@ -4,8 +4,8 @@ import type { ServiceRef } from "../data/types";
 import { RestoredFrom } from "../features/backups/Restored";
 import { failedNews } from "../features/overview/pipeline";
 import { NeedsAttention } from "../features/service/Attention";
-import { EnvStrip } from "../features/service/EnvStrip";
 import { FailedDeploy } from "../features/service/FailedDeploy";
+import { PromoteLine } from "../features/service/PromoteLine";
 import { ReleaseHistory } from "../features/service/ReleaseHistory";
 import { imageLabel } from "../features/service/releases";
 import {
@@ -45,7 +45,7 @@ function ServiceOverview() {
       {/* What serves, then what needs a look, said once (ADR 0076). */}
       <div className="flex flex-col gap-3">
         <StatusSentence view={service} />
-        <EnvStrip serviceRef={ref} />
+        <PromoteLine serviceRef={ref} />
         {failed && (
           <FailedDeploy serviceRef={ref} view={service} failed={failed} />
         )}

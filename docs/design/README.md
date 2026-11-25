@@ -176,9 +176,9 @@ for everything.
   (`settings#domains`) that links and search use. A setting has one home, at the level it applies to; a
   service's Variables tab shows what it sees, grouped by where each is
   set.
-- **Overview.** One column: status, the service in its other
-  environments (a strip in pipeline order, the same words as the
-  Projects page), a failed deploy with its cause, where the same image
+- **Overview.** One column: status, a line under it when a neighbour in
+  the pipeline asks for action (a newer image to promote, this image
+  failing further on; the header's environment buttons switch), a failed deploy with its cause, where the same image
   works and how that environment's settings differ, and the fix that
   fits, then what else needs attention, facts (each a row into its home
   in Settings, Metrics or Requests), the deploy in flight, the three

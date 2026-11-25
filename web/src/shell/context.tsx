@@ -1,190 +1,36 @@
 import { Link } from "@tanstack/react-router";
-import type { components } from "../api/schema";
-import {
-  useProjectOverview,
-  useProjectTree,
-  useSeesPlatform,
-} from "../data/queries";
-import type { ServerStatus, ServiceView } from "../data/types";
-import { Icon } from "../ui/icons";
-import { Glyph, LockMark, Menu, menuItem } from "../ui/kit";
-import { serverState, serviceState, type Tone, toneText } from "../ui/status";
-import { useOrg } from "./location";
+import { useProjectTree, useSeesPlatform } from "../data/queries";
+import type { ServerStatus } from "../data/types";
+import { Glyph } from "../ui/kit";
+import { serverState, type Tone, toneText } from "../ui/status";
 
-// What a PageBar shows next to the title inside a project: the environment
-// switch and the servers in view.
-
-type PullRequest = components["schemas"]["PullRequestRef"];
-
-const worst: Tone[] = ["fail", "warn", "prog", "ok", "mut"];
-
-/** The colour of an environment's dot: its worst service. */
-function envTone(services: ServiceView[]): Tone {
-  const tones = new Set(services.map((s) => serviceState(s).tone));
-  return worst.find((t) => tones.has(t)) ?? "mut";
-}
-
-/** "PR #12": marks a preview environment (ADR 0056) in lists. */
-export function PrMark({ preview }: { preview: PullRequest | undefined }) {
-  if (!preview) return null;
-  return (
-    <span className="font-mono text-2xs text-info" title={preview.title}>
-      PR #{preview.number}
-    </span>
-  );
-}
+// What a PageBar shows next to the title inside a project: the
+// environment switch's pieces and the servers in view.
 
 /**
- * "● production ▾": the environment in view (the dot only off a service
- * page), and a menu of the others. On
- * a service page it lists the environments that have the same service and
- * keeps you on it; elsewhere it goes to each environment's variables.
- * Preview environments come last, marked with their pull request; on one,
- * its pull request is linked next to the switch.
+ * One button of an environment switch, the row of buttons both the
+ * project header and a service's header show. The one in view carries
+ * aria-current ("true" on a button, "page" on a link).
  */
-export function EnvSwitch({
-  project,
-  environment,
-  service,
-}: {
-  project: string;
-  environment: string;
-  service?: string;
-}) {
-  const org = useOrg();
-  const { environments } = useProjectOverview(project);
-  const here = environments.find((e) => e.environment.name === environment);
-  const others = environments.filter(
-    (e) =>
-      e.environment.name !== environment &&
-      (!service || e.services.some((s) => s.service.name === service)),
-  );
-  const pr = here?.environment.preview;
-  const pill = (
-    <span className="flex items-center gap-[7px] rounded-ctl border border-edge px-[9px] py-1 text-xs hover:border-dash hover:bg-hover">
-      {/* On a service page the service's own chip says its state; an
-          environment-wide dot beside it would read as the service's. */}
-      {!service && (
-        <span className={toneText[envTone(here?.services ?? [])]}>
-          <span className="dot" />
-        </span>
-      )}
-      {environment}
-      <LockMark lock={here?.environment.lock} />
-      {others.length > 0 && (
-        <Icon name="chevronDown" size={11} className="text-mut" />
-      )}
-    </span>
-  );
-  const pull = pr && (
-    <a
-      href={pr.url}
-      target="_blank"
-      rel="noreferrer"
-      title={`${pr.repo}#${pr.number}: ${pr.title} by ${pr.author}`}
-      className="max-w-[40ch] truncate text-xs text-mut hover:text-fg"
-    >
-      <span className="font-mono text-info">PR #{pr.number}</span> {pr.title}
-    </a>
-  );
-  const control =
-    others.length === 0 ? (
-      pill
-    ) : (
-      <Menu label={`Environment: ${environment}`} button={pill}>
-        {(close) => [
-          // The one in view first, checked, so the menu reads as a choice.
-          // Environments are a choice of one (menuitemradio), so the menu's
-          // children are all items, as role="menu" requires.
-          <div
-            key="here"
-            role="menuitemradio"
-            aria-checked="true"
-            tabIndex={-1}
-            className={`${menuItem} cursor-default text-fg hover:bg-transparent`}
-          >
-            <span aria-hidden className="w-[7px] text-2xs">
-              ✓
-            </span>
-            <span className="flex-1">
-              {environment} <LockMark lock={here?.environment.lock} />
-            </span>
-          </div>,
-          ...others.map((e) => {
-            const twin = e.services.find((s) => s.service.name === service);
-            const dot = (
-              <span
-                className={
-                  toneText[twin ? serviceState(twin).tone : envTone(e.services)]
-                }
-              >
-                <span className="dot" />
-              </span>
-            );
-            return service && twin ? (
-              <Link
-                key={e.environment.id}
-                to="/$org/$project/$environment/$service"
-                params={{
-                  org,
-                  project,
-                  environment: e.environment.name,
-                  service,
-                }}
-                onClick={close}
-                className={menuItem}
-                role="menuitemradio"
-                aria-checked="false"
-              >
-                {dot}
-                <span className="flex-1">
-                  {e.environment.name} <LockMark lock={e.environment.lock} />
-                </span>
-                <PrMark preview={e.environment.preview} />
-                <span className="font-mono text-2xs text-faint">
-                  {twin.service.active_release
-                    ? `r${twin.service.active_release}`
-                    : "not deployed"}
-                </span>
-              </Link>
-            ) : (
-              <Link
-                key={e.environment.id}
-                to="/$org/$project/$environment"
-                params={{ org, project, environment: e.environment.name }}
-                onClick={close}
-                className={menuItem}
-                role="menuitemradio"
-                aria-checked="false"
-              >
-                {dot}
-                <span className="flex-1">
-                  {e.environment.name} <LockMark lock={e.environment.lock} />
-                </span>
-                <PrMark preview={e.environment.preview} />
-              </Link>
-            );
-          }),
-          <hr key="line" className="my-1 border-0 border-t border-line" />,
-          <Link
-            key="compare"
-            to="/$org/$project/compare"
-            params={{ org, project }}
-            onClick={close}
-            className={menuItem}
-            role="menuitem"
-          >
-            <span aria-hidden className="w-[7px]" />
-            <span className="flex-1">Compare environments</span>
-          </Link>,
-        ]}
-      </Menu>
-    );
+export const envSegment =
+  "inline-flex min-h-[26px] items-center gap-1.5 px-2.5 text-ctl text-mut no-underline hover:text-fg aria-[current=page]:bg-sel aria-[current=page]:text-fg aria-[current=true]:bg-sel aria-[current=true]:text-fg";
+
+/** The box around an environment switch's buttons. */
+export const envSwitchBox =
+  "inline-flex overflow-hidden rounded-ctl border border-edge";
+
+/**
+ * A small dot in a problem's colour on an environment's button, named
+ * for screen readers.
+ */
+export function ToneDot({ tone }: { tone: Tone | undefined }) {
+  if (!tone) return null;
   return (
-    <>
-      {control}
-      {pull}
-    </>
+    <span
+      role="img"
+      aria-label={tone === "fail" ? ", has a problem" : ", needs a look"}
+      className={`dot ${toneText[tone]}`}
+    />
   );
 }
 
