@@ -1,0 +1,9 @@
+# BuildKit reads this for deploy/demo/Dockerfile: the Go sources dock-demo
+# needs, the demo's files, and the release's Linux dock binaries.
+*
+!go.mod
+!go.sum
+!cmd/dock-demo
+!internal
+!deploy/demo
+!dist/dock-linux-*

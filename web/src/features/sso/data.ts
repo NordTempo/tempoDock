@@ -1,7 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  queryOptions,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { api, body } from "../../api/client";
 import type { components } from "../../api/schema";
 import { useAction } from "../../data/action";
+import { currentMe, keys } from "../../data/queries";
 
 // Signing in through one of the platform's identity providers (ADR 0065):
 // the sign-in page's buttons, an invite page signed out, and the step-up
@@ -9,13 +15,36 @@ import { useAction } from "../../data/action";
 
 type StartRequest = components["schemas"]["SSOStartRequest"];
 
-/** What the sign-in page offers: a button per provider, and passwords. */
-export const useSignInMethods = () =>
-  useQuery({
-    queryKey: ["sign-in-methods"],
-    queryFn: () => body(api.GET("/api/v1/auth/methods")),
-    staleTime: Number.POSITIVE_INFINITY,
-  });
+/**
+ * What the sign-in page offers: a button per provider, passwords, or on
+ * the public demo (ADR 0100) the demo's shared account.
+ */
+export const signInMethods = queryOptions({
+  queryKey: ["sign-in-methods"],
+  queryFn: () => body(api.GET("/api/v1/auth/methods")),
+  staleTime: Number.POSITIVE_INFINITY,
+});
+
+export const useSignInMethods = () => useQuery(signInMethods);
+
+/**
+ * Signs in to the public demo's shared account (ADR 0100), no password:
+ * the sign-in page does it on its own, and its button again after a
+ * sign-out. 503 while the demo is starting.
+ */
+export async function demoSignIn(queryClient: QueryClient) {
+  await body(api.POST("/api/v1/auth/demo"));
+  queryClient.setQueryData(keys.session, await currentMe());
+}
+
+/** demoSignIn as the sign-in page's button. */
+export const useDemoSignIn = () => {
+  const queryClient = useQueryClient();
+  return useAction(
+    () => demoSignIn(queryClient),
+    () => [],
+  );
+};
 
 /**
  * Starts signing in through a provider: the browser leaves for its page,

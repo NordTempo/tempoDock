@@ -68,9 +68,20 @@ func New(c *core.Core, opts Options) http.Handler {
 	c.SetReplayer("api", s.replay)
 	// The MCP endpoint (ADR 0017) speaks JSON-RPC, not REST, so it sits
 	// next to the Huma API rather than in its OpenAPI spec.
-	mux.Handle(Prefix+"/mcp", mcp.Handler(c, mcp.Options{Logger: opts.Logger}))
+	mux.Handle(Prefix+"/mcp", mcpHandler(c, opts))
 	mux.Handle("/", uiHandler())
 	return guard(mux)
+}
+
+// mcpHandler is the MCP endpoint, which the public demo (ADR 0100) leaves
+// out: its tools reach what demoRefused refuses the API.
+func mcpHandler(c *core.Core, opts Options) http.Handler {
+	if c.Demo() {
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "MCP isn't in the demo; install Dock on your own server to connect an agent", http.StatusForbidden)
+		})
+	}
+	return mcp.Handler(c, mcp.Options{Logger: opts.Logger})
 }
 
 // Spec returns the OpenAPI document (JSON) without a running daemon.
@@ -101,6 +112,7 @@ func newAPI(mux *http.ServeMux, s *Server) huma.API {
 	registerSystem(s, a)
 	registerGuide(a)
 	registerAuth(s, a)
+	registerDemo(s, a)
 	registerTwoFactor(s, a)
 	registerSSO(s, a)
 	registerCLILogin(s, a)
@@ -376,6 +388,9 @@ func (s *Server) authedOp(op huma.Operation, newIn func() any, call authedCall) 
 // request's actor, scoped to the project its input names, with its error
 // filed as an access request (when replayable) and mapped to a problem.
 func (s *Server) serveAuthed(ctx context.Context, op *huma.Operation, replayable bool, in any, call authedCall) (any, error) {
+	if err := s.demoRefusal(ctx, op); err != nil {
+		return nil, err
+	}
 	actor := actorFrom(ctx)
 	if p, ok := in.(interface{ expectedProjectID() int64 }); ok {
 		actor.ExpectedProjectID = p.expectedProjectID()

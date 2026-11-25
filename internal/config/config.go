@@ -86,7 +86,23 @@ type Config struct {
 	Scan Scan `toml:"scan"`
 	// Previews bounds copies of databases into previews (ADR 0092).
 	Previews Previews `toml:"previews"`
+	// Demo makes this daemon the public demo (ADR 0100).
+	Demo Demo `toml:"demo"`
 }
+
+// Demo configures demo mode (ADR 0100): a daemon on the fake runtime that
+// signs every visitor in as one shared user, refuses what would lock the
+// next visitor out or reach other hosts, and is reset by starting it
+// again (cmd/dock-demo). Off unless User is set; `dock serve` refuses it
+// on a real runtime.
+type Demo struct {
+	// User is the email of the account visitors are signed in as. The
+	// demo is ready once that account exists (dock-demo creates it last).
+	User string `toml:"user"`
+}
+
+// Enabled reports whether this daemon is the demo.
+func (d Demo) Enabled() bool { return d.User != "" }
 
 // Previews configures preview environments. Control plane only.
 type Previews struct {

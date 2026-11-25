@@ -462,6 +462,7 @@ end) are not listed.
 | Caddy's span batch | `dock-caddy.service` (`OTEL_BSP_SCHEDULE_DELAY`) | once a day, or when 512 spans fill a batch | always, in Caddy, while a route is traced (ADR 0075) | one export to the `none` exporter: nothing |
 | Trace store trim | `cmd/dock-analytics/serve.go` (`api.serve`), in `dock-analytics traces` | once, a minute after the last request | the trace store was asked something | a checkpoint and two `SET memory_limit`, then `debug.FreeOSMemory`, as for the analytics store |
 | Analytics rollups | `cmd/dock-analytics/store/rollup.go` | no timer: woken by a write that brings events for a finished day, or the first write of a new day | there are days to roll up | per site and day, one transaction of about 25 grouped inserts (0.27 s for a day of a 100M-event-a-year site) |
+| Demo reset | `cmd/dock-demo/main.go` (`demo.loop`), in the public demo's container only | 1 h (`-reset`) | always, in the demo image (ADR 0100); never in `dock` | stops the demo daemon, empties its data dir and seeds a new one through the API: about 2 s of downtime and 1.3 s of seeding an hour |
 
 ## SQLite
 

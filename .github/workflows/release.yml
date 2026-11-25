@@ -6,7 +6,8 @@ name: release
 # GitHub Release with generated notes: dock and tempobase from the same
 # commit, one version (ADR 0024). Tags with a "-" (v0.2.0-rc.1) are marked
 # as pre-releases, so "latest" never points at them. tempoBase's image goes
-# to ghcr.io/nordtempo/tempobase. Dock Analytics' store (ADR 0037) ships as
+# to ghcr.io/nordtempo/tempobase, the public demo's (ADR 0100) to
+# ghcr.io/nordtempo/dock-demo. Dock Analytics' store (ADR 0037) ships as
 # dock-analytics-linux-{amd64,arm64} in the release, which a Dock of the
 # same version downloads when analytics runs.
 #
@@ -191,9 +192,9 @@ jobs:
       # tempoBase binaries (cmd/tempobase exists).
       - name: Set up Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-        if: startsWith(github.ref, 'refs/tags/v') && hashFiles('dist/tempobase-linux-amd64') != ''
+        if: startsWith(github.ref, 'refs/tags/v')
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
-        if: startsWith(github.ref, 'refs/tags/v') && hashFiles('dist/tempobase-linux-amd64') != ''
+        if: startsWith(github.ref, 'refs/tags/v')
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -206,6 +207,18 @@ jobs:
           [[ "$GITHUB_REF_NAME" == *-* ]] || tags+=(--tag "$image:latest")
           docker buildx build --platform linux/amd64,linux/arm64 --push \
             --file deploy/tempobase/Dockerfile "${tags[@]}" dist
+
+      # The public demo's image (deploy/demo/Dockerfile, ADR 0100): the
+      # dock binaries just released with dock-demo, built from the
+      # repository with dist/ in it. Only on a v* tag.
+      - name: Publish the demo image
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          image=ghcr.io/nordtempo/dock-demo
+          tags=(--tag "$image:$GITHUB_REF_NAME")
+          [[ "$GITHUB_REF_NAME" == *-* ]] || tags+=(--tag "$image:latest")
+          docker buildx build --platform linux/amd64,linux/arm64 --push \
+            --file deploy/demo/Dockerfile "${tags[@]}" .
 
       # NordTempo/deploy-action, the GitHub Action's own repository (ADR
       # 0094), follows contrib/github-action: a new minor version, and v0

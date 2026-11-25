@@ -239,6 +239,8 @@ type Core struct {
 	// spend from loginLimit like passwords.
 	ceremonies   *ceremonies
 	operators2FA atomic.Bool
+	// demoReady is set once the demo's user exists (demo.go).
+	demoReady atomic.Bool
 	// sso is single sign-on's flows in flight and the HTTP client that
 	// talks to identity providers (sso_signin.go).
 	sso ssoState

@@ -1,0 +1,6 @@
+{"ID":"CVE-2024-45337","Severity":5,"Package":"golang.org/x/crypto","Version":"0.21.0","Type":"go-module","FixedIn":"0.31.0","KEV":false,"EPSS":0.12}
+{"ID":"CVE-2024-6119","Severity":4,"Package":"openssl","Version":"3.1.4-r0","Type":"apk","FixedIn":"3.1.7-r0","KEV":false,"EPSS":0.02}
+{"ID":"CVE-2023-44487","Severity":4,"Package":"nghttp2","Version":"1.57.0-r0","Type":"apk","FixedIn":"1.58.0-r0","KEV":true,"EPSS":0.94}
+{"ID":"GHSA-9wv6-86v2-598j","Severity":3,"Package":"path-to-regexp","Version":"0.1.7","Type":"npm","FixedIn":"0.1.12","KEV":false,"EPSS":0.01}
+{"ID":"CVE-2024-21538","Severity":3,"Package":"cross-spawn","Version":"7.0.3","Type":"npm","FixedIn":"7.0.5","KEV":false,"EPSS":-1}
+{"ID":"CVE-2023-5678","Severity":2,"Package":"busybox","Version":"1.36.1-r5","Type":"apk","FixedIn":"","KEV":false,"EPSS":0.001}
