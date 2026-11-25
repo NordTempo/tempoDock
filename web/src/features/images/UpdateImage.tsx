@@ -8,14 +8,28 @@ import type { ImageScan } from "./data";
 /** The base of a live image deployed by tag whose tag has a newer image. */
 type Moved = NonNullable<ImageScan["base"]> & { latest: string };
 
+/** A reference's tag, without its digest or Docker Hub's implied prefix. */
+const tagOf = (ref: string) =>
+  ref.split("@")[0]?.replace(/^docker\.io\/(library\/)?/, "");
+
 /**
  * The live image's tag points at a newer image (ADR 0074, amendment
  * 2026-11-25): the base of an image deployed by tag, when the daily
- * check saw it move. Undefined otherwise.
+ * check saw it move. Undefined otherwise. A scan is kept by digest, so
+ * it may follow another tag of the same image (postgres:alpine for a
+ * service on postgres:18-alpine): only the service's own tag counts.
  */
-export function movedTag(scan: ImageScan | undefined): Moved | undefined {
+export function movedTag(
+  scan: ImageScan | undefined,
+  view: ServiceView,
+): Moved | undefined {
   const base = scan?.base;
-  return base?.own && base.moved && base.latest
+  const running = view.active_release?.image_ref;
+  return base?.own &&
+    base.moved &&
+    base.latest &&
+    running &&
+    tagOf(running) === tagOf(base.image)
     ? { ...base, latest: base.latest }
     : undefined;
 }

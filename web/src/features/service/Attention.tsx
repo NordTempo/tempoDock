@@ -29,7 +29,7 @@ export function NeedsAttention({
     scan?.state === "scanned" && (scan.critical > 0 || scan.high > 0);
   // Only template databases get a row of their own: an app deployed by a
   // tag CI moves (app:latest) would be offered every push.
-  const moved = movedTag(scan);
+  const moved = movedTag(scan, view);
   const update = !vulnerable && view.service.template ? moved : undefined;
   const down = view.uptime?.state === "down";
   const domains = view.domains.filter(domainNeedsAttention);

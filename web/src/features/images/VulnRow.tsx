@@ -43,7 +43,7 @@ export function VulnRow({
     },
   ]);
   const flags = `-s ${ref.service} -e ${ref.environment}`;
-  const moved = movedTag(scan);
+  const moved = movedTag(scan, view);
   return (
     <Row
       tone={scan.critical > 0 ? "fail" : "warn"}
