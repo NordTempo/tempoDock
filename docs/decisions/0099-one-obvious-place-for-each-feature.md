@@ -3,7 +3,9 @@
 Status: accepted (Saile picked the v4 before and after mocks on
 2026-11-24, Postplan `8k22xveyb52d`; the Projects page, the environment
 strip and the failed deploy on the Overview came from the Pipeline mock
-on 2026-11-25, Postplan `knc9mvckx1v6`). Amends
+on 2026-11-25, Postplan `knc9mvckx1v6`; the strip gave way to the
+project header's environment buttons and a promote line on 2026-11-25,
+Postplan `gtvj0aheh613`, mock D). Amends
 [0076](0076-service-page-in-nine-tabs.md) (settings views, tab order,
 the save model's place stays) and [0062](0062-org-alerts-and-operators.md)
 (the settings column's groups).
@@ -79,7 +81,8 @@ Placement rules, applied to every page:
    settings that differ, a newer image with Promote, or an image that
    failed there. Projects shows it as a grid for each project with
    something going on (quiet ones fold to a row); a service's Overview
-   shows its own row as a strip, and a failed deploy names the
+   says under its status only what asks for action (a newer image to
+   promote, this image failing further on), and a failed deploy names the
    environment where the same image works and the settings that differ
    (`features/overview/pipeline.ts`).
 

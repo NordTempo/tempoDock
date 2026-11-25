@@ -13,7 +13,6 @@ import { Fragment, useEffect } from "react";
 import { liveStatus, reconnectLive } from "../data/liveStatus";
 import { serviceTabs } from "../features/service/tabs";
 import { ErrorBlock } from "./ErrorBlock";
-import { Icon } from "./icons";
 
 // Words after /<org>/ that are pages of the organization, not projects.
 const orgPages: Record<string, string> = {
@@ -203,10 +202,9 @@ export function PagePending() {
                 </span>
               )}
               {service && (
-                // EnvSwitch's look, without its menu.
-                <span className="flex items-center gap-[7px] rounded-ctl border border-edge px-[9px] py-1 text-xs">
+                // EnvSwitch's look: the environment in view, marked.
+                <span className="inline-flex min-h-[26px] items-center rounded-ctl border border-edge bg-sel px-2.5 text-ctl">
                   {service.environment}
-                  <Icon name="chevronDown" size={11} className="text-mut" />
                 </span>
               )}
             </div>

@@ -9,7 +9,12 @@ import {
   useSession,
 } from "../../data/queries";
 import type { EnvironmentView } from "../../data/types";
-import { ServerDots } from "../../shell/context";
+import {
+  envSegment,
+  envSwitchBox,
+  ServerDots,
+  ToneDot,
+} from "../../shell/context";
 import { useShortcuts } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
 import { Icon } from "../../ui/icons";
@@ -23,7 +28,6 @@ import {
   menuItem,
   PageBar,
 } from "../../ui/kit";
-import { type Tone, toneText } from "../../ui/status";
 import { sitesQuery } from "../analytics/loaders";
 import { canCreateEnvironment } from "../create/access";
 import { openCreate } from "../create/open";
@@ -398,13 +402,11 @@ function EnvironmentSwitch({
   const regular = environments.filter((e) => !e.environment.preview);
   const previews = environments.filter((e) => e.environment.preview);
   const current = previews.find((e) => e.environment.name === environment);
-  const segment =
-    "inline-flex min-h-[26px] items-center gap-1.5 px-2.5 text-ctl text-mut no-underline hover:text-fg aria-[current=true]:bg-sel aria-[current=true]:text-fg";
   return (
     <nav
       aria-label="Environment"
       title={off ? "Project settings apply to every environment" : undefined}
-      className={`inline-flex overflow-hidden rounded-ctl border border-edge ${off ? "opacity-40" : ""}`}
+      className={`${envSwitchBox} ${off ? "opacity-40" : ""}`}
     >
       {regular.map((e) => (
         <button
@@ -413,7 +415,7 @@ function EnvironmentSwitch({
           disabled={off}
           aria-current={e.environment.name === environment}
           onClick={() => go(e.environment.name)}
-          className={`${segment} not-first:border-l not-first:border-edge`}
+          className={`${envSegment} not-first:border-l not-first:border-edge`}
         >
           {e.environment.name}
           <ToneDot tone={tones.get(e.environment.name)} />
@@ -424,7 +426,7 @@ function EnvironmentSwitch({
           label="Previews"
           className="border-l border-edge"
           button={
-            <span aria-current={!!current} className={segment}>
+            <span aria-current={!!current} className={envSegment}>
               {current ? current.environment.name : "previews"}
               <span className="text-faint">{previews.length}</span>
               <Icon name="chevronDown" size={12} />
@@ -456,24 +458,12 @@ function EnvironmentSwitch({
           aria-label="New environment"
           title={`New environment (dock environment create <name> -p ${project})`}
           onClick={() => openCreate({ kind: "environment", project })}
-          className={`${segment} ${environments.length > 0 ? "border-l border-edge" : ""}`}
+          className={`${envSegment} ${environments.length > 0 ? "border-l border-edge" : ""}`}
         >
           +
         </button>
       )}
     </nav>
-  );
-}
-
-/** A small dot in a problem's colour, named for screen readers. */
-function ToneDot({ tone }: { tone: Tone | undefined }) {
-  if (!tone) return null;
-  return (
-    <span
-      role="img"
-      aria-label={tone === "fail" ? ", has a problem" : ", needs a look"}
-      className={`dot ${toneText[tone]}`}
-    />
   );
 }
 

@@ -210,10 +210,9 @@ function LaneCells({
  * What lies between two environments for one service, said briefly:
  * the earlier one's image failing in the later one links to that release, a newer image offers Promote (the
  * project's compare page with the promote panel open), settings that
- * differ are counted with the list in the title. A service's
- * environment strip says it the same way.
+ * differ are counted with the list in the title.
  */
-export function StepCell({
+function StepCell({
   project,
   from,
   to,
