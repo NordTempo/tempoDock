@@ -60,11 +60,11 @@ export const useShellMode = (): ShellMode =>
   });
 
 /**
- * The left column: the project tree (or its rail) on organization pages,
- * the console's views on the console. A page with a menu of its own
- * (useOwnMenu) gets no project column: its own list is the left column
- * (the shell leaves this out there). Wide screens keep it in view while
- * the page scrolls; narrow ones put it above the page.
+ * The left column: the project tree (or its rail) on the Projects page,
+ * the console's views on the console. Every other organization page has
+ * none (useProjectsColumn; the shell leaves it out there). Wide screens
+ * keep it in view while the page scrolls; narrow ones put it above the
+ * page.
  */
 export function Sidebar({ mode }: { mode: ShellMode }) {
   // Narrow screens fold the sidebar behind a button; moving on folds it.
@@ -118,14 +118,15 @@ export const columnClass = (wide: boolean) =>
   `flex flex-col gap-0.5 border-b border-line bg-side px-2 py-2.5 lg:sticky ${wide ? "lg:w-[248px]" : "lg:w-[60px]"} lg:flex-none lg:overflow-y-auto lg:border-r lg:border-b-0 lg:top-(--shell-top) lg:h-[calc(100vh-var(--shell-top))]`;
 
 /**
- * Whether the page has a menu of its own down its left side (the route's
- * `staticData.ownMenu`): an analytics site's views, Settings' sections.
- * Such a page's own list is the only left column: no project tree or
- * rail beside it, so the left side always lists what's inside the place
- * you're in.
+ * Whether the page is the organization's Projects page (`/$org`), the one
+ * organization page with the project tree or rail down its left side
+ * (Saile): every other page gets the full width, and the top bar's
+ * Projects is the way back to the list. A page with a menu of its own
+ * (Settings' sections, an analytics site's views) has that list as its
+ * only left column.
  */
-export const useOwnMenu = () =>
-  useMatches({ select: (ms) => ms.some((m) => m.staticData.ownMenu) });
+export const useProjectsColumn = () =>
+  useMatches({ select: (ms) => ms.at(-1)?.routeId === "/_app/$org/" });
 
 /**
  * Whether the left column shows the full project tree or only the project

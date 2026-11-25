@@ -46,10 +46,6 @@ declare module "@tanstack/react-router" {
   interface Register {
     router: typeof router;
   }
-  interface StaticDataRouteOption {
-    /** The page has its own menu on the left: the sidebar shows the rail. */
-    ownMenu?: true;
-  }
 }
 
 const root = document.getElementById("root");

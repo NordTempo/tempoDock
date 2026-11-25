@@ -5,7 +5,6 @@ import { SitePage } from "../features/analytics/SitePage";
 // A site in the Analytics area (ADR 0059): /nordtempo/analytics/shop/shop.example.com?range=7d&f=country:is:NO,
 // its views (Overview, Vitals, Funnels, Replays) under it.
 export const Route = createFileRoute("/_app/$org/analytics/$project/$site")({
-  staticData: { ownMenu: true },
   validateSearch: analyticsSearch,
   loader: ({ context: { queryClient }, params }) =>
     queryClient.ensureQueryData(sitesQuery(params.project)),
