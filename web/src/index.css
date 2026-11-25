@@ -824,7 +824,10 @@
   }
 
   /* Section tabs: quiet links, the current one on a chip. */
+  /* Tabs keep their width: a narrow window scrolls the strip sideways
+     instead of squeezing labels into each other. */
   .tabs > a {
+    flex: none;
     padding: 5px 10px;
     border-radius: var(--radius-ctl);
     color: var(--color-mut);

@@ -302,7 +302,7 @@ export function TopBar() {
 export const topBarClass =
   "app-shell flex h-[52px] items-center gap-1 border-b border-line bg-side px-3 whitespace-nowrap";
 export const topLinkClass =
-  "flex min-h-[28px] items-center gap-1.5 rounded-ctl px-2.5 text-mut hover:text-fg aria-[current=page]:bg-sel aria-[current=page]:text-fg";
+  "flex min-h-[28px] items-center gap-1.5 rounded-ctl px-2 text-mut hover:text-fg aria-[current=page]:bg-sel aria-[current=page]:text-fg sm:px-2.5";
 
 /** The org's views, in the top bar's order. */
 export const orgViews = [
@@ -327,7 +327,7 @@ function ViewsMenu() {
       <Menu
         label="Organization views"
         button={
-          <span className="flex min-h-[28px] items-center gap-1.5 rounded-ctl px-2.5 text-fg">
+          <span className="flex min-h-[28px] items-center gap-1.5 rounded-ctl px-2 text-fg">
             {here} <Icon name="chevronDown" size={12} className="text-mut" />
           </span>
         }
@@ -387,7 +387,8 @@ function HelpButton() {
       aria-expanded={open}
       title="Help (?)"
       onClick={() => (open ? closeHelp() : openHelp())}
-      className="flex min-h-[28px] items-center rounded-ctl px-2.5 text-mut hover:text-fg aria-expanded:bg-sel aria-expanded:text-fg"
+      // Phones reach Help from the account menu, so the bar fits 360px.
+      className="hidden min-h-[28px] items-center rounded-ctl px-2.5 text-mut hover:text-fg aria-expanded:bg-sel aria-expanded:text-fg sm:flex"
     >
       <span aria-hidden>?</span>
     </button>
@@ -433,7 +434,8 @@ function OrgSwitcher() {
         button={
           <span className="flex min-w-0 flex-1 items-center gap-2 rounded-ctl p-1.5 hover:bg-panel">
             {current && <OrgBadge org={current} />}
-            <span className="truncate font-semibold">
+            {/* Phones show the badge alone; the button's label names it. */}
+            <span className="hidden truncate font-semibold sm:inline">
               {current?.name ?? "No organization"}
             </span>
             <Icon name="chevronDown" size={12} className="text-mut" />

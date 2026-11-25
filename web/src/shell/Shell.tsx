@@ -171,7 +171,7 @@ function TopBarFrame({ path }: { path: string }) {
     <header className={topBarClass}>
       <span className="flex items-center gap-2 p-1.5">
         <OrgBadge org={{ slug: org, name: org }} />
-        <span className="font-semibold">{org}</span>
+        <span className="hidden font-semibold sm:inline">{org}</span>
         <Icon name="chevronDown" size={12} className="text-mut" />
       </span>
       <nav
@@ -206,7 +206,7 @@ function TopBarFrame({ path }: { path: string }) {
       </Link>
       <span
         aria-hidden
-        className="flex min-h-[28px] items-center px-2.5 text-mut"
+        className="hidden min-h-[28px] items-center px-2.5 text-mut sm:flex"
       >
         ?
       </span>
