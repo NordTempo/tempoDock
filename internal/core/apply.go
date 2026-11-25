@@ -691,6 +691,11 @@ func (c *Core) planService(ep *envPlan, line func(*[]apitypes.PlanChange, apityp
 			ep.staged++
 		}
 		cur := settingsOf(ls.row)
+		if tag := imageTag(cur.Image); tmpl != nil && fs.Image == "" && tag != "" && tag == imageTag(tmpl.image) {
+			// A template's image is its tag: a database updated to a newer
+			// image of it (ADR 0074) is where the file wants it.
+			want.Image = cur.Image
+		}
 		diff := settingChanges(name, cur, want)
 		for _, ch := range diff {
 			line(&ep.changes, svc(apitypes.PlanChange{Kind: apitypes.PlanSetting, Action: apitypes.ChangeUpdate, Name: ch.Field, Old: ch.Old, New: ch.New}))
@@ -1183,6 +1188,9 @@ func (c *Core) createStagedService(ctx context.Context, q *store.Queries, es env
 		tmpl = &t
 	}
 	set := desiredSettings(fs, tmpl)
+	if tmpl != nil && fs.Image == "" {
+		set.Image = c.templateImage(ctx, q, *tmpl)
+	}
 	s, err := q.CreateService(ctx, store.CreateServiceParams{
 		EnvironmentID: es.env.ID, Name: fs.Name, Image: set.Image, Port: int64(set.Port),
 		HealthCheckPath: set.HealthCheckPath, HealthCheckTimeoutSeconds: int64(set.HealthCheckTimeoutSeconds),

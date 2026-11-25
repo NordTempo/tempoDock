@@ -282,10 +282,21 @@ GROUP BY i.base_image LIMIT +sqlc.arg(max_rows);
 
 -- name: SetBaseImageDigest :exec
 -- What a base image's tag points at now: the images built on an older
--- digest have a newer base a rebuild picks up. base_image != '' lets
--- SQLite use the partial index image_scans_base.
-UPDATE image_scans SET base_moved = CAST(base_digest != sqlc.arg(digest) AS INTEGER), base_checked_at = sqlc.arg(checked_at)
+-- digest have a newer base a rebuild picks up, and an image deployed by
+-- that tag has a newer image to update to. base_image != '' lets SQLite
+-- use the partial index image_scans_base.
+UPDATE image_scans SET base_moved = CAST(base_digest != sqlc.arg(digest) AS INTEGER), base_latest = sqlc.arg(digest),
+  base_checked_at = sqlc.arg(checked_at)
 WHERE base_image = +sqlc.arg(base_image) AND base_image != '' AND base_digest != '';
+
+-- name: GetTagDigest :one
+-- What a tag pointed at at its last daily check since checked_after: the
+-- digest a new template database starts on. SetBaseImageDigest writes
+-- every row of a tag at once, so any one of them says it.
+SELECT base_latest FROM image_scans
+WHERE base_image = +sqlc.arg(base_image) AND base_image != '' AND base_latest != ''
+  AND base_checked_at > +sqlc.arg(checked_after)
+LIMIT 1;
 
 -- name: GetScanDatabaseImport :one
 SELECT scan_db_import FROM platform_settings WHERE id = 1;

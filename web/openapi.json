@@ -9904,7 +9904,7 @@
             "type": "string"
           },
           "digest": {
-            "description": "What the tag pointed at when the image was built",
+            "description": "What the tag pointed at when the image was built or deployed",
             "type": "string"
           },
           "image": {
@@ -9913,7 +9913,16 @@
             ],
             "type": "string"
           },
+          "latest": {
+            "examples": [
+              "sha256:f9cf3e1f0066f0eb0c48707d864f0ac5941e9ff454a072077d97a4d278d07d73"
+            ],
+            "type": "string"
+          },
           "moved": {
+            "type": "boolean"
+          },
+          "own": {
             "type": "boolean"
           }
         },

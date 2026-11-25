@@ -351,6 +351,10 @@ func (c *Core) syncScans(ctx context.Context) error {
 			continue
 		}
 		prod := apitypes.EnvironmentKind(r.EnvKind) == apitypes.KindProduction
+		base, baseDigest := r.BaseImage, r.BaseDigest
+		if base == "" {
+			base, baseDigest = img.base, img.baseDigest
+		}
 		prio := int64(1)
 		if prod {
 			prio = 0
@@ -362,7 +366,7 @@ func (c *Core) syncScans(ctx context.Context) error {
 			case store.IsNotFound(err):
 				scan, err = q.AddImageScan(ctx, store.AddImageScanParams{
 					ImageKey: img.key, PullRef: img.pull, LocalRef: img.local, BuiltOnServerID: img.builtOn,
-					OrgID: r.OrgID, Production: boolInt(prod), Priority: prio, BaseImage: r.BaseImage, BaseDigest: r.BaseDigest,
+					OrgID: r.OrgID, Production: boolInt(prod), Priority: prio, BaseImage: base, BaseDigest: baseDigest,
 					CreatedAt: now().Unix(),
 				})
 				if err == nil && img.unsupported != "" {
@@ -398,6 +402,9 @@ type scanImage struct {
 	key, pull, local string
 	builtOn          *int64
 	unsupported      string
+	// base and baseDigest are the tag an image deployed by tag follows
+	// and the digest it was deployed at: it is its own base.
+	base, baseDigest string
 }
 
 // scanImageOf works out a live release's scanImage; ok false means not
@@ -445,7 +452,11 @@ func (c *Core) scanImageOf(ctx context.Context, r store.ListUnscannedReleasesRow
 			unsupported: "Dock can't tell which image this is: it has no registry digest. Deploy it by digest (--image name@sha256:...) to get it scanned"}, true
 	}
 	_, digest, _ := strings.Cut(pinned, "@")
-	return scanImage{key: digest, pull: pinned}, true
+	img := scanImage{key: digest, pull: pinned}
+	if tag := imageTag(r.ImageRef); tag != "" {
+		img.base, img.baseDigest = tag, digest
+	}
+	return img, true
 }
 
 // sbomPath is where an image's SBOM is kept: gzipped syft-json in the

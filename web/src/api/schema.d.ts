@@ -9843,11 +9843,14 @@ export interface components {
         ImageBase: {
             /** Format: date-time */
             checked_at?: string;
-            /** @description What the tag pointed at when the image was built */
+            /** @description What the tag pointed at when the image was built or deployed */
             digest: string;
             /** @example node:22-alpine */
             image: string;
+            /** @example sha256:f9cf3e1f0066f0eb0c48707d864f0ac5941e9ff454a072077d97a4d278d07d73 */
+            latest?: string;
             moved?: boolean;
+            own?: boolean;
         };
         ImageDetail: {
             findings: components["schemas"]["Finding"][] | null;

@@ -674,6 +674,7 @@ type ImageScan struct {
 	BaseDigest      string
 	BaseMoved       int64
 	BaseCheckedAt   *int64
+	BaseLatest      string
 }
 
 type Install struct {

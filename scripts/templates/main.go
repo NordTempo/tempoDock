@@ -1,7 +1,9 @@
 // Command templates pins and bumps the images of the app templates
-// (internal/apptemplates/catalog, ADR 0083).
+// (internal/apptemplates/catalog, ADR 0083) and of the database templates
+// (internal/core/templates.go, ADR 0019).
 //
 //	go run ./scripts/templates pin [name...]   pin each image's tag to its current digest
+//	go run ./scripts/templates pin-db          the same for the database templates
 //	go run ./scripts/templates bump [name...]  move each image to the newest tag on its track, then pin
 //	go run ./scripts/templates tags IMAGE      list an image's tags, to choose a track
 //
@@ -9,7 +11,9 @@
 // have linux/amd64 and linux/arm64. A file whose image changes gets its
 // revision raised. It edits the image and revision lines in place, so the
 // rest of a file keeps its layout. Run it by hand before a release, then
-// e2e/templates.sh for the templates it changed.
+// e2e/templates.sh for the templates it changed. A database template's
+// tag is its line (17-alpine), never bumped here: a running Dock follows
+// it (ADR 0074, amendment 2026-11-25), and the pin is where it starts.
 package main
 
 import (
@@ -30,7 +34,13 @@ import (
 	"time"
 )
 
-const dir = "internal/apptemplates/catalog"
+const (
+	dir    = "internal/apptemplates/catalog"
+	dbFile = "internal/core/templates.go"
+)
+
+// dbImage is a database template's image in dbFile.
+var dbImage = regexp.MustCompile(`"([a-z0-9./-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64})"`)
 
 func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -46,8 +56,15 @@ func main() {
 		fmt.Println(strings.Join(tags, "\n"))
 		return
 	}
+	if len(os.Args) == 2 && os.Args[1] == "pin-db" {
+		if err := pinDB(ctx); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) < 2 || (os.Args[1] != "pin" && os.Args[1] != "bump") {
-		fmt.Fprintln(os.Stderr, "usage: go run ./scripts/templates pin|bump [name...] | tags IMAGE")
+		fmt.Fprintln(os.Stderr, "usage: go run ./scripts/templates pin|bump [name...] | pin-db | tags IMAGE")
 		os.Exit(2)
 	}
 	names := os.Args[2:]
@@ -78,6 +95,31 @@ var (
 	trackLine    = regexp.MustCompile(`^\s*track\s*=\s*"([^"]+)"`)
 	revisionLine = regexp.MustCompile(`(?m)^revision\s*=\s*(\d+)`)
 )
+
+// pinDB pins every database template's tag to its current digest.
+func pinDB(ctx context.Context) error {
+	b, err := os.ReadFile(dbFile)
+	if err != nil {
+		return err
+	}
+	var failed error
+	out := dbImage.ReplaceAllStringFunc(string(b), func(quoted string) string {
+		cur := strings.Trim(quoted, `"`)
+		next, err := resolve(ctx, cur, "", false)
+		if err != nil {
+			failed = errors.Join(failed, fmt.Errorf("%s: %w", cur, err))
+			return quoted
+		}
+		if next != cur {
+			fmt.Printf("%s: updated\n", next)
+		}
+		return `"` + next + `"`
+	})
+	if failed != nil {
+		return failed
+	}
+	return os.WriteFile(dbFile, []byte(out), 0o644)
+}
 
 // update pins (and with bump, moves) every image of one template file.
 func update(ctx context.Context, path string, bump bool) (bool, error) {

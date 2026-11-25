@@ -1,7 +1,6 @@
 package core
 
 import (
-	"cmp"
 	"context"
 	"crypto/rand"
 	"fmt"
@@ -49,25 +48,29 @@ type dbTemplate struct {
 // volumeName of every template's volume.
 const templateVolume = "data"
 
-// templates are the database templates by name.
+// templates are the database templates by name. Each image is a tag that
+// moves with its major or minor line (17-alpine, 8.4), pinned to the
+// digest it pointed at when last bumped: the daily check follows the tag,
+// new databases start on what it saw, and existing ones are offered
+// Update (ADR 0074, amendment 2026-11-25).
 var templates = map[apitypes.Template]dbTemplate{
 	apitypes.TemplatePostgres: postgresTemplate(apitypes.TemplatePostgres, "PostgreSQL", "PostgreSQL 17, tuned for 512 MB",
-		"postgres:17-alpine@sha256:1bcc18d81671b02906296aad470ec9778a6b71016ce953092024b680bad007b0"),
+		"postgres:17-alpine@sha256:f9cf3e1f0066f0eb0c48707d864f0ac5941e9ff454a072077d97a4d278d07d73"),
 	// pgvector is Postgres with the vector extension, for apps that store
 	// embeddings (ADR 0083). Its backups and restores run in its own
 	// image, so a restore has the extension too.
 	apitypes.TemplatePgvector: postgresTemplate(apitypes.TemplatePgvector, "PostgreSQL with pgvector", "PostgreSQL 17 with the vector extension, tuned for 512 MB",
-		"pgvector/pgvector:0.8.7-pg17@sha256:b513c48566e4777cd3370451400000c78eda6a08131d68f4c31d4a76f27bd8fd"),
+		"pgvector/pgvector:pg17@sha256:b513c48566e4777cd3370451400000c78eda6a08131d68f4c31d4a76f27bd8fd"),
 	apitypes.TemplateRedis: redisTemplate(apitypes.TemplateRedis, "Redis", "AGPL-3.0", "Redis 8 with append-only persistence, 200 MB of data",
-		"redis:8-alpine@sha256:615b4cedaff0c1437a1548acae4222572df8c021eeb7382d64cb8b5e3a13ac7a", "redis-server"),
+		"redis:8-alpine@sha256:5af80107c1eeecb484a2269b80a26d12bfa6521787da4663bd9f19f60a163483", "redis-server"),
 	// Valkey is the BSD-licensed fork of Redis, with the same protocol,
 	// files and variables.
 	apitypes.TemplateValkey: redisTemplate(apitypes.TemplateValkey, "Valkey", "BSD-3-Clause", "Valkey 9 (Redis compatible) with append-only persistence, 200 MB of data",
-		"valkey/valkey:9.1.3-alpine@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b", "valkey-server"),
+		"valkey/valkey:9-alpine@sha256:c8e2d17498838af5d91e12eb7c11220b3434a7b7131a333e3af52ad5e0b80882", "valkey-server"),
 	apitypes.TemplateMySQL: mysqlTemplate(apitypes.TemplateMySQL, "MySQL", "GPL-2.0", "MySQL 8.4 LTS, tuned for 768 MB",
-		"mysql:8.4.13@sha256:a81d043930e51745522bd5c430961cf8286f0a23f0a9a2a6e0108f7ea71b0902", "mysqld", "MYSQL", 768),
+		"mysql:8.4@sha256:8c233bad33d520a7aae1c1e619c3a9775f4a1ba2d463d692fada04ec7f40be00", "mysqld", "MYSQL", 768),
 	apitypes.TemplateMariaDB: mysqlTemplate(apitypes.TemplateMariaDB, "MariaDB", "GPL-2.0", "MariaDB 11.8 LTS, tuned for 512 MB",
-		"mariadb:11.8.9@sha256:d36f18d65a0459510b8b0f643b226a6d299e3206486e2b64ff20754a6d291707", "mariadbd", "MARIADB", 512),
+		"mariadb:11.8@sha256:e1d5495f445654134f226f55a41ce0da227116f6f27f283101f405c794d841fc", "mariadbd", "MARIADB", 512),
 }
 
 // postgresTemplate is a Postgres template running image, which keeps the
@@ -191,15 +194,20 @@ type templateOptions struct {
 }
 
 // createFromTemplate creates a service from a template: the service with
-// the template's settings, its volume and generated variables staged, and
+// the template's settings (its image at the newest digest the daily check
+// saw, templateImage), its volume and generated variables staged, and
 // (unless opts.noDeploy) an image deploy that applies them. A deploy that
 // can't start (server offline) is an error, but the service exists and
 // deploys like any other once the cause is fixed.
 func (c *Core) createFromTemplate(ctx context.Context, a Actor, es envScope, name string, t dbTemplate, opts templateOptions) (svcScope, error) {
 	var ss svcScope
+	image := opts.image
+	if image == "" {
+		image = c.templateImage(ctx, c.store.Queries, t)
+	}
 	err := c.store.Tx(ctx, func(q *store.Queries) error {
 		s, err := q.CreateService(ctx, store.CreateServiceParams{
-			EnvironmentID: es.env.ID, Name: name, Image: cmp.Or(opts.image, t.image), StartCommand: t.cmd, MemoryMb: int64(t.memoryMB),
+			EnvironmentID: es.env.ID, Name: name, Image: image, StartCommand: t.cmd, MemoryMb: int64(t.memoryMB),
 		})
 		if store.IsUnique(err) {
 			// An archived service keeps its name: say so, as it isn't in
@@ -252,7 +260,7 @@ func (c *Core) createFromTemplate(ctx context.Context, a Actor, es envScope, nam
 		return ss, err
 	}
 	c.audit(ctx, a, "service.create", &es.project, &es.env, ss.String(),
-		fmt.Sprintf("created service from the %s template (%s), with a volume and generated credentials", t.name, t.image))
+		fmt.Sprintf("created service from the %s template (%s), with a volume and generated credentials", t.name, image))
 	if opts.noDeploy {
 		return ss, nil
 	}

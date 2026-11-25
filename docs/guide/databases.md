@@ -37,6 +37,12 @@ The others follow the same pattern:
 - Creating a template service deploys it at once. Afterwards it is an
   ordinary service: change its memory or start command, roll it back, and
   so on.
+- Its image follows the template's tag (`postgres:17-alpine`). Once a day
+  Dock checks whether the tag has a newer image; when it has, the
+  database's Overview offers **Update**, which deploys that image by
+  digest (`dock deploy -s db --image postgres:17-alpine@sha256:...`). A
+  new database starts on the newest image Dock has seen. Moving to a
+  newer major version (Postgres 18) comes with a Dock release.
 - It publishes no port. Other services reach it by name on the
   environment's private network; the health check connects there too.
   A Postgres database counts as healthy once it accepts connections, not
