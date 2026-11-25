@@ -23,8 +23,9 @@ const SaveTemplate = lazy(() => import("../features/templates/SaveTemplate"));
 // it. The header's environment switch doesn't scope them, so it's
 // greyed out here; ?env= only keeps the pick for the other tabs.
 export const Route = createFileRoute("/_app/$org/$project/project-settings")({
-  validateSearch: (search: Record<string, unknown>): { env?: string } =>
-    typeof search.env === "string" && search.env ? { env: search.env } : {},
+  validateSearch: (search: Record<string, unknown>): { env?: string } => ({
+    env: typeof search.env === "string" && search.env ? search.env : undefined,
+  }),
   loader: async ({ context: { queryClient }, params }) => {
     const [, session] = await Promise.all([
       queryClient.ensureQueryData(queries.overview(params.project)),

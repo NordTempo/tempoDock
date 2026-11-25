@@ -57,6 +57,11 @@ tests/          dev-only browser fixtures (`*.html`, with `*.test.ts(x)`
 - Heavy code loads with what opens it: dialogs and editors are `lazy()`
   (see `features/create/open.tsx`). `make perf` holds the initial JS, CSS
   and fonts to a budget.
+- A route's search is its `validateSearch` result laid over the raw
+  parameters, so a key it leaves out keeps its raw value (`?request=abc`
+  reaches the page as a string typed as a number). Name every key and
+  set a dropped one to `undefined`, never `cond ? { key } : {}` or
+  `...(cond && { key })`.
 - Only a route's components are code-split. `beforeLoad`, `loader` and
   `validateSearch` go into the route tree, in the initial bundle, with
   everything they import: a check that needs a big module belongs in the

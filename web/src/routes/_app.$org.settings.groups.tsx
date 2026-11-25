@@ -5,8 +5,9 @@ import { orgQueries } from "../features/org/data";
 
 // Settings › Groups (ADR 0080): groups, what they give, who is in them.
 export const Route = createFileRoute("/_app/$org/settings/groups")({
-  validateSearch: (s: Record<string, unknown>): { group?: string } =>
-    typeof s.group === "string" ? { group: s.group } : {},
+  validateSearch: (s: Record<string, unknown>): { group?: string } => ({
+    group: typeof s.group === "string" ? s.group : undefined,
+  }),
   loader: ({ context: { queryClient } }) =>
     Promise.all([
       queryClient.ensureQueryData(accessQueries.groups()),

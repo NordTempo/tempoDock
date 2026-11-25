@@ -27,8 +27,8 @@ const isTime = (ms: unknown): ms is number =>
 
 /**
  * A chart range from the address, when both ends are times and in order.
- * Both keys are always returned: the router keeps raw parameters a route
- * leaves out, so a dropped one must be set to undefined.
+ * Both keys always: a route's search is its validateSearch's result laid
+ * over the raw parameters, so one left out keeps its raw value.
  */
 function rangeOf({ from, to }: Record<string, unknown>) {
   return isTime(from) && isTime(to) && from < to

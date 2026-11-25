@@ -14,8 +14,8 @@ const emailShape = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const Route = createFileRoute("/invite-only")({
   validateSearch: (search: Record<string, unknown>): Search => ({
-    ...(typeof search.provider === "string" && { provider: search.provider }),
-    ...(typeof search.email === "string" && { email: search.email }),
+    provider: typeof search.provider === "string" ? search.provider : undefined,
+    email: typeof search.email === "string" ? search.email : undefined,
   }),
   component: InviteOnly,
 });

@@ -11,9 +11,11 @@ export const Route = createFileRoute("/_app/$org/$project/$environment/")({
   validateSearch: (
     search: Record<string, unknown>,
   ): { service?: string; tab?: "activity" } => ({
-    ...(typeof search.service === "string" &&
-      search.service && { service: search.service }),
-    ...(search.tab === "activity" && { tab: "activity" as const }),
+    service:
+      typeof search.service === "string" && search.service
+        ? search.service
+        : undefined,
+    tab: search.tab === "activity" ? ("activity" as const) : undefined,
   }),
   beforeLoad: ({ params, search }) => {
     if (search.service) {

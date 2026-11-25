@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type { AnalyticsSearch } from "../features/analytics/data";
-import { analyticsSearch } from "../features/analytics/loaders";
+import { analyticsSearch, devices } from "../features/analytics/loaders";
 import { ReplayPlayer } from "../features/analytics/ReplayPlayer";
 
 // A session replay (ADR 0037, phase A3), inside its site's page:
@@ -20,12 +20,12 @@ export const Route = createFileRoute(
 )({
   validateSearch: (s: Record<string, unknown>): Search => ({
     ...analyticsSearch(s),
-    ...(s.errors === true && { errors: true }),
-    ...(["desktop", "mobile", "tablet"].includes(s.device as string) && {
-      device: s.device as string,
-    }),
-    ...(typeof s.t === "number" && s.t >= 0 && { t: s.t }),
-    ...(typeof s.at === "number" && s.at > 0 && { at: s.at }),
+    errors: s.errors === true ? true : undefined,
+    device: devices.includes(s.device as string)
+      ? (s.device as string)
+      : undefined,
+    t: typeof s.t === "number" && s.t >= 0 ? s.t : undefined,
+    at: typeof s.at === "number" && s.at > 0 ? s.at : undefined,
   }),
   component: Replay,
 });

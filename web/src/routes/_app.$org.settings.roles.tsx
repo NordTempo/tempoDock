@@ -4,8 +4,9 @@ import { RolesPage } from "../features/access/RolesPage";
 
 // Settings › Roles (ADR 0080): the built-in roles and the org's own.
 export const Route = createFileRoute("/_app/$org/settings/roles")({
-  validateSearch: (s: Record<string, unknown>): { role?: string } =>
-    typeof s.role === "string" ? { role: s.role } : {},
+  validateSearch: (s: Record<string, unknown>): { role?: string } => ({
+    role: typeof s.role === "string" ? s.role : undefined,
+  }),
   loader: ({ context: { queryClient } }) =>
     Promise.all([
       queryClient.ensureQueryData(accessQueries.roles()),

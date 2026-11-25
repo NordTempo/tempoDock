@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import {
   type AnalyticsSearch,
   analyticsSearch,
+  devices,
 } from "../features/analytics/loaders";
 import { ReplaysView } from "../features/analytics/ReplaysView";
 import { useSiteView } from "../features/analytics/SitePage";
@@ -14,10 +15,10 @@ export const Route = createFileRoute(
 )({
   validateSearch: (s: Record<string, unknown>): Search => ({
     ...analyticsSearch(s),
-    ...(s.errors === true && { errors: true }),
-    ...(["desktop", "mobile", "tablet"].includes(s.device as string) && {
-      device: s.device as string,
-    }),
+    errors: s.errors === true ? true : undefined,
+    device: devices.includes(s.device as string)
+      ? (s.device as string)
+      : undefined,
   }),
   component: Replays,
 });

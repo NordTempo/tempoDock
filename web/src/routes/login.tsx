@@ -42,12 +42,10 @@ type LoginSearch = {
 
 export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>): LoginSearch => ({
-    ...(typeof search.redirect === "string" && { redirect: search.redirect }),
-    ...(typeof search.error === "string" && { error: search.error }),
-    ...(typeof search.provider === "string" && { provider: search.provider }),
-    ...((search.second === 1 || search.second === true) && {
-      second: true,
-    }),
+    redirect: typeof search.redirect === "string" ? search.redirect : undefined,
+    error: typeof search.error === "string" ? search.error : undefined,
+    provider: typeof search.provider === "string" ? search.provider : undefined,
+    second: search.second === 1 || search.second === true ? true : undefined,
   }),
   // A provider's sign-in started from a session (a step-up) comes back
   // here too: its second step or error is shown, not skipped.
