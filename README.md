@@ -11,8 +11,8 @@ platform never competes with the apps it hosts.
 **[Try the demo](https://demo.nordtempo.com)** ·
 [Install](docs/guide/install.md) · [Guide](docs/guide/README.md)
 
-The demo is the real UI and API on a pretend server: click around, deploy,
-roll back. Everyone shares one account and it starts fresh every hour.
+The demo is the real UI on a sample company's data, view-only: click
+around and see how deploys, releases, logs and analytics look.
 
 Built by NordTempo, for NordTempo first, and open source under the
 [AGPL-3.0](LICENSE) (see [vision](docs/vision.md)).

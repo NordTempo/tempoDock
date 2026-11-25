@@ -406,8 +406,7 @@ function Login() {
         {demo && (
           <div className="flex flex-col gap-3.5">
             <p className="text-sec">
-              Everyone here shares one account, and the demo starts fresh every
-              hour.
+              A look around Dock with a sample company's data. It is view-only.
             </p>
             <button
               type="button"

@@ -74,7 +74,7 @@ func New(c *core.Core, opts Options) http.Handler {
 }
 
 // mcpHandler is the MCP endpoint, which the public demo (ADR 0100) leaves
-// out: its tools reach what demoRefused refuses the API.
+// out: the demo is view-only, and most of its tools change things.
 func mcpHandler(c *core.Core, opts Options) http.Handler {
 	if c.Demo() {
 		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

@@ -6,8 +6,8 @@ data_dir = "/tmp/dock-demo"
 # The service's port; Dock's Caddy sends demo.nordtempo.com here.
 listen = "0.0.0.0:7070"
 public_ip = "203.0.113.10"
-# Demo mode refuses source uploads (demoRefused); the cap stays as a
-# second guard, since the data dir is on the disk the server's apps use.
+# The demo is view-only and refuses uploads (internal/api/demo.go); the
+# cap stays as a second guard, since the data dir is on the disk the server's apps use.
 max_upload_mb = 1
 base_domain = "apps.example.com"
 

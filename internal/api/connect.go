@@ -36,7 +36,7 @@ func registerConnect(s *Server, a huma.API, mux *http.ServeMux) {
 	}) (*out[apitypes.ConnectInfo], error) {
 		return reply(s.core.ConnectInfo(ctx, actor, in.ref(), core.ConnectRequest{Confirm: in.Confirm, Reveal: in.Reveal}))
 	})
-	mux.HandleFunc("GET "+servicePathT+"/tunnel", s.tunnel)
+	mux.HandleFunc("GET "+servicePathT+"/tunnel", s.demoOff(s.tunnel))
 }
 
 // tunnel serves one tunnel connection: authenticate, open the tunnel in

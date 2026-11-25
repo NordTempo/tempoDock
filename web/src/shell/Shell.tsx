@@ -217,8 +217,8 @@ function TopBarFrame({ path }: { path: string }) {
 
 /**
 /**
- * The public demo's strip (ADR 0100), above every page: why changes
- * don't last, and where to get Dock. A fixed 30px, which index.css
+ * The public demo's strip (ADR 0100), above every page: that it's
+ * view-only, and where to get Dock. A fixed 30px, which index.css
  * counts in --shell-top through the `demo-bar` class.
  */
 function DemoBar() {
@@ -226,7 +226,7 @@ function DemoBar() {
     <p className="demo-bar flex h-[30px] items-center gap-4 overflow-hidden border-b border-line bg-page px-4 text-xs whitespace-nowrap text-sec">
       <span className="font-semibold text-fg">Demo</span>
       <span className="min-w-0 truncate">
-        Everyone shares this account. It starts fresh every hour.
+        View-only, with a sample company's data.
       </span>
       <a
         href="https://dock.nordtempo.com/docs/install"
