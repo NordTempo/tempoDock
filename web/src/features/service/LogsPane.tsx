@@ -212,20 +212,21 @@ export function LogsPane({
     }
   }, [filter.follow, newest]);
 
-  // The newest line when following stopped, to count what came since.
+  // The stream's newest line when following stopped, to count what came
+  // since. The whole stream, not the shown lines, so a filter changed
+  // while paused counts nothing. Another source drops the mark: its
+  // lines aren't the ones counted from.
   const [mark, setMark] = useState<string | undefined>();
-  const markRef = useRef(newest);
-  markRef.current = newest;
+  const markRef = useRef(stream.lines[0]?.key);
+  markRef.current = stream.lines[0]?.key;
   useEffect(() => {
-    if (!filter.follow) setMark(markRef.current);
+    setMark(filter.follow ? undefined : markRef.current);
   }, [filter.follow]);
-  // A mark that left the capped list means more came than it shows.
-  const markAt = mark ? shown.findIndex((r) => r.line.key === mark) : -1;
-  const fresh = !mark
-    ? 0
-    : markAt < 0
-      ? shown.length
-      : shown.length - 1 - markAt;
+  useEffect(() => setMark(undefined), [release, filter.build]);
+  const markAt = mark ? stream.lines.findIndex((l) => l.key === mark) : -1;
+  // A mark the stream no longer keeps means more came than it holds.
+  const evicted = mark !== undefined && markAt < 0;
+  const fresh = evicted ? stream.lines.length : Math.max(markAt, 0);
 
   // The time range on screen, which the chart outlines.
   const outline = useCallback(() => {
@@ -531,7 +532,7 @@ export function LogsPane({
           >
             ↓{" "}
             {fresh > 0
-              ? `${fresh}${markAt < 0 ? "+" : ""} new ${fresh === 1 ? "line" : "lines"}`
+              ? `${fresh}${evicted ? "+" : ""} new ${fresh === 1 ? "line" : "lines"}`
               : "Newest"}
           </button>
         )}
