@@ -17,14 +17,16 @@ const (
 	demoSharedAccount = "everyone visiting the demo shares this account, so it stays as it is"
 	demoSignIn        = "everyone visiting the demo signs in the same way, so that stays as it is"
 	demoOtherHosts    = "the demo sends nothing to other hosts"
+	demoDisk          = "the demo shares its server's disk, so it keeps no large files"
 )
 
 // demoRefused are the operations demo mode refuses, by operation ID, and
 // why: what would lock the next visitor out of the demo or out of its
 // account, and what would make the daemon connect to an address a visitor
 // typed in (alert channels, log drains, mail, identity providers, buckets,
-// Cloudflare, GitHub, releases). Everything else works, on the fake
-// runtime, until the next reset.
+// Cloudflare, GitHub, releases), and what would store a large file on
+// the server's disk. Everything else works, on the fake runtime, until
+// the next reset.
 var demoRefused = map[string]string{
 	// The shared account.
 	"change-password":           demoSharedAccount,
@@ -89,6 +91,10 @@ var demoRefused = map[string]string{
 	"deploy-git":                   demoOtherHosts,
 	"check-site-tracking":          demoOtherHosts,
 	"start-update":                 demoOtherHosts,
+
+	// Large files: a vulnerability database is up to 1 GB. Source uploads
+	// are capped by the demo's max_upload_mb instead.
+	"import-scan-database": demoDisk,
 }
 
 // demoRefusal is the error for an operation demo mode refuses, or nil.

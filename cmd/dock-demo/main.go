@@ -4,7 +4,8 @@
 // with a small company's projects, and creates the demo's shared user
 // last, which makes the demo ready (GET /api/v1/auth/demo). Every -reset
 // it stops the daemon and does it all again, so whatever visitors
-// changed is gone. It passes SIGTERM and SIGINT on, and exits when the
+// changed is gone; sooner when the data dir grows past -max-disk-mb,
+// since it lives on the disk the server's real apps use. It passes SIGTERM and SIGINT on, and exits when the
 // daemon exits on its own (Dock then starts the container again).
 //
 //	dock-demo -config /demo/config.toml -dock /usr/local/bin/dock
@@ -16,6 +17,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"os"
@@ -34,11 +36,12 @@ func main() {
 	dock := flag.String("dock", "dock", "the dock binary")
 	content := flag.String("content", "/demo", "directory with the demo's logs.txt and findings.jsonl")
 	reset := flag.Duration("reset", time.Hour, "how often the demo starts again from its seed")
+	maxDisk := flag.Int64("max-disk-mb", 1024, "start again early when the data dir grows past this")
 	flag.Parse()
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
-	d := demo{log: log, configPath: *configPath, dock: *dock, content: *content}
+	d := demo{log: log, configPath: *configPath, dock: *dock, content: *content, maxDisk: *maxDisk << 20}
 	if err := d.loop(ctx, *reset); err != nil {
 		log.Error("demo", "err", err)
 		os.Exit(1)
@@ -49,14 +52,18 @@ func main() {
 type demo struct {
 	log                       *slog.Logger
 	configPath, dock, content string
+	// maxDisk is the data dir's size, in bytes, past which the demo
+	// starts again before its next reset.
+	maxDisk int64
 }
 
 // errReset ends one demo for the next.
 var errReset = errors.New("reset")
 
 // loop runs fresh demos until ctx ends or a daemon exits on its own.
-// The reset timer is the demo's only periodic work: about 2 seconds of
-// downtime an hour, when the daemon restarts and is seeded again.
+// The reset timer and run's disk check are the demo's only periodic
+// work: about 2 seconds of downtime an hour, when the daemon restarts
+// and is seeded again.
 func (d demo) loop(ctx context.Context, every time.Duration) error {
 	for {
 		runCtx, cancel := context.WithTimeoutCause(ctx, every, errReset)
@@ -70,7 +77,8 @@ func (d demo) loop(ctx context.Context, every time.Duration) error {
 }
 
 // run starts a fresh demo and waits for its daemon to exit, or stops it
-// when ctx ends.
+// when ctx ends or its data dir grows past maxDisk. It returns nil when
+// it stopped the daemon, and the loop starts the next demo.
 func (d demo) run(ctx context.Context) error {
 	cfg, err := config.Load(d.configPath)
 	if err != nil {
@@ -126,8 +134,21 @@ func (d demo) run(ctx context.Context) error {
 			return <-exited
 		}
 	}
+	// Once a minute: the data dir is small (a database and some logs), so
+	// walking it is cheap, and a visitor filling the disk takes minutes.
+	disk := time.NewTicker(time.Minute)
+	defer disk.Stop()
 	for {
 		select {
+		case <-disk.C:
+			size, err := dirSize(cfg.DataDir)
+			if err != nil {
+				d.log.Warn("measure the data dir", "err", err)
+			} else if size > d.maxDisk {
+				d.log.Warn("the data dir is too large; starting the demo again", "bytes", size)
+				_ = stop()
+				return nil
+			}
 		case err := <-exited:
 			return fmt.Errorf("dock serve exited: %w", err)
 		case err := <-seeded:
@@ -165,6 +186,30 @@ func bootstrap(ctx context.Context, dock, configPath string) (string, error) {
 		return "", errors.New("dock admin bootstrap printed no password: " + stderr.String())
 	}
 	return m[1], nil
+}
+
+// dirSize adds up the sizes of the files under dir. Files that go away
+// while it walks are skipped.
+func dirSize(dir string) (int64, error) {
+	var total int64
+	err := filepath.WalkDir(dir, func(_ string, e fs.DirEntry, err error) error {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if err != nil || e.IsDir() {
+			return err
+		}
+		info, err := e.Info()
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		total += info.Size()
+		return nil
+	})
+	return total, err
 }
 
 // dialable is a listen address to connect to: 0.0.0.0 and [::] become
