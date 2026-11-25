@@ -132,10 +132,11 @@ for everything.
   keys. Topics are short and live in `web/src/features/help/topics.ts`;
   routes map to them in `where.ts`. `/$org/help/$topic` and
   `/$org/help/guide/$page` give a topic and a guide page an address.
-  On the left the projects: a rail of tiles (initials and a health dot)
-  that expands into the tree and stays expanded until collapsed (`[`).
-  A Settings page's left column is its list of sections instead, never
-  the tree or the rail beside it. Sticky bars sit under the top bar
+  On the Projects page, the projects down the left: a rail of tiles
+  (initials and a health dot) that expands into the tree and stays
+  expanded until collapsed (`[`). Every other page has the full width;
+  the top bar's Projects is the way back. A Settings page's left column
+  is its list of sections. Sticky bars sit under the top bar
   (`--shell-top`). There is no second command bar.
 - **One shape at every level** (ADR 0099). Org, project, service and
   server pages: a header with the name, its state, one primary button

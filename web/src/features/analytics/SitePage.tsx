@@ -21,8 +21,8 @@ import { count } from "./parts";
 import { SiteBar } from "./SiteBar";
 
 // A site's page in the Analytics area (ADR 0059, layout C): its name and
-// project in the header bar, its views down a side menu (beside the
-// project rail: the route's staticData.ownMenu), the range and filters
+// project in the header bar, its views down a side menu (the page's only
+// left column), the range and filters
 // they share above the view. Settings is a view too, without the range.
 // The views read the site, range and filters from useSiteView.
 

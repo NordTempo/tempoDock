@@ -18,7 +18,7 @@ import {
   TopBar,
   topBarClass,
   topLinkClass,
-  useOwnMenu,
+  useProjectsColumn,
   useShellMode,
   useTreeOpen,
 } from "./Sidebar";
@@ -43,9 +43,8 @@ function OrgShell() {
   useLiveUpdates();
   const mode = useShellMode();
   const demo = useSession()?.demo === true;
-  // A page with its own menu (Settings, an analytics site) has that list
-  // as its only left column.
-  const ownMenu = useOwnMenu();
+  // The project tree sits beside the Projects page only.
+  const projects = useProjectsColumn();
   return (
     <PaletteProvider>
       <a
@@ -63,7 +62,7 @@ function OrgShell() {
       </div>
       {mode === "console" && <DrainStrip />}
       <div className="flex min-h-screen flex-col lg:flex-row">
-        {(mode === "console" || !ownMenu) && <Sidebar mode={mode} />}
+        {(mode === "console" || projects) && <Sidebar mode={mode} />}
         <main id="main" className="flex min-w-0 flex-1 flex-col">
           <TwoFactorNotice />
           <div className="flex flex-1 flex-col">
@@ -90,14 +89,16 @@ export const RoutePending = PagePending;
  * _app's pendingComponent): the top bar's fixed parts (none on the
  * console), the left column at the width it will have (the saved tree or
  * rail choice) and the page's
- * frame. Nothing here reads a query; the org is the address's slug. A
- * page with its own menu gets no column, as in the shell.
+ * frame. Nothing here reads a query; the org is the address's slug. Only
+ * the Projects page gets the column, as in the shell.
  */
 export function ShellPending() {
   const path = useRouterState({ select: (s) => s.location.pathname });
   const inConsole = path === "/console" || path.startsWith("/console/");
   const [saved] = useTreeOpen();
-  const ownMenu = useOwnMenu();
+  // By the address, since the matches may not be in yet: /$org alone.
+  const projects =
+    !inConsole && path !== "/account" && /^\/[^/]+\/?$/.test(path);
   const wide = inConsole || saved;
   return (
     <>
@@ -105,7 +106,7 @@ export function ShellPending() {
         {!inConsole && <TopBarFrame path={path} />}
       </div>
       <div className="flex min-h-screen flex-col lg:flex-row">
-        {(inConsole || !ownMenu) && (
+        {(inConsole || projects) && (
           <div className={columnClass(wide)}>
             <span className="nav-row text-mut lg:hidden">
               <Icon name="list" />

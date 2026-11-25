@@ -5,7 +5,6 @@ import { OrgSettingsColumn } from "../features/org/SettingsBar";
 // of sections, and the open section beside it with its own bar (its name
 // as the title, its actions), the shape of every Settings page in Dock.
 export const Route = createFileRoute("/_app/$org/settings")({
-  staticData: { ownMenu: true },
   component: OrgSettings,
 });
 
