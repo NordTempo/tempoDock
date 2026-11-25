@@ -1,0 +1,71 @@
+# CodeRabbit reviews every pull request (GitHub App on NordTempo, free for
+# public repositories). The rules it reviews against live in AGENTS.md and
+# the per-directory AGENTS.md files, which CodeRabbit reads by default;
+# this file only adds the docs they point to and keeps the output short.
+# Schema: https://coderabbit.ai/integrations/schema.v2.json
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+
+reviews:
+  profile: chill
+  # Our PR descriptions are written by hand; keep CodeRabbit's summary in
+  # its own comment.
+  high_level_summary: false
+  high_level_summary_in_walkthrough: true
+  poem: false
+  in_progress_fortune: false
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  suggested_labels: false
+  suggested_reviewers: false
+  auto_review:
+    enabled: true
+    drafts: false
+  # Generated or vendored: reviewed through their sources instead.
+  path_filters:
+    - "!internal/store/**/*.sql.go"
+    - "!internal/tempobase/tbstore/**/*.sql.go"
+    - "!web/openapi.json"
+    - "!web/src/api/schema.d.ts"
+    - "!web/src/routeTree.gen.ts"
+    - "!web/tempobase/openapi.json"
+    - "!web/tempobase/src/api/schema.d.ts"
+    - "!web/tempobase/src/routeTree.gen.ts"
+    - "!internal/analytics/ingest/recorder/r.js"
+    - "!**/pnpm-lock.yaml"
+    - "!**/go.sum"
+    - "!web/dist/**"
+  path_instructions:
+    - path: "internal/store/**"
+      instructions: >-
+        Query parameters must be written `col = +?` / `LIMIT +?`, never plain
+        `col = ?`. Every new filter needs an index. A changed query or
+        migration must come with regenerated sqlc output.
+    - path: "internal/{api,core,node,mcp}/**/*.go"
+      instructions: >-
+        Flag new polling, tickers or timers that lack a doc comment saying
+        why (docs/performance.md), N+1 queries, buffering of uploads, logs
+        or images, and unbounded caches. Core operations must check the
+        calling Actor's permissions.
+    - path: "web/src/**"
+      instructions: >-
+        Flag `any`, redeclared API shapes that should derive from
+        web/src/api/schema.d.ts, refetches where an event could patch the
+        query cache, uncapped long lists and continuously repainting
+        animations.
+    - path: ".github/workflows/**"
+      instructions: >-
+        Every action must be pinned to a commit SHA. A fork's pull request
+        must never reach a self-hosted runner. Release jobs get no caches.
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - docs/performance.md
+      - docs/design/README.md
+
+chat:
+  # Pull requests from forks are untrusted input (AGENTS.md); only org
+  # members can steer CodeRabbit from comments.
+  allow_non_org_members: false
