@@ -1068,8 +1068,8 @@ function ServiceLink({ view }: { view: ServiceView }) {
 }
 
 /**
- * The platform console's sidebar (ADR 0099): the way back to projects,
- * "Platform" with a quiet console label, then its nine entries by job
+ * The platform console's sidebar (ADR 0099): a header row, "Platform" with
+ * a quiet console label, that leads back to projects, then its nine entries by job
  * (features/console/nav.ts), each marked on any of its pages, with Updates
  * by the account at the foot. Only operators reach it.
  */
@@ -1081,23 +1081,25 @@ function ConsoleNav() {
   return (
     <>
       {/* In place of the organization: the console has none (ADR 0062). */}
-      {/* The way back above the title, apart from it: right under it, it
-          read as part of the title (Saile). */}
-      <div className="flex flex-col gap-1.5 px-2.5 pb-2">
-        {/* No preload: it would read the org's projects from inside the
-            console, which sends no organization (api/client.ts). */}
-        <Link
-          to="/"
-          preload={false}
-          className="inline-flex min-h-[24px] items-center self-start text-xs text-mut hover:text-fg"
-        >
-          ← Back to projects
-        </Link>
-        <div className="flex items-baseline gap-2">
-          <span className="font-semibold">Platform</span>
-          <span className="text-2xs text-warn">console</span>
-        </div>
-      </div>
+      {/* One header row, all of it the way back (Saile's pick C): the title
+          left, "Projects" right. On wide screens it is as tall as the page
+          bar beside it, so their bottom lines meet, and 18px down like that
+          bar's crumb slot (ui/kit.tsx), so the two titles share a line.
+          Narrow screens put it under the Navigation button, plain.
+          No preload: it would read the org's projects from inside the
+          console, which sends no organization (api/client.ts). */}
+      <Link
+        to="/"
+        preload={false}
+        className="group -mx-2 mb-2 flex min-h-[44px] items-center gap-2 border-b border-line px-[18px] hover:bg-hover lg:-mt-2.5 lg:min-h-[64px] lg:pt-[18px]"
+      >
+        <span className="font-semibold">Platform</span>
+        <span className="text-2xs text-warn">console</span>
+        <span className="flex-1" />
+        <span className="text-xs text-mut group-hover:text-fg">
+          <span aria-hidden>← </span>Projects
+        </span>
+      </Link>
       {entries.map((e) => (
         <ConsoleLink key={e.label} entry={e} current={e === here}>
           {e.label === "Alerts" ? (
