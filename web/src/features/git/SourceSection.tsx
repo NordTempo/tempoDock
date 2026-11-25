@@ -282,8 +282,10 @@ export function SourceSection({
                     <EditFoot error={null} onCancel={close} />
                   </span>
                 ) : (
-                  <span
+                  <form
+                    aria-label="Edit commit statuses"
                     className="flex flex-col"
+                    onSubmit={(e) => e.preventDefault()}
                     onKeyDown={(e) => e.key === "Escape" && close()}
                   >
                     <Choice
@@ -297,7 +299,7 @@ export function SourceSection({
                       onChange={(v) => save({ status: v === "on" }, close)}
                     />
                     <EditFoot error={connect.error} onCancel={close} />
-                  </span>
+                  </form>
                 )
               }
             />
