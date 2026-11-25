@@ -1,5 +1,5 @@
 ---
-import { install } from "../site";
+import { install, site } from "../site";
 import Button from "./Button.astro";
 import Command from "./Command.astro";
 import Stack from "./Stack.astro";
@@ -20,6 +20,7 @@ import Stack from "./Stack.astro";
     </p>
     <div class="flex flex-wrap gap-3">
       <Button href="/docs">Read the docs</Button>
+      <Button href={site.demoUrl} variant="secondary">Try the demo</Button>
       <Button href="#install" variant="secondary">Install the CLI</Button>
     </div>
   </div>

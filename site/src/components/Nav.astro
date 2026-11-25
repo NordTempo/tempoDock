@@ -3,7 +3,7 @@ import { site } from "../site";
 import Button from "./Button.astro";
 import Logo from "./Logo.astro";
 
-/** The header: the docs, then the home page's sections. */
+/** The header: the docs and the demo (from sm up; the hero links it on phones), then the home page's sections. */
 interface Props {
   /** The part of the site the page belongs to, shown as the open link. */
   current?: "docs";
@@ -22,6 +22,7 @@ const links = [
 <nav class="mx-auto flex max-w-[1200px] items-center gap-5 px-6 pt-7 sm:gap-8 md:px-14">
   <a href="/" class="sm:mr-3"><Logo /></a>
   <a href="/docs" class:list={["text-[15px] hover:text-white", current === "docs" ? "text-white" : "text-neutral-400"]}>Docs</a>
+  <a href={site.demoUrl} class="hidden text-[15px] text-neutral-400 hover:text-white sm:inline">Demo</a>
   {links.map(([label, href]) => (
     <a href={href} class="hidden text-[15px] text-neutral-400 hover:text-white lg:inline">{label}</a>
   ))}

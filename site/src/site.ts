@@ -2,6 +2,8 @@
 export const site = {
   earlyAccessEmail: "dock@nordtempo.com",
   repoUrl: "https://github.com/NordTempo/tempoDock",
+  /** The public demo (ADR 0100): the real UI on a fake runtime, reset hourly. */
+  demoUrl: "https://demo.nordtempo.com",
 } as const;
 
 /**
