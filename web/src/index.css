@@ -318,9 +318,10 @@
    * Targets are at least 24px (WCAG 2.5.8) without changing the layout:
    * a standalone link gets 4px of padding taken back by a negative margin,
    * and a 24px minimum width. Links in running text are exempt and stay
-   * inline; links that lay themselves out (flex, grid, block) size
-   * themselves. Note: 1rem is 14px here, so Tailwind's spacing scale is
-   * 14/16 of the usual; sizes that must be 24px are written in px.
+   * inline; links that lay themselves out (flex, grid, block) or set
+   * their own vertical padding (py-*) size themselves, or the margin
+   * would pull a list of them over each other. Note: 1rem is 14px here,
+   * so Tailwind's spacing scale is 14/16 of the usual; sizes that must be 24px are written in px.
    */
   a:not(
     .btn,
@@ -330,7 +331,8 @@
     .prose a,
     [class*="flex"],
     [class*="grid"],
-    [class*="block"]
+    [class*="block"],
+    [class*="py-"]
   ) {
     display: inline-block;
     min-width: 24px;
