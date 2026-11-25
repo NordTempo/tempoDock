@@ -12,14 +12,16 @@ const levelKeys = new Set(["level", "lvl", "severity"]);
 const msgKeys = new Set(["msg", "message"]);
 
 // pino's and bunyan's numeric levels.
-const numbered: Record<string, string> = {
-  "10": "trace",
-  "20": "debug",
-  "30": "info",
-  "40": "warn",
-  "50": "error",
-  "60": "fatal",
-};
+const numbered = new Map(
+  Object.entries({
+    "10": "trace",
+    "20": "debug",
+    "30": "info",
+    "40": "warn",
+    "50": "error",
+    "60": "fatal",
+  }),
+);
 
 /**
  * Splits a JSON or logfmt line into its level, message and fields, for
@@ -34,7 +36,7 @@ export function parseLog(text: string): ParsedLog {
   const fields: ParsedLog["fields"] = [];
   for (const [key, value] of pairs) {
     if (level === null && levelKeys.has(key)) {
-      level = numbered[value] ?? value.toLowerCase();
+      level = numbered.get(value) ?? value.toLowerCase();
     } else if (msg === null && msgKeys.has(key)) {
       msg = value;
     } else {

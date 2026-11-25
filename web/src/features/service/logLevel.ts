@@ -36,6 +36,15 @@ const levels = new Map<string, LogLevel>(
 );
 
 /**
+ * How a level word reads (lower case: "warning" is a warning, "notice"
+ * neither); undefined for a word it doesn't know. The logs table judges
+ * a JSON or logfmt line by the level parseLog found with it.
+ */
+export function namedLevel(word: string): LogLevel | undefined {
+  return levels.get(word);
+}
+
+/**
  * Judges a log line by the level it states, so a server that logs
  * everything to stderr (Caddy) or says "error" in an info message isn't
  * read as failing. Go's errparse.LineLevel judges the Errors tab's lines
@@ -57,7 +66,7 @@ export function logLevel(text: string): LogLevel {
       const n = Number(word);
       return n >= 50 ? "error" : n >= 40 ? "warn" : null;
     }
-    const level = levels.get(word);
+    const level = namedLevel(word);
     if (level !== undefined) return level;
   }
   return errorWords.test(text) ? "error" : null;

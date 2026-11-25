@@ -19,7 +19,7 @@ import { useShortcuts } from "../../shell/keys";
 import { clockSec, since } from "../../ui/format";
 import { CopyButton } from "../../ui/kit";
 import { LogChart } from "./LogChart";
-import { type LogLevel, logLevel } from "./logLevel";
+import { type LogLevel, logLevel, namedLevel } from "./logLevel";
 import { type ParsedLog, parseLog } from "./logParse";
 
 export type LogFilter = {
@@ -60,6 +60,9 @@ const levels = [
 /** Rendered lines are capped; the stream keeps more for filtering. */
 const VISIBLE = 500;
 
+/** Rows open at once; opening another closes the oldest. */
+const OPEN_CAP = 20;
+
 /** Fields the time column already shows, left out of the row (not its details). */
 const timeKeys = new Set(["time", "ts", "timestamp", "@timestamp"]);
 
@@ -87,10 +90,14 @@ const read = new WeakMap<LogLine, Row>();
 function rowOf(line: LogLine): Row {
   let row = read.get(line);
   if (!row) {
+    const log = parseLog(line.text);
+    // A structured line's own level decides, so the column, the switch
+    // and the chart agree (level=50, a nested "level" in JSON).
+    const named = log.level === null ? undefined : namedLevel(log.level);
     row = {
       line,
-      level: logLevel(line.text),
-      log: parseLog(line.text),
+      level: named === undefined ? logLevel(line.text) : named,
+      log,
       at: line.time ? Date.parse(line.time) : null,
     };
     read.set(line, row);
@@ -212,8 +219,13 @@ export function LogsPane({
   useEffect(() => {
     if (!filter.follow) setMark(markRef.current);
   }, [filter.follow]);
+  // A mark that left the capped list means more came than it shows.
   const markAt = mark ? shown.findIndex((r) => r.line.key === mark) : -1;
-  const fresh = markAt < 0 ? 0 : shown.length - 1 - markAt;
+  const fresh = !mark
+    ? 0
+    : markAt < 0
+      ? shown.length
+      : shown.length - 1 - markAt;
 
   // The time range on screen, which the chart outlines.
   const outline = useCallback(() => {
@@ -221,7 +233,7 @@ export function LogsPane({
     if (!rows?.length) return setSeen(null);
     const top = stuckBottom(controls.current);
     const bottom = window.innerHeight - (foot.current?.offsetHeight ?? 0);
-    const first = firstBelow(rows, top);
+    const first = Math.min(firstBelow(rows, top), rows.length - 1);
     const last = Math.max(first, firstBelow(rows, bottom) - 1);
     const from = Number(rows[first]?.dataset.at);
     const to = Number(rows[last]?.dataset.at);
@@ -274,6 +286,11 @@ export function LogsPane({
       setOpen((was) => {
         const next = new Set(was);
         if (!next.delete(key)) next.add(key);
+        // The last few opened stay open; older ones close.
+        for (const old of next) {
+          if (next.size <= OPEN_CAP) break;
+          next.delete(old);
+        }
         return next;
       }),
     [],
@@ -514,7 +531,7 @@ export function LogsPane({
           >
             ↓{" "}
             {fresh > 0
-              ? `${fresh} new ${fresh === 1 ? "line" : "lines"}`
+              ? `${fresh}${markAt < 0 ? "+" : ""} new ${fresh === 1 ? "line" : "lines"}`
               : "Newest"}
           </button>
         )}
@@ -532,7 +549,10 @@ export function LogsPane({
   );
 }
 
-/** The index of the first row whose bottom is below y on screen. */
+/**
+ * The index of the first row whose bottom is below y on screen; the
+ * number of rows when every row is above it.
+ */
 function firstBelow(rows: NodeListOf<HTMLElement>, y: number) {
   let lo = 0;
   let hi = rows.length;
@@ -542,7 +562,7 @@ function firstBelow(rows: NodeListOf<HTMLElement>, y: number) {
     if (r && r.getBoundingClientRect().bottom <= y) lo = mid + 1;
     else hi = mid;
   }
-  return Math.min(lo, rows.length - 1);
+  return lo;
 }
 
 /**
@@ -631,7 +651,7 @@ const LogTableRow = memo(function LogTableRow({
             colSpan={4}
             className="bg-panel py-2.5 pr-4 pl-4 sm:pr-7 sm:pl-[calc(17ch+2.5rem)]"
           >
-            {structured ? (
+            {structured && (
               <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-0.5">
                 {log.msg && (
                   <>
@@ -650,11 +670,13 @@ const LogTableRow = memo(function LogTableRow({
                   </Fragment>
                 ))}
               </dl>
-            ) : (
-              <div className="break-words whitespace-pre-wrap text-fg">
-                {line.text}
-              </div>
             )}
+            {/* The line as it came: under the fields for a structured one. */}
+            <div
+              className={`break-words whitespace-pre-wrap ${structured ? "mt-2 text-mut" : "text-fg"}`}
+            >
+              {line.text}
+            </div>
             <div className="mt-2 flex items-center gap-3.5 font-sans">
               <CopyButton text={line.text} label="Copy line" />
               {line.time && (

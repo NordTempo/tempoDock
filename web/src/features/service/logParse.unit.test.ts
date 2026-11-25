@@ -34,6 +34,10 @@ test("JSON: pino's numeric level is named, nested values stay JSON", () => {
   );
 });
 
+test("a level named like an object's own property stays a word", () => {
+  assert.equal(parseLog('{"level":"__proto__","msg":"x"}').level, "__proto__");
+});
+
 test("plain text stays whole, even with a key=value in it", () => {
   for (const text of [
     "GET /api/cart 200 18ms",
