@@ -193,7 +193,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       }
     >
       <div className="flex flex-col gap-3">
-        <dl className="props [grid-template-columns:200px_minmax(0,1fr)]">
+        <dl className="props">
           {/* On the middle line of the row's controls (the 28px hour
               select, or the 24px checkbox alone), not a 34px field's (the
               .props rule matches the select). */}

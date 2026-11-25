@@ -694,6 +694,26 @@
     padding-top: 16px;
   }
 
+  /* On a phone the label goes over its value, which gets the full width
+     (a 180px label column left a repository name a few letters a line).
+     A page that sets its own columns does it from 640px up (Heartbeat). */
+  @media (max-width: 639px) {
+    .props {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .props > dt,
+    .props
+      > dt:has(+ dd > :first-child :is(input:not([type="checkbox"]), select)),
+    .props
+      > dt:has(+ dd > :is(input:not([type="checkbox"]), select):first-child) {
+      padding: 9px 0 0;
+      border-bottom: 0;
+    }
+    .props > dd {
+      padding: 2px 0 9px;
+    }
+  }
+
   /*
    * Status is a tinted chip wherever StateText shows it, so the state
    * reads before its word (the trial's clearest status, H1).

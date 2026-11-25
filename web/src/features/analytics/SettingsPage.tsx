@@ -158,9 +158,7 @@ function Section({
   return (
     <section aria-labelledby={id} id={id}>
       <SectionHead id={`${id}-h`}>{title}</SectionHead>
-      <dl className="props [grid-template-columns:200px_minmax(0,1fr)]">
-        {children}
-      </dl>
+      <dl className="props">{children}</dl>
     </section>
   );
 }

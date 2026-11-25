@@ -159,7 +159,7 @@ function Status({ heartbeat: hb }: { heartbeat: HeartbeatState }) {
         <span>every {hb.minutes} min</span>
       </p>
       {failing && (
-        <dl className="props max-w-[760px] [grid-template-columns:120px_minmax(0,1fr)]">
+        <dl className="props max-w-[760px] min-[640px]:[grid-template-columns:120px_minmax(0,1fr)]">
           <Prop label="Last error">
             <span className="text-fail">{hb.last_error}</span>
             {hb.last_error_at && (

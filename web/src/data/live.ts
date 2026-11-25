@@ -80,6 +80,7 @@ const busEvents = [
   "sleep",
   "scan",
   "email",
+  "git",
 ] as const satisfies readonly Exclude<LiveEvent["type"], "build_log">[];
 
 const refOf = (e: LiveEvent): ServiceRef | null =>
@@ -409,6 +410,17 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       // A mail moved on (ADR 0079): the console's list, an invite's row.
       if (event.email) applyEmailEvent(queryClient, event.email);
       return;
+    case "git": {
+      // A push or a deploy from GitHub was recorded (an ignored push
+      // changes nothing else): the connection replaces the cached one.
+      const connection = event.git;
+      if (!ref || !connection) return;
+      queryClient.setQueryData<components["schemas"]["GitSource"]>(
+        keys.git(ref),
+        (old) => old && { ...old, connection },
+      );
+      return;
+    }
     case "project_renamed":
       return; // Navigation is handled by useLiveUpdates.
     case "build_log":

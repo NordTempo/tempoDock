@@ -9439,6 +9439,7 @@ export interface components {
             drain?: components["schemas"]["ServerDrain"];
             email?: components["schemas"]["EmailDelivery"];
             environment?: string;
+            git?: components["schemas"]["GitConnection"];
             job?: components["schemas"]["Job"];
             lock?: components["schemas"]["EnvironmentLock"];
             message?: string;
@@ -9458,7 +9459,7 @@ export interface components {
             time: string;
             traffic?: components["schemas"]["TrafficUpdate"];
             /** @enum {string} */
-            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "traffic" | "server" | "alert" | "update" | "project_renamed" | "disk" | "analytics" | "environment_lock" | "access_request" | "run" | "uptime" | "job" | "environment_move" | "server_drain" | "cloudflare_redirect" | "sleep" | "scan" | "email";
+            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "traffic" | "server" | "alert" | "update" | "project_renamed" | "disk" | "analytics" | "environment_lock" | "access_request" | "run" | "uptime" | "job" | "environment_move" | "server_drain" | "cloudflare_redirect" | "sleep" | "scan" | "email" | "git";
             update?: components["schemas"]["UpdateStatus"];
             uptime?: components["schemas"]["UptimeUpdate"];
             usage?: components["schemas"]["UsageUpdate"];

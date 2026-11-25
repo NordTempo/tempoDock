@@ -9,6 +9,9 @@ export type TextSettingKey = {
   [K in SettingKey]: NonNullable<SettingsPatch[K]> extends boolean ? never : K;
 }[SettingKey];
 
+/** The on/off settings, edited as a checkbox. */
+export type FlagSettingKey = Exclude<SettingKey, TextSettingKey>;
+
 export const settingLabel: Record<SettingKey, string> = {
   image: "image",
   port: "port",

@@ -544,13 +544,25 @@ func (c *Core) gitToken(conn store.GitConnection) (string, error) {
 
 // gitEvent records what happened to a connection's latest push, without
 // control characters: a failed push's reason can quote the repository
-// (a dock.toml parse error), and the line is shown in terminals. Failures
-// are logged: the event is informational.
+// (a dock.toml parse error), and the line is shown in terminals. The
+// connection then goes out on the bus (EventGit), so an open Settings or
+// History shows it: an ignored push changes nothing else. Failures are
+// logged: the event is informational. Pushes are rare, so the scope's
+// lookups don't matter.
 func (c *Core) gitEvent(connID int64, msg string) {
 	t := now()
-	if err := c.store.SetGitLastEvent(c.ctx, store.SetGitLastEventParams{LastEvent: cleanLine(msg, 500), LastEventAt: &t, ID: connID}); err != nil {
+	conn, err := c.store.SetGitLastEvent(c.ctx, store.SetGitLastEventParams{LastEvent: cleanLine(msg, 500), LastEventAt: &t, ID: connID})
+	if err != nil {
 		c.log.Error("record git event", "err", err)
+		return
 	}
+	ss, err := c.scopeOf(c.ctx, conn.ServiceID)
+	if err != nil {
+		c.log.Error("publish git event", "err", err)
+		return
+	}
+	gc := c.toGitConnection(conn)
+	c.publish(ss, apitypes.Event{Type: apitypes.EventGit, Git: &gc})
 }
 
 // shortSHA is the 7-character form of a commit SHA.

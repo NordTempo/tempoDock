@@ -1774,11 +1774,15 @@ const (
 	// 0079). An org's mail reaches its admins; every mail reaches
 	// operators.
 	EventEmail EventType = "email"
+	// EventGit carries a service's GitHub connection after a push or a
+	// deploy from GitHub was recorded on it (its last event, a queued
+	// commit), so the push that was ignored shows without a refetch.
+	EventGit EventType = "git"
 )
 
 // Event is a live update. Exactly one payload field is set, matching Type.
 type Event struct {
-	Type           EventType           `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk,analytics,environment_lock,access_request,run,uptime,job,environment_move,server_drain,cloudflare_redirect,sleep,scan,email"`
+	Type           EventType           `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk,analytics,environment_lock,access_request,run,uptime,job,environment_move,server_drain,cloudflare_redirect,sleep,scan,email,git"`
 	Time           time.Time           `json:"time"`
 	ProjectRenamed *ProjectRenamed     `json:"project_renamed,omitempty"`
 	Project        string              `json:"project,omitempty"`
@@ -1807,6 +1811,7 @@ type Event struct {
 	Sleep          *EnvironmentSleep   `json:"sleep,omitempty"`
 	Scan           *ImageScan          `json:"scan,omitempty"`
 	Email          *EmailDelivery      `json:"email,omitempty"`
+	Git            *GitConnection      `json:"git,omitempty"`
 	Message        string              `json:"message,omitempty"`
 }
 

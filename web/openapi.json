@@ -8495,6 +8495,9 @@
           "environment": {
             "type": "string"
           },
+          "git": {
+            "$ref": "#/components/schemas/GitConnection"
+          },
           "job": {
             "$ref": "#/components/schemas/Job"
           },
@@ -8575,7 +8578,8 @@
               "cloudflare_redirect",
               "sleep",
               "scan",
-              "email"
+              "email",
+              "git"
             ],
             "type": "string"
           },
