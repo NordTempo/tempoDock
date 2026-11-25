@@ -42,3 +42,6 @@ app, at demo.nordtempo.com.
   `demoAllowed`, or the demo refuses it.
 - The fake runtime's own events still change the demo between resets
   (logs, alerts), so the hourly reset stays.
+- Every visitor is the same user, so per-user bounds count per session
+  on the demo: live streams (32 a session) would otherwise be 32 for
+  everyone, and the 33rd visitor's page would not update.

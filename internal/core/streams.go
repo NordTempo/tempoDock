@@ -537,7 +537,9 @@ const logSendBatch = 256
 // Live streams are held open (an event stream with a subscription and
 // its buffer, which every published event walks; a log follow with a
 // connection to its server): a person or a token has maxActorStreams at
-// once (a tab or a `dock logs -f` each), and the server maxStreams.
+// once (a tab or a `dock logs -f` each), and the server maxStreams. On the
+// public demo (ADR 0100) every visitor is the same person, so the bound
+// is per session there: one visitor's tabs can't take everyone's.
 const (
 	maxActorStreams = 32
 	maxStreams      = 4096
@@ -546,28 +548,34 @@ const (
 // streamCounts counts the live streams open (events, log follows, build
 // log follows, live usage), by who opened them.
 type streamCounts struct {
-	mu    sync.Mutex
-	by    map[[2]int64]int // {user, token}: a token's streams are its own
+	mu sync.Mutex
+	// by counts by {user, token, session}: a token's streams are its own,
+	// and a session's only when perSession.
+	by    map[[3]int64]int
 	total int
+	// perSession counts a user's streams per session: set on the demo.
+	perSession bool
 }
 
 // open counts a stream for a, or refuses it past a bound; closed gives
 // its place back, once.
 func (s *streamCounts) open(a Actor) (closed func(), err error) {
-	key := [2]int64{a.UserID, a.TokenID}
+	key := [3]int64{a.UserID, a.TokenID, 0}
 	if a.TokenID != 0 {
 		key[0] = 0
+	} else if s.perSession {
+		key[2] = a.SessionID
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	switch {
-	case key != [2]int64{} && s.by[key] >= maxActorStreams:
+	case key != [3]int64{} && s.by[key] >= maxActorStreams:
 		return nil, errf(apitypes.CodeRateLimited, "%s already follows %d live streams, the most at once; close a tab or a command that follows one", a, maxActorStreams)
 	case s.total >= maxStreams:
 		return nil, errf(apitypes.CodeRateLimited, "the server already serves %d live streams, the most at once; try again in a moment", maxStreams)
 	}
 	if s.by == nil {
-		s.by = map[[2]int64]int{}
+		s.by = map[[3]int64]int{}
 	}
 	s.by[key]++
 	s.total++

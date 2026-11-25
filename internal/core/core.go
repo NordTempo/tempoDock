@@ -398,6 +398,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		loginLimit:      httpkit.NewLoginLimiter(),
 		bcryptSem:       make(chan struct{}, 2),
 		cliLogins:       newCLILogins(),
+		streams:         streamCounts{perSession: o.Config.Demo.Enabled()},
 		ceremonies:      newCeremonies(),
 		sso:             newSSOState(),
 		backups:         newBackupState(),
