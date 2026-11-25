@@ -24,7 +24,8 @@ dock service previews off -s web -e staging                # no new previews; op
 ```
 
 Or in the UI: the service's Settings › Source, Previews; the base's
-numbers on the project's settings, Previews. Changing them needs admin on
+numbers, and the shared variables previews copy, on the project's
+Project settings › Previews. Changing them needs admin on
 the environment: a preview runs a pull request's code.
 
 A pull request gets a preview when it goes into the branch a service with

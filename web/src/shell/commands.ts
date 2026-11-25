@@ -134,7 +134,8 @@ export function useCommands({
       run: () =>
         navigate({ to: "/$org/$project/settings", params: { org, project } }),
     });
-    // Each section of the project's Settings tab, found by what it holds.
+    // Each setting of the project, found by what it holds, on its page:
+    // the Settings tab for an environment's, Project settings for the rest.
     for (const section of projectSettingSections) {
       add({
         id: `setting:${project}:${section.id}`,
@@ -146,7 +147,10 @@ export function useCommands({
         weight: inProject ? 1 : -0.5,
         run: () =>
           navigate({
-            to: "/$org/$project/settings",
+            to:
+              section.scope === "project"
+                ? "/$org/$project/project-settings"
+                : "/$org/$project/settings",
             params: { org, project },
             hash: section.id,
           }),

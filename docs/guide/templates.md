@@ -59,7 +59,7 @@ dock template save --file stats.toml           # after changing its name
 dock template remove shop-stack                # services made from it stay
 ```
 
-In the UI: the project's Settings › Config file, **Save as template…**. Settings, volumes,
+In the UI: the project's Project settings › Config file, **Save as template…**. Settings, volumes,
 jobs and the references between the services are kept, a service
 deploys after those it references, parts named after the main service
 (`shop-db`) lose its name (`db`), and database templates stay templates. Variables that aren't references become inputs

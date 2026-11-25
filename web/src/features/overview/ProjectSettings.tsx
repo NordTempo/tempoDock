@@ -8,14 +8,14 @@ import { useOrg } from "../../shell/location";
 import { ago } from "../../ui/format";
 import { Act, Button, Confirm } from "../../ui/kit";
 
-// Pieces of a project's Settings tab (ADR 0059): its name, its config
-// file and archiving it.
+// Pieces of a project's Project settings (ADR 0059, 0099): its name, its
+// config file and archiving it.
 
 const RenameProject = lazy(() => import("./RenameProject"));
 
 /**
  * The project's name and address, with Rename for admins of the whole
- * project: the General section of its Settings.
+ * project: the Name row of its Project settings.
  */
 export function ProjectName({ project }: { project: Project }) {
   const org = useOrg();
@@ -26,12 +26,11 @@ export function ProjectName({ project }: { project: Project }) {
     (!session.project || session.project === project.name);
   const [renaming, setRenaming] = useState(false);
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-y border-line py-2.5">
-      <span className="w-40 text-mut">Name</span>
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
       <span className="min-w-0 flex-1">
         <span className="font-mono">{project.name}</span>{" "}
         <span className="text-mut">
-          at /{org}/{project.name}, created {ago(project.created_at)}
+          · /{org}/{project.name} · created {ago(project.created_at)}
         </span>
       </span>
       {canRename && (
@@ -70,8 +69,8 @@ export function Export({
   const path = `/api/v1/projects/${encodeURIComponent(project)}/export`;
   return (
     // Buttons, not inline links: downloading and applying are actions.
-    <div className="flex flex-wrap items-center gap-2 text-xs text-mut">
-      <span className="mr-1">Config as a file</span>
+    <div className="flex flex-wrap items-center gap-2 text-mut">
+      <span className="mr-1 min-w-0 flex-1">the whole project as one file</span>
       <a
         href={withOrg(`${path}.toml`)}
         download
@@ -154,10 +153,9 @@ export function ArchiveProject({ project }: { project: string }) {
     return <p className="text-mut">Only an admin can archive {project}.</p>;
   }
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-y border-line py-2.5">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
       <span className="min-w-0 flex-1 text-mut">
-        Archiving stops every service and removes its routes. Volumes and
-        history are kept.
+        stops every service in every environment; volumes and history stay
       </span>
       <Button danger onClick={() => setConfirming(true)}>
         Archive {project}

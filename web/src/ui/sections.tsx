@@ -153,3 +153,38 @@ function useSectionInView(sections: SectionItem[]) {
   }, [ids]);
   return current;
 }
+
+/**
+ * A settings page short enough to need no list of sections (a project's
+ * Settings and Project settings, ADR 0099): one row per setting, its name
+ * on the left and what it is, with its buttons, beside it. `id` is the
+ * address's #hash.
+ */
+export function SettingRow({
+  id,
+  label,
+  danger,
+  children,
+}: {
+  id: string;
+  label: ReactNode;
+  /** The row that archives or deletes: its name in red. */
+  danger?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      id={id}
+      aria-labelledby={`${id}-h`}
+      className="grid scroll-mt-[12px] gap-x-6 gap-y-2 border-b border-line py-3 first:border-t md:grid-cols-[170px_minmax(0,1fr)]"
+    >
+      <h2
+        id={`${id}-h`}
+        className={`font-semibold ${danger ? "text-fail" : ""}`}
+      >
+        {label}
+      </h2>
+      <div className="min-w-0">{children}</div>
+    </section>
+  );
+}

@@ -14,8 +14,8 @@ import { kindLabel } from "../../ui/status";
 const kinds: EnvironmentKind[] = ["production", "non_production"];
 
 /**
- * Which server each kind of the project's environments lives on, under
- * the environments' own rows in Settings › Placement (operators). A kind
+ * Which server each kind of the project's environments lives on: Project
+ * settings › New environments (operators). A kind
  * with nothing placed yet goes to the emptiest eligible server on its
  * first environment; operators can pin it before that.
  */
@@ -24,10 +24,10 @@ export function Placements({ project }: { project: string }) {
   const { environments } = useProjectOverview(project);
   const operator = useSeesPlatform();
   return (
-    <section aria-labelledby="placement-kinds" className="mt-4 min-w-0">
-      <h3 id="placement-kinds" className="mb-1.5 font-semibold">
-        Where each kind of environment goes
-      </h3>
+    <section aria-labelledby="placement-kinds" className="min-w-0">
+      <p id="placement-kinds" className="mb-1.5 text-mut">
+        the server each kind of environment goes to
+      </p>
       <Panel>
         <table>
           <thead>

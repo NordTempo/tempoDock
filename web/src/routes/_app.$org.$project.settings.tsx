@@ -5,9 +5,9 @@ import { defaultEnvironment } from "../features/overview/load";
 import { ProjectHeader } from "../features/overview/ProjectHeader";
 import { rememberProject } from "../shell/location";
 
-// A project's Settings tab (ADR 0059): the project page's header, then
-// every section on one page. ?env= is the environment the per-environment
-// sections (shared variables, log drains) show, the header's switch.
+// A project's Settings tab (ADR 0059, 0099): the project page's header,
+// then the settings of one environment, the one ?env= names (the
+// header's switch). The project's own are on Project settings.
 export const Route = createFileRoute("/_app/$org/$project/settings")({
   validateSearch: (search: Record<string, unknown>): { env?: string } =>
     typeof search.env === "string" && search.env ? { env: search.env } : {},
