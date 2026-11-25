@@ -215,7 +215,9 @@ for everything.
   text, a value left on its default marked "default" in faint text; the
   whole value opens a small form (with the explanation in it); Save,
   Cancel, Esc. A row that can't be changed here has no chevron. Links
-  and buttons go in the form, not beside the value. Only settings are
+  and buttons go in the form, not beside the value; Copy, for a value
+  people paste elsewhere (a webhook URL), is the one exception, since
+  people who can't edit need it too. Only settings are
   rows; events and actions live elsewhere.
 - **Row actions.** The action a list exists for (Restore, Show, Retry)
   stays visible on every row; rare and destructive ones go in the row's
@@ -244,8 +246,8 @@ for everything.
 - **Fields** (inputs, selects, checkboxes) have a 3:1 edge on black.
 - **Targets** are at least 24px: buttons, inputs, selects and standalone
   links (by padding taken back with a negative margin).
-- **Defaults** fold away on settings pages (see Settings rows) and say
-  "default" once shown; in tables the value alone, dimmer, with a tooltip.
+- **Defaults** show in place on settings pages, marked "default" (see
+  Settings rows); in tables the value alone, dimmer, with a tooltip.
 - **Words.** Plain words over product terms ("Going live", "Before it goes
   live", "Checks while running"): replaced (not superseded),
   traffic moved, downtime, waiting to apply, reached at, memory reserved,

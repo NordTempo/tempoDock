@@ -181,6 +181,7 @@ export function SourceSection({
             edit={(close) => (
               <SourceEdit
                 conn={conn}
+                pending={connect.isPending}
                 onDisconnect={() => {
                   close();
                   setConfirming("disconnect");
@@ -281,7 +282,10 @@ export function SourceSection({
                     <EditFoot error={null} onCancel={close} />
                   </span>
                 ) : (
-                  <span className="flex flex-col">
+                  <span
+                    className="flex flex-col"
+                    onKeyDown={(e) => e.key === "Escape" && close()}
+                  >
                     <Choice
                       label="Commit statuses"
                       name="git-status"
@@ -883,14 +887,18 @@ const sourceParts: readonly (readonly [SourcePart, string, string])[] = [
 /**
  * The Deploys from row's editor: pick the repository, branch or path and
  * change it with its own editor (branch first, the usual change); under
- * them who connected it, a link to it on GitHub and Disconnect.
+ * them who connected it, a link to it on GitHub and Disconnect. While a
+ * save is `pending` the picks are disabled: each save sends the whole
+ * connection from the cache, so a second one would undo the first.
  */
 function SourceEdit({
   conn,
+  pending,
   editors,
   onDisconnect,
 }: {
   conn: GitConnection;
+  pending: boolean;
   editors: Record<SourcePart, ReactNode>;
   onDisconnect: () => void;
 }) {
@@ -898,15 +906,17 @@ function SourceEdit({
   const hint = sourceParts.find(([p]) => p === part)?.[2];
   return (
     <span className="flex flex-col gap-2">
-      <Choice
-        label="Change"
-        name="git-source-part"
-        value={part}
-        options={sourceParts.map(([p, label]) => [p, label] as const)}
-        onChange={setPart}
-      />
-      <span className="text-xs text-mut">{hint}</span>
-      <span key={part}>{editors[part]}</span>
+      <fieldset disabled={pending} className="flex min-w-0 flex-col gap-2">
+        <Choice
+          label="Change"
+          name="git-source-part"
+          value={part}
+          options={sourceParts.map(([p, label]) => [p, label] as const)}
+          onChange={setPart}
+        />
+        <span className="text-xs text-mut">{hint}</span>
+        <span key={part}>{editors[part]}</span>
+      </fieldset>
       <span className="flex flex-wrap items-center gap-x-4 gap-y-2 border-soft border-t pt-2 text-xs text-mut">
         <span>
           connected {ago(conn.created_at)} by {conn.created_by}

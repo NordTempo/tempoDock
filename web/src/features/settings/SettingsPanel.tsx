@@ -137,7 +137,10 @@ export function SettingsPanel({
             [{ key: "image" }],
             <ImageNote serviceRef={ref} />,
           )}
-          imageSet={service.image !== "" || !!change("image")}
+          // ?edit=image (a fix for a failed deploy) needs the row too.
+          imageSet={
+            service.image !== "" || !!change("image") || edit === "image"
+          }
           build={row("Build", "For deploys from source.", [
             { key: "dockerfile_path", word: "Dockerfile" },
             { key: "build_command", word: "build command" },
