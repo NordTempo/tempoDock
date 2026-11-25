@@ -119,7 +119,7 @@ for everything.
 
 - **Navigation** (ADR 0076, option 3; ADR 0099). A top bar across every
   page: the organization switcher (the Platform console in it for
-  operators), the organization's views (Overview, Errors, Analytics,
+  operators), the organization's views (Projects, Errors, Analytics,
   Images, Status pages), one search (the palette, Cmd+K: pages, settings
   sections, actions, `dock` commands and help topics in one list), Inbox
   with its count, Settings (the organization's: Members, Activity and
@@ -143,8 +143,12 @@ for everything.
   a `···` menu (`MoreMenu` in `ui/kit.tsx`) holding every other action in
   one order: operate, run, connect, then archive or delete in red. Then
   tabs, with Settings always last.
-- **Pages.** An organization's home is its Overview (one "needs you"
-  line into the Inbox, its projects, recent deploys); a project page
+- **Pages.** An organization's home is Projects: what needs you (the
+  first five alerts with their buttons, the rest a count into the
+  Inbox), then each project with something going on as a pipeline, its
+  services by environment with what lies between two (same image,
+  settings that differ, Promote, an image that failed there), the quiet
+  ones a row each, then recent deploys; a project page
   shows one environment at a time (the switch beside its name) in three
   tabs: Services (its problems, then its services and where each is
   reached), Activity and Settings; an environment's address
@@ -166,9 +170,13 @@ for everything.
   and search use. A setting has one home, at the level it applies to; a
   service's Variables tab shows what it sees, grouped by where each is
   set.
-- **Overview.** One column: status, what needs attention, facts (each a
-  row into its home in Settings, Metrics or Requests), the deploy in
-  flight, the three newest releases. Logs have their own tab; all
+- **Overview.** One column: status, the service in its other
+  environments (a strip in pipeline order, the same words as the
+  Projects page), a failed deploy with its cause, where the same image
+  works and how that environment's settings differ, and the fix that
+  fits, then what else needs attention, facts (each a row into its home
+  in Settings, Metrics or Requests), the deploy in flight, the three
+  newest releases. Logs have their own tab; all
   releases are on History; Connect from your machine is in the header's
   `···`.
 - **Width.** Every page uses the one content width. Below 1400px, side

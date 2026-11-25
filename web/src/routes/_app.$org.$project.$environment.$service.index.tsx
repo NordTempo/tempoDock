@@ -2,7 +2,10 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { servicePath, useRelease, useService } from "../data/queries";
 import type { ServiceRef } from "../data/types";
 import { RestoredFrom } from "../features/backups/Restored";
+import { failedNews } from "../features/overview/pipeline";
 import { NeedsAttention } from "../features/service/Attention";
+import { EnvStrip } from "../features/service/EnvStrip";
+import { FailedDeploy } from "../features/service/FailedDeploy";
 import { ReleaseHistory } from "../features/service/ReleaseHistory";
 import { imageLabel } from "../features/service/releases";
 import {
@@ -16,10 +19,12 @@ import { elapsed } from "../ui/format";
 import { Actor, actorKind, SectionHead } from "../ui/kit";
 import { inFlight } from "../ui/status";
 
-// A service at a glance (A2, ADR 0099): status, what needs attention,
-// facts that each open their one home (uptime and visitors among them),
-// the deploy in flight and the three newest releases (all of them on
-// History). Connecting from your machine is in the header's "···" menu.
+// A service at a glance (A2, ADR 0099): status, the service in its other
+// environments (the pipeline strip), a failed deploy with its cause and
+// fix, what else needs attention, facts that each open their one home
+// (uptime and visitors among them), the deploy in flight and the three
+// newest releases (all of them on History). Connecting from your machine
+// is in the header's "···" menu.
 export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/",
 )({
@@ -30,6 +35,7 @@ function ServiceOverview() {
   const ref = servicePath(Route.useParams());
   const service = useService(ref);
   const current = service.deploying;
+  const failed = failedNews(service);
 
   // One column: status, facts, the deploy in flight and the newest
   // releases. Logs have their own tab; a database's connection lines are
@@ -39,6 +45,10 @@ function ServiceOverview() {
       {/* What serves, then what needs a look, said once (ADR 0076). */}
       <div className="flex flex-col gap-3">
         <StatusSentence view={service} />
+        <EnvStrip serviceRef={ref} />
+        {failed && (
+          <FailedDeploy serviceRef={ref} view={service} failed={failed} />
+        )}
         <NeedsAttention serviceRef={ref} view={service} />
       </div>
       <ServiceFacts serviceRef={ref} />

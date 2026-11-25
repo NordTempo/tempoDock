@@ -1,7 +1,9 @@
 # 0099: One obvious place for each feature
 
 Status: accepted (Saile picked the v4 before and after mocks on
-2026-11-24, Postplan `8k22xveyb52d`). Amends
+2026-11-24, Postplan `8k22xveyb52d`; the Projects page, the environment
+strip and the failed deploy on the Overview came from the Pipeline mock
+on 2026-11-25, Postplan `knc9mvckx1v6`). Amends
 [0076](0076-service-page-in-nine-tabs.md) (settings views, tab order,
 the save model's place stays) and [0062](0062-org-alerts-and-operators.md)
 (the settings column's groups).
@@ -51,13 +53,25 @@ Placement rules, applied to every page:
 4. **`···` holds every other action** in one order (operate, run,
    connect, then archive in red), never a menu with one item.
 5. **A problem is said once with the button that fixes it**; elsewhere
-   it's a count that links there. The org Overview's "Needs you" is one
-   line into the Inbox.
+   it's a mark or a count that links there. The organization's home,
+   Projects (first in the top bar), lists the first five open alerts
+   with their buttons, as the Inbox does, and the rest as a count into
+   the Inbox. A failed deploy is said on the service's Overview with its
+   cause and fix, not only on the release's page.
 6. **Show what was set, fold the defaults.** The action a list exists
    for (Restore, Show) stays visible on every row; rare and destructive
    ones go in the row's `···`.
 7. **Search knows every settings section and the actions people look
    for**, by the names the pages use.
+8. **A project reads as a pipeline.** Its environments in the order a
+   release goes through them (previews, then the others, production
+   last) and, for each service, what lies between two: the same image,
+   settings that differ, a newer image with Promote, or an image that
+   failed there. Projects shows it as a grid for each project with
+   something going on (quiet ones fold to a row); a service's Overview
+   shows its own row as a strip, and a failed deploy names the
+   environment where the same image works and the settings that differ
+   (`features/overview/pipeline.ts`).
 
 Kept from 0076: key hints on buttons, Apply in the service header while
 changes wait, the review drawer.

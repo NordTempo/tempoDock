@@ -586,6 +586,13 @@ push to the same tag changes nothing.
   involved, so promoting from the homelab works while it is off, as long
   as the image went through the [registry](install.md#registry).
 
+In the UI, the Projects page shows each project with something going on
+as a grid of its services by environment, and a service's Overview shows
+the same row as a strip: between two environments it says whether they
+run the same image, which settings differ, or that the image failed in
+the later one, and offers **Promote** where the earlier one is ahead.
+Promote opens the project's Compare page with the promote panel.
+
 ## Clone an environment
 
 ```sh

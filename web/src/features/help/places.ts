@@ -79,7 +79,7 @@ export const projectPlaces = {
 } as const;
 
 export const orgPlaces = {
-  overview: { to: "/$org", label: "Organization overview" },
+  overview: { to: "/$org", label: "Projects" },
   errors: { to: "/$org/errors", label: "Errors" },
   analytics: { to: "/$org/analytics", label: "Analytics" },
   images: { to: "/$org/images", label: "Images" },

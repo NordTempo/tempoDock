@@ -299,7 +299,7 @@ export const topLinkClass =
 
 /** The org's views, in the top bar's order. */
 export const orgViews = [
-  ["/$org", "Overview"],
+  ["/$org", "Projects"],
   ["/$org/errors", "Errors"],
   ["/$org/analytics", "Analytics"],
   ["/$org/images", "Images"],
@@ -346,7 +346,7 @@ function ViewsMenu() {
   );
 }
 
-/** A link in the top bar; current on its page (Overview only exactly). */
+/** A link in the top bar; current on its page (Projects only exactly). */
 function TopLink({
   to,
   children,

@@ -1,9 +1,9 @@
-// Open alerts in words: the Overview's line and the Inbox's grouped rows.
+// Open alerts in words: the Inbox's grouped rows.
 // Run by `pnpm check:unit` (node --test): pure functions, no browser.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { components } from "../../api/schema";
-import { groupAlerts, groupTitle, needsPhrase } from "./summary.ts";
+import { groupAlerts, groupTitle } from "./summary.ts";
 
 type Alert = components["schemas"]["Alert"];
 
@@ -21,22 +21,6 @@ const alert = (kind: string, more: Partial<Alert> = {}): Alert => ({
 
 const siteError = () =>
   alert("new_error", { project: "shop", target: { site: "shop.example.com" } });
-
-test("the line names each kind once, counting the errors", () => {
-  const open = [
-    alert("access_request"),
-    alert("backup_failed"),
-    siteError(),
-    siteError(),
-    siteError(),
-  ];
-  assert.equal(
-    needsPhrase(open),
-    "an access request, a failed backup and 3 new errors",
-  );
-  assert.equal(needsPhrase([alert("backup_failed")]), "a failed backup");
-  assert.equal(needsPhrase([]), "");
-});
 
 test("errors about one site are one row; other alerts keep their own", () => {
   const groups = groupAlerts([

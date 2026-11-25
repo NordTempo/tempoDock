@@ -466,7 +466,7 @@ export function useCommands({
     run: () => navigate({ to: "/account" }),
   });
   const orgPages = [
-    ["Overview", "/$org", "dock project list"],
+    ["Projects", "/$org", "dock project list"],
     ["Inbox", "/$org/inbox", "dock alerts"],
     ["Errors", "/$org/errors", "dock errors"],
     ["Analytics", "/$org/analytics", "dock analytics sites"],

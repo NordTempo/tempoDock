@@ -42,7 +42,11 @@ or day, **regressed** when it comes back after being resolved, and
 A deploy that fails opens issues for the errors its app logged, like a
 live release. Two things are left out: lines about Dock's own health
 check getting a 404, and what the app wrote while Dock stopped it.
-`dock diagnose` shows the failed deploy's output with the likely cause.
+`dock diagnose` shows the failed deploy's output with the likely cause;
+in the UI the service's Overview says it under its status, with the
+environment where the same image runs, the settings that differ, and the
+fix that fits (for a port, "Use staging's port 8080" saves it and deploys
+the image again).
 
 ```sh
 dock errors                     # the organization's open issues

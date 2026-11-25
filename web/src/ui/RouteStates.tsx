@@ -151,7 +151,7 @@ function shapeOf(path: string): {
 } {
   const [org, second, third, fourth] = path.split("/").filter(Boolean);
   if (!org || org === "console" || org === "account") return {};
-  if (!second) return { title: "Overview" };
+  if (!second) return { title: "Projects" };
   const area = orgPages[second];
   // A settings section's frame is titled with the section's name.
   if (second === "settings" && third)
@@ -317,11 +317,11 @@ export function NotFound() {
   const parts = path.split("/").filter(Boolean);
   const m = missingFor(parts, projects);
   const up = `/${m.up.join("/")}`;
-  // One level under an organization is its Overview; the console's and
-  // the account's top pages go by their own names.
+  // One level under an organization is its Projects page; the console's
+  // and the account's top pages go by their own names.
   const upName =
     m.up.length === 1 && m.up[0] !== "console" && m.up[0] !== "account"
-      ? "overview"
+      ? "projects"
       : (m.up.at(-1) ?? "projects");
   return (
     <>

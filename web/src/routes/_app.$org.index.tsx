@@ -8,11 +8,14 @@ import {
   useSession,
 } from "../data/queries";
 import type { AuditEvent, ProjectOverview } from "../data/types";
+import { AlertTable } from "../features/alerts/AlertTable";
 import { useOrgOpenAlerts } from "../features/alerts/data";
-import { needsPhrase } from "../features/alerts/summary";
+import { groupAlerts } from "../features/alerts/summary";
 import { pastLabel } from "../features/audit/AuditTable";
 import { canCreateProject } from "../features/create/access";
 import { openCreate } from "../features/create/open";
+import { ProjectGrid } from "../features/overview/ProjectGrid";
+import { stages, step } from "../features/overview/pipeline";
 import { useOrg } from "../shell/location";
 import { cliInstallLine } from "../ui/cliInstall";
 import { ago, plural } from "../ui/format";
@@ -27,12 +30,15 @@ import {
   SectionHead,
 } from "../ui/kit";
 
-// An organization's home ("/" lands here too), its Overview in the top
-// bar: one line on what needs someone (the Inbox is the one list of it),
-// its projects with their health worst first, and the latest deploys.
-// Errors and status pages have their own views in the top bar, so they
-// aren't repeated here. With no projects yet, it offers to create one or
-// says how to deploy from a terminal.
+// An organization's home ("/" lands here too), Projects in the top bar
+// (ADR 0099): what needs someone first, the first few with the button to
+// each fix (the Inbox has them all), then its projects. A project with
+// something going on shows as a pipeline, its services by environment
+// with what lies between them (ProjectGrid); the quiet ones are a row
+// each, worst first. Then the latest deploys. Errors and status pages
+// have their own views in the top bar, so they aren't repeated here. With
+// no projects yet, it offers to create one or says how to deploy from a
+// terminal.
 export const Route = createFileRoute("/_app/$org/")({
   loader: async ({ context: { queryClient } }) => {
     const projects = await queryClient.ensureQueryData(queries.projects());
@@ -54,13 +60,19 @@ function Home() {
     queries: projects.map((p) => queries.overview(p.name)),
   });
   if (projects.length === 0) return <NoProjects />;
-  const rows = projects
-    .map((project, i) => ({ project, health: health(overviews[i]?.data) }))
+  const all = projects
+    .map((project, i) => {
+      const overview = overviews[i]?.data;
+      const h = health(overview);
+      return { project, overview, health: h, busy: busy(overview, h) };
+    })
     .sort((a, b) => (b.health?.rank ?? 0) - (a.health?.rank ?? 0));
+  const grids = all.filter((r) => r.busy);
+  const rows = all.filter((r) => !r.busy);
   return (
     <>
       <PageBar
-        title="Overview"
+        title="Projects"
         actions={
           canCreate && (
             <Button primary onClick={() => openCreate({ kind: "project" })}>
@@ -71,60 +83,70 @@ function Home() {
       />
       <Page>
         <NeedsYou />
-        <section aria-labelledby="projects-head">
-          <SectionHead id="projects-head">Projects</SectionHead>
-          <Panel>
-            <table>
-              <thead className="sr-only">
-                <tr>
-                  <th>Project</th>
-                  <th>Health</th>
-                  <th>Last deploy</th>
-                  <th>Open</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(({ project, health: h }) => (
-                  <tr key={project.id} className="row-link">
-                    <td className="w-[22%]">
-                      <Link
-                        to="/$org/$project"
-                        params={{ org, project: project.name }}
-                        className="row-main font-medium hover:underline"
-                      >
-                        {project.name}
-                      </Link>
-                    </td>
-                    <td className="whitespace-normal">
-                      {h ? (
-                        <span className={h.tone}>
-                          <Glyph char={h.glyph} /> {h.text}
-                          {h.note && <span className="text-mut">{h.note}</span>}
-                        </span>
-                      ) : (
-                        <span className="text-faint">not loaded</span>
-                      )}
-                    </td>
-                    <td className="w-[18%] text-right text-mut">
-                      {h?.deploying ? (
-                        <span className="text-prog">deploying</span>
-                      ) : h?.last ? (
-                        <span title={new Date(h.last).toLocaleString()}>
-                          deployed {ago(h.last)}
-                        </span>
-                      ) : (
-                        <span className="text-faint">never deployed</span>
-                      )}
-                    </td>
-                    <td className="row-go" aria-hidden>
-                      <Icon name="chevronRight" size={14} />
-                    </td>
+        {grids.map(
+          ({ project, overview }) =>
+            overview && <ProjectGrid key={project.id} overview={overview} />,
+        )}
+        {rows.length > 0 && (
+          <section aria-labelledby="projects-head">
+            <SectionHead id="projects-head">
+              {grids.length > 0 ? "Other projects" : "All projects"}
+            </SectionHead>
+            <Panel>
+              <table>
+                <thead className="sr-only">
+                  <tr>
+                    <th>Project</th>
+                    <th>Health</th>
+                    <th>Last deploy</th>
+                    <th>Open</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </Panel>
-        </section>
+                </thead>
+                <tbody>
+                  {rows.map(({ project, health: h }) => (
+                    <tr key={project.id} className="row-link">
+                      <td className="w-[22%]">
+                        <Link
+                          to="/$org/$project"
+                          params={{ org, project: project.name }}
+                          className="row-main font-medium hover:underline"
+                        >
+                          {project.name}
+                        </Link>
+                      </td>
+                      <td className="whitespace-normal">
+                        {h ? (
+                          <span className={h.tone}>
+                            <Glyph char={h.glyph} /> {h.text}
+                            {h.note && (
+                              <span className="text-mut">{h.note}</span>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-faint">not loaded</span>
+                        )}
+                      </td>
+                      <td className="w-[18%] text-right text-mut">
+                        {h?.deploying ? (
+                          <span className="text-prog">deploying</span>
+                        ) : h?.last ? (
+                          <span title={new Date(h.last).toLocaleString()}>
+                            deployed {ago(h.last)}
+                          </span>
+                        ) : (
+                          <span className="text-faint">never deployed</span>
+                        )}
+                      </td>
+                      <td className="row-go" aria-hidden>
+                        <Icon name="chevronRight" size={14} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Panel>
+          </section>
+        )}
         <RecentDeploys />
       </Page>
     </>
@@ -240,6 +262,32 @@ function health(o: ProjectOverview | undefined) {
   };
 }
 
+/**
+ * Whether a project shows as a pipeline on the page: something in it is
+ * broken, deploying or waiting (health ranks it), changes wait to apply,
+ * a backup failed, or an image waits to be promoted. Quiet projects are a
+ * row each, so ten of them still fit on a screen.
+ */
+function busy(o: ProjectOverview | undefined, h: ReturnType<typeof health>) {
+  if (!o) return false;
+  if ((h?.rank ?? 0) > 0) return true;
+  const { lanes } = stages(o.environments);
+  if (lanes.some((e) => e.pending_changes > 0)) return true;
+  if (lanes.some((e) => e.services.some((s) => s.backup?.status === "failed")))
+    return true;
+  return lanes.some((e, i) => {
+    const before = lanes[i - 1];
+    if (!before) return false;
+    return e.services.some((s) => {
+      const k = step(
+        before.services.find((b) => b.service.name === s.service.name),
+        s,
+      )?.kind;
+      return k === "ahead" || k === "failed";
+    });
+  });
+}
+
 function NoProjects() {
   const org = useOrg();
   // Only operators can list servers, so only they see where it runs.
@@ -266,7 +314,7 @@ function NoProjects() {
   return (
     <>
       <PageBar
-        title="Overview"
+        title="Projects"
         actions={
           canCreate && (
             <Button primary onClick={() => openCreate({ kind: "project" })}>
@@ -318,10 +366,14 @@ function NoProjects() {
   );
 }
 
+/** Open alerts the page lists; the rest are a count into the Inbox. */
+const NEEDS_SHOWN = 5;
+
 /**
- * What needs someone, in one line: each kind once ("an access request, a
- * failed backup and 3 new errors"), with the way to the Inbox, the one
- * list of it. Its alerts are the Inbox's count in the top bar.
+ * What needs someone (ADR 0099): the first few open alerts, worst first
+ * and grouped as in the Inbox, each with the button to its fix, so the
+ * usual case is handled from here; more than that is a line into the
+ * Inbox, the one list of all of it.
  */
 function NeedsYou() {
   const org = useOrg();
@@ -333,20 +385,28 @@ function NeedsYou() {
       </p>
     );
   }
-  const critical = open.some((a) => a.severity === "critical");
+  const groups = groupAlerts(open);
+  const more = groups.length - NEEDS_SHOWN;
   return (
-    <p className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-y border-line py-2">
-      <span className={critical ? "text-fail" : "text-warn"}>
-        <Glyph char={critical ? "✕" : "▲"} />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="font-semibold">Needs you:</span>{" "}
-        <span className="text-sec">{needsPhrase(open)}</span>
-      </span>
-      <Link to="/$org/inbox" params={{ org }} className="btn sm no-underline">
-        Open inbox
-      </Link>
-    </p>
+    <section aria-labelledby="needs-head">
+      <SectionHead
+        id="needs-head"
+        aside={groups.length}
+        right={
+          <Link to="/$org/inbox" params={{ org }} className="hover:text-fg">
+            {more > 0 ? `${more} more in the Inbox →` : "Open inbox →"}
+          </Link>
+        }
+      >
+        Needs you
+      </SectionHead>
+      <AlertTable
+        scope="org"
+        groups={groups.slice(0, NEEDS_SHOWN)}
+        resolvable
+        brief
+      />
+    </section>
   );
 }
 
