@@ -43,7 +43,7 @@ function OrgShell() {
   useLiveUpdates();
   const mode = useShellMode();
   const demo = useSession()?.demo === true;
-  // The project tree sits beside the Projects page only.
+  // The project tree sits beside Projects and the pages inside a project.
   const projects = useProjectsColumn();
   return (
     <PaletteProvider>
@@ -89,16 +89,14 @@ export const RoutePending = PagePending;
  * _app's pendingComponent): the top bar's fixed parts (none on the
  * console), the left column at the width it will have (the saved tree or
  * rail choice) and the page's
- * frame. Nothing here reads a query; the org is the address's slug. Only
- * the Projects page gets the column, as in the shell.
+ * frame. Nothing here reads a query; the org is the address's slug. The
+ * column shows where the shell shows it (useProjectsColumn).
  */
 export function ShellPending() {
   const path = useRouterState({ select: (s) => s.location.pathname });
   const inConsole = path === "/console" || path.startsWith("/console/");
   const [saved] = useTreeOpen();
-  // By the address, since the matches may not be in yet: /$org alone.
-  const projects =
-    !inConsole && path !== "/account" && /^\/[^/]+\/?$/.test(path);
+  const projects = useProjectsColumn();
   const wide = inConsole || saved;
   return (
     <>

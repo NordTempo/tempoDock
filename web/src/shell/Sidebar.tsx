@@ -60,11 +60,11 @@ export const useShellMode = (): ShellMode =>
   });
 
 /**
- * The left column: the project tree (or its rail) on the Projects page,
- * the console's views on the console. Every other organization page has
- * none (useProjectsColumn; the shell leaves it out there). Wide screens
- * keep it in view while the page scrolls; narrow ones put it above the
- * page.
+ * The left column: the project tree (or its rail) on the Projects page
+ * and inside a project, the console's views on the console. The
+ * organization's other views have none (useProjectsColumn; the shell
+ * leaves it out there). Wide screens keep it in view while the page
+ * scrolls; narrow ones put it above the page.
  */
 export function Sidebar({ mode }: { mode: ShellMode }) {
   // Narrow screens fold the sidebar behind a button; moving on folds it.
@@ -118,15 +118,21 @@ export const columnClass = (wide: boolean) =>
   `flex flex-col gap-0.5 border-b border-line bg-side px-2 py-2.5 lg:sticky ${wide ? "lg:w-[248px]" : "lg:w-[60px]"} lg:flex-none lg:overflow-y-auto lg:border-r lg:border-b-0 lg:top-(--shell-top) lg:h-[calc(100vh-var(--shell-top))]`;
 
 /**
- * Whether the page is the organization's Projects page (`/$org`), the one
- * organization page with the project tree or rail down its left side
- * (Saile): every other page gets the full width, and the top bar's
- * Projects is the way back to the list. A page with a menu of its own
- * (Settings' sections, an analytics site's views) has that list as its
- * only left column.
+ * Whether the page is in Projects: the Projects page (`/$org`) or any
+ * page inside a project (its services, environments, settings). Those
+ * have the project tree or rail down their left side and Projects marked
+ * in the top bar; the organization's other views (Errors, Analytics,
+ * Images, Status pages, Inbox, Settings) get the full width (Saile).
  */
 export const useProjectsColumn = () =>
-  useMatches({ select: (ms) => ms.at(-1)?.routeId === "/_app/$org/" });
+  useMatches({
+    select: (ms) =>
+      ms.some(
+        (m) =>
+          m.routeId === "/_app/$org/" ||
+          m.routeId.startsWith("/_app/$org/$project"),
+      ),
+  });
 
 /**
  * Whether the left column shows the full project tree or only the project
@@ -356,11 +362,14 @@ function TopLink({
   children: ReactNode;
 }) {
   const org = useOrg();
+  // Projects stays marked inside a project, not only on its list.
+  const inProjects = useProjectsColumn();
   return (
     <Link
       to={to}
       params={{ org }}
       activeOptions={{ exact: to === "/$org" }}
+      {...(to === "/$org" && inProjects && { "aria-current": "page" as const })}
       className={topLinkClass}
     >
       {children}
