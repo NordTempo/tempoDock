@@ -18,14 +18,15 @@ const (
 	demoSignIn        = "everyone visiting the demo signs in the same way, so that stays as it is"
 	demoOtherHosts    = "the demo sends nothing to other hosts"
 	demoDisk          = "the demo shares its server's disk, so it keeps no large files"
+	demoNoUploads     = "the demo builds nothing, so it takes no uploads; deploy an image to see a release"
 )
 
 // demoRefused are the operations demo mode refuses, by operation ID, and
 // why: what would lock the next visitor out of the demo or out of its
 // account, and what would make the daemon connect to an address a visitor
 // typed in (alert channels, log drains, mail, identity providers, buckets,
-// Cloudflare, GitHub, releases), and what would store a large file on
-// the server's disk. Everything else works, on the fake runtime, until
+// Cloudflare, GitHub, releases), and what would take in a visitor's files
+// (source uploads) or store a large file on the server's disk. Everything else works, on the fake runtime, until
 // the next reset.
 var demoRefused = map[string]string{
 	// The shared account.
@@ -92,8 +93,9 @@ var demoRefused = map[string]string{
 	"check-site-tracking":          demoOtherHosts,
 	"start-update":                 demoOtherHosts,
 
-	// Large files: a vulnerability database is up to 1 GB. Source uploads
-	// are capped by the demo's max_upload_mb instead.
+	// Files: the demo shows how Dock works on mock data and takes in
+	// nothing a visitor sends. A vulnerability database is up to 1 GB.
+	"deploy-source":        demoNoUploads,
 	"import-scan-database": demoDisk,
 }
 
