@@ -15,7 +15,6 @@ import {
   Confirm,
   CopyButton,
   ErrorText,
-  SectionHead,
 } from "../../ui/kit";
 import { autofocus, Choice, input } from "../create/form";
 import {
@@ -28,6 +27,7 @@ import {
   useSetServicePreviews,
 } from "../previews/data";
 import { canAdmin } from "../previews/PreviewsSection";
+import { OpenValue } from "../settings/OpenValue";
 import {
   commitText,
   type GitConnection,
@@ -47,7 +47,8 @@ type ConnectRequest = Schemas["GitConnectRequest"];
 type ConnectResult = Schemas["GitConnectResult"];
 
 /**
- * The service's GitHub source (ADR 0018) as settings rows (plan mock A):
+ * The service's GitHub source (ADR 0018) as rows of Settings' Source
+ * section, under the image and build (plan mock A):
  * repository, branch, path, previews (ADR 0077) and statuses each with
  * their own Edit; through Dock's GitHub App (ADR 0031) the repository,
  * branch and path are picked from lists, through a webhook they are
@@ -116,18 +117,22 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     );
 
   return (
-    <section aria-labelledby="source" className="flex flex-col">
-      <SectionHead id="source">Source</SectionHead>
+    <div className="flex flex-col">
       {source.error && <ErrorText error={source.error} />}
       {source.data && !conn && !connecting && (
-        <p className="flex flex-wrap items-center gap-x-3 gap-y-2 pb-2">
-          <span className="text-sec">Not connected to GitHub.</span>
-          {canEdit && (
-            <Button small onClick={() => setConnecting(true)}>
-              Connect a repository
-            </Button>
-          )}
-        </p>
+        <dl className="props border-t-0 [grid-template-columns:200px_minmax(0,1fr)]">
+          <dt>
+            <span className="block text-sec">Repository</span>
+          </dt>
+          <dd className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span className="text-mut">none; it deploys what Deploy sends</span>
+            {canEdit && (
+              <Button small onClick={() => setConnecting(true)}>
+                Connect a repository
+              </Button>
+            )}
+          </dd>
+        </dl>
       )}
       {source.data && !conn && connecting && (
         <ConnectForm
@@ -140,7 +145,7 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         />
       )}
       {source.data && (
-        <dl className="props [grid-template-columns:200px_minmax(0,1fr)]">
+        <dl className="props border-t-0 [grid-template-columns:200px_minmax(0,1fr)]">
           {conn && (
             <>
               <Row
@@ -149,14 +154,7 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                 canEdit={canEdit}
                 value={
                   <>
-                    <a
-                      href={`https://github.com/${conn.repo}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="font-mono"
-                    >
-                      {conn.repo} ↗
-                    </a>{" "}
+                    <span className="font-mono">{conn.repo}</span>{" "}
                     <span className="text-faint">
                       ·{" "}
                       {conn.mode === "app"
@@ -164,6 +162,16 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                         : "through a webhook"}
                     </span>
                   </>
+                }
+                after={
+                  <a
+                    href={`https://github.com/${conn.repo}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs"
+                  >
+                    Open on GitHub ↗
+                  </a>
                 }
                 edit={(close) => (
                   <RepoEdit
@@ -282,11 +290,8 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                   value={
                     <span className="flex flex-col gap-1">
                       {conn.webhook_url ? (
-                        <span className="inline-flex flex-wrap items-baseline gap-2">
-                          <span className="break-all font-mono">
-                            {conn.webhook_url}
-                          </span>
-                          <CopyButton text={conn.webhook_url} />
+                        <span className="break-all font-mono">
+                          {conn.webhook_url}
                         </span>
                       ) : (
                         <span className="text-warn">no public address yet</span>
@@ -295,6 +300,9 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                         token {conn.token_set ? "set" : "not set"}
                       </span>
                     </span>
+                  }
+                  after={
+                    conn.webhook_url && <CopyButton text={conn.webhook_url} />
                   }
                   edit={(close) => (
                     <TokenEdit
@@ -405,7 +413,7 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       {source.data?.hooks_hint && (
         <p className="text-warn text-xs">{source.data.hooks_hint}</p>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -413,19 +421,23 @@ const onOffText = (on: boolean) =>
   on ? "on" : <span className="text-mut">off</span>;
 
 /**
- * A settings row: label with its hint, the value, and an Edit that swaps
- * the value for `edit` (a small form that calls close when done).
+ * A settings row: the label, and the value, which opens `edit` (a small
+ * form that calls close when done) with `hint` over it, for people who
+ * can change it.
  */
 function Row({
   label,
   hint,
   value,
+  after,
   edit,
   canEdit,
 }: {
   label: string;
   hint?: string;
   value: ReactNode;
+  /** Links or buttons of its own beside the value (not inside its target). */
+  after?: ReactNode;
   edit?: (close: () => void) => ReactNode;
   canEdit?: boolean;
 }) {
@@ -434,23 +446,24 @@ function Row({
     <>
       <dt>
         <span className="block text-sec">{label}</span>
-        {hint && <span className="block text-2xs text-faint">{hint}</span>}
       </dt>
       <dd>
         {open && edit ? (
-          edit(() => setOpen(false))
+          <span className="flex flex-col gap-1.5">
+            {hint && <span className="text-xs text-mut">{hint}</span>}
+            {edit(() => setOpen(false))}
+          </span>
         ) : (
-          <span className="flex max-w-[760px] items-start gap-3">
-            <span className="min-w-0 flex-1">{value}</span>
-            {edit && canEdit && (
-              <Button
-                small
-                aria-label={`Edit ${label.toLowerCase()}`}
-                onClick={() => setOpen(true)}
+          <span className="flex items-start gap-3">
+            <span className="min-w-0 flex-1">
+              <OpenValue
+                label={`Edit ${label.toLowerCase()}`}
+                onOpen={edit && canEdit ? () => setOpen(true) : undefined}
               >
-                Edit
-              </Button>
-            )}
+                {value}
+              </OpenValue>
+            </span>
+            {after}
           </span>
         )}
       </dd>
@@ -1131,8 +1144,9 @@ function PreviewsEdit({
             : "never sleep"}{" "}
           ·{" "}
           <Link
-            to="/$org/$project/settings/previews"
+            to="/$org/$project/settings"
             params={{ org, project: ref.project }}
+            hash="previews"
           >
             change
           </Link>

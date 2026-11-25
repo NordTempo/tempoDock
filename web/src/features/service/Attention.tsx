@@ -3,16 +3,14 @@ import type { ReactNode } from "react";
 import { domainNeedsAttention } from "../../data/problems";
 import type { Domain, ServiceRef, ServiceView } from "../../data/types";
 import { useOrg } from "../../shell/location";
-import { ago } from "../../ui/format";
-import { failurePhrase } from "../../ui/status";
 import { VulnRow } from "../images/VulnRow";
 
 /**
  * What needs a look on a service, said once (ADR 0076): under the
  * Overview's status, one list instead of stacked bands. A row each for
- * a fresh failed deploy, critical or high vulnerabilities in the live
- * image, a down uptime check and a domain that needs attention, each with
- * its one way to act. Elsewhere these are a dot, a chip or a count.
+ * critical or high vulnerabilities in the live image, a down uptime check
+ * and a domain that needs attention, each with its one way to act (a
+ * failed deploy has its own block above, FailedDeploy). Elsewhere these are a dot, a chip or a count.
  * Nothing renders while nothing needs a look.
  */
 export function NeedsAttention({
@@ -23,54 +21,17 @@ export function NeedsAttention({
   view: ServiceView;
 }) {
   const org = useOrg();
-  const { service, latest_release: latest } = view;
-  const serving = service.active_release;
-  // The failed deploy, while it is the news: the overview's
-  // last_failed_deploy survives a rollback and clears once a new image or
-  // config deploys; else the latest attempt when it failed. Once more
-  // releases came after, the releases table's chip says it.
-  const lastFailed =
-    view.last_failed_deploy ??
-    (latest?.status === "failed" && latest.number > (serving ?? 0)
-      ? latest
-      : undefined);
-  const failed =
-    lastFailed &&
-    serving !== lastFailed.number &&
-    (serving ?? 0) <= lastFailed.number + 1
-      ? lastFailed
-      : undefined;
   const scan = view.scan;
   const vulnerable =
     scan?.state === "scanned" && (scan.critical > 0 || scan.high > 0);
   const down = view.uptime?.state === "down";
   const domains = view.domains.filter(domainNeedsAttention);
-  if (!failed && !vulnerable && !down && !domains.length) return null;
+  if (!vulnerable && !down && !domains.length) return null;
   return (
     <section
       aria-label="Needs attention"
       className="border-t border-line [&>*:last-child]:border-b-0"
     >
-      {failed && (
-        <Row
-          tone="fail"
-          action={
-            <Link
-              to="/$org/$project/$environment/$service/history/$number"
-              params={{ org, ...ref, number: String(failed.number) }}
-              className="btn sm"
-            >
-              See why
-            </Link>
-          }
-        >
-          <span className="text-fail">
-            r{failed.number} {failurePhrase(failed)}
-          </span>
-          {failed.diagnosis?.rule && <>. {failed.diagnosis.summary}</>}{" "}
-          <span className="text-mut">· {ago(failed.created_at)}</span>
-        </Row>
-      )}
       {vulnerable && scan && (
         <VulnRow serviceRef={ref} view={view} scan={scan} />
       )}
@@ -79,9 +40,9 @@ export function NeedsAttention({
           tone="fail"
           action={
             <Link
-              to="/$org/$project/$environment/$service/metrics"
+              to="/$org/$project/$environment/$service/settings"
               params={{ org, ...ref }}
-              hash="uptime"
+              hash="health"
               className="btn sm"
             >
               Uptime checks
@@ -96,8 +57,9 @@ export function NeedsAttention({
           tone="warn"
           action={
             <Link
-              to="/$org/$project/$environment/$service/settings/domains"
+              to="/$org/$project/$environment/$service/settings"
               params={{ org, ...ref }}
+              hash="domains"
               className="btn sm"
             >
               {domains[0].status === "waiting_for_dns"

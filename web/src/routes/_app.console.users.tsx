@@ -17,6 +17,7 @@ import {
   useAccounts,
   useSetPlatformRole,
 } from "../features/console/accounts";
+import { ConsoleTabs } from "../features/console/ConsoleTabs";
 import {
   platformSecurityQuery,
   useSetPlatformSecurity,
@@ -54,8 +55,17 @@ export const Route = createFileRoute("/_app/console/users")({
       queryClient.ensureQueryData(consoleOrgsQuery()),
       queryClient.ensureQueryData(platformSecurityQuery()),
     ]),
-  component: Users,
+  component: Tabbed,
 });
+
+/** Users under People and access's tab row (ConsoleTabs). */
+function Tabbed() {
+  return (
+    <ConsoleTabs>
+      <Users />
+    </ConsoleTabs>
+  );
+}
 
 /** A generated password, shown once. */
 type Reset = { email: string; password: string };

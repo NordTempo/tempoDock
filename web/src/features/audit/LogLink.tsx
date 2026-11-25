@@ -4,8 +4,8 @@ import { useOrg } from "../../shell/location";
 
 /**
  * Where a failed run's output is, for audit rows that record one: a failed
- * backup opens its service's Backups tab, where the failed run has View
- * log. Nothing for other actions.
+ * backup opens its service's Settings at Backups, where the failed run
+ * has View log. Nothing for other actions.
  */
 export function AuditLogLink({ event: e }: { event: AuditEvent }) {
   const org = useOrg();
@@ -14,8 +14,9 @@ export function AuditLogLink({ event: e }: { event: AuditEvent }) {
     return null;
   return (
     <Link
-      to="/$org/$project/$environment/$service/settings/backups"
+      to="/$org/$project/$environment/$service/settings"
       params={{ org, project: e.project, environment: e.environment, service }}
+      hash="backups"
       className="text-fail underline underline-offset-3"
     >
       View log

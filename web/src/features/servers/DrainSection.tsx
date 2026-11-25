@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useServers } from "../../data/queries";
 import type { EnvironmentKind, Server, ServerDetail } from "../../data/types";
 import { ago, elapsed, plural, size } from "../../ui/format";
-import { Act, Confirm, ErrorText, Panel, SectionHead } from "../../ui/kit";
+import { Act, Confirm, ErrorText, Panel } from "../../ui/kit";
 import { kindLabel } from "../../ui/status";
 import { heldFor } from "../move/data";
 import {
@@ -32,18 +32,15 @@ const kindChoices: [Kind, string][] = [
 
 const holds = [30, 60, 120];
 
-/** The section: the running drain, or the planner and the last result. */
+/**
+ * The server page's Drain row, opened: the running drain, or the planner
+ * and the last result.
+ */
 export function DrainSection({ detail }: { detail: ServerDetail }) {
   const name = detail.server.name;
   const drain = useDrain(name);
   return (
-    <section aria-labelledby="drain" className="flex flex-col gap-2.5">
-      <SectionHead
-        id="drain"
-        aside="move everything off this server without downtime"
-      >
-        Drain
-      </SectionHead>
+    <div className="flex flex-col gap-2.5">
       {drainOpen(drain) && drain ? (
         <DrainRun drain={drain} />
       ) : (
@@ -53,7 +50,7 @@ export function DrainSection({ detail }: { detail: ServerDetail }) {
         </>
       )}
       {drain && (drain.forwards ?? []).length > 0 && <Forwards drain={drain} />}
-    </section>
+    </div>
   );
 }
 

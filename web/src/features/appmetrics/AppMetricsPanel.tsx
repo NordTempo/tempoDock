@@ -179,9 +179,8 @@ function Why({ metrics: m }: { metrics: AppMetrics }) {
   if (m.tracing_off)
     return (
       <p className="text-mut">
-        App metrics come with tracing, which is off. An operator turns it on
-        with <code>dock tracing on</code>; apps with an OpenTelemetry SDK then
-        send their metrics with their next deploy.
+        Off: they come with tracing, which an operator turns on with{" "}
+        <code>dock tracing on</code>.
       </p>
     );
   const cut = m.metrics.filter((x) => (x.cut ?? 0) > 0);

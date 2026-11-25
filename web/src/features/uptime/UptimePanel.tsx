@@ -1,15 +1,18 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
 import { listenPort, useService } from "../../data/queries";
 import type { ServiceRef } from "../../data/types";
+import { useOrg } from "../../shell/location";
 import { ago, clock, day, elapsed } from "../../ui/format";
 import {
   Act,
   Button,
   Confirm,
   ErrorText,
-  Panel,
-  SectionHead,
+  MoreItem,
+  MoreMenu,
+  Scroll,
   StateText,
 } from "../../ui/kit";
 import { notify } from "../../ui/notice";
@@ -25,10 +28,13 @@ import {
   useUpdateUptimeCheck,
 } from "./data";
 
-// A service's uptime checks (ADR 0055): the add form, one row per check
-// with its state, last day's strip and percentages, then Dock's own health
-// check of the container (the view from inside, ADR 0059) and the latest
-// incidents. Live state comes from uptime events (data.ts).
+// A service's uptime checks (ADR 0055), in Settings' Health and uptime
+// section next to the health check they're easily confused with (ADR
+// 0099): one row per check with its state, last day's strip and
+// percentages, Add check, and the latest incidents. UptimeSummary is the
+// one line Metrics and the overview show; HealthOnServer is Dock's own
+// health check of the container (the view from inside, ADR 0059). Live
+// state comes from uptime events (data.ts).
 
 const intervals = [
   [30, "30s"],
@@ -50,9 +56,15 @@ function percent(p: number | undefined) {
 
 const stateWord = { up: "Up", down: "Down", unknown: "Unknown" };
 
-export function UptimePanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+/**
+ * The uptime checks, under the health check rows in Settings: Add check
+ * opens the form in place; Check all domains adds one per verified
+ * domain without a check.
+ */
+export function UptimeChecks({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const { domains } = useService(ref);
   const checks = useSuspenseQuery(uptimeChecks(ref)).data;
+  const [adding, setAdding] = useState(false);
   // The check added here, marked in the list until the page changes.
   const [added, setAdded] = useState<number | null>(null);
   // Verified domains that serve the service and have no check yet.
@@ -65,78 +77,87 @@ export function UptimePanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     .sort((a, b) => b.opened_at.localeCompare(a.opened_at))
     .slice(0, 5);
   return (
-    <>
-      <section aria-labelledby="uptime-checks">
-        <SectionHead
-          id="uptime-checks"
-          right={
-            unchecked.length > 0 && (
+    <div className="mt-5 flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <h3 className="font-semibold">Uptime checks</h3>
+        <span className="text-mut">
+          Probes from outside; two failures in a row raise an alert.
+        </span>
+        {domains.length > 0 && (
+          <span className="ml-auto flex flex-wrap items-center gap-2">
+            {unchecked.length > 0 && (
               <CheckDomains
                 serviceRef={ref}
                 hosts={unchecked.map((d) => d.hostname)}
               />
-            )
-          }
-        >
-          Uptime checks
-        </SectionHead>
-        {/* The heading keeps its own margin, as the tab's other sections. */}
-        <div className="flex flex-col gap-3">
-          {domains.length === 0 ? (
-            <p className="text-mut">
-              Uptime checks probe one of the service's domains. Add a domain
-              first.
-            </p>
-          ) : (
-            <AddCheck
-              serviceRef={ref}
-              host={domains[0]?.hostname ?? ""}
-              checks={checks}
-              onAdded={setAdded}
-            />
-          )}
-          {checks.length > 0 && (
-            <Panel>
-              <table className="w-full">
-                <thead>
-                  <tr>
-                    <th>State</th>
-                    <th>URL</th>
-                    <th>Every</th>
-                    <th>Expects</th>
-                    <th>Last 24 hours</th>
-                    <th className="text-right">24h</th>
-                    <th className="text-right">7d</th>
-                    <th className="text-right">30d</th>
-                    <th>Last probe</th>
-                    <th>From</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {checks.map((c) => (
-                    <CheckRow
-                      key={c.id}
-                      serviceRef={ref}
-                      check={c}
-                      fresh={c.id === added}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </Panel>
-          )}
-          {checks.length > 0 && (
-            <p className="text-xs text-mut">
-              Two failed probes in a row raise an alert.
-            </p>
-          )}
-        </div>
-      </section>
-      <Inside serviceRef={ref} />
+            )}
+            {!adding && (
+              <Button onClick={() => setAdding(true)}>Add check</Button>
+            )}
+          </span>
+        )}
+      </div>
+      <datalist id="uptime-statuses">
+        <option value="200" />
+        <option value="2xx" />
+        <option value="3xx" />
+      </datalist>
+      {domains.length === 0 && (
+        <p className="text-mut">
+          Uptime checks probe one of the service's domains. Add a domain first.
+        </p>
+      )}
+      {adding && (
+        <AddCheck
+          serviceRef={ref}
+          host={domains[0]?.hostname ?? ""}
+          checks={checks}
+          onAdded={(id) => {
+            setAdded(id);
+            setAdding(false);
+          }}
+          onCancel={() => setAdding(false)}
+        />
+      )}
+      {checks.length === 0 && domains.length > 0 && !adding && (
+        <p className="text-mut">None yet.</p>
+      )}
+      {checks.length > 0 && (
+        <Scroll>
+          <table className="w-full">
+            <thead>
+              <tr>
+                <th>State</th>
+                <th>URL</th>
+                <th>Every</th>
+                <th>Expects</th>
+                <th>Last 24 hours</th>
+                <th className="text-right">24h</th>
+                <th className="text-right">7d</th>
+                <th className="text-right">30d</th>
+                <th>Last probe</th>
+                <th>From</th>
+                <th>
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {checks.map((c) => (
+                <CheckRow
+                  key={c.id}
+                  serviceRef={ref}
+                  check={c}
+                  fresh={c.id === added}
+                />
+              ))}
+            </tbody>
+          </table>
+        </Scroll>
+      )}
       {incidents.length > 0 && (
-        <section aria-labelledby="uptime-incidents">
-          <SectionHead id="uptime-incidents">Last incidents</SectionHead>
+        <div className="flex flex-col gap-1">
+          <h3 className="font-semibold">Last incidents</h3>
           <ul className="flex flex-col gap-1">
             {incidents.map((i) => (
               <li
@@ -161,9 +182,56 @@ export function UptimePanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
               </li>
             ))}
           </ul>
-        </section>
+        </div>
       )}
-    </>
+    </div>
+  );
+}
+
+/**
+ * Uptime in one line, where it's watched (Metrics, the overview): up or
+ * down, the last day's percentage and how many checks, with a link to
+ * where they're set up (Settings › Health and uptime). Nothing when the
+ * service has no checks and no domain to check.
+ */
+export function UptimeSummary({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const org = useOrg();
+  const { domains } = useService(ref);
+  const checks = useSuspenseQuery(uptimeChecks(ref)).data;
+  if (checks.length === 0 && domains.length === 0) return null;
+  const down = checks.filter((c) => c.state === "down");
+  const known = checks.filter((c) => c.uptime_24h !== undefined);
+  const worst = known.length
+    ? Math.min(...known.map((c) => c.uptime_24h ?? 100))
+    : undefined;
+  return (
+    <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      {checks.length === 0 ? (
+        <span className="text-mut">No uptime checks.</span>
+      ) : (
+        <span>
+          {down.length > 0 ? (
+            <span className="text-fail">
+              {down.length === checks.length ? "down" : `${down.length} down`}
+            </span>
+          ) : checks.every((c) => c.state === "up") ? (
+            <span className="text-ok">up</span>
+          ) : (
+            <span className="text-mut">waiting for the first probe</span>
+          )}
+          {worst !== undefined && ` · ${percent(worst)} in 24h`}
+          {` · ${checks.length} ${checks.length === 1 ? "check" : "checks"}`}
+        </span>
+      )}
+      <Link
+        to="/$org/$project/$environment/$service/settings"
+        params={{ org, ...ref }}
+        hash="health"
+        className="lnk"
+      >
+        {checks.length === 0 ? "Add one" : "Set up in Settings"}
+      </Link>
+    </p>
   );
 }
 
@@ -281,10 +349,19 @@ function CheckRow({
           : `first probe within ${every(c.interval_seconds)}`}
       </td>
       <td className="text-mut">{c.server}</td>
-      <td className="w-px py-1 whitespace-nowrap">
-        <Button danger small onClick={() => setConfirming(true)}>
-          Remove
-        </Button>
+      <td className="w-px py-1 text-right whitespace-nowrap">
+        <MoreMenu label={`Check of ${c.url}`}>
+          {(close) => (
+            <MoreItem
+              close={close}
+              danger
+              cli={`dock uptime remove ${c.id} -s ${ref.service} -e ${ref.environment}`}
+              onClick={() => setConfirming(true)}
+            >
+              Remove check…
+            </MoreItem>
+          )}
+        </MoreMenu>
         {confirming && (
           <Confirm
             danger
@@ -461,17 +538,27 @@ function CheckDomains({
  * inside, next to the probes from outside. From the service's status, no
  * prober of its own.
  */
-function Inside({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+export function HealthOnServer({
+  serviceRef: ref,
+}: {
+  serviceRef: ServiceRef;
+}) {
   const { service } = useService(ref);
   const { status } = service;
   const interval = service.health_check_interval_seconds;
   const health = status.health;
   return (
-    <section aria-labelledby="uptime-inside" className="flex flex-col">
-      <SectionHead id="uptime-inside">Health check on its server</SectionHead>
+    <section
+      aria-labelledby="uptime-inside"
+      className="mt-5 flex flex-col gap-1"
+    >
+      <h3 id="uptime-inside" className="font-semibold">
+        Health check on its server now
+      </h3>
       {interval === -1 ? (
         <p className="text-mut">
-          The ongoing health check is off; set an interval in Settings.
+          The ongoing health check is off; set an interval in Settings › Health
+          and uptime.
         </p>
       ) : (
         <p className="flex flex-wrap gap-x-3">
@@ -528,14 +615,19 @@ function AddCheck({
   host,
   checks,
   onAdded,
+  onCancel,
 }: {
   serviceRef: ServiceRef;
   host: string;
   checks: UptimeCheck[];
   onAdded: (id: number) => void;
+  onCancel: () => void;
 }) {
   const add = useAddUptimeCheck(ref);
   const [url, setUrl] = useState("");
+  // The form opens from Add check, so its first field takes the focus.
+  const urlField = useRef<HTMLInputElement>(null);
+  useEffect(() => urlField.current?.focus(), []);
   const [status, setStatus] = useState("200");
   const [intervalS, setIntervalS] = useState(60);
   const [timeoutS, setTimeoutS] = useState(10);
@@ -559,6 +651,7 @@ function AddCheck({
     <form
       aria-label="Add an uptime check"
       className="flex flex-col gap-1.5"
+      onKeyDown={(e) => e.key === "Escape" && onCancel()}
       onSubmit={(e) => {
         e.preventDefault();
         if (repeat) return;
@@ -579,6 +672,7 @@ function AddCheck({
         <label className={fieldLabel}>
           <span className="text-xs text-sec">URL</span>
           <input
+            ref={urlField}
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder={`https://${host}/`}
@@ -593,11 +687,6 @@ function AddCheck({
             list="uptime-statuses"
             className={`field w-[96px] font-mono ${control}`}
           />
-          <datalist id="uptime-statuses">
-            <option value="200" />
-            <option value="2xx" />
-            <option value="3xx" />
-          </datalist>
         </label>
         <label className={fieldLabel}>
           <span className="text-xs text-sec">Every</span>
@@ -643,6 +732,9 @@ function AddCheck({
         >
           {existing.length > 0 ? "Add a second check as well" : "Add check"}
         </Act>
+        <Button className={control} onClick={onCancel}>
+          Cancel
+        </Button>
         <ErrorText error={add.error} />
       </span>
       {existing.length > 0 && (

@@ -1,18 +1,14 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { useCanDeploy, useService } from "../../data/queries";
 import type { ServiceRef } from "../../data/types";
 import { useOrg } from "../../shell/location";
-import { Act, CopyButton, ErrorText, Panel } from "../../ui/kit";
 import {
   type AnalyticsChange,
   type Filter,
   type Site,
   type StatsRange,
   sitesQuery,
-  useDisableHostname,
-  useEnableHostname,
 } from "./data";
 import { SiteBar } from "./SiteBar";
 
@@ -59,8 +55,9 @@ export function ServiceSite({
         Visitors come from Dock Analytics' script on the service's pages. Count
         visits to one of its domains on{" "}
         <Link
-          to="/$org/$project/$environment/$service/settings/domains"
+          to="/$org/$project/$environment/$service/settings"
           params={{ org, ...ref }}
+          hash="domains"
         >
           Domains
         </Link>
@@ -83,97 +80,5 @@ export function ServiceSite({
       />
       {children(site)}
     </div>
-  );
-}
-
-/**
- * The service's domains and whether each is counted, with the switch: on
- * its Domains tab.
- */
-export function Hostnames({ serviceRef: ref }: { serviceRef: ServiceRef }) {
-  const org = useOrg();
-  const { data: all } = useSuspenseQuery(sitesQuery(ref.project));
-  const counted = new Map(
-    sitesOf(all, ref).flatMap((s) =>
-      (s.hostnames ?? []).map((h) => [h.hostname, s.name]),
-    ),
-  );
-  const { domains } = useService(ref);
-  const canDeploy = useCanDeploy(ref);
-  const enable = useEnableHostname();
-  const disable = useDisableHostname();
-  const hosts = domains.filter((d) => !d.redirect_to).map((d) => d.hostname);
-  if (!hosts.length) {
-    return null;
-  }
-  return (
-    <section aria-labelledby="hostnames" className="flex flex-col gap-2">
-      <h2 id="hostnames" className="text-md font-semibold">
-        Analytics
-      </h2>
-      <Panel>
-        <table>
-          <thead>
-            <tr>
-              <th>Hostname</th>
-              <th>Visits</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {hosts.map((h) => {
-              const site = counted.get(h);
-              return (
-                <tr key={h}>
-                  <td className="font-mono">{h}</td>
-                  <td className="text-mut">
-                    {site ? (
-                      <>
-                        counted for site{" "}
-                        <Link
-                          to="/$org/analytics/$project/$site"
-                          params={{ org, project: ref.project, site }}
-                        >
-                          {site}
-                        </Link>
-                      </>
-                    ) : (
-                      "not counted"
-                    )}
-                  </td>
-                  <td className="text-right">
-                    {site ? (
-                      <Act
-                        small
-                        cli={`dock analytics disable ${h}`}
-                        disabled={!canDeploy || disable.isPending}
-                        onClick={() => disable.mutate(h)}
-                      >
-                        Stop counting
-                      </Act>
-                    ) : (
-                      <Act
-                        small
-                        cli={`dock analytics enable ${h}`}
-                        disabled={!canDeploy || enable.isPending}
-                        onClick={() => enable.mutate({ hostname: h })}
-                      >
-                        Count visits
-                      </Act>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </Panel>
-      <ErrorText error={enable.error ?? disable.error} />
-      <p className="flex flex-wrap items-center gap-2 text-xs text-mut">
-        Counted pages load the script, in their {"<head>"}:
-        <code className="font-mono text-fg">{scriptTag}</code>
-        <CopyButton text={scriptTag} />
-      </p>
-    </section>
   );
 }

@@ -150,9 +150,9 @@ export function AlertLink({
       if (svc)
         return (
           <Link
-            to="/$org/$project/$environment/$service/settings/backups"
+            to="/$org/$project/$environment/$service/settings"
             params={svc}
-            hash={run}
+            hash={run ?? "backups"}
             {...props}
           >
             {run ? "See why" : "Open backups"}
@@ -217,8 +217,9 @@ export function AlertLink({
       if (!svc) break;
       return (
         <Link
-          to="/$org/$project/$environment/$service/settings/domains"
+          to="/$org/$project/$environment/$service/settings"
           params={svc}
+          hash="domains"
           {...props}
         >
           Open domains
@@ -228,9 +229,9 @@ export function AlertLink({
       if (!svc) break;
       return (
         <Link
-          to="/$org/$project/$environment/$service/metrics"
+          to="/$org/$project/$environment/$service/settings"
           params={svc}
-          hash="uptime"
+          hash="health"
           {...props}
         >
           Open uptime
@@ -266,6 +267,18 @@ export function AlertLink({
         return (
           <Link to="/console/alerts" hash="heartbeat" {...props}>
             Open heartbeat
+          </Link>
+        );
+      // A channel alerts can't reach (alert_channel:<name>): where
+      // channels are set, the org's Settings or the console's Alerts.
+      if (kind === "alert_channel")
+        return a.platform ? (
+          <Link to="/console/alerts" {...props}>
+            Fix channel
+          </Link>
+        ) : (
+          <Link to="/$org/settings/alerts" params={{ org }} {...props}>
+            Fix channel
           </Link>
         );
       const to = connectionPages[kind ?? ""];

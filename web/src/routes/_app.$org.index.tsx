@@ -1,6 +1,5 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import type { ReactNode } from "react";
 import { isFailing } from "../data/problems";
 import {
   queries,
@@ -8,14 +7,15 @@ import {
   useServersIfOperator,
   useSession,
 } from "../data/queries";
-import type { ProjectOverview } from "../data/types";
-import { type Alert, useOrgOpenAlerts } from "../features/alerts/data";
-import { AlertLink } from "../features/alerts/source";
-import { AuditTable } from "../features/audit/AuditTable";
+import type { AuditEvent, ProjectOverview } from "../data/types";
+import { AlertTable } from "../features/alerts/AlertTable";
+import { useOrgOpenAlerts } from "../features/alerts/data";
+import { groupAlerts } from "../features/alerts/summary";
+import { pastLabel } from "../features/audit/AuditTable";
 import { canCreateProject } from "../features/create/access";
 import { openCreate } from "../features/create/open";
-import { errorsQuery } from "../features/errors/data";
-import { publishState, statusQueries } from "../features/status/data";
+import { ProjectGrid } from "../features/overview/ProjectGrid";
+import { stages, step } from "../features/overview/pipeline";
 import { useOrg } from "../shell/location";
 import { cliInstallLine } from "../ui/cliInstall";
 import { ago, plural } from "../ui/format";
@@ -24,18 +24,19 @@ import {
   Button,
   CopyButton,
   Glyph,
-  LockMark,
   Page,
   PageBar,
   Panel,
   SectionHead,
-  StateText,
 } from "../ui/kit";
 
-// An organization's home ("/" lands here too), its Overview in the top
-// bar (option 3): what needs someone (open alerts, the Inbox's), its
-// projects with their health worst first, the most frequent open errors,
-// the latest deploys and its status pages. With
+// An organization's home ("/" lands here too), Projects in the top bar
+// (ADR 0099): what needs someone first, the first few with the button to
+// each fix (the Inbox has them all), then its projects. A project with
+// something going on shows as a pipeline, its services by environment
+// with what lies between them (ProjectGrid); the quiet ones are a row
+// each, worst first. Then the latest deploys. Errors and status pages
+// have their own views in the top bar, so they aren't repeated here. With
 // no projects yet, it offers to create one or says how to deploy from a
 // terminal.
 export const Route = createFileRoute("/_app/$org/")({
@@ -59,13 +60,19 @@ function Home() {
     queries: projects.map((p) => queries.overview(p.name)),
   });
   if (projects.length === 0) return <NoProjects />;
-  const rows = projects
-    .map((project, i) => ({ project, health: health(overviews[i]?.data) }))
+  const all = projects
+    .map((project, i) => {
+      const overview = overviews[i]?.data;
+      const h = health(overview);
+      return { project, overview, health: h, busy: busy(overview, h) };
+    })
     .sort((a, b) => (b.health?.rank ?? 0) - (a.health?.rank ?? 0));
+  const grids = all.filter((r) => r.busy);
+  const rows = all.filter((r) => !r.busy);
   return (
     <>
       <PageBar
-        title="Overview"
+        title="Projects"
         actions={
           canCreate && (
             <Button primary onClick={() => openCreate({ kind: "project" })}>
@@ -76,164 +83,145 @@ function Home() {
       />
       <Page>
         <NeedsYou />
-        <section aria-labelledby="projects-head">
-          <SectionHead id="projects-head">Projects</SectionHead>
-          <Panel>
-            <table className="tabular-nums">
-              <thead>
-                <tr>
-                  <th>Project</th>
-                  <th>Health</th>
-                  <th className="text-right">Running</th>
-                  <th>Environments</th>
-                  <th>Last deploy</th>
-                  <th>
-                    <span className="sr-only">Open</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(({ project, health: h }) => (
-                  <tr key={project.id} className="row-link">
-                    <td className="w-[22%]">
-                      <Link
-                        to="/$org/$project"
-                        params={{ org, project: project.name }}
-                        className="row-main font-medium hover:underline"
-                      >
-                        {project.name}
-                      </Link>
-                    </td>
-                    <td className="w-[24%]">
-                      {h ? (
-                        <span className={h.tone}>
-                          <Glyph char={h.glyph} />{" "}
-                          {h.parts.map(([text, tone], i) => (
-                            <span key={text} className={tone}>
-                              {i > 0 && ", "}
-                              {text}
-                            </span>
-                          ))}
-                        </span>
-                      ) : (
-                        <span className="text-faint">not loaded</span>
-                      )}
-                    </td>
-                    <td className="w-[10%] text-right font-mono">
-                      {h ? `${h.running} of ${h.total}` : "·"}
-                    </td>
-                    <td className="w-[24%] truncate">
-                      {h?.environments.map((e, i) => (
-                        <span key={e.id}>
-                          {i > 0 && ", "}
-                          {e.name}
-                          {e.lock && (
-                            <>
-                              {" "}
-                              <LockMark lock={e.lock} />
-                            </>
-                          )}
-                        </span>
-                      )) ?? <span className="text-faint">·</span>}
-                    </td>
-                    <td className="text-mut">
-                      {h?.last ? (
-                        <span title={h.last.at}>
-                          <span className="font-mono text-sec">
-                            {h.last.service} r{h.last.number}
-                          </span>{" "}
-                          {h.last.failed && (
-                            <span className="text-fail">failed </span>
-                          )}
-                          {ago(h.last.at)}
-                        </span>
-                      ) : (
-                        <span className="text-faint">never</span>
-                      )}
-                    </td>
-                    <td className="row-go" aria-hidden>
-                      <Icon name="chevronRight" size={14} />
-                    </td>
+        {grids.map(
+          ({ project, overview }) =>
+            overview && <ProjectGrid key={project.id} overview={overview} />,
+        )}
+        {rows.length > 0 && (
+          <section aria-labelledby="projects-head">
+            <SectionHead id="projects-head">
+              {grids.length > 0 ? "Other projects" : "All projects"}
+            </SectionHead>
+            <Panel>
+              <table>
+                <thead className="sr-only">
+                  <tr>
+                    <th>Project</th>
+                    <th>Health</th>
+                    <th>Last deploy</th>
+                    <th>Open</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </Panel>
-        </section>
-        <TopErrors />
+                </thead>
+                <tbody>
+                  {rows.map(({ project, health: h }) => (
+                    <tr key={project.id} className="row-link">
+                      <td className="w-[22%]">
+                        <Link
+                          to="/$org/$project"
+                          params={{ org, project: project.name }}
+                          className="row-main font-medium hover:underline"
+                        >
+                          {project.name}
+                        </Link>
+                      </td>
+                      <td className="whitespace-normal">
+                        {h ? (
+                          <span className={h.tone}>
+                            <Glyph char={h.glyph} /> {h.text}
+                            {h.note && (
+                              <span className="text-mut">{h.note}</span>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-faint">not loaded</span>
+                        )}
+                      </td>
+                      <td className="w-[18%] text-right text-mut">
+                        {h?.deploying ? (
+                          <span className="text-prog">deploying</span>
+                        ) : h?.last ? (
+                          <span title={new Date(h.last).toLocaleString()}>
+                            deployed {ago(h.last)}
+                          </span>
+                        ) : (
+                          <span className="text-faint">never deployed</span>
+                        )}
+                      </td>
+                      <td className="row-go" aria-hidden>
+                        <Icon name="chevronRight" size={14} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Panel>
+          </section>
+        )}
         <RecentDeploys />
-        <StatusPages />
       </Page>
     </>
   );
 }
 
-/** A piece of a project's health and the colour of its state. */
-type Part = [text: string, tone: string];
-
 /**
- * A project's row: its worst state (failing services, a failed latest
- * deploy, a deploy running), how many services run, its environments and
- * its latest release. rank orders rows, worst first.
+ * A project's health in one phrase, its worst state first: a failing
+ * service or a failed deploy by name when there is one ("web r8 failed,
+ * r9 still serving"), else a count; a deploy running; else what runs and
+ * what doesn't. `last` is when its newest release was made. rank orders
+ * the rows, worst first.
  */
 function health(o: ProjectOverview | undefined) {
   if (!o) return undefined;
-  const environments = (o.environments ?? []).map((e) => e.environment);
   const services = (o.environments ?? []).flatMap((e) => e.services ?? []);
-  const failing = services.filter(isFailing).length;
+  const failing = services.filter(isFailing);
   // A failed deploy counts while it is the news: the latest release, or
   // the one a rollback answered (the overview's rule).
-  const failedDeploys = services.filter((s) => {
-    if (s.deploying) return false;
-    if (s.latest_release?.status === "failed") return true;
+  const failedDeploys = services.flatMap((s) => {
+    if (s.deploying) return [];
+    if (s.latest_release?.status === "failed")
+      return [{ s, number: s.latest_release.number }];
     const f = s.last_failed_deploy;
-    return !!f && (s.service.active_release ?? 0) <= f.number + 1;
-  }).length;
-  const deploying = services.filter((s) => s.deploying).length;
+    return f && (s.service.active_release ?? 0) <= f.number + 1
+      ? [{ s, number: f.number }]
+      : [];
+  });
+  const deploying = services.some((s) => s.deploying);
   const running = services.filter(
     (s) => s.service.status.state === "running",
   ).length;
-  let last: {
-    service: string;
-    number: number;
-    at: string;
-    failed: boolean;
-  } | null = null;
+  let last: string | undefined;
   for (const s of services) {
-    const r = s.deploying ?? s.latest_release;
-    if (r && (!last || r.created_at > last.at)) {
-      last = {
-        service: s.service.name,
-        number: r.number,
-        at: r.created_at,
-        failed: r.status === "failed",
-      };
-    }
+    const at = (s.deploying ?? s.latest_release)?.created_at;
+    if (at && (!last || at > last)) last = at;
   }
-  const base = { environments, running, total: services.length, last };
-  if (failing > 0)
+  const base = { last, deploying, note: "" };
+  const [oneFailing] = failing;
+  if (oneFailing)
     return {
       ...base,
       rank: 3,
       tone: "text-fail",
       glyph: "✕" as const,
-      parts: [[`${plural(failing, "service")} failing`, "text-fail"]],
+      text:
+        failing.length === 1
+          ? `${oneFailing.service.name} failing`
+          : `${plural(failing.length, "service")} failing`,
     };
-  if (failedDeploys > 0)
+  const [oneFailed] = failedDeploys;
+  if (oneFailed) {
+    const serving = oneFailed.s.service.active_release;
     return {
       ...base,
       rank: 2,
       tone: "text-fail",
       glyph: "✕" as const,
-      parts: [[`${plural(failedDeploys, "deploy")} failed`, "text-fail"]],
+      text:
+        failedDeploys.length === 1
+          ? `${oneFailed.s.service.name} r${oneFailed.number} failed`
+          : `${plural(failedDeploys.length, "deploy")} failed`,
+      note:
+        failedDeploys.length === 1 && serving
+          ? `, r${serving} still serving`
+          : "",
     };
-  if (deploying > 0)
+  }
+  if (deploying)
     return {
       ...base,
       rank: 1,
       tone: "text-prog",
       glyph: "◐" as const,
-      parts: [["deploying", "text-prog"]],
+      text: "deploying",
     };
   // Nothing broken: say what isn't running, if anything.
   const idle = [
@@ -252,28 +240,52 @@ function health(o: ProjectOverview | undefined) {
       "asleep",
     ],
   ] as const;
-  // Each part in its own state's colour: green covers only what runs.
-  const note: Part[] = idle
+  const note = idle
     .filter(([n]) => n > 0)
-    .map(([n, what]) => [`${n} ${what}`, "text-mut"]);
+    .map(([n, what]) => `${n} ${what}`)
+    .join(", ");
   if (services.length === 0 || running === 0)
     return {
       ...base,
       rank: 0,
       tone: "text-mut",
       glyph: "○" as const,
-      parts: note.length > 0 ? note : [["no services", "text-mut"] as Part],
+      text: services.length === 0 ? "no services" : note,
     };
   return {
     ...base,
     rank: 0,
     tone: "text-ok",
     glyph: "●" as const,
-    parts: [
-      [note.length > 0 ? `${running} running` : "all running", "text-ok"],
-      ...note,
-    ] as Part[],
+    text: note ? `${running} running` : "all running",
+    note: note ? ` · ${note}` : "",
   };
+}
+
+/**
+ * Whether a project shows as a pipeline on the page: something in it is
+ * broken, deploying or waiting (health ranks it), changes wait to apply,
+ * a backup failed, or an image waits to be promoted. Quiet projects are a
+ * row each, so ten of them still fit on a screen.
+ */
+function busy(o: ProjectOverview | undefined, h: ReturnType<typeof health>) {
+  if (!o) return false;
+  if ((h?.rank ?? 0) > 0) return true;
+  const { lanes } = stages(o.environments);
+  if (lanes.some((e) => e.pending_changes > 0)) return true;
+  if (lanes.some((e) => e.services.some((s) => s.backup?.status === "failed")))
+    return true;
+  return lanes.some((e, i) => {
+    const before = lanes[i - 1];
+    if (!before) return false;
+    return e.services.some((s) => {
+      const k = step(
+        before.services.find((b) => b.service.name === s.service.name),
+        s,
+      )?.kind;
+      return k === "ahead" || k === "failed";
+    });
+  });
 }
 
 function NoProjects() {
@@ -302,7 +314,7 @@ function NoProjects() {
   return (
     <>
       <PageBar
-        title="Overview"
+        title="Projects"
         actions={
           canCreate && (
             <Button primary onClick={() => openCreate({ kind: "project" })}>
@@ -354,122 +366,80 @@ function NoProjects() {
   );
 }
 
-/** Alert kinds about error issues, which the Errors section lists. */
-const errorKinds = new Set<Alert["kind"]>([
-  "new_error",
-  "error_regressed",
-  "error_spike",
-]);
+/** Open alerts the page lists; the rest are a count into the Inbox. */
+const NEEDS_SHOWN = 5;
 
 /**
- * The Inbox on the Overview: every open alert, so its count is the top
- * bar's Inbox count. Error alerts fold into one row pointing at Errors
- * (each issue is listed once, below); the others are rows of their own,
- * worst first, the newest six.
+ * What needs someone (ADR 0099): the first few open alerts, worst first
+ * and grouped as in the Inbox, each with the button to its fix, so the
+ * usual case is handled from here; more than that is a line into the
+ * Inbox, the one list of all of it.
  */
 function NeedsYou() {
   const org = useOrg();
   const open = useOrgOpenAlerts();
-  const errors = open.filter((a) => errorKinds.has(a.kind));
-  const rest = open.filter((a) => !errorKinds.has(a.kind)).slice(0, 6);
-  const [newestError] = errors;
+  if (open.length === 0) {
+    return (
+      <p className="flex items-center gap-2.5 border-y border-line py-2.5 text-mut">
+        <span className="text-ok">●</span> Nothing needs you.
+      </p>
+    );
+  }
+  const groups = groupAlerts(open);
+  const more = groups.length - NEEDS_SHOWN;
   return (
     <section aria-labelledby="needs-head">
       <SectionHead
         id="needs-head"
-        aside={open.length > 0 && `${open.length} open`}
+        aside={groups.length}
         right={
           <Link to="/$org/inbox" params={{ org }} className="hover:text-fg">
-            Inbox →
+            {more > 0 ? `${more} more in the Inbox →` : "Open inbox →"}
           </Link>
         }
       >
         Needs you
       </SectionHead>
-      {open.length === 0 ? (
-        <p className="text-mut">Nothing waits on anyone.</p>
-      ) : (
-        // A grid shared by the rows (subgrid), so the times line up
-        // whatever the width of the button after them.
-        <ul className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] gap-x-3 border-t border-line">
-          {rest.map((a) => (
-            <NeedsRow
-              key={a.id}
-              alert={a}
-              title={a.title}
-              action={<AlertLink alert={a} className="btn sm no-underline" />}
-            />
-          ))}
-          {errors.length === 1 && newestError && (
-            <NeedsRow
-              alert={newestError}
-              title={newestError.title}
-              action={
-                <AlertLink
-                  alert={newestError}
-                  className="btn sm no-underline"
-                />
-              }
-            />
-          )}
-          {errors.length > 1 && newestError && (
-            <NeedsRow
-              // Critical if any is; opened when the newest was.
-              alert={
-                errors.find((a) => a.severity === "critical") ?? newestError
-              }
-              title={
-                errors.every((a) => a.kind === "new_error")
-                  ? `${errors.length} new errors`
-                  : `${errors.length} error alerts`
-              }
-              opened={newestError.opened_at}
-              action={
-                <Link
-                  to="/$org/errors"
-                  params={{ org }}
-                  className="btn sm no-underline"
-                >
-                  See errors
-                </Link>
-              }
-            />
-          )}
-        </ul>
-      )}
+      <AlertTable
+        scope="org"
+        groups={groups.slice(0, NEEDS_SHOWN)}
+        resolvable
+        brief
+      />
     </section>
   );
 }
 
-/** One row of Needs you: severity, what, when and where to act. */
-function NeedsRow({
-  alert: a,
-  title,
-  opened = a.opened_at,
-  action,
-}: {
-  alert: Alert;
-  title: string;
-  opened?: string;
-  action: ReactNode;
-}) {
-  const critical = a.severity === "critical";
-  return (
-    <li className="col-span-full grid grid-cols-subgrid items-baseline border-b border-soft py-2">
-      <span className={critical ? "text-fail" : "text-warn"}>
-        {critical ? "✕" : "▲"}
-      </span>
-      <span className="min-w-0">{title}</span>
-      <span className="text-right text-xs text-mut">{ago(opened)}</span>
-      <span className="justify-self-end">{action}</span>
-    </li>
+/** A release's image without its registry path, digests cut to 7. */
+const shortImage = (ref: string) =>
+  (ref.split("/").at(-1) ?? ref).replace(
+    /@sha256:([0-9a-f]{7})[0-9a-f]+/,
+    "@$1",
   );
+
+/**
+ * A deploy's audit event as a sentence after the service's name:
+ * "r9 rolled back to r7", "deployed r1 from shop-web:1.4.0".
+ */
+function deployWords(e: AuditEvent) {
+  const back = e.summary.match(/^release (\d+) rolls back to release (\d+)/);
+  if (back) return `r${back[1]} rolled back to r${back[2]}`;
+  const rest = e.summary
+    .replace(/\brelease (\d+)/g, "r$1")
+    .replace(
+      /from image (\S+)/,
+      (_, image: string) => `from ${shortImage(image)}`,
+    );
+  return `${pastLabel(e.action)} ${rest}`;
 }
 
-/** The latest deploys, rollbacks and restarts across the organization. */
+/**
+ * The latest five deploys, rollbacks and restarts across the
+ * organization: the service, what happened, where and how long ago.
+ */
 function RecentDeploys() {
   const org = useOrg();
-  const events = useQuery(queries.audit({ action: "release.", limit: 8 })).data;
+  const events = useQuery(queries.audit({ action: "release.", limit: 5 })).data;
   if (!events?.length) return null;
   return (
     <section aria-labelledby="deploys-head">
@@ -487,109 +457,30 @@ function RecentDeploys() {
       >
         Recent deploys
       </SectionHead>
-      <AuditTable events={events} compact />
-    </section>
-  );
-}
-
-/** The open error issues seen most, across the organization. */
-function TopErrors() {
-  const org = useOrg();
-  const issues = useQuery(errorsQuery({})).data?.issues ?? [];
-  if (issues.length === 0) return null;
-  const top = [...issues].sort((a, b) => b.count - a.count).slice(0, 5);
-  return (
-    <section aria-labelledby="errors-head">
-      <SectionHead
-        id="errors-head"
-        aside={`${issues.length} open`}
-        right={
-          <Link to="/$org/errors" params={{ org }} className="hover:text-fg">
-            All errors →
-          </Link>
-        }
-      >
-        Errors
-      </SectionHead>
       <ul className="border-t border-line">
-        {top.map((i) => (
-          <li
-            key={i.id}
-            className="flex flex-wrap items-baseline gap-x-3 border-b border-soft py-2"
-          >
-            <span className="min-w-0 flex-1 truncate" title={i.title}>
-              {i.title}
-            </span>
-            <Link
-              to="/$org/$project/$environment/$service/errors"
-              params={{
-                org,
-                project: i.project,
-                environment: i.environment,
-                service: i.service,
-              }}
-              className="font-mono text-xs text-sec hover:text-fg"
+        {events.map((e) => {
+          const parts = e.target.split("/");
+          const service = parts.at(-1);
+          return (
+            <li
+              key={e.id}
+              className="flex flex-wrap items-baseline gap-x-3 border-b border-soft py-2"
             >
-              {i.project}/{i.service}
-            </Link>
-            <span
-              className="w-14 text-right font-mono text-xs tabular-nums"
-              title={`${i.count} events`}
-            >
-              {i.count}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-/** The organization's status pages: published or not, and where. */
-function StatusPages() {
-  const org = useOrg();
-  const pages = useQuery(statusQueries.list()).data ?? [];
-  if (pages.length === 0) return null;
-  return (
-    <section aria-labelledby="status-head">
-      <SectionHead
-        id="status-head"
-        right={
-          <Link
-            to="/$org/status-pages"
-            params={{ org }}
-            className="hover:text-fg"
-          >
-            Status pages →
-          </Link>
-        }
-      >
-        Status pages
-      </SectionHead>
-      <ul className="border-t border-line">
-        {pages.map((p) => (
-          <li
-            key={p.slug}
-            className="flex flex-wrap items-baseline gap-x-3 border-b border-soft py-2"
-          >
-            <Link
-              to="/$org/status-pages/$page"
-              params={{ org, page: p.slug }}
-              className="-my-[2px] inline-flex min-h-[24px] min-w-0 flex-1 items-center hover:underline"
-            >
-              {p.title}
-            </Link>
-            <span className="text-xs text-mut">
-              {plural(p.components, "component")}
-            </span>
-            <StateText state={publishState(p.published)} />
-            {p.url && p.published && (
-              <span className="font-mono text-xs text-sec">
-                {p.url.replace(/^https?:\/\//, "")}
+              <span className="min-w-0 flex-1" title={e.summary}>
+                <span className="font-medium">{service}</span> {deployWords(e)}
               </span>
-            )}
-          </li>
-        ))}
+              <span className="font-mono text-xs text-mut">
+                {parts.slice(0, -1).join("/")}
+              </span>
+              <span
+                className="w-20 text-right text-xs text-mut"
+                title={new Date(e.created_at).toLocaleString()}
+              >
+                {ago(e.created_at)}
+              </span>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

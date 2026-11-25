@@ -6,14 +6,7 @@ import type { EnvRef, Session } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { ago } from "../../ui/format";
 import { httpsHref } from "../../ui/httpsHref";
-import {
-  Act,
-  Button,
-  Check,
-  ErrorText,
-  SectionHead,
-  StateText,
-} from "../../ui/kit";
+import { Act, Button, Check, ErrorText, StateText } from "../../ui/kit";
 import { autofocus } from "../create/form";
 import {
   type EnvironmentPreviews,
@@ -40,11 +33,11 @@ export function PreviewsSection({ project }: { project: string }) {
   const settings = useQuery(previewQueries.settings(project));
   const s = settings.data;
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
       <section aria-labelledby="preview-services" className="flex flex-col">
-        <SectionHead id="preview-services">
+        <h3 id="preview-services" className="mb-1.5 font-semibold">
           Services that build pull requests
-        </SectionHead>
+        </h3>
         {settings.error && <ErrorText error={settings.error} />}
         {s && s.services.length === 0 && (
           <>
@@ -128,7 +121,9 @@ export function PreviewsSection({ project }: { project: string }) {
       </section>
 
       <section aria-labelledby="preview-open" className="flex flex-col">
-        <SectionHead id="preview-open">Open previews</SectionHead>
+        <h3 id="preview-open" className="mb-1.5 font-semibold">
+          Open previews
+        </h3>
         {s && s.previews.length === 0 && (
           <p className="text-mut">No open previews.</p>
         )}

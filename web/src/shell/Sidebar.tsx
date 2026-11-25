@@ -1,7 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
 import {
   Link,
-  type LinkProps,
   useMatches,
   useNavigate,
   useRouterState,
@@ -10,7 +8,6 @@ import { type ReactNode, useState } from "react";
 import { useLogout } from "../data/mutations";
 import {
   canDeploy,
-  queries,
   serviceRef,
   useOrgs,
   useProjects,
@@ -30,15 +27,20 @@ import {
   usePlatformOpenAlerts,
 } from "../features/alerts/data";
 import {
+  type ConsoleEntry,
+  consoleEntryOf,
+  consoleNav,
+} from "../features/console/nav";
+import {
   canCreateEnvironment,
   canCreateProject,
 } from "../features/create/access";
 import { openCreate } from "../features/create/open";
 import { closeHelp, openHelp, useHelpOpen } from "../features/help/open";
 import { useUpdateNote } from "../features/update/data";
-import { plural, since } from "../ui/format";
-import { Icon, type IconName } from "../ui/icons";
-import { ErrorText, Glyph, LockMark, Menu, menuItem } from "../ui/kit";
+import { plural } from "../ui/format";
+import { Icon } from "../ui/icons";
+import { Glyph, LockMark, Menu, menuItem } from "../ui/kit";
 import { serviceState, toneText } from "../ui/status";
 import { modKey, useShortcuts } from "./keys";
 import { useCurrentContext, useOrg } from "./location";
@@ -58,25 +60,16 @@ export const useShellMode = (): ShellMode =>
   });
 
 /**
- * The left column on every page. Wide screens keep it in view while the
- * page scrolls; narrow ones put it above the page.
+ * The left column: the project tree (or its rail) on organization pages,
+ * the console's views on the console. A page with a menu of its own
+ * (useOwnMenu) gets no project column: its own list is the left column
+ * (the shell leaves this out there). Wide screens keep it in view while
+ * the page scrolls; narrow ones put it above the page.
  */
 export function Sidebar({ mode }: { mode: ShellMode }) {
   // Narrow screens fold the sidebar behind a button; moving on folds it.
   const [open, setOpen] = useState(false);
-  const [saved, toggleSaved] = useTreeOpen();
-  // A page with a menu of its own shows the rail beside it whatever is
-  // saved (Saile's pick B, 2026-11-13); expanding there opens the tree
-  // until the next such page, and leaves the saved choice alone.
-  const ownMenu = useOwnMenu();
-  const [peek, setPeek] = useState(false);
-  const [wasOwn, setWasOwn] = useState(ownMenu);
-  if (wasOwn !== ownMenu) {
-    setWasOwn(ownMenu);
-    setPeek(false);
-  }
-  const tree = ownMenu ? peek : saved;
-  const toggleTree = ownMenu ? () => setPeek(!peek) : toggleSaved;
+  const [tree, toggleTree] = useTreeOpen();
   useShortcuts(
     mode === "app"
       ? [{ key: "[", label: "project tree or rail", run: toggleTree }]
@@ -124,32 +117,12 @@ export function Sidebar({ mode }: { mode: ShellMode }) {
 export const columnClass = (wide: boolean) =>
   `flex flex-col gap-0.5 border-b border-line bg-side px-2 py-2.5 lg:sticky ${wide ? "lg:w-[248px]" : "lg:w-[60px]"} lg:flex-none lg:overflow-y-auto lg:border-r lg:border-b-0 lg:top-(--shell-top) lg:h-[calc(100vh-var(--shell-top))]`;
 
-/** A sidebar link with an icon; current when its route (or a child) is. */
-function NavLink({
-  icon,
-  children,
-  exact,
-  ...link
-}: LinkProps & { icon?: IconName; exact?: boolean; children: ReactNode }) {
-  return (
-    <Link
-      {...link}
-      className="nav-row"
-      activeOptions={{ exact: !!exact, includeSearch: false }}
-      activeProps={{ "aria-current": "page" }}
-    >
-      {icon && <Icon name={icon} className="text-mut" />}
-      {children}
-    </Link>
-  );
-}
-
-const groupLabel = "px-2.5 pt-3 pb-1 text-2xs font-medium text-faint";
-
 /**
  * Whether the page has a menu of its own down its left side (the route's
- * `staticData.ownMenu`): an analytics site's views, Organization
- * settings' sections. The project column is the rail beside it.
+ * `staticData.ownMenu`): an analytics site's views, Settings' sections.
+ * Such a page's own list is the only left column: no project tree or
+ * rail beside it, so the left side always lists what's inside the place
+ * you're in.
  */
 export const useOwnMenu = () =>
   useMatches({ select: (ms) => ms.some((m) => m.staticData.ownMenu) });
@@ -200,14 +173,7 @@ function AppNav({ tree, onToggle }: { tree: boolean; onToggle: () => void }) {
           <Icon name="chevronRight" size={14} />
         )}
       </button>
-      {tree ? (
-        <>
-          <ProjectTree />
-          <ArchivedProjects />
-        </>
-      ) : (
-        <ProjectRail />
-      )}
+      {tree ? <ProjectTree /> : <ProjectRail />}
     </>
   );
 }
@@ -312,9 +278,10 @@ export function TopBar() {
       <TopLink to="/$org/inbox">
         Inbox <InboxCount />
       </TopLink>
-      {/* Named in full: the project page has Project settings beside it,
-          and blind reviewers opened that one looking for Members. */}
-      <TopLink to="/$org/settings">Organization settings</TopLink>
+      {/* "Settings", the word every level uses for its last tab: a
+          project's and a service's are tabs on their pages, so this one is
+          the organization's (members, alerts, connections). */}
+      <TopLink to="/$org/settings">Settings</TopLink>
       <HelpButton />
       <AccountMenu />
     </header>
@@ -332,7 +299,7 @@ export const topLinkClass =
 
 /** The org's views, in the top bar's order. */
 export const orgViews = [
-  ["/$org", "Overview"],
+  ["/$org", "Projects"],
   ["/$org/errors", "Errors"],
   ["/$org/analytics", "Analytics"],
   ["/$org/images", "Images"],
@@ -379,7 +346,7 @@ function ViewsMenu() {
   );
 }
 
-/** A link in the top bar; current on its page (Overview only exactly). */
+/** A link in the top bar; current on its page (Projects only exactly). */
 function TopLink({
   to,
   children,
@@ -837,9 +804,9 @@ function useUrlEnvironment(): string | undefined {
 /**
  * Moves the page to another environment of the current project, on the
  * equivalent page where there is one: the same service tab (a release
- * opens the service, release numbers differ), the same shared variables,
- * else that environment's page. Project pages without an environment
- * (settings, compare) stay where they are.
+ * opens the service, release numbers differ), the project's Settings for
+ * that environment, else that environment's page. Compare stays where it
+ * is.
  */
 function useSwitchEnvironment() {
   const navigate = useNavigate();
@@ -856,11 +823,19 @@ function useSwitchEnvironment() {
         to: "/$org/$project/$environment/$service",
         params: { org, project, environment, service },
       });
-    } else if (hasService || leaf?.includes("/settings/variables/")) {
+    } else if (hasService) {
       navigate({
         to: ".",
         params: (prev) => ({ ...prev, environment }),
         search: true,
+      });
+    } else if (leaf?.startsWith("/_app/$org/$project/settings")) {
+      // The project's Settings show one environment's sections (?env=).
+      navigate({
+        to: "/$org/$project/settings",
+        params: { org, project },
+        search: { env: environment },
+        hash: true,
       });
     } else if (
       service ||
@@ -950,71 +925,6 @@ function EnvironmentMenu({
         </>
       )}
     </Menu>
-  );
-}
-
-/**
- * "Archived" under the project tree: a fold listing archived projects
- * (`dock project list --all`), fetched once opened. It opens by itself on
- * an archived project's page.
- */
-function ArchivedProjects() {
-  const org = useOrg();
-  const here = useCurrentContext().project;
-  const onArchived =
-    useQuery({
-      ...queries.overview(here ?? ""),
-      enabled: !!here,
-      select: (o) => !!o.project.archived_at,
-    }).data ?? false;
-  const [open, setOpen] = useState<boolean>();
-  const shown = open ?? onArchived;
-  const archived = useQuery({
-    ...queries.archivedProjects(),
-    enabled: shown,
-  });
-  return (
-    <>
-      <button
-        type="button"
-        aria-expanded={shown}
-        onClick={() => setOpen(!shown)}
-        className="flex w-full items-center rounded-ctl text-faint hover:bg-panel hover:text-sec"
-      >
-        <span className="grid h-[28px] w-[24px] flex-none place-items-center">
-          <Icon name={shown ? "chevronDown" : "chevronRight"} size={12} />
-        </span>
-        Archived
-      </button>
-      {shown && archived.error && (
-        <p className="pl-[30px] text-2xs">
-          <ErrorText error={archived.error} />
-        </p>
-      )}
-      {shown && archived.data?.length === 0 && (
-        <p className="py-1 pl-[30px] text-2xs text-faint">None</p>
-      )}
-      {shown && !!archived.data?.length && (
-        <ul className="flex flex-col gap-px pb-1">
-          {archived.data.map((p) => (
-            <li key={p.id}>
-              <Link
-                to="/$org/$project"
-                params={{ org, project: p.name }}
-                activeOptions={{ exact: true }}
-                activeProps={{ "aria-current": "page" }}
-                className="nav-row py-[5px] pl-[30px] text-faint"
-              >
-                <span className="flex-1 truncate">{p.name}</span>
-                <span className="text-2xs" title={p.archived_at}>
-                  archived {since(p.archived_at)}
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-    </>
   );
 }
 
@@ -1148,81 +1058,84 @@ function ServiceLink({ view }: { view: ServiceView }) {
 }
 
 /**
- * The platform console's sidebar (Saile's pick A, 2026-11-17): the
- * console's own views, then infrastructure, access and integrations, with
- * Updates by the account at the foot. It fits a 900px screen. Only
- * operators reach it.
+ * The platform console's sidebar (ADR 0099): "Platform" with a quiet
+ * console label and the way back to projects, then its nine entries by job
+ * (features/console/nav.ts), each marked on any of its pages, with Updates
+ * by the account at the foot. Only operators reach it.
  */
 function ConsoleNav() {
+  const path = useRouterState({ select: (s) => s.location.pathname });
+  const here = consoleEntryOf(path);
+  const entries = consoleNav.filter((e) => e.label !== "Updates");
+  const updates = consoleNav.find((e) => e.label === "Updates");
   return (
     <>
       {/* In place of the organization: the console has none (ADR 0062). */}
-      <div className="px-2.5 pt-1 pb-2 font-semibold">Platform</div>
-      <NavLink to="/console" exact icon="grid">
-        Overview
-      </NavLink>
-      <NavLink to="/console/orgs" icon="users">
-        Organizations
-      </NavLink>
-      <NavLink to="/console/alerts" icon="bell">
-        <span className="flex-1">Alerts</span>
-        <PlatformAlertCount />
-      </NavLink>
-      <NavLink to="/console/audit" icon="activity">
-        Activity
-      </NavLink>
-      <div className={groupLabel}>Infrastructure</div>
-      {/* Each server is a row on the Servers page, which stays current on
-          a server's own page: a row per server here pushed the account
-          off a 900px screen (Saile's pick A, 2026-11-17). */}
-      <NavLink to="/console/servers" icon="server">
-        Servers
-      </NavLink>
-      <NavLink to="/console/registry" icon="box">
-        Registry
-      </NavLink>
-      <NavLink to="/console/backups" icon="history">
-        Backups
-      </NavLink>
-      <NavLink to="/console/storage" icon="database">
-        Storage
-      </NavLink>
-      <div className={groupLabel}>Access</div>
-      <NavLink to="/console/users" icon="users">
-        Users
-      </NavLink>
-      <NavLink to="/console/tokens" icon="key">
-        Tokens
-      </NavLink>
-      <NavLink to="/console/sign-in" icon="lock">
-        Sign-in
-      </NavLink>
-      <NavLink to="/console/data-access" icon="shield">
-        Data access
-      </NavLink>
-      <div className={groupLabel}>Integrations</div>
-      <NavLink to="/console/email" icon="mail">
-        Email
-      </NavLink>
-      <NavLink to="/console/address" icon="globe">
-        Address
-      </NavLink>
-      <NavLink to="/console/github" icon="graph">
-        GitHub
-      </NavLink>
-      <NavLink to="/console/cloudflare" icon="cloud">
-        Cloudflare
-      </NavLink>
-      <NavLink to="/console/analytics" icon="bars">
-        Analytics
-      </NavLink>
+      <div className="flex flex-col px-2.5 pt-1 pb-2">
+        <div className="flex items-baseline gap-2">
+          <span className="font-semibold">Platform</span>
+          <span className="text-2xs text-warn">console</span>
+        </div>
+        {/* No preload: it would read the org's projects from inside the
+            console, which sends no organization (api/client.ts). */}
+        <Link
+          to="/"
+          preload={false}
+          className="inline-flex min-h-[24px] items-center text-xs text-mut hover:text-fg"
+        >
+          ← Back to projects
+        </Link>
+      </div>
+      {entries.map((e) => (
+        <ConsoleLink key={e.label} entry={e} current={e === here}>
+          {e.label === "Alerts" ? (
+            <>
+              <span className="flex-1">Alerts</span>
+              <PlatformAlertCount />
+            </>
+          ) : (
+            e.label
+          )}
+        </ConsoleLink>
+      ))}
       <div className="min-h-2 flex-1" />
       {/* Updates by the account: both are about this Dock itself. */}
-      <NavLink to="/console/updates" icon="upload">
-        <span className="flex-1">Updates</span>
-        <UpdateBadge />
-      </NavLink>
+      {updates && (
+        <ConsoleLink entry={updates} current={updates === here}>
+          <span className="flex-1">Updates</span>
+          <UpdateBadge />
+        </ConsoleLink>
+      )}
       <Me />
     </>
+  );
+}
+
+/**
+ * A console sidebar entry: opens its first page, current on any of its
+ * pages (a server's own page counts under Servers).
+ */
+function ConsoleLink({
+  entry,
+  current,
+  children,
+}: {
+  entry: ConsoleEntry;
+  current: boolean;
+  children: ReactNode;
+}) {
+  return (
+    // Exact: the router's own mark would otherwise light Overview
+    // ("/console") on every console page; `current` marks the entry on
+    // any of its pages.
+    <Link
+      to={entry.pages[0].to}
+      className="nav-row"
+      activeOptions={{ exact: true }}
+      aria-current={current ? "page" : undefined}
+    >
+      <Icon name={entry.icon} className="text-mut" />
+      {children}
+    </Link>
   );
 }

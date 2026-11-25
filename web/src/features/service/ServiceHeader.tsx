@@ -21,14 +21,16 @@ import type { ServiceRef, ServiceView } from "../../data/types";
 import { EnvSwitch } from "../../shell/context";
 import { type Shortcut, useShortcuts } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
+import { Dialog } from "../../ui/Dialog";
 import { ago, plural, since } from "../../ui/format";
 import {
   Act,
   Confirm,
   ErrorText,
   Glyph,
-  Menu,
-  menuItem,
+  MoreItem,
+  MoreMenu,
+  MoreSeparator,
   PageBar,
   StateText,
 } from "../../ui/kit";
@@ -39,17 +41,19 @@ import {
   isCrashLooping,
   isUnhealthy,
   oomPhrase,
+  serverState,
   serviceState,
   stepPhrase,
 } from "../../ui/status";
+import { ConnectHint } from "../connect/ConnectHint";
 import { openDeploy } from "../deploy/start";
 import { useGitSource } from "../git/api";
 import { sleepCli, useWakeEnvironment } from "../overview/EnvironmentSleep";
-import { EnvServer } from "../servers/parts";
 import { ApplyControl } from "../variables/ApplyBox";
 import { ArchiveConfirm } from "./ArchiveConfirm";
 import { CancelDeploy } from "./CancelDeploy";
 import { useRestartService, useStartService, useStopService } from "./data";
+import { Chevron, FactLabel, factRow } from "./facts";
 import { RollbackConfirm } from "./ReleasesTable";
 import {
   errorSummary,
@@ -58,6 +62,7 @@ import {
   rollbackTarget,
   shortImage,
 } from "./releases";
+import { UptimeFact, VisitorsFact } from "./Signals";
 import { type ServiceTab, tabsFor } from "./tabs";
 import { CpuUsage, MemoryUsage } from "./Usage";
 
@@ -253,165 +258,123 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
 }
 
 /**
- * Image, domains, backups (stateful services), resources, port and server,
- * then the start command: the Overview's facts.
+ * The Overview's facts, two columns of rows: each says one thing about
+ * the service and opens its one home (ADR 0099): the image and the
+ * domains open their Settings sections, resources and uptime open
+ * Metrics, visitors open Requests. No buttons of their own; the row is
+ * the target, with a chevron.
  */
 export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const org = useOrg();
   const view = useService(ref);
   const { environment } = useEnvironment(ref);
   const { service } = view;
-  const domain =
-    view.domains.find((d) => d.status === "active") ?? view.domains[0];
   const image = imageSetting(service, useReleases(ref));
   const running = view.active_release
     ? imageLabel(view.active_release)
     : service.image;
-  const facts: [string, ReactNode][] = [
-    [
-      "Image",
-      // What runs now; the image setting only when the next deploy differs
-      // (after a rollback, or a failed deploy of a new tag).
-      <span key="s" className="flex flex-col font-mono">
-        <span className="wrap-anywhere" title={running}>
-          {/* The full name, but a digest only as long as it needs to be. */}
-          {running ? (
-            <BreakAtParts
-              text={running.replace(/@sha256:([0-9a-f]{7})[0-9a-f]+/, "@$1")}
-            />
-          ) : (
-            "built from source"
+  const domain =
+    view.domains.find((d) => d.status === "active") ?? view.domains[0];
+  const settings = "/$org/$project/$environment/$service/settings" as const;
+  const params = { org, ...ref };
+  const server = environment.server;
+  const serverDown =
+    environment.server_status !== "online"
+      ? serverState(environment.server_status)
+      : undefined;
+  return (
+    <div className="grid gap-x-12 border-b border-soft @3xl:grid-cols-2">
+      <Link to={settings} params={params} hash="source" className={factRow}>
+        <FactLabel>{running ? "Image" : "Source"}</FactLabel>
+        <span className="flex min-w-0 flex-col">
+          <span className="truncate font-mono" title={running}>
+            {/* A digest only as long as it needs to be. */}
+            {running
+              ? running.replace(/@sha256:([0-9a-f]{7})[0-9a-f]+/, "@$1")
+              : "built from source"}
+          </span>
+          {/* After a failed new tag, the status line says it once; this
+              is only for a rollback that left the setting ahead. */}
+          {image.differs && !image.failed && (
+            <span className="truncate text-mut" title={image.next}>
+              next deploy uses{" "}
+              <span className="font-mono text-sec">
+                {shortImage(image.next)}
+              </span>
+            </span>
           )}
         </span>
-        {/* After a failed new tag, the status line says it once and the
-            Deploy dialog offers the serving image; nothing more here. */}
-        {image.differs && !image.failed && (
-          <span className="font-sans break-words text-mut" title={image.next}>
-            Next deploy uses{" "}
-            <span className="font-mono text-sec">{shortImage(image.next)}</span>
+        <Chevron />
+      </Link>
+      <Link to={settings} params={params} hash="domains" className={factRow}>
+        <FactLabel>Domains</FactLabel>
+        {domain ? (
+          <span className="truncate">
+            <span className="font-mono">{domain.hostname}</span>
+            {view.domains.length > 1 && (
+              <span className="text-mut"> +{view.domains.length - 1}</span>
+            )}
           </span>
-        )}
-      </span>,
-    ],
-    [
-      "Domains",
-      // The address, how many more, and the way to all of them (Settings).
-      <span key="a" className="flex flex-wrap items-center gap-x-2 gap-y-2">
-        {domain && (
-          <a
-            href={`https://${domain.hostname}`}
-            className="-my-[4px] inline-flex min-h-[24px] items-center font-mono text-info hover:underline"
-          >
-            {domain.hostname}
-          </a>
-        )}
-        <Link
-          to="/$org/$project/$environment/$service/settings/domains"
-          params={{ org, ...ref }}
-          // A button, not faint text: it is where domains are added.
-          className="btn sm -my-[4px]"
-        >
-          {domain
-            ? view.domains.length > 1
-              ? `+${view.domains.length - 1} · Manage`
-              : "Manage"
-            : "Add domain"}
-        </Link>
-      </span>,
-    ],
-    ...(service.stateful
-      ? ([["Backups", <BackupsFact key="b" serviceRef={ref} />]] as [
-          string,
-          ReactNode,
-        ][])
-      : []),
-    [
-      "Resources",
-      <Link
-        key="r"
-        to="/$org/$project/$environment/$service/metrics"
-        params={{ org, ...ref }}
-        title="Memory and CPU, latest sample against the limit"
-        className="hover:text-fg"
-      >
-        <CpuUsage service={service} />
-        <br />
-        <MemoryUsage service={service} />
-      </Link>,
-    ],
-    [
-      // Only operators see which server; others see it only when down.
-      environment.server ? "Port and server" : "Port",
-      <span key="p">
-        <span className="font-mono">:{listenPort(service)}</span>{" "}
-        {environment.server && <span className="text-mut">on server</span>}{" "}
-        <EnvServer environment={environment} />
-      </span>,
-    ],
-    // How it starts, a full row: Jobs' Run a command runs a command
-    // once; this is where the start command changes.
-    [
-      "Start command",
-      <span key="c" className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        {service.start_command ? (
-          <LongCommand text={service.start_command} />
         ) : (
-          <span className="text-mut">the image's default</span>
+          <span className="text-mut">none yet</span>
         )}
-        <Link
-          to="/$org/$project/$environment/$service/settings"
-          params={{ org, ...ref }}
-          search={{ edit: "start_command" }}
-          className="btn sm"
-        >
-          Edit
+        <Chevron />
+      </Link>
+      {service.stateful && (
+        <Link to={settings} params={params} hash="backups" className={factRow}>
+          <FactLabel>Backups</FactLabel>
+          <BackupsFact serviceRef={ref} />
+          <Chevron />
         </Link>
-      </span>,
-    ],
-  ];
-  // One row at wide widths: four facts, or five with Backups; Start
-  // command takes the full row below.
-  const wide = facts.length > 5 ? "@4xl:grid-cols-5" : "@4xl:grid-cols-4";
-  return (
-    <dl
-      className={`facts grid grid-cols-2 gap-x-6 border-t border-line ${wide}`}
-    >
-      {facts.map(([term, value]) => (
-        <div
-          key={term}
-          className={`flex flex-col gap-1 border-b border-soft py-3 ${term === "Start command" ? "col-span-full" : ""}`}
-        >
-          <dt className="text-2xs text-faint">{term}</dt>
-          <dd className="min-w-0 break-words text-xs">{value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
-/**
- * A command that can run long (a database's dozens of -c options): two
- * lines, wrapped at spaces, with Show all when there is more. Rendered
- * into its parent's wrapping flex row: a long command takes the whole
- * first line, so Show all and the actions after it share the next.
- */
-function LongCommand({ text }: { text: string }) {
-  const [all, setAll] = useState(false);
-  const long = text.length > 140;
-  return (
-    <>
-      <code
-        title={text}
-        className={`min-w-0 font-mono break-words ${long ? `basis-full ${all ? "" : "line-clamp-2"}` : ""}`}
-      >
-        {text}
-      </code>
-      {long && (
-        <button type="button" className="lnk" onClick={() => setAll(!all)}>
-          {all ? "Show less" : "Show all"}
-        </button>
       )}
-    </>
+      <Link
+        to="/$org/$project/$environment/$service/metrics"
+        params={params}
+        title="CPU and memory, latest sample against the limit"
+        className={factRow}
+      >
+        <FactLabel>Resources</FactLabel>
+        <span className="truncate">
+          <CpuUsage service={service} />
+          <span className="text-mut"> · </span>
+          <MemoryUsage service={service} />
+        </span>
+        <Chevron />
+      </Link>
+      <Link to={settings} params={params} hash="running" className={factRow}>
+        <FactLabel>Runs on</FactLabel>
+        <span className="truncate">
+          <span className="font-mono">:{listenPort(service)}</span>
+          {/* Only operators see which server; others see it only when down. */}
+          {(server || serverDown) && (
+            <>
+              {" "}
+              <span className="text-mut">on</span>{" "}
+              <span className="font-mono">{server || "its server"}</span>
+              {serverDown && (
+                <>
+                  {" "}
+                  <StateText state={serverDown} />
+                </>
+              )}
+            </>
+          )}
+        </span>
+        <Chevron />
+      </Link>
+      {/* Only a command someone set: the image's own is the default. */}
+      {service.start_command && (
+        <Link to={settings} params={params} hash="running" className={factRow}>
+          <FactLabel>Start command</FactLabel>
+          <code className="truncate font-mono" title={service.start_command}>
+            {service.start_command}
+          </code>
+          <Chevron />
+        </Link>
+      )}
+      <UptimeFact serviceRef={ref} className={factRow} />
+      <VisitorsFact serviceRef={ref} className={factRow} />
+    </div>
   );
 }
 
@@ -573,7 +536,18 @@ export function StatusSentence({ view }: { view: ServiceView }) {
             .
           </>
         )}{" "}
-        {domain && mut(`At ${domain.hostname}.`)}{" "}
+        {domain && (
+          <span className="text-mut">
+            At{" "}
+            <a
+              href={`https://${domain.hostname}`}
+              className="text-inherit underline decoration-faint underline-offset-2 hover:decoration-current"
+            >
+              {domain.hostname}
+            </a>
+            .
+          </span>
+        )}{" "}
         {!!status.health_restarts &&
           mut(
             `Restarted ${plural(status.health_restarts, "time")} for failing health checks.`,
@@ -591,45 +565,37 @@ export function StatusSentence({ view }: { view: ServiceView }) {
 }
 
 /**
- * A stateful service's last good backup, and the way to its restore
- * points (Settings): so backups are found from the Overview.
+ * A stateful service's last good backup, and a failed newest one said
+ * first, not hidden behind an older success. Its row opens Backups.
  */
 function BackupsFact({ serviceRef: ref }: { serviceRef: ServiceRef }) {
-  const org = useOrg();
   const runs = useQuery(queries.backups(ref)).data?.runs ?? [];
   const backups = runs.filter((r) => r.operation === "backup");
   const last = backups.find((r) => r.status === "succeeded");
-  // The newest run failed: said here, not hidden behind an older success.
   const failed = backups[0]?.status === "failed" ? backups[0] : undefined;
   return (
-    <span className="flex flex-wrap items-center gap-x-2 gap-y-2">
+    <span className="truncate">
       {failed && (
         <span className="text-fail">
-          ✕ latest failed {ago(failed.started_at)}
+          latest failed {ago(failed.started_at)}
+          {" · "}
         </span>
       )}
       <span className={last?.finished_at ? "" : "text-mut"}>
         {last?.finished_at ? `last good ${ago(last.finished_at)}` : "none yet"}
       </span>
-      {/* A button like Domains' Manage: it is where backups are set up. */}
-      <Link
-        to="/$org/$project/$environment/$service/settings/backups"
-        params={{ org, ...ref }}
-        className="btn sm -my-[4px]"
-      >
-        Manage
-      </Link>
     </span>
   );
 }
 
 /**
- * Stop or start, restart, roll back, deploy: buttons with keys and CLI
- * equivalents, and a menu with the rarer actions (Archive, for admins).
- * Stop, roll back and archive ask first, and restart does in production.
- * Stop and Start have no key (S opens Settings, see ServiceTabs).
- * Buttons that can't apply (Roll back with nothing to go back to) are
- * left out; one line says why the others wait.
+ * The header's actions (ADR 0099): Restart (Start while stopped) and
+ * Deploy, with keys and CLI equivalents, then one "···" menu with every
+ * other action in a fixed order: roll back and stop, run a command and
+ * connect, then archive in red (admins). Stop, roll back and archive ask
+ * first, and restart does in production. While changes wait to apply,
+ * the header's Apply is the primary. Stop and Start have no key (S opens
+ * Settings, see ServiceTabs). One line says why actions wait.
  */
 function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const org = useOrg();
@@ -762,6 +728,30 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   ];
   useShortcuts(mayDeploy ? shortcuts : []);
 
+  // "Run a command" is the Jobs tab's box; the tab focuses it from #run.
+  const runCommand = () =>
+    navigate({
+      to: "/$org/$project/$environment/$service/jobs",
+      params: { org, ...ref },
+      hash: "run",
+    });
+  // `dock connect` reaches an app's set port once it was deployed.
+  const connectable = service.port > 0 && !service.template && !!latest;
+  const [connecting, setConnecting] = useState(false);
+  const connectDialog = connecting && (
+    <Dialog
+      title={`Connect to ${ref.service} from your machine`}
+      onClose={() => setConnecting(false)}
+    >
+      <ConnectHint serviceRef={ref} />
+    </Dialog>
+  );
+  const statusCli = `dock status ${flags}`;
+  const copyCli = async (cli: string) => {
+    await navigator.clipboard.writeText(cli);
+    notify("Copied the command", "info");
+  };
+
   // Callers who can't change the service see its actions disabled, each
   // saying why and what would allow it (ADR 0080).
   if (denied) {
@@ -774,21 +764,34 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         </span>
         {!stopped && service.active_release && (
           <Act cli={`dock restart ${flags}`} disabled title={denied}>
-            Restart
-          </Act>
-        )}
-        {target && (
-          <Act
-            cli={`dock rollback ${target.number} ${flags}`}
-            disabled
-            title={denied}
-          >
-            Roll back
+            Restart <kbd>R</kbd>
           </Act>
         )}
         <Act cli={`dock deploy ${flags}`} disabled title={denied}>
-          Deploy
+          Deploy <kbd>D</kbd>
         </Act>
+        {connectDialog}
+        <MoreMenu>
+          {(close) => (
+            <>
+              <MoreItem close={close} onClick={runCommand}>
+                Run a command
+              </MoreItem>
+              {connectable && (
+                <MoreItem close={close} onClick={() => setConnecting(true)}>
+                  Connect from your machine
+                </MoreItem>
+              )}
+              <MoreItem
+                close={close}
+                cli={statusCli}
+                onClick={() => copyCli(statusCli)}
+              >
+                Copy CLI command
+              </MoreItem>
+            </>
+          )}
+        </MoreMenu>
       </div>
     );
   }
@@ -873,42 +876,17 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           Start
         </Act>
       ) : (
+        // Nothing deployed has nothing to restart.
         service.active_release && (
           <Act
-            cli={`dock service stop ${ref.service} -e ${ref.environment}`}
-            disabled={!canStop}
-            title={busy ?? "Remove its container; domains answer 503"}
-            onClick={() => setConfirming("stop")}
+            cli={`dock restart ${flags}`}
+            disabled={!canRestart}
+            title={busy ?? "Start a copy of the active release"}
+            onClick={askRestart}
           >
-            Stop
+            Restart <kbd>R</kbd>
           </Act>
         )
-      )}
-      {/* A stopped service starts instead; nothing deployed has nothing to restart. */}
-      {!stopped && service.active_release && (
-        <Act
-          cli={`dock restart ${flags}`}
-          disabled={!canRestart}
-          title={busy ?? "Start a copy of the active release"}
-          onClick={askRestart}
-        >
-          Restart <kbd>R</kbd>
-        </Act>
-      )}
-      {target && (
-        <Act
-          cli={`dock rollback ${target.number} ${flags}`}
-          disabled={!canRollback}
-          title={
-            busy ??
-            `r${target.number} is the last release that served and differs from the one serving now`
-          }
-          onClick={() => setConfirming("rollback")}
-        >
-          {/* The target and why it is that one open in the dialog: a
-              release number here read as "the one before" (it may not be). */}
-          Roll back <kbd>B</kbd>
-        </Act>
       )}
       {deploying && (
         <CancelDeploy serviceRef={ref} number={deploying.number} shortcut />
@@ -927,32 +905,71 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       >
         Deploy <kbd>D</kbd>
       </Act>
-      {isAdmin && (
-        <Menu
-          label="More actions"
-          right
-          button={
-            <span className="btn" title="More actions">
-              More
-            </span>
-          }
-        >
-          {(close) => (
-            <button
-              type="button"
-              role="menuitem"
-              className={`${menuItem} text-fail`}
-              title={`dock service archive ${ref.service} -e ${ref.environment}`}
-              onClick={() => {
-                close();
-                setConfirming("archive");
-              }}
+      {connectDialog}
+      <MoreMenu>
+        {(close) => (
+          <>
+            {target && (
+              <MoreItem
+                close={close}
+                keyHint="B"
+                disabled={!canRollback}
+                cli={
+                  busy ??
+                  `dock rollback ${target.number} ${flags}: r${target.number} is the last release that served and differs from the one serving now`
+                }
+                onClick={() => setConfirming("rollback")}
+              >
+                Roll back to r{target.number}
+              </MoreItem>
+            )}
+            {!stopped && service.active_release && (
+              <MoreItem
+                close={close}
+                disabled={!canStop}
+                cli={
+                  busy ??
+                  `dock service stop ${ref.service} -e ${ref.environment}: removes its container; domains answer 503`
+                }
+                onClick={() => setConfirming("stop")}
+              >
+                Stop
+              </MoreItem>
+            )}
+            {(target || (!stopped && service.active_release)) && (
+              <MoreSeparator />
+            )}
+            <MoreItem close={close} onClick={runCommand}>
+              Run a command
+            </MoreItem>
+            {connectable && (
+              <MoreItem close={close} onClick={() => setConnecting(true)}>
+                Connect from your machine
+              </MoreItem>
+            )}
+            <MoreItem
+              close={close}
+              cli={statusCli}
+              onClick={() => copyCli(statusCli)}
             >
-              Archive {ref.service}…
-            </button>
-          )}
-        </Menu>
-      )}
+              Copy CLI command
+            </MoreItem>
+            {isAdmin && (
+              <>
+                <MoreSeparator />
+                <MoreItem
+                  close={close}
+                  danger
+                  cli={`dock service archive ${ref.service} -e ${ref.environment}`}
+                  onClick={() => setConfirming("archive")}
+                >
+                  Archive {ref.service}…
+                </MoreItem>
+              </>
+            )}
+          </>
+        )}
+      </MoreMenu>
       <span className="self-center text-xs">
         {blocked ? (
           <span className="text-fail">Disabled: {blocked}.</span>
@@ -967,19 +984,4 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       </span>
     </div>
   );
-}
-
-/**
- * An image name that wraps after its slashes and before its tag or
- * digest (ghcr.io/org/ · name · :2.3.0), not in the middle of a part:
- * each part is one inline box, so "1.4.0-rc1" never breaks at its hyphen.
- * A part wider than the column still wraps inside its box.
- */
-function BreakAtParts({ text }: { text: string }) {
-  return text.split(/(?<=\/)|(?=[:@])/).map((part, i) => (
-    <Fragment key={`${i}-${part}`}>
-      {i > 0 && <wbr />}
-      <span className="inline-block max-w-full">{part}</span>
-    </Fragment>
-  ));
 }

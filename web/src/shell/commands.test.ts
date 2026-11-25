@@ -47,12 +47,22 @@ const commands = [
   command("logs", "Go to", "Logs · api production", "G L"),
   command("deploy", "Actions", "Deploy api production", "dock deploy -s api"),
   command("members", "Go to", "Members", "dock org members"),
+  {
+    ...command("domains", "Settings", "Domains · api production", ""),
+    keywords: "settings domain hostname dns",
+  },
 ];
 const ids = (query: string) =>
   matchCommands(commands, query).map((m) => m.command.id);
 check(ids("logs api").join() === "logs", "'logs api' finds the Logs tab");
 check(ids("dock deploy").join() === "deploy", "'dock deploy' finds Deploy");
 check(ids("members").join() === "members", "'members' finds the page");
+// Settings sections: found by what they hold, never listed untyped.
+check(ids("dns").join() === "domains", "'dns' finds the Domains section");
+check(
+  !ids("").includes("domains"),
+  "an empty query lists no settings sections",
+);
 
 document.title = "PASS: palette";
 const results = document.getElementById("results");

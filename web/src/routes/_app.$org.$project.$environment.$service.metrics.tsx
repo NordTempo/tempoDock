@@ -1,5 +1,5 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { queries, servicePath, useService } from "../data/queries";
 import type { Service, ServiceRef, StatsRange } from "../data/types";
@@ -15,17 +15,18 @@ import {
   validateRange,
 } from "../features/stats/series";
 import { uptimeChecks } from "../features/uptime/data";
-import { UptimePanel } from "../features/uptime/UptimePanel";
-import { cpus, pct, size } from "../ui/format";
+import { useOrg } from "../shell/location";
+import { cpus, pct, plural, size } from "../ui/format";
 import { SectionHead } from "../ui/kit";
 
 const MiB = 1024 * 1024;
 
 // A service's Metrics tab (ADR 0076): CPU and memory, live while open,
 // and history across releases; its app metrics' pinned charts (ADR
-// 0075); then, where it has a domain or checks,
-// its uptime checks and the health check on its server (ADR 0055).
-// /shop/production/web/metrics?range=24h, #uptime for the checks.
+// 0075); then, where it has a domain or checks, its uptime as one result
+// line (ADR 0055). The checks and the health check are set up in
+// Settings › Health and uptime, next to each other (ADR 0099).
+// /shop/production/web/metrics?range=24h, #uptime for the line.
 export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/metrics",
 )({
@@ -95,12 +96,50 @@ function MetricsTab() {
         <History serviceRef={ref} range={range} service={service} />
       </section>
       <AppMetricsPanel serviceRef={ref} range={range} />
-      {checked && (
-        <div id="uptime" className="flex flex-col gap-7">
-          <UptimePanel serviceRef={ref} />
-        </div>
-      )}
+      {checked && <UptimeLine serviceRef={ref} />}
     </>
+  );
+}
+
+/**
+ * Uptime as a result: up or down, the last day's share and how many
+ * checks, with the way to where they are set up (Settings › Health and
+ * uptime). Without checks, the way to add one.
+ */
+function UptimeLine({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const org = useOrg();
+  const { uptime } = useService(ref);
+  const checks = useSuspenseQuery(uptimeChecks(ref)).data;
+  const word = { up: "up", down: "down", unknown: "first check pending" };
+  const tone = { up: "text-ok", down: "text-fail", unknown: "text-mut" };
+  return (
+    <section id="uptime" aria-labelledby="uptime-head">
+      <SectionHead id="uptime-head">Uptime</SectionHead>
+      <p className="flex flex-wrap items-center gap-x-1.5 border-y border-line py-2.5">
+        {uptime && checks.length > 0 ? (
+          <>
+            <span className={tone[uptime.state]}>{word[uptime.state]}</span>
+            {uptime.uptime_24h !== undefined && (
+              <span className="tabular-nums">
+                · {Math.min(uptime.uptime_24h, 99.99).toFixed(2)}% in 24h
+              </span>
+            )}
+            <span className="text-mut">· {plural(checks.length, "check")}</span>
+          </>
+        ) : (
+          <span className="text-mut">No uptime checks yet.</span>
+        )}
+        <Link
+          to="/$org/$project/$environment/$service/settings"
+          params={{ org, ...ref }}
+          hash="health"
+          className="ml-auto inline-flex min-h-[24px] items-center underline decoration-faint underline-offset-2 hover:decoration-current"
+        >
+          {checks.length > 0 ? "Set up in" : "Add one in"} Settings › Health and
+          uptime
+        </Link>
+      </p>
+    </section>
   );
 }
 

@@ -1,6 +1,7 @@
 import { Fragment, useMemo, useState } from "react";
 import { ago, pct, plural, size } from "../../ui/format";
-import { Act, Button, ErrorText, Panel, SectionHead } from "../../ui/kit";
+import { Act, Button, ErrorText, Panel } from "../../ui/kit";
+import { notify } from "../../ui/notice";
 import { type DiskPart, usePruneServer, useServerDisk } from "./disk";
 
 type Group = DiskPart["group"];
@@ -16,16 +17,85 @@ const groups: { group: Group; label: string; dot: string }[] = [
 ];
 
 /**
- * Where a server's disk goes (ADR 0035): one bar split by group, a table
- * of the groups that open to show their parts, and Prune, which frees the
- * Reclaimable column. Read when the page opens, not with it: the read
- * takes seconds.
+ * The Prune button on the server page's Disk row, when part of the disk
+ * can be freed: asks once ("Prune 1.4G now" or Cancel), then says what
+ * was freed in a notice. `dock server prune`.
+ */
+export function PruneAction({ server }: { server: string }) {
+  const d = useServerDisk(server).data;
+  const prune = usePruneServer(server);
+  const [confirming, setConfirming] = useState(false);
+  if (!d || d.reclaimable_bytes <= 0) return null;
+  const cli = `dock server prune ${server}`;
+  if (!confirming) {
+    return (
+      <Button small onClick={() => setConfirming(true)}>
+        Prune {size(d.reclaimable_bytes)}
+      </Button>
+    );
+  }
+  return (
+    <span className="flex items-center gap-2">
+      <Act
+        small
+        danger
+        cli={cli}
+        disabled={prune.isPending}
+        onClick={() =>
+          prune.mutate(undefined, {
+            onSuccess: (done) =>
+              notify(
+                done.image_bytes + done.cache_bytes > 0
+                  ? `Freed ${size(done.image_bytes + done.cache_bytes)}: ${plural(done.images_removed, "image")} (${size(done.image_bytes)}), ${size(done.cache_bytes)} of build cache.${done.error ? ` Part of it failed: ${done.error}` : ""}`
+                  : "Nothing was freed: no image or cache could go.",
+                done.error ? "fail" : "ok",
+              ),
+            onError: (e) => notify(e.message, "fail"),
+            onSettled: () => setConfirming(false),
+          })
+        }
+      >
+        {prune.isPending
+          ? "Pruning…"
+          : `Prune ${size(d.reclaimable_bytes)} now`}
+      </Act>
+      <Button small onClick={() => setConfirming(false)}>
+        Cancel
+      </Button>
+    </span>
+  );
+}
+
+/**
+ * The Disk row's few words: "11G of 40G · 1.4G reclaimable", from the
+ * same reading as the breakdown.
+ */
+export function DiskSummary({ server }: { server: string }) {
+  const disk = useServerDisk(server);
+  const d = disk.data;
+  if (!d) return <>{disk.isPending ? "reading the disk" : "not read"}</>;
+  return (
+    <>
+      {size(d.used_bytes)} of {size(d.total_bytes)}
+      {d.reclaimable_bytes > 0 && (
+        <span className="text-warn">
+          {" "}
+          · {size(d.reclaimable_bytes)} reclaimable
+        </span>
+      )}
+    </>
+  );
+}
+
+/**
+ * Where a server's disk goes (ADR 0035), the Disk row opened: one bar
+ * split by group, a table of the groups that open to show their parts,
+ * and when it was read. Prune is on the row (PruneAction). Read when the
+ * page opens, not with it: the read takes seconds.
  */
 export function DiskBreakdown({ server }: { server: string }) {
   const disk = useServerDisk(server);
-  const prune = usePruneServer(server);
   const [open, setOpen] = useState<ReadonlySet<Group>>(() => new Set());
-  const [confirming, setConfirming] = useState(false);
   const d = disk.data;
   const byGroup = useMemo(
     () =>
@@ -50,70 +120,23 @@ export function DiskBreakdown({ server }: { server: string }) {
   const total = d?.total_bytes ?? 0;
   const used = d?.used_bytes ?? 0;
   const share = (n: number) => (total ? (100 * n) / total : 0);
-  const cli = `dock server prune ${server}`;
-  const done = prune.data;
-  const actions = d && d.reclaimable_bytes > 0 && (
-    <span className="flex items-center gap-2">
-      {confirming ? (
-        <>
-          <Act
-            small
-            danger
-            cli={cli}
-            disabled={prune.isPending}
-            onClick={() =>
-              prune.mutate(undefined, { onSettled: () => setConfirming(false) })
-            }
-          >
-            {prune.isPending
-              ? "Pruning…"
-              : `Prune ${size(d.reclaimable_bytes)} now`}
-          </Act>
-          <Button small onClick={() => setConfirming(false)}>
-            Cancel
-          </Button>
-        </>
-      ) : (
-        <Button small onClick={() => setConfirming(true)}>
-          Prune {size(d.reclaimable_bytes)}
-        </Button>
-      )}
-    </span>
-  );
 
   return (
-    <section aria-labelledby="disk">
-      <SectionHead
-        id="disk"
-        aside={
-          d
-            ? `${size(used)} of ${size(total)} used · read ${ago(d.read_at)}${d.refreshing ? ", reading again" : ""}`
-            : undefined
-        }
-        right={actions}
-      >
-        Disk
-      </SectionHead>
+    <div>
+      {d && (
+        <p className="mb-2 text-xs text-mut">
+          Read {ago(d.read_at)}
+          {d.refreshing ? ", reading again" : ""}.
+        </p>
+      )}
       {disk.isPending && (
         <p className="text-mut">
           Reading the disk: Docker sizes every image and volume, which takes a
           few seconds.
         </p>
       )}
-      <ErrorText error={disk.error ?? prune.error} />
+      <ErrorText error={disk.error} />
       {d?.error && <p className="mb-2 text-fail">{d.error}</p>}
-      {done && (
-        <p className="mb-2 text-mut">
-          {done.image_bytes + done.cache_bytes > 0
-            ? `Freed ${size(done.image_bytes + done.cache_bytes)}: ${plural(done.images_removed, "image")} (${size(done.image_bytes)}), ${size(done.cache_bytes)} of build cache.`
-            : "Nothing was freed: no image or cache could go."}
-          {done.error && (
-            <span className="block text-fail">
-              Part of it failed: {done.error}
-            </span>
-          )}
-        </p>
-      )}
       {d && (
         <>
           <div className="flex h-2.5 overflow-hidden rounded-tag bg-line">
@@ -213,7 +236,7 @@ export function DiskBreakdown({ server }: { server: string }) {
           </Panel>
         </>
       )}
-    </section>
+    </div>
   );
 }
 

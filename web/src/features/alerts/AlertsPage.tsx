@@ -3,21 +3,20 @@ import { createContext, useContext, useState } from "react";
 import { api, list } from "../../api/client";
 import { useIsAdmin } from "../../data/queries";
 import { ErrorBlock } from "../../ui/ErrorBlock";
-import { ago, since } from "../../ui/format";
+import { since } from "../../ui/format";
 import {
   Act,
   Button,
   Confirm,
   CopyButton,
   ErrorText,
-  Glyph,
   Page,
   PageBar,
   Panel,
   SectionHead,
 } from "../../ui/kit";
-import { toneText } from "../../ui/status";
 import { useValidation } from "../create/form";
+import { AlertTable } from "./AlertTable";
 import {
   type Alert,
   type AlertChannel,
@@ -30,14 +29,13 @@ import {
   useCreateAlertChannel,
   useOpenAlerts,
   useRemoveAlertChannel,
-  useResolveAlert,
   useSetVulnAlerts,
   useTestAlertChannel,
   useVulnAlerts,
   type VulnAlerts,
 } from "./data";
 import { Heartbeat } from "./Heartbeat";
-import { AlertLink, alertText } from "./source";
+import { groupAlerts } from "./summary";
 
 // Alerts (ADR 0062): open alerts (worst first), recent history, and the
 // channels alerts are sent to, for both scopes: an org's, for its members
@@ -85,21 +83,27 @@ export function AlertsPage({ scope }: { scope: AlertScope }) {
 }
 
 /**
- * Open alerts (worst first) and the last resolved ones. `skip` leaves
- * some out: the Inbox's access request alerts, which its own section
- * lists for admins.
+ * Open alerts, worst first, one row each, except error alerts about one
+ * site or service, which are one row ("3 new errors on shop.example.com");
+ * each row has the button that leads to the fix. Resolved ones fold under
+ * a line that shows them, only when there are some. `skip` leaves some
+ * out: the Inbox's access request alerts, which its own section lists for
+ * admins. `title` heads the open ones ("Alerts" in the Inbox).
  */
 export function AlertLists({
   scope,
   skip,
+  title = "Open",
 }: {
   scope: AlertScope;
   skip?: (a: Alert) => boolean;
+  title?: string;
 }) {
   const kept = (alerts: Alert[]) =>
     skip ? alerts.filter((a) => !skip(a)) : alerts;
   const open = kept(useOpenAlerts(scope));
   const recent = useAllAlerts(scope);
+  const [shown, setShown] = useState(false);
   const [more, setMore] = useState(false);
   const older = useOlderAlerts(scope, more);
   const resolved = kept(older.data ?? recent)
@@ -109,45 +113,56 @@ export function AlertLists({
     <Scope.Provider value={scope}>
       <section aria-labelledby="open">
         <SectionHead id="open" aside={open.length > 0 && open.length}>
-          Open
+          {title}
         </SectionHead>
         {open.length > 0 ? (
-          <AlertTable alerts={open} resolvable />
+          <AlertTable scope={scope} groups={groupAlerts(open)} resolvable />
         ) : (
-          <p className="py-2 text-mut">Nothing open.</p>
+          <p className="py-2 text-mut">No open alerts.</p>
         )}
       </section>
-      <section aria-labelledby="history">
-        <SectionHead
-          id="history"
-          right={
-            !more &&
-            resolved.length === HISTORY && (
-              <Act
-                small
-                cli={`dock alerts --all --limit ${MAX}${flag(scope)}`}
-                onClick={() => setMore(true)}
-              >
-                Show up to {MAX}
-              </Act>
-            )
-          }
-        >
-          {/* "Last 50" only once the list is cut there. */}
-          {more || resolved.length === HISTORY
-            ? `Last ${more ? MAX : HISTORY} resolved`
-            : "Resolved"}
-        </SectionHead>
-        {resolved.length > 0 ? (
-          <AlertTable alerts={resolved} />
-        ) : (
-          <p className="py-2 text-mut">None yet.</p>
-        )}
-        {older.error && (
-          <ErrorBlock error={older.error} onRetry={() => older.refetch()} />
-        )}
-      </section>
-      <p className="font-mono text-2xs text-mut">dock alerts{flag(scope)}</p>
+      {resolved.length > 0 && (
+        <section aria-labelledby="history">
+          <SectionHead
+            id="history"
+            aside={!shown && resolved.length}
+            right={
+              <>
+                {shown && !more && resolved.length === HISTORY && (
+                  <Act
+                    small
+                    cli={`dock alerts --all --limit ${MAX}${flag(scope)}`}
+                    onClick={() => setMore(true)}
+                  >
+                    Show up to {MAX}
+                  </Act>
+                )}
+                <Button
+                  small
+                  aria-expanded={shown}
+                  onClick={() => setShown(!shown)}
+                >
+                  {shown ? "Hide" : "Show"}
+                </Button>
+              </>
+            }
+          >
+            {/* "Last 50" only once the list is cut there. */}
+            {shown && (more || resolved.length === HISTORY)
+              ? `Last ${more ? MAX : HISTORY} resolved`
+              : "Resolved"}
+          </SectionHead>
+          {shown && (
+            <AlertTable
+              scope={scope}
+              groups={resolved.map((a) => ({ lead: a, alerts: [a] }))}
+            />
+          )}
+          {older.error && (
+            <ErrorBlock error={older.error} onRetry={() => older.refetch()} />
+          )}
+        </section>
+      )}
     </Scope.Provider>
   );
 }
@@ -237,98 +252,6 @@ function VulnerabilityAlerts({ admin }: { admin: boolean }) {
         on the Images page.
       </p>
     </section>
-  );
-}
-
-const severityTone = { critical: "fail", warning: "warn" } as const;
-
-/** Where an alert is: project/environment/service, or a server. */
-function where(a: Alert) {
-  if (a.project && a.environment && a.service) {
-    return `${a.project}/${a.environment}/${a.service}`;
-  }
-  return a.server ?? a.project ?? "";
-}
-
-function AlertTable({
-  alerts,
-  resolvable,
-}: {
-  alerts: Alert[];
-  resolvable?: boolean;
-}) {
-  return (
-    <Panel>
-      <table>
-        <thead>
-          <tr>
-            <th>Severity</th>
-            <th>Alert</th>
-            <th className="pr-7">Where</th>
-            <th>{resolvable ? "Open for" : "Resolved"}</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {alerts.map((a) => (
-            <AlertRow key={a.id} alert={a} resolvable={resolvable} />
-          ))}
-        </tbody>
-      </table>
-    </Panel>
-  );
-}
-
-function AlertRow({
-  alert: a,
-  resolvable,
-}: {
-  alert: Alert;
-  resolvable?: boolean;
-}) {
-  const resolve = useResolveAlert();
-  const scope = useContext(Scope);
-  const tone = a.resolved_at ? "text-mut" : toneText[severityTone[a.severity]];
-  const { text, cli } = alertText(a);
-  return (
-    <tr>
-      <td className={`py-2 whitespace-nowrap ${tone}`}>
-        <Glyph char={a.severity === "critical" ? "✕" : "▲"} /> {a.severity}
-      </td>
-      <td className="w-full min-w-[240px] py-2 whitespace-normal">
-        {a.title}
-        {a.count > 1 && <span className="text-mut"> {a.count} times</span>}
-        {text && <span className="block text-mut">{text}</span>}
-        {/* Settling (ADR 0097): the condition cleared, and the alert
-            resolves once it has stayed clear. */}
-        {a.cleared_at && !a.resolved_at && (
-          <span className="block text-ok">
-            Clear since {ago(a.cleared_at)}, resolves once it stays clear
-          </span>
-        )}
-      </td>
-      <td className="py-2 pr-7 font-mono">{where(a)}</td>
-      <td className="py-2 whitespace-nowrap text-mut">
-        {a.resolved_at ? `${since(a.resolved_at)} ago` : since(a.opened_at)}
-      </td>
-      <td className="py-1.5 text-right">
-        <span className="inline-flex items-center gap-2 whitespace-nowrap">
-          <ErrorText error={resolve.error} />
-          <AlertLink alert={a} className="btn sm no-underline" title={cli} />
-          {resolvable && (
-            <Act
-              small
-              cli={`dock alerts resolve ${a.id}${flag(scope)}`}
-              disabled={resolve.isPending}
-              title="Close it by hand; it opens again if the condition is still there"
-              onClick={() => resolve.mutate(a.id)}
-            >
-              Resolve
-            </Act>
-          )}
-        </span>
-      </td>
-    </tr>
   );
 }
 

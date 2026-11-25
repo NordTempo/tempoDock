@@ -586,6 +586,13 @@ push to the same tag changes nothing.
   involved, so promoting from the homelab works while it is off, as long
   as the image went through the [registry](install.md#registry).
 
+In the UI, the Projects page shows each project with something going on
+as a grid of its services by environment, and a service's Overview shows
+the same row as a strip: between two environments it says whether they
+run the same image, which settings differ, or that the image failed in
+the later one, and offers **Promote** where the earlier one is ahead.
+Promote opens the project's Compare page with the promote panel.
+
 ## Clone an environment
 
 ```sh
@@ -914,7 +921,7 @@ the audit log) says what was left:
 ## Deleting an archived project
 
 An archived project keeps its volumes, history and name until it is
-deleted. On its page, or in Organization settings, General, choose
+deleted. On its page, or in Settings › Archived projects, choose
 **Delete permanently** and type its name, or run:
 
 ```sh
@@ -941,7 +948,7 @@ dock project rename shop storefront
 
 This needs admin access to the whole project. Use the same lowercase name rules
 as project creation. An archived project can be renamed too (its page, or
-Organization settings), which frees its name for a new project.
+Settings › Archived projects), which frees its name for a new project.
 
 The project's ID, services, containers, volumes, domains, tokens and release
 history stay unchanged. Renaming does not redeploy anything, even if a deployment

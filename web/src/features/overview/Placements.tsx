@@ -8,13 +8,14 @@ import {
   useServers,
 } from "../../data/queries";
 import type { EnvironmentKind } from "../../data/types";
-import { Button, ErrorText, Panel, SectionHead } from "../../ui/kit";
+import { Button, ErrorText, Panel } from "../../ui/kit";
 import { kindLabel } from "../../ui/status";
 
 const kinds: EnvironmentKind[] = ["production", "non_production"];
 
 /**
- * Which server each kind of the project's environments lives on. A kind
+ * Which server each kind of the project's environments lives on, under
+ * the environments' own rows in Settings › Placement (operators). A kind
  * with nothing placed yet goes to the emptiest eligible server on its
  * first environment; operators can pin it before that.
  */
@@ -23,8 +24,10 @@ export function Placements({ project }: { project: string }) {
   const { environments } = useProjectOverview(project);
   const operator = useSeesPlatform();
   return (
-    <section aria-labelledby="placement" className="min-w-0">
-      <SectionHead id="placement">Placement</SectionHead>
+    <section aria-labelledby="placement-kinds" className="mt-4 min-w-0">
+      <h3 id="placement-kinds" className="mb-1.5 font-semibold">
+        Where each kind of environment goes
+      </h3>
       <Panel>
         <table>
           <thead>

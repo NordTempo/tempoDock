@@ -71,10 +71,13 @@ function feedEntry(item: FeedItem): Entry {
 export function Activity({
   project,
   environment,
+  limit = 12,
 }: {
   project: string;
   /** Only what happened in this environment. */
   environment?: string;
+  /** How many entries at most; the full log is a link away. */
+  limit?: number;
 }) {
   const org = useOrg();
   const prefix = `${project}/${environment}`;
@@ -94,7 +97,7 @@ export function Activity({
     ...audit.map((e) => auditEntry(e, project)),
   ]
     .sort((a, b) => Date.parse(b.time) - Date.parse(a.time))
-    .slice(0, 12);
+    .slice(0, limit);
 
   return (
     <section aria-labelledby="activity" className="min-w-0">

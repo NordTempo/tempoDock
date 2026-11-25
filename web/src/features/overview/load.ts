@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { queries } from "../../data/queries";
+import type { ProjectOverview } from "../../data/types";
 
 // Kept apart from ProjectView: route loaders aren't code-split, so what
 // they import lands in the first page load.
@@ -25,4 +26,17 @@ export async function loadProject(queryClient: QueryClient, project: string) {
       ),
   );
   return overview;
+}
+
+/**
+ * The environment a project's page opens on when its address names none:
+ * the first production one, else the first that isn't a preview.
+ */
+export function defaultEnvironment(overview: ProjectOverview) {
+  const envs = overview.environments;
+  return (
+    envs.find((e) => e.environment.kind === "production") ??
+    envs.find((e) => !e.environment.preview) ??
+    envs[0]
+  )?.environment.name;
 }

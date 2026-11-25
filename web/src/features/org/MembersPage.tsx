@@ -12,10 +12,16 @@ import {
   Button,
   Confirm,
   ErrorText,
+  Menu,
+  MoreItem,
+  MoreMenu,
+  MoreSeparator,
+  menuItem,
   Page,
   Panel,
   StateText,
 } from "../../ui/kit";
+import { notify } from "../../ui/notice";
 import { useGroupMember, useGroups } from "../access/data";
 import { PersonAccess } from "../access/PersonAccess";
 import { ShadowNote } from "../access/ShadowNote";
@@ -93,11 +99,28 @@ function Members() {
     <>
       <OrgSettingsBar
         actions={
-          !inviting && (
-            <Button primary onClick={() => setInviting(true)}>
-              Invite people <kbd>N</kbd>
-            </Button>
-          )
+          <>
+            {!inviting && (
+              <Button primary onClick={() => setInviting(true)}>
+                Invite people <kbd>N</kbd>
+              </Button>
+            )}
+            <MoreMenu>
+              {(close) => (
+                <MoreItem
+                  close={close}
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(
+                      cliLines(enforce).join("\n"),
+                    );
+                    notify("Copied the dock commands for members");
+                  }}
+                >
+                  Copy CLI commands
+                </MoreItem>
+              )}
+            </MoreMenu>
+          </>
         }
       />
       <Page>
@@ -190,29 +213,6 @@ function Members() {
                   </tbody>
                 </table>
               </Panel>
-              <p className="text-xs text-mut">
-                Removing someone takes them out of this organization; their
-                account stays. Leave the organization from General.
-              </p>
-              {/* One command a line, so where one ends is plain. */}
-              <p className="flex flex-col gap-0.5 font-mono text-2xs text-mut">
-                {(enforce
-                  ? [
-                      "dock group add|remove <group> <email>",
-                      "dock can <email>",
-                      "dock org member remove <email>",
-                    ]
-                  : [
-                      "dock org member role <email> read|deploy|admin",
-                      "dock group add|remove <group> <email>",
-                      "dock can <email>",
-                    ]
-                ).map((c) => (
-                  <span key={c} className="whitespace-nowrap">
-                    {c}
-                  </span>
-                ))}
-              </p>
             </div>
             {person ? (
               <Suspense fallback={<p className="text-faint">Loading.</p>}>
@@ -231,6 +231,25 @@ function Members() {
     </>
   );
 }
+
+/**
+ * The `dock` commands for this page, one a line, for the header menu's
+ * "Copy CLI commands": under enforce groups decide, so there is no role
+ * command (ADR 0080).
+ */
+const cliLines = (enforce: boolean) =>
+  enforce
+    ? [
+        "dock group add|remove <group> <email>",
+        "dock can <email>",
+        "dock org member remove <email>",
+      ]
+    : [
+        "dock org member role <email> read|deploy|admin",
+        "dock group add|remove <group> <email>",
+        "dock can <email>",
+        "dock org member remove <email>",
+      ];
 
 /** What each role can do, beside the members table. */
 function Roles() {
@@ -447,7 +466,6 @@ function MemberRow({
   const { id, email, name, role } = member;
   const setRole = useSetMemberRole();
   const membership = useGroupMember();
-  const others = allGroups.filter((g) => !groups.includes(g));
   const remove = useRemoveMember();
   const [asking, setAsking] = useState(false);
   const access = signedIn(member);
@@ -489,48 +507,16 @@ function MemberRow({
           )}
         </td>
       )}
-      <td className="min-w-[150px] py-2 @min-[1000px]:min-w-[240px]">
-        <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-          {groups.map((g) => (
-            <span key={g} className="whitespace-nowrap">
-              {g}
-              <button
-                type="button"
-                className="-my-1 inline-grid min-h-[24px] min-w-[24px] place-items-center text-mut hover:text-fg"
-                aria-label={`Take ${email} out of ${g}`}
-                disabled={membership.isPending}
-                onClick={() =>
-                  membership.mutate({ group: g, member: email, add: false })
-                }
-              >
-                ×
-              </button>
-            </span>
-          ))}
-          {others.length > 0 && (
-            <select
-              aria-label={`Add ${email} to a group`}
-              className="cursor-pointer appearance-none border-0 bg-transparent bg-none p-0 text-mut hover:text-fg"
-              value=""
-              disabled={membership.isPending}
-              onChange={(e) =>
-                e.target.value &&
-                membership.mutate({
-                  group: e.target.value,
-                  member: email,
-                  add: true,
-                })
-              }
-            >
-              <option value="">+ group</option>
-              {others.map((g) => (
-                <option key={g} value={g}>
-                  {g}
-                </option>
-              ))}
-            </select>
-          )}
-        </span>
+      <td className="min-w-[150px] py-1.5 @min-[1000px]:min-w-[240px]">
+        <GroupsField
+          email={email}
+          groups={groups}
+          allGroups={allGroups}
+          pending={membership.isPending}
+          onToggle={(group, add) =>
+            membership.mutate({ group, member: email, add })
+          }
+        />
         <ErrorText error={membership.error} />
       </td>
       <td className="py-2">
@@ -550,9 +536,18 @@ function MemberRow({
       </td>
       <td className="w-full py-1.5 text-right">
         {!you && (
-          <Button danger small onClick={() => setAsking(true)}>
-            Remove
-          </Button>
+          <MoreMenu label={`More for ${email}`}>
+            {(close) => (
+              <MoreItem
+                close={close}
+                danger
+                cli={`dock org member remove ${email}`}
+                onClick={() => setAsking(true)}
+              >
+                Remove from the organization…
+              </MoreItem>
+            )}
+          </MoreMenu>
         )}
         {/* The modal inherits the cell's alignment and nowrap. */}
         <div className="contents text-left whitespace-normal">
@@ -579,6 +574,66 @@ function MemberRow({
   );
 }
 
+/**
+ * A member's groups as one field with a caret: the names, or "No group".
+ * It opens a menu of the org's groups with a check on theirs; picking one
+ * adds or takes them out (`dock group add|remove`). Looks like a field so
+ * it reads as editable.
+ */
+function GroupsField({
+  email,
+  groups,
+  allGroups,
+  pending,
+  onToggle,
+}: {
+  email: string;
+  groups: string[];
+  allGroups: string[];
+  pending: boolean;
+  onToggle: (group: string, add: boolean) => void;
+}) {
+  if (allGroups.length === 0) return <span className="text-mut">none</span>;
+  return (
+    <Menu
+      label={`Groups of ${email}`}
+      button={
+        <span className="field inline-flex max-w-[280px] items-center gap-2 py-0.5 text-left">
+          <span className={`truncate ${groups.length ? "" : "text-mut"}`}>
+            {groups.length ? groups.join(", ") : "No group"}
+          </span>
+          <span aria-hidden className="ml-auto text-mut">
+            ▾
+          </span>
+        </span>
+      }
+    >
+      {() =>
+        allGroups.map((g) => {
+          const member = groups.includes(g);
+          return (
+            <button
+              key={g}
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={member}
+              disabled={pending}
+              title={`dock group ${member ? "remove" : "add"} ${g} ${email}`}
+              className={menuItem}
+              onClick={() => onToggle(g, !member)}
+            >
+              <span aria-hidden className="w-3 text-ok">
+                {member ? "✓" : ""}
+              </span>
+              {g}
+            </button>
+          );
+        })
+      }
+    </Menu>
+  );
+}
+
 /** How an invite's latest mail went, after its state. */
 function MailNote({ mail }: { mail: Invite["mail"] }) {
   if (!mail) return null;
@@ -599,8 +654,9 @@ function MailNote({ mail }: { mail: Invite["mail"] }) {
 }
 
 /**
- * An open invite. New link revokes it and invites them again, for a link
- * that was lost (it is shown only once); `onLink` shows the new one.
+ * An open invite. Its "···" holds New link (revokes it and invites them
+ * again, for a link that was lost: it is shown only once; `onLink` shows
+ * the new one) and Revoke.
  */
 function InviteRow({
   invite,
@@ -651,20 +707,25 @@ function InviteRow({
       </td>
       <td className="@max-[900px]:hidden" />
       <td className="w-full py-1.5 text-right">
-        <span className="inline-flex flex-wrap justify-end gap-1.5">
-          <Button small onClick={() => setRenewing(true)}>
-            New link
-          </Button>
-          <Act
-            danger
-            small
-            cli={`dock org invites revoke ${id}`}
-            disabled={revoke.isPending}
-            onClick={() => setRevoking(true)}
-          >
-            Revoke
-          </Act>
-        </span>
+        <MoreMenu label={`More for the invite to ${email}`}>
+          {(close) => (
+            <>
+              <MoreItem close={close} onClick={() => setRenewing(true)}>
+                New link…
+              </MoreItem>
+              <MoreSeparator />
+              <MoreItem
+                close={close}
+                danger
+                cli={`dock org invites revoke ${id}`}
+                disabled={revoke.isPending}
+                onClick={() => setRevoking(true)}
+              >
+                Revoke invite…
+              </MoreItem>
+            </>
+          )}
+        </MoreMenu>
         <div className="contents text-left whitespace-normal">
           {revoking && (
             <Confirm

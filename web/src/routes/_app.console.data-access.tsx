@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { ConsoleTabs } from "../features/console/ConsoleTabs";
 import {
   PlatformPolicyPage,
   platformPolicyQuery,
@@ -9,5 +10,14 @@ import {
 export const Route = createFileRoute("/_app/console/data-access")({
   loader: ({ context: { queryClient } }) =>
     queryClient.ensureQueryData(platformPolicyQuery()),
-  component: PlatformPolicyPage,
+  component: Tabbed,
 });
+
+/** The page under its sidebar entry's tab row (ConsoleTabs). */
+function Tabbed() {
+  return (
+    <ConsoleTabs>
+      <PlatformPolicyPage />
+    </ConsoleTabs>
+  );
+}

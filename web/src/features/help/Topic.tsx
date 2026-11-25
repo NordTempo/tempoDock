@@ -151,14 +151,19 @@ function PlaceLink({
   if ("s" in at) {
     const { project, environment, service } = here;
     if (!project || !environment || !service) return null;
-    const place = servicePlaces[at.s];
+    const place: { to: string; label: string; hash?: string } =
+      servicePlaces[at.s];
     const params = { org, project, environment, service };
-    if (matchRoute({ to: place.to, params })) return null;
+    // A section's link stays on its own page: it scrolls there.
+    if (!place.hash && matchRoute({ to: servicePlaces[at.s].to, params }))
+      return null;
     return (
       <button
         type="button"
         className={className}
-        onClick={() => go(navigate({ to: place.to, params }))}
+        onClick={() =>
+          go(navigate({ to: servicePlaces[at.s].to, params, hash: place.hash }))
+        }
       >
         {place.label}
       </button>
@@ -167,13 +172,18 @@ function PlaceLink({
   if ("p" in at) {
     const { project } = here;
     if (!project) return null;
-    const place = projectPlaces[at.p];
-    if (matchRoute({ to: place.to, params: { org, project } })) return null;
+    const place: { to: string; label: string; hash?: string } =
+      projectPlaces[at.p];
+    const to = projectPlaces[at.p].to;
+    if (!place.hash && matchRoute({ to, params: { org, project } }))
+      return null;
     return (
       <button
         type="button"
         className={className}
-        onClick={() => go(navigate({ to: place.to, params: { org, project } }))}
+        onClick={() =>
+          go(navigate({ to, params: { org, project }, hash: place.hash }))
+        }
       >
         {place.label}
       </button>

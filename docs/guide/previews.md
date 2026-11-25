@@ -164,7 +164,7 @@ keeps it awake. Uptime checks pause while it sleeps and never wake it.
   the previews cloned from staging, open ones included; `--sleep-after
   off` keeps them up.
 - Other non-production environments can sleep too: "Sleep after…" in the
-  environment's More menu, or `dock env sleep-after staging 2h`.
+  project page's `···` menu, or `dock env sleep-after staging 2h`.
   Production never sleeps.
 
 Sleeping keeps every container, so a preview comes back as it was, except

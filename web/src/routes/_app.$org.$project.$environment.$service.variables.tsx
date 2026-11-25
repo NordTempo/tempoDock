@@ -2,9 +2,10 @@ import { createFileRoute } from "@tanstack/react-router";
 import { envPath, queries } from "../data/queries";
 import { VariablesEditor } from "../features/variables/VariablesEditor";
 
-// A service's Variables tab: what it sees at runtime (shared lines and its
-// own), edited in place under the service's header. The environment page
-// (/shop/production) has the same editor for the shared lines.
+// A service's Variables tab: what it sees at runtime, grouped (its own,
+// edited here; the environment's shared lines and the organization's,
+// with where they are edited). The project's Settings edit the shared
+// lines. It lays out its own page (the service layout's ownLayout).
 export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/variables",
 )({

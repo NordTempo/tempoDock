@@ -1,7 +1,7 @@
 import { Fragment, useMemo, useState } from "react";
 import type { MemoryPart, ServerUsage } from "../../data/types";
 import { pct, plural, size } from "../../ui/format";
-import { Panel, SectionHead } from "../../ui/kit";
+import { Panel } from "../../ui/kit";
 
 type Group = MemoryPart["group"];
 
@@ -21,8 +21,9 @@ const groups: { group: Group; label: string; dot: string; title?: string }[] = [
 
 /**
  * Where a server's used memory goes: one bar split by group, and a table
- * of the groups that open to show their parts. Hidden until the server
- * reports a breakdown (cgroup v2, a dock that sends one).
+ * of the groups that open to show their parts (the server page's Memory
+ * row, opened). Nothing until the server reports a breakdown (cgroup v2,
+ * a dock that sends one).
  */
 export function MemoryBreakdown({ usage }: { usage?: ServerUsage }) {
   const [open, setOpen] = useState<ReadonlySet<Group>>(() => new Set());
@@ -51,13 +52,7 @@ export function MemoryBreakdown({ usage }: { usage?: ServerUsage }) {
     });
 
   return (
-    <section aria-labelledby="memory">
-      <SectionHead
-        id="memory"
-        aside={total ? `${size(used)} of ${size(total)} used` : undefined}
-      >
-        Memory
-      </SectionHead>
+    <div>
       <div className="flex h-2.5 overflow-hidden rounded-tag bg-line">
         {byGroup.map((g) => (
           <i
@@ -142,7 +137,7 @@ export function MemoryBreakdown({ usage }: { usage?: ServerUsage }) {
           </tbody>
         </table>
       </Panel>
-    </section>
+    </div>
   );
 }
 

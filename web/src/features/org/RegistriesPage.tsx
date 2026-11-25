@@ -3,7 +3,16 @@ import { useRef, useState } from "react";
 import { useIsAdmin } from "../../data/queries";
 import { useShortcuts } from "../../shell/keys";
 import { since } from "../../ui/format";
-import { Act, Button, Confirm, ErrorText, Page, Panel } from "../../ui/kit";
+import {
+  Act,
+  Button,
+  Confirm,
+  ErrorText,
+  MoreItem,
+  MoreMenu,
+  Page,
+  Panel,
+} from "../../ui/kit";
 import { useValidation } from "../create/form";
 import {
   orgQueries,
@@ -113,6 +122,10 @@ function Registries() {
   );
 }
 
+/**
+ * One registry login: Replace on the row (the usual change, a new
+ * password), Remove in its "···" menu since it breaks deploys.
+ */
 function CredentialRow({
   host,
   username,
@@ -140,15 +153,19 @@ function CredentialRow({
           <Button small onClick={onReplace}>
             Replace
           </Button>
-          <Act
-            danger
-            small
-            cli={`dock registry logout ${host}`}
-            disabled={remove.isPending}
-            onClick={() => setAsking(true)}
-          >
-            Remove
-          </Act>
+          <MoreMenu label={`More for ${host}`}>
+            {(close) => (
+              <MoreItem
+                close={close}
+                danger
+                cli={`dock registry logout ${host}`}
+                disabled={remove.isPending}
+                onClick={() => setAsking(true)}
+              >
+                Remove login…
+              </MoreItem>
+            )}
+          </MoreMenu>
         </span>
         {asking && (
           <Confirm

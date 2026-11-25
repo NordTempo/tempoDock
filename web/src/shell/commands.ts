@@ -11,6 +11,7 @@ import {
   useServersIfOperator,
   useSession,
 } from "../data/queries";
+import { type ConsolePage, consoleNav } from "../features/console/nav";
 import {
   canCreateEnvironment,
   canCreateProject,
@@ -19,9 +20,11 @@ import { openCreate } from "../features/create/open";
 import { openDeploy } from "../features/deploy/start";
 import { openHelp } from "../features/help/open";
 import { requestLock } from "../features/overview/lockRequest";
+import { projectSettingSections } from "../features/overview/sections";
 import { promoteCli, promotionPairs } from "../features/promote/plan";
 import { rollbackTarget } from "../features/service/releases";
 import { tabsFor } from "../features/service/tabs";
+import { serviceSettingSections } from "../features/settings/sections";
 import { serviceState, type Tone } from "../ui/status";
 import { openConfirm } from "./confirmHost";
 import { useCurrentContext, useOrg } from "./location";
@@ -29,7 +32,11 @@ import { useShellMode } from "./Sidebar";
 
 export type Command = {
   id: string;
-  group: "Actions" | "Go to";
+  /**
+   * Actions change something; Settings are the sections of a Settings
+   * page, found by what they hold ("domain", "backup"); Go to opens a page.
+   */
+  group: "Actions" | "Settings" | "Go to";
   /** Plain text, matched against the query. */
   label: string;
   /** A part of the label shown bold, usually the service name. */
@@ -46,10 +53,12 @@ export type Command = {
 };
 
 /**
- * Every palette command, built from the project tree and current location.
- * Rollback commands need release history, which is fetched only while
- * `withHistory` (the palette open); until then
- * only histories already cached count.
+ * Every palette command, built from the project tree and current location:
+ * actions, every section of the Settings pages in reach (the current
+ * project's services and every project, the organization's, the console's
+ * for operators) and pages to go to. Rollback commands need release
+ * history, which is fetched only while `withHistory` (the palette open);
+ * until then only histories already cached count.
  */
 export function useCommands({
   withHistory,
@@ -125,6 +134,24 @@ export function useCommands({
       run: () =>
         navigate({ to: "/$org/$project/settings", params: { org, project } }),
     });
+    // Each section of the project's Settings tab, found by what it holds.
+    for (const section of projectSettingSections) {
+      add({
+        id: `setting:${project}:${section.id}`,
+        group: "Settings",
+        label: `${section.label} · ${project}`,
+        strong: project,
+        keywords: `settings ${section.words.join(" ")}`,
+        cli: "",
+        weight: inProject ? 1 : -0.5,
+        run: () =>
+          navigate({
+            to: "/$org/$project/settings",
+            params: { org, project },
+            hash: section.id,
+          }),
+      });
+    }
     if (environments.length > 1) {
       add({
         id: `compare:${project}`,
@@ -233,8 +260,10 @@ export function useCommands({
         weight: (inProject ? 1 : 0) + (inEnv ? 1 : 0),
         run: () =>
           navigate({
-            to: "/$org/$project/settings/variables/$environment",
-            params: { org, project, environment },
+            to: "/$org/$project/settings",
+            params: { org, project },
+            search: { env: environment },
+            hash: "variables",
           }),
       });
 
@@ -341,6 +370,56 @@ export function useCommands({
             run: () => navigate({ to: tab.to, params: { org, ...params } }),
           });
         }
+        // The current project's services only: every section of every
+        // service in the organization would drown the rest.
+        if (!inProject) continue;
+        const settings = (hash: string) => () =>
+          navigate({
+            to: "/$org/$project/$environment/$service/settings",
+            params: { org, ...params },
+            hash,
+          });
+        for (const section of serviceSettingSections) {
+          if ("stateful" in section && !svc.service.stateful) continue;
+          add({
+            id: `setting:${id}:${section.id}`,
+            group: "Settings",
+            label: `${section.label} · ${service} ${where}`,
+            strong: service,
+            keywords: `settings ${section.words.join(" ")}`,
+            cli: "",
+            weight: weight - 1,
+            run: settings(section.id),
+          });
+        }
+        // What people look for by the task's name: both open the place
+        // where it's done (the Domains section, the Jobs tab's command).
+        if (mayDeploy) {
+          add({
+            id: `add-domain:${id}`,
+            group: "Actions",
+            label: `Add a domain to ${service} ${where}`,
+            strong: service,
+            keywords: "hostname dns",
+            cli: `dock domain add <hostname>${flags}`,
+            weight: weight - 1,
+            run: settings("domains"),
+          });
+          add({
+            id: `run:${id}`,
+            group: "Actions",
+            label: `Run a command in ${service} ${where}`,
+            strong: service,
+            keywords: "exec shell one-off migrate",
+            cli: `dock run ${service} -e ${environment}${pFlag} -- <command>`,
+            weight: weight - 1,
+            run: () =>
+              navigate({
+                to: "/$org/$project/$environment/$service/jobs",
+                params: { org, ...params },
+              }),
+          });
+        }
       }
     }
   }
@@ -356,65 +435,44 @@ export function useCommands({
     });
   }
 
-  // Operators reach the platform console's pages; everyone else the
-  // activity they may see. Admins reach their organization's members and
-  // tokens; everyone its general settings and variables.
-  const pages = [
-    ...(operator
-      ? ([
-          ["Platform console", "/console", ""],
-          ["Servers", "/console/servers", "dock server list"],
-          ["Registry", "/console/registry", "dock registry"],
-          ["Storage", "/console/storage", "dock storage"],
-          ["Backups", "/console/backups", "dock backup status"],
-          ["Users", "/console/users", "dock user list"],
-          ["Sign-in", "/console/sign-in", "dock sso list"],
-          ["Email", "/console/email", "dock email"],
-          ["Data access policy", "/console/data-access", "dock db policy show"],
-          ["Alerts", "/console/alerts", "dock alerts"],
-          ["Activity", "/console/audit", "dock audit"],
-          ["GitHub App", "/console/github", "dock github"],
-          ["Cloudflare", "/console/cloudflare", "dock cloudflare"],
-          ["Address", "/console/address", "dock address"],
-          ["Updates", "/console/updates", "dock update"],
-          ["Analytics store", "/console/analytics", "dock analytics"],
-        ] as const)
-      : []),
-    ["Account", "/account", "dock whoami"],
-  ] as const;
-  for (const [label, to, cli] of pages) {
-    add({
-      id: `go:${to}`,
-      group: "Go to",
-      label,
-      cli,
-      weight: 0,
-      run: () => navigate({ to }),
-    });
+  // Operators reach the platform console's pages (its sidebar's entries
+  // and the pages under them); everyone their account.
+  if (operator) {
+    for (const entry of consoleNav) {
+      for (const page of entry.pages) {
+        add({
+          id: `go:${page.to}`,
+          group: "Go to",
+          label:
+            page.to === "/console"
+              ? "Platform console"
+              : entry.pages.length > 1
+                ? `${page.label} · ${entry.label}`
+                : page.label,
+          keywords: `console platform ${entry.label}`,
+          cli: consoleCli[page.to] ?? "",
+          weight: 0,
+          run: () => navigate({ to: page.to }),
+        });
+      }
+    }
   }
+  add({
+    id: "go:/account",
+    group: "Go to",
+    label: "Account",
+    cli: "dock whoami",
+    weight: 0,
+    run: () => navigate({ to: "/account" }),
+  });
   const orgPages = [
-    ...(session?.scope === "admin"
-      ? ([
-          ["Members", "/$org/settings/members", "dock org members"],
-          ["Tokens", "/$org/settings/tokens", "dock token list"],
-          [
-            "Registry credentials",
-            "/$org/settings/registries",
-            "dock registry credentials",
-          ],
-        ] as const)
-      : []),
-    ["Overview", "/$org", "dock project list"],
+    ["Projects", "/$org", "dock project list"],
     ["Inbox", "/$org/inbox", "dock alerts"],
-    ["Alert settings", "/$org/settings/alerts", "dock alerts channel list"],
+    ["Errors", "/$org/errors", "dock errors"],
     ["Analytics", "/$org/analytics", "dock analytics sites"],
     ["Images", "/$org/images", "dock images"],
     ["Vulnerability ignores", "/$org/images/ignores", "dock vulns ignores"],
-    ["Organization variables", "/$org/settings/variables", "dock org env list"],
-    ["Organization settings", "/$org/settings/general", "dock org list"],
-    ...(operator
-      ? []
-      : ([["Activity", "/$org/settings/activity", "dock audit"]] as const)),
+    ["Status pages", "/$org/status-pages", "dock status-page list"],
   ] as const;
   for (const [label, to, cli] of orgPages) {
     add({
@@ -424,6 +482,23 @@ export function useCommands({
       cli,
       weight: 0,
       run: () => navigate({ to, params: { org } }),
+    });
+  }
+  // The organization's Settings sections, by what they hold; the ones
+  // only admins can use for admins.
+  const admin = session?.scope === "admin";
+  for (const s of orgSettingSections) {
+    if (s.admin && !admin) continue;
+    // Operators read the platform's activity on the console.
+    if (s.to === "/$org/settings/activity" && operator) continue;
+    add({
+      id: `go:${s.to}`,
+      group: "Settings",
+      label: `${s.label} · organization`,
+      keywords: `settings ${s.words}`,
+      cli: s.cli,
+      weight: 0,
+      run: () => navigate({ to: s.to, params: { org } }),
     });
   }
   // Server pages (statistics, placement) are in the console.
@@ -492,16 +567,160 @@ export function matchCommands(commands: Command[], query: string): Match[] {
   }
   scored.sort(
     (a, b) =>
-      groupOrder(a.command) - groupOrder(b.command) || b.score - a.score,
+      groupOrder[a.command.group] - groupOrder[b.command.group] ||
+      b.score - a.score,
   );
   const limit = words.length ? 6 : 4;
+  const of = (group: Command["group"]) =>
+    scored.filter((m) => m.command.group === group).slice(0, limit);
+  // Settings sections come up once something is typed: listed untyped,
+  // they would push out the places and actions people come for.
   return [
-    ...scored.filter((m) => m.command.group === "Actions").slice(0, limit),
-    ...scored.filter((m) => m.command.group === "Go to").slice(0, limit),
+    ...of("Actions"),
+    ...(words.length ? of("Settings") : []),
+    ...of("Go to"),
   ];
 }
 
-const groupOrder = (c: Command) => (c.group === "Actions" ? 0 : 1);
+/** The `dock` command of each console page, for the palette's hint. */
+const consoleCli: Partial<Record<ConsolePage["to"], string>> = {
+  "/console/servers": "dock server list",
+  "/console/registry": "dock registry",
+  "/console/storage": "dock storage",
+  "/console/backups": "dock backup status",
+  "/console/users": "dock user list",
+  "/console/sign-in": "dock sso list",
+  "/console/email": "dock email",
+  "/console/data-access": "dock db policy show",
+  "/console/alerts": "dock alerts --platform",
+  "/console/audit": "dock audit",
+  "/console/github": "dock github",
+  "/console/cloudflare": "dock cloudflare",
+  "/console/address": "dock address",
+  "/console/updates": "dock update",
+  "/console/analytics": "dock analytics",
+};
+
+const groupOrder: Record<Command["group"], number> = {
+  Actions: 0,
+  Settings: 1,
+  "Go to": 2,
+};
+
+/**
+ * The organization's Settings sections for search: where each is, what it
+ * holds (`words`), its CLI and whether only admins use it. The same
+ * sections as the Settings column (settingsGroups in
+ * features/org/SettingsBar.tsx), kept here as plain data so the shell's
+ * initial bundle doesn't take that page's components and queries.
+ */
+const orgSettingSections = [
+  {
+    to: "/$org/settings/general",
+    label: "General",
+    admin: false,
+    cli: "dock org list",
+    words: "name address two-factor sign-in lock new production",
+  },
+  {
+    to: "/$org/settings/variables",
+    label: "Variables",
+    admin: false,
+    cli: "dock org env list",
+    words: "organization variables shared secrets",
+  },
+  {
+    to: "/$org/settings/activity",
+    label: "Activity",
+    admin: false,
+    cli: "dock audit",
+    words: "audit log history who changed",
+  },
+  {
+    to: "/$org/settings/members",
+    label: "Members",
+    admin: true,
+    cli: "dock org members",
+    words: "people invite users remove",
+  },
+  {
+    to: "/$org/settings/groups",
+    label: "Groups",
+    admin: true,
+    cli: "dock group list",
+    words: "teams people",
+  },
+  {
+    to: "/$org/settings/roles",
+    label: "Roles",
+    admin: true,
+    cli: "dock role list",
+    words: "permissions access",
+  },
+  {
+    to: "/$org/settings/agents",
+    label: "Agent rules",
+    admin: true,
+    cli: "dock agent rules",
+    words: "agents mcp ai",
+  },
+  {
+    to: "/$org/settings/tokens",
+    label: "Tokens",
+    admin: true,
+    cli: "dock token list",
+    words: "api keys deploy token ci",
+  },
+  {
+    to: "/$org/settings/alerts",
+    label: "Alerts",
+    admin: false,
+    cli: "dock alerts channel list",
+    words: "notifications slack webhook email channels vulnerabilities",
+  },
+  {
+    to: "/$org/settings/github",
+    label: "GitHub",
+    admin: true,
+    cli: "dock github",
+    words: "repository git app install",
+  },
+  {
+    to: "/$org/settings/cloudflare",
+    label: "Cloudflare",
+    admin: true,
+    cli: "dock cloudflare",
+    words: "dns domains tunnel zone",
+  },
+  {
+    to: "/$org/settings/registries",
+    label: "Registries",
+    admin: true,
+    cli: "dock registry credentials",
+    words: "registry credentials docker images pull",
+  },
+  {
+    to: "/$org/settings/data-access",
+    label: "Data access",
+    admin: false,
+    cli: "dock db policy show",
+    words: "database policy data panel",
+  },
+  {
+    to: "/$org/settings/archived",
+    label: "Archived projects",
+    admin: false,
+    cli: "dock project list --all",
+    words: "archive restore delete old projects",
+  },
+  {
+    to: "/$org/settings/analytics",
+    label: "Analytics defaults",
+    admin: false,
+    cli: "dock analytics",
+    words: "consent privacy replays",
+  },
+] as const;
 
 const RECENT = "dock.recent";
 

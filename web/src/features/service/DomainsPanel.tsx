@@ -1,3 +1,5 @@
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { api, body } from "../../api/client";
 import {
@@ -6,21 +8,33 @@ import {
   useRemoveDomain,
 } from "../../data/mutations";
 import { domainNeedsAttention } from "../../data/problems";
-import { listenPort, servicePath, useService } from "../../data/queries";
+import {
+  listenPort,
+  servicePath,
+  useCanDeploy,
+  useService,
+} from "../../data/queries";
 import type { Domain, ServiceRef } from "../../data/types";
 import { useShortcuts } from "../../shell/keys";
-import { ago, since } from "../../ui/format";
+import { useOrg } from "../../shell/location";
+import { ago } from "../../ui/format";
 import {
   Act,
   Button,
   Confirm,
   CopyButton,
   ErrorText,
-  Panel,
+  MoreItem,
+  MoreMenu,
+  MoreSeparator,
+  Scroll,
   StateText,
 } from "../../ui/kit";
 import { notify } from "../../ui/notice";
+import { SettingsSection } from "../../ui/sections";
 import { domainState } from "../../ui/status";
+import { useDisableHostname, useEnableHostname } from "../analytics/data";
+import { sitesQuery } from "../analytics/loaders";
 import { AccessLine } from "./AccessLine";
 
 // Loads when it opens.
@@ -46,11 +60,15 @@ function addedNotice(d: Domain, service: string) {
 }
 
 /**
- * Add form, who can open the domains, a card per domain that needs a
- * human, and every domain. A domain added here is marked in the list; its
- * notice waits for Dock's first DNS check, so it says what the row says.
+ * Settings' Domains section: who can open them, then one table of the
+ * service's domains (where each goes and whether Dock Analytics counts
+ * its visits). A domain still waiting for DNS, verification or its
+ * certificate opens its records and "Check again" under its row. A domain
+ * added here is marked in the list; its notice waits for Dock's first DNS
+ * check, so it says what the row says.
  */
 export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const org = useOrg();
   const { service, domains } = useService(ref);
   const port = listenPort(service);
   const [added, setAdded] = useState<string | null>(null);
@@ -58,6 +76,17 @@ export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const [checking, setChecking] = useState<string | null>(null);
   const waiting = domains.filter(
     (d) => domainNeedsAttention(d) || d.verification || d.status === "added",
+  );
+  // Which hostnames Dock Analytics counts, and for which site.
+  const { data: sites } = useSuspenseQuery(sitesQuery(ref.project));
+  const counted = new Map(
+    sites
+      .filter((s) => !s.archived && s.environment === ref.environment)
+      .flatMap((s) =>
+        (s.hostnames ?? [])
+          .filter((h) => h.service === ref.service)
+          .map((h) => [h.hostname, s.name] as const),
+      ),
   );
   useEffect(() => {
     const d = checking && domains.find((x) => x.hostname === checking);
@@ -67,47 +96,48 @@ export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   }, [checking, domains, ref.service]);
 
   return (
-    <>
-      <AddDomain
-        serviceRef={ref}
-        hasGenerated={domains.some((d) => d.generated)}
-        onAdded={(d) => {
-          setAdded(d.hostname);
-          if (d.status === "added" && !d.dns && !d.verification)
-            setChecking(d.hostname);
-          else
-            notify(
-              addedNotice(d, ref.service),
-              d.status === "error" ? "fail" : "ok",
-            );
-        }}
-      />
-      <AccessLine serviceRef={ref} />
-      {waiting.map((d) => (
-        <DnsCard key={d.hostname} serviceRef={ref} domain={d} />
-      ))}
-      <section aria-labelledby="all-domains">
-        <h3 id="all-domains" className="sr-only">
-          All domains
-        </h3>
+    <SettingsSection
+      id="domains"
+      title="Domains"
+      actions={
+        <AddDomain
+          serviceRef={ref}
+          hasGenerated={domains.some((d) => d.generated)}
+          onAdded={(d) => {
+            setAdded(d.hostname);
+            if (d.status === "added" && !d.dns && !d.verification)
+              setChecking(d.hostname);
+            else
+              notify(
+                addedNotice(d, ref.service),
+                d.status === "error" ? "fail" : "ok",
+              );
+          }}
+        />
+      }
+    >
+      <div className="flex flex-col gap-3">
+        <AccessLine serviceRef={ref} />
         {domains.length === 0 ? (
           <p className="py-2 text-mut">
-            No domains. The service is reachable on the private network at{" "}
+            No domains. Other services reach it on the private network at{" "}
             <span className="font-mono text-fg">
               {service.name}:{port}
             </span>
             .
           </p>
         ) : (
-          <Panel>
+          <Scroll>
             <table>
               <thead>
                 <tr>
                   <th>Hostname</th>
                   <th>Status</th>
-                  <th>Detail</th>
-                  <th>Added</th>
-                  <th />
+                  <th>Goes to</th>
+                  <th>Visits</th>
+                  <th>
+                    <span className="sr-only">Actions</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -118,18 +148,33 @@ export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                     domain={d}
                     port={port}
                     fresh={d.hostname === added}
-                    inCard={waiting.includes(d)}
+                    waiting={waiting.includes(d)}
+                    site={counted.get(d.hostname)}
                   />
                 ))}
               </tbody>
             </table>
-          </Panel>
+          </Scroll>
         )}
-      </section>
-    </>
+        {counted.size > 0 && (
+          <p className="flex flex-wrap items-center gap-2 text-xs text-mut">
+            Counted pages load the script, in their {"<head>"}:
+            <code className="font-mono text-fg">{scriptTag}</code>
+            <CopyButton text={scriptTag} />
+            <Link to="/$org/analytics" params={{ org }} className="lnk ml-2">
+              Analytics
+            </Link>
+          </p>
+        )}
+      </div>
+    </SettingsSection>
   );
 }
 
+/** The script a counted hostname's pages load (ADR 0037). */
+const scriptTag = '<script src="/_dock/a/s.js" defer></script>';
+
+/** The section's Add domain (N), and Generate one while it has no generated domain. */
 function AddDomain({
   serviceRef: ref,
   hasGenerated,
@@ -144,11 +189,7 @@ function AddDomain({
   useShortcuts([{ key: "n", label: "add domain", run: () => setOpen(true) }]);
   const flags = `-s ${ref.service} -e ${ref.environment}`;
   return (
-    <div className="flex flex-wrap items-center gap-2.5">
-      {/* The section's heading, with its actions on the right (Settings, ADR 0076). */}
-      <h2 id="domains" className="mr-auto text-lg font-semibold">
-        Domains
-      </h2>
+    <>
       <Button onClick={() => setOpen(true)}>
         Add domain <kbd>N</kbd>
       </Button>
@@ -171,7 +212,7 @@ function AddDomain({
           />
         </Suspense>
       )}
-    </div>
+    </>
   );
 }
 
@@ -208,11 +249,12 @@ const useCheckDomain = () =>
   );
 
 /**
- * The DNS records to create (the TXT record that proves control first,
- * while the domain isn't verified), what the name resolves to now, and
- * progress.
+ * Under a domain's row while it isn't serving yet: the DNS records to
+ * create (the TXT record that proves control first, while the domain
+ * isn't verified), what the name resolves to now, progress, and Check
+ * again, which asks now instead of at the server's next retry.
  */
-function DnsCard({
+function DnsSteps({
   serviceRef: ref,
   domain,
 }: {
@@ -239,17 +281,39 @@ function DnsCard({
         : 3;
   return (
     <section
-      aria-labelledby={`dns-${domain.hostname}`}
-      className={`flex flex-col gap-3.5 border p-4 ${error ? "border-fail-edge" : "border-warn-edge"}`}
+      aria-label={`What ${domain.hostname} still needs`}
+      className="flex flex-col gap-3 py-1.5"
     >
       <div className="flex flex-wrap items-baseline gap-x-3.5 gap-y-1.5">
-        <h2
-          id={`dns-${domain.hostname}`}
-          className="font-mono text-md font-medium"
+        {/* Steps, not counts: joined by arrows, only the current one coloured. */}
+        <ol
+          aria-label="Progress"
+          className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs"
         >
-          {domain.hostname}
-        </h2>
-        <StateText state={domainState(domain)} />
+          {steps.map((label, i) => (
+            <li key={label} className="flex items-center gap-2">
+              {i > 0 && (
+                <span aria-hidden className="text-faint">
+                  →
+                </span>
+              )}
+              <span
+                aria-current={i + 1 === step ? "step" : undefined}
+                className={
+                  i + 1 === step
+                    ? error
+                      ? "text-fail"
+                      : "text-warn"
+                    : i + 1 < step
+                      ? "text-mut"
+                      : "text-faint"
+                }
+              >
+                {label}
+              </span>
+            </li>
+          ))}
+        </ol>
         <span className="ml-auto flex items-center gap-2.5">
           {domain.checked_at && (
             <span className="text-mut">Checked {ago(domain.checked_at)}</span>
@@ -260,15 +324,13 @@ function DnsCard({
             disabled={check.isPending}
             onClick={() => check.mutate({ ref, hostname: domain.hostname })}
           >
-            Check now
+            Check again
           </Act>
         </span>
       </div>
       <ErrorText error={check.error} />
       {domain.dns ? (
-        <p
-          className={`text-md ${domain.dns.status === "error" ? "text-fail" : ""}`}
-        >
+        <p className={domain.dns.status === "error" ? "text-fail" : ""}>
           {routedWords(domain.dns)}{" "}
           <span className="text-mut">Zone {domain.dns.zone}.</span>
           {error && domain.status_reason && (
@@ -276,11 +338,11 @@ function DnsCard({
           )}
         </p>
       ) : error ? (
-        <p className="text-md text-fail">
+        <p className="text-fail">
           {domain.status_reason ?? "The certificate could not be issued."}
         </p>
       ) : proof ? (
-        <p className="text-md">
+        <p>
           Create the TXT record to prove you control this hostname
           {records.length > 2
             ? ", and one of the others to point it here"
@@ -293,14 +355,14 @@ function DnsCard({
           )}
         </p>
       ) : (
-        <p className="text-md">
+        <p>
           Create {records.length > 1 ? "one of these records" : "this record"}{" "}
           at your DNS provider. Nothing else is needed; the certificate is
           issued automatically once it resolves.
         </p>
       )}
       {records.length > 0 && !domain.dns && (
-        <Panel>
+        <Scroll>
           <table className="font-mono">
             <thead>
               <tr>
@@ -323,7 +385,7 @@ function DnsCard({
               ))}
             </tbody>
           </table>
-        </Panel>
+        </Scroll>
       )}
       {domain.checked_at && (
         <div className="flex flex-wrap gap-x-6 gap-y-1">
@@ -342,35 +404,6 @@ function DnsCard({
           )}
         </div>
       )}
-      {/* Steps, not counts: joined by arrows, only the current one coloured. */}
-      <ol
-        aria-label="Progress"
-        className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs"
-      >
-        {steps.map((label, i) => (
-          <li key={label} className="flex items-center gap-2">
-            {i > 0 && (
-              <span aria-hidden className="text-faint">
-                →
-              </span>
-            )}
-            <span
-              aria-current={i + 1 === step ? "step" : undefined}
-              className={
-                i + 1 === step
-                  ? error
-                    ? "text-fail"
-                    : "text-warn"
-                  : i + 1 < step
-                    ? "text-mut"
-                    : "text-faint"
-              }
-            >
-              {label}
-            </span>
-          </li>
-        ))}
-      </ol>
     </section>
   );
 }
@@ -416,112 +449,138 @@ function detail(d: Domain) {
 }
 
 /**
- * The records to create for a domain that doesn't resolve here yet, each
- * with its value to copy: "A store.example.com → 203.0.113.7".
+ * A domain's row: hostname, state, where it goes, whether its visits are
+ * counted (with Count visits when not), and its menu (Stop counting,
+ * Remove). `fresh` marks one just added here; `waiting` opens what it
+ * still needs (DnsSteps) under it.
  */
-function RecordsToCreate({ domain: d }: { domain: Domain }) {
-  const records = d.dns_records ?? [];
-  return (
-    <span className="flex flex-col gap-1 text-fg">
-      {records.map((r, i) => (
-        <span key={`${r.type} ${r.value}`} className="flex items-center gap-2">
-          <span className="text-mut">{i === 0 ? "Create" : "or"}</span>
-          <span className="font-mono">
-            {r.type} {r.name} → {r.value}
-          </span>
-          <CopyButton text={r.value} />
-        </span>
-      ))}
-    </span>
-  );
-}
-
-/** A domain's row; `fresh` marks one just added here. */
 function DomainRow({
   serviceRef: ref,
   domain: d,
   port,
   fresh,
-  inCard,
+  waiting,
+  site,
 }: {
   serviceRef: ServiceRef;
   domain: Domain;
   port: number;
   fresh: boolean;
-  /** Its records are in the panel above; the row doesn't repeat them. */
-  inCard: boolean;
+  waiting: boolean;
+  /** The analytics site that counts its visits, if one does. */
+  site?: string;
 }) {
+  const org = useOrg();
   const remove = useRemoveDomain();
+  const canDeploy = useCanDeploy(ref);
+  const enable = useEnableHostname();
+  const disable = useDisableHostname();
   const [confirming, setConfirming] = useState(false);
-  // Until it resolves here, the row says which record makes it work.
-  const needsRecord =
-    !inCard &&
-    !d.dns &&
-    !d.verification &&
-    (d.status === "added" || d.status === "waiting_for_dns") &&
-    (d.dns_records?.length ?? 0) > 0;
   return (
-    <tr className={fresh ? "[&>td]:bg-sel" : ""}>
-      <td className="font-mono">
-        <a
-          href={d.url}
-          target="_blank"
-          rel="noreferrer"
-          className="no-underline hover:underline"
-        >
-          {d.hostname}
-        </a>
-      </td>
-      <td>
-        <StateText state={domainState(d)} />
-      </td>
-      <td
-        className={`w-full whitespace-normal ${d.status === "error" ? "text-fail" : "text-mut"}`}
+    <>
+      <tr
+        className={`${fresh ? "[&>td]:bg-sel" : ""} ${waiting ? "[&>td]:border-b-transparent" : ""}`}
       >
-        {needsRecord ? (
-          <RecordsToCreate domain={d} />
-        ) : (
-          <>
-            {inCard &&
-            !d.verification &&
-            (d.status === "added" || d.status === "waiting_for_dns")
-              ? "waiting for the DNS record above"
-              : detail(d)}
-            {d.redirect_to
-              ? ` · redirects to ${d.redirect_to}`
-              : ` · to :${port}`}
-            <span className="text-faint">{lastCheck(d)}</span>
-          </>
-        )}
-      </td>
-      <td className="text-mut">{fresh ? "just added" : since(d.created_at)}</td>
-      <td className="py-1">
-        <Button danger small onClick={() => setConfirming(true)}>
-          Remove
-        </Button>
-        {confirming && (
-          <Confirm
-            danger
-            action={`Remove ${d.hostname}`}
-            cli={`dock domain remove ${d.hostname} -s ${ref.service} -e ${ref.environment}`}
-            pending={remove.isPending}
-            error={remove.error}
-            onConfirm={() =>
-              remove.mutate(
-                { ref, hostname: d.hostname },
-                { onSuccess: () => setConfirming(false) },
-              )
-            }
-            onCancel={() => {
-              remove.reset();
-              setConfirming(false);
-            }}
+        <td className="font-mono">
+          <a
+            href={d.url}
+            target="_blank"
+            rel="noreferrer"
+            className="no-underline hover:underline"
           >
-            Requests to <b>{d.hostname}</b> stop reaching {ref.service}. You can
-            add it again later.
-          </Confirm>
-        )}
-      </td>
-    </tr>
+            {d.hostname}
+          </a>
+        </td>
+        <td>
+          <StateText state={domainState(d)} />
+        </td>
+        <td
+          className={`w-full whitespace-normal ${d.status === "error" ? "text-fail" : "text-mut"}`}
+        >
+          {d.redirect_to ? `redirects to ${d.redirect_to}` : `:${port}`}
+          {waiting ? "" : ` · ${detail(d)}`}
+          <span className="text-faint">{lastCheck(d)}</span>
+        </td>
+        <td className="whitespace-nowrap">
+          {d.redirect_to ? (
+            <span className="text-faint">-</span>
+          ) : site ? (
+            <Link
+              to="/$org/analytics/$project/$site"
+              params={{ org, project: ref.project, site }}
+              title={`Counted for site ${site}`}
+            >
+              counted
+            </Link>
+          ) : (
+            <Act
+              small
+              cli={`dock analytics enable ${d.hostname}`}
+              disabled={!canDeploy || enable.isPending}
+              onClick={() => enable.mutate({ hostname: d.hostname })}
+            >
+              Count visits
+            </Act>
+          )}
+        </td>
+        <td className="py-1 text-right">
+          <MoreMenu label={`${d.hostname} actions`}>
+            {(close) => (
+              <>
+                {site && (
+                  <MoreItem
+                    close={close}
+                    cli={`dock analytics disable ${d.hostname}`}
+                    disabled={!canDeploy || disable.isPending}
+                    onClick={() => disable.mutate(d.hostname)}
+                  >
+                    Stop counting visits
+                  </MoreItem>
+                )}
+                {site && <MoreSeparator />}
+                <MoreItem
+                  close={close}
+                  danger
+                  cli={`dock domain remove ${d.hostname} -s ${ref.service} -e ${ref.environment}`}
+                  onClick={() => setConfirming(true)}
+                >
+                  Remove {d.hostname}…
+                </MoreItem>
+              </>
+            )}
+          </MoreMenu>
+          <ErrorText error={enable.error ?? disable.error} />
+          {confirming && (
+            <Confirm
+              danger
+              action={`Remove ${d.hostname}`}
+              cli={`dock domain remove ${d.hostname} -s ${ref.service} -e ${ref.environment}`}
+              pending={remove.isPending}
+              error={remove.error}
+              onConfirm={() =>
+                remove.mutate(
+                  { ref, hostname: d.hostname },
+                  { onSuccess: () => setConfirming(false) },
+                )
+              }
+              onCancel={() => {
+                remove.reset();
+                setConfirming(false);
+              }}
+            >
+              Requests to <b>{d.hostname}</b> stop reaching {ref.service}. You
+              can add it again later.
+            </Confirm>
+          )}
+        </td>
+      </tr>
+      {waiting && (
+        <tr>
+          <td colSpan={5} className="whitespace-normal">
+            <DnsSteps serviceRef={ref} domain={d} />
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
