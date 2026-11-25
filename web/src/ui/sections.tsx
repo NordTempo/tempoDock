@@ -67,7 +67,9 @@ export function SettingsSection({
     <section
       id={id}
       aria-labelledby={`${id}-h`}
-      className="scroll-mt-[calc(var(--shell-top)+var(--sections-top,112px)+12px)]"
+      // 12px under the sticky header: html's scroll-padding-top
+      // (index.css) already keeps it clear of the header.
+      className="scroll-mt-[12px]"
     >
       <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-2">
         <h2 id={`${id}-h`} className="text-lg font-semibold">
@@ -85,9 +87,14 @@ export function SettingsSection({
 }
 
 /**
- * The id of the section in view, for the list's mark: the one whose top
- * last passed the upper third of the window. Starts from the address's
- * #hash. An IntersectionObserver, so nothing runs while the page is still.
+ * The id of the section in view, for the list's mark: the last one whose
+ * top passed the line just under the sticky header (where a click in the
+ * list puts it: html's scroll padding plus SettingsSection's scroll
+ * margin), or the first before any has. At the bottom of the page,
+ * where short last sections can't reach that line, the one the #hash
+ * names (a click in the list) wins while it's on screen. A passive scroll
+ * listener coalesced to one check per frame, so nothing runs while the
+ * page is still.
  */
 function useSectionInView(sections: SectionItem[]) {
   const ids = sections.map((s) => s.id).join(" ");
@@ -99,27 +106,50 @@ function useSectionInView(sections: SectionItem[]) {
       .split(" ")
       .map((id) => document.getElementById(id))
       .filter((e): e is HTMLElement => e !== null);
-    if (elements.length === 0) return;
-    const visible = new Set<string>();
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          if (e.isIntersecting) visible.add(e.target.id);
-          else visible.delete(e.target.id);
-        }
-        // The lowest one in the top third: its heading passed the line
-        // last, so it's the one being read (and a #hash jump's target,
-        // not the end of the section above it).
-        const last = elements.findLast((e) => visible.has(e.id));
-        if (last) setCurrent(last.id);
-      },
-      { rootMargin: "0px 0px -66% 0px" },
-    );
-    for (const e of elements) observer.observe(e);
+    const first = elements[0];
+    if (!first) return;
+    // 48px of slack marks a section as its heading reaches the header.
+    const line =
+      Number.parseFloat(
+        getComputedStyle(document.documentElement).scrollPaddingTop,
+      ) +
+      Number.parseFloat(getComputedStyle(first).scrollMarginTop) +
+      48;
+    let frame = 0;
+    const pick = () => {
+      frame = 0;
+      let id = first.id;
+      for (const e of elements) {
+        if (e.getBoundingClientRect().top <= line) id = e.id;
+      }
+      const root = document.documentElement;
+      const hashed = document.getElementById(location.hash.slice(1));
+      if (
+        scrollY + innerHeight >= root.scrollHeight - 2 &&
+        hashed &&
+        elements.includes(hashed) &&
+        hashed.getBoundingClientRect().top < innerHeight
+      ) {
+        id = hashed.id;
+      }
+      setCurrent(id);
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(pick);
+    };
     // A #hash in the address scrolls to its section once it's rendered.
     const hash = location.hash.slice(1);
     if (hash) document.getElementById(hash)?.scrollIntoView();
-    return () => observer.disconnect();
+    pick();
+    addEventListener("scroll", schedule, { passive: true });
+    addEventListener("hashchange", schedule);
+    addEventListener("resize", schedule);
+    return () => {
+      cancelAnimationFrame(frame);
+      removeEventListener("scroll", schedule);
+      removeEventListener("hashchange", schedule);
+      removeEventListener("resize", schedule);
+    };
   }, [ids]);
   return current;
 }
