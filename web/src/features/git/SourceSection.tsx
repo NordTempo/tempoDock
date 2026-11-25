@@ -288,16 +288,19 @@ export function SourceSection({
                     onSubmit={(e) => e.preventDefault()}
                     onKeyDown={(e) => e.key === "Escape" && close()}
                   >
-                    <Choice
-                      label="Commit statuses"
-                      name="git-status"
-                      value={conn.status ? "on" : "off"}
-                      options={[
-                        ["on", "posted"],
-                        ["off", "not posted"],
-                      ]}
-                      onChange={(v) => save({ status: v === "on" }, close)}
-                    />
+                    {/* Like Deploys from: one connection save at a time. */}
+                    <fieldset disabled={connect.isPending} className="min-w-0">
+                      <Choice
+                        label="Commit statuses"
+                        name="git-status"
+                        value={conn.status ? "on" : "off"}
+                        options={[
+                          ["on", "posted"],
+                          ["off", "not posted"],
+                        ]}
+                        onChange={(v) => save({ status: v === "on" }, close)}
+                      />
+                    </fieldset>
                     <EditFoot error={connect.error} onCancel={close} />
                   </form>
                 )
