@@ -4,7 +4,7 @@ import type { components } from "../../api/schema";
 import { useOrg } from "../../shell/location";
 import { Icon } from "../../ui/icons";
 import { SectionHead } from "../../ui/kit";
-import type { OrgSitesRange } from "./loaders";
+import { type OrgSitesRange, orgSitesRanges } from "./loaders";
 import { delta } from "./parts";
 
 // The Analytics area's sites (ADR 0059) in two views the page bar
@@ -18,6 +18,20 @@ export const siteViews = ["rows", "tiles"] as const;
 export type SiteView = (typeof siteViews)[number];
 
 const viewKey = "dock.analytics.view";
+const rangeKey = "dock.analytics.range";
+
+/**
+ * The range last chosen on the site list on this browser, 24h until one
+ * is: the list opens on it when its URL names none.
+ */
+export function lastSitesRange(): OrgSitesRange {
+  const saved = localStorage.getItem(rangeKey);
+  return orgSitesRanges.find((r) => r === saved) ?? "24h";
+}
+
+/** Saves the site list's range for the next visit. */
+export const rememberSitesRange = (range: OrgSitesRange) =>
+  localStorage.setItem(rangeKey, range);
 
 /** The view last chosen on this browser, rows until one is. */
 export function useSiteView() {

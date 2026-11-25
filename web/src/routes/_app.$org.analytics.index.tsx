@@ -7,6 +7,8 @@ import {
   orgSitesRanges,
 } from "../features/analytics/loaders";
 import {
+  lastSitesRange,
+  rememberSitesRange,
   SiteRows,
   SiteTiles,
   useSiteView,
@@ -17,8 +19,8 @@ import { useOrg } from "../shell/location";
 import { Page, PageBar, Panel, SectionHead } from "../ui/kit";
 
 // The Analytics area (ADR 0059, layout C): the organization's sites with
-// their visitors and page views over a range (24h unless ?range= says
-// otherwise), as rows by project or as tiles. A site opens its page on
+// their visitors and page views over a range (?range=, else the one last
+// chosen on this browser, else 24h), as rows by project or as tiles. A site opens its page on
 // the same range. Projects that count nothing yet are listed too, with
 // the way to turn analytics on: a domain's switch on its service's
 // Domains tab.
@@ -27,14 +29,16 @@ export const Route = createFileRoute("/_app/$org/analytics/")({
     orgSitesRanges.includes(s.range as OrgSitesRange)
       ? { range: s.range as OrgSitesRange }
       : {},
-  loaderDeps: ({ search: { range } }) => ({ range }),
+  loaderDeps: ({ search: { range } }) => ({
+    range: range ?? lastSitesRange(),
+  }),
   loader: ({ context: { queryClient }, deps: { range } }) =>
     queryClient.ensureQueryData(orgSitesQuery(range)),
   component: Sites,
 });
 
 function Sites() {
-  const { range = "24h" } = Route.useSearch();
+  const { range = lastSitesRange() } = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const [view, setView] = useSiteView();
   const sites = useSuspenseQuery(orgSitesQuery(range)).data;
@@ -48,9 +52,10 @@ function Sites() {
               <RangeSwitch
                 value={range}
                 options={orgSitesRanges}
-                onChange={(r) =>
-                  navigate({ search: r === "24h" ? {} : { range: r } })
-                }
+                onChange={(r) => {
+                  rememberSitesRange(r);
+                  navigate({ search: r === "24h" ? {} : { range: r } });
+                }}
               />
               <ViewSwitch value={view} onChange={setView} />
             </>
