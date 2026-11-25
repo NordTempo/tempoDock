@@ -4,7 +4,8 @@ import Section from "./Section.astro";
 
 /**
  * From a new server to a live app in four commands, each with the guide
- * that explains it. The commands are the guides' own.
+ * that explains it. The commands are the guides' own. They wrap instead of
+ * scrolling: after a path slash where they can (<wbr>), anywhere if they must.
  */
 const steps = [
   ["Install the server", install.server, "Install", "/docs/install"],
@@ -25,7 +26,7 @@ const steps = [
       <li class:list={["min-w-0 border-line py-5 sm:pr-5", n > 0 && "border-t sm:border-t-0 lg:border-l lg:pl-5", n > 1 && "sm:max-lg:border-t"]}>
         <p class="font-mono text-xs text-deploys">{n + 1}</p>
         <h3 class="mt-1.5 mb-2.5 font-semibold">{title}</h3>
-        <pre class="overflow-x-auto pb-2.5 font-mono text-xs text-white"><code class="select-all [font-variant-ligatures:none]">{command}</code></pre>
+        <pre class="whitespace-pre-wrap pb-2.5 font-mono text-xs text-white [overflow-wrap:anywhere]"><code class="select-all [font-variant-ligatures:none]">{command.split(/(?<=[^/:]\/)/).map((part, i) => <>{i > 0 && <wbr />}{part}</>)}</code></pre>
         <a href={href} class="text-sm text-body hover:text-white">{guide} →</a>
       </li>
     ))}
