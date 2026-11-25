@@ -1,3 +1,4 @@
+import { remembered } from "../../data/remembered";
 import type { TrafficPoint, TrafficRange } from "../../data/types";
 
 /** One bar of the requests chart: a bucket's start (ms) and its counts. */
@@ -34,7 +35,10 @@ export const barLabel: Record<TrafficRange, string> = {
   "30d": "per 6 hours",
 };
 
-/** `?range=` for the traffic page; anything else is 24h. */
+/** Requests' Traffic range last picked on this browser, 24h until one is. */
+export const trafficRange = remembered("requests.range", trafficRanges, "24h");
+
+/** `?range=` for the traffic page; 24h or none shows trafficRange. */
 export const validateTrafficRange = (
   search: Record<string, unknown>,
 ): { range?: TrafficRange } => {

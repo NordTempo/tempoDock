@@ -33,6 +33,7 @@ export {
   orgAnalyticsDefaultsQuery,
   parseFilter,
   type StatsRange,
+  siteRange,
   sitesQuery,
   statsRanges,
   tracingStatusQuery,

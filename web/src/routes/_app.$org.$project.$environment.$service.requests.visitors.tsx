@@ -6,6 +6,7 @@ import {
   analyticsSearch,
   applyChange,
   parseFilter,
+  siteRange,
   sitesQuery,
 } from "../features/analytics/data";
 import { ServiceSite } from "../features/analytics/ServiceSite";
@@ -27,10 +28,12 @@ function Visitors() {
   const ref = servicePath(Route.useParams());
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const range = search.range ?? "30d";
+  const range = search.range ?? siteRange.get();
   const filters = (search.f ?? []).flatMap((f) => parseFilter(f) ?? []);
-  const onChange = (change: AnalyticsChange) =>
+  const onChange = (change: AnalyticsChange) => {
+    if (change.range) siteRange.set(change.range);
     navigate({ search: (s) => applyChange(s, change), replace: true });
+  };
   return (
     <ServiceSite
       serviceRef={ref}

@@ -9,6 +9,7 @@ import {
   barLabel,
   barMs,
   toBars,
+  trafficRange,
   trafficRangeLabel,
   trafficRangeMs,
   trafficRanges,
@@ -26,7 +27,9 @@ export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/requests/",
 )({
   validateSearch: validateTrafficRange,
-  loaderDeps: ({ search }) => ({ range: search.range ?? "24h" }),
+  loaderDeps: ({ search }) => ({
+    range: search.range ?? trafficRange.get(),
+  }),
   loader: ({ context: { queryClient }, params, deps }) =>
     queryClient.ensureQueryData(
       queries.serviceTraffic(servicePath(params), deps.range),
@@ -39,7 +42,7 @@ const count = (n: number) => n.toLocaleString("en-US");
 function TrafficTab() {
   const org = useOrg();
   const ref = servicePath(Route.useParams());
-  const range = Route.useSearch().range ?? "24h";
+  const range = Route.useSearch().range ?? trafficRange.get();
   const navigate = Route.useNavigate();
   const { domains } = useService(ref);
   // Traffic events append each new minute to the 24h view (data/live.ts).
@@ -72,12 +75,13 @@ function TrafficTab() {
             <RangeSwitch
               value={range}
               options={trafficRanges}
-              onChange={(r) =>
+              onChange={(r) => {
+                trafficRange.set(r);
                 navigate({
                   search: r === "24h" ? {} : { range: r },
                   replace: true,
-                })
-              }
+                });
+              }}
             />
           }
         >

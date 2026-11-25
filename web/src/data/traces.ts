@@ -2,6 +2,7 @@ import { queryOptions } from "@tanstack/react-query";
 import { api, body } from "../api/client";
 import type { components } from "../api/schema";
 import { servicePath } from "./queries";
+import { remembered } from "./remembered";
 import type { ServiceRef } from "./types";
 
 // Traces (ADR 0075): a service's list and one trace, read when a view
@@ -22,6 +23,9 @@ export const traceRanges = [
   "24h",
   "7d",
 ] as const satisfies readonly TraceRange[];
+
+/** Requests' Traces range last picked on this browser, 24h until one is. */
+export const traceRange = remembered("traces.range", traceRanges, "24h");
 
 /** What a list shows; the API's query parameters. */
 export type TraceFilter = {

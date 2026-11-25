@@ -1,10 +1,11 @@
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import type { components } from "../../api/schema";
+import { remembered } from "../../data/remembered";
 import { useOrg } from "../../shell/location";
 import { Icon } from "../../ui/icons";
 import { SectionHead } from "../../ui/kit";
-import { type OrgSitesRange, orgSitesRanges } from "./loaders";
+import type { OrgSitesRange } from "./loaders";
 import { delta } from "./parts";
 
 // The Analytics area's sites (ADR 0059) in two views the page bar
@@ -17,29 +18,13 @@ type OrgSite = components["schemas"]["OrgSite"];
 export const siteViews = ["rows", "tiles"] as const;
 export type SiteView = (typeof siteViews)[number];
 
-const viewKey = "dock.analytics.view";
-const rangeKey = "dock.analytics.range";
-
-/**
- * The range last chosen on the site list on this browser, 24h until one
- * is: the list opens on it when its URL names none.
- */
-export function lastSitesRange(): OrgSitesRange {
-  const saved = localStorage.getItem(rangeKey);
-  return orgSitesRanges.find((r) => r === saved) ?? "24h";
-}
-
-/** Saves the site list's range for the next visit. */
-export const rememberSitesRange = (range: OrgSitesRange) =>
-  localStorage.setItem(rangeKey, range);
+const lastView = remembered("analytics.view", siteViews, "rows");
 
 /** The view last chosen on this browser, rows until one is. */
 export function useSiteView() {
-  const [view, setView] = useState<SiteView>(() =>
-    localStorage.getItem(viewKey) === "tiles" ? "tiles" : "rows",
-  );
+  const [view, setView] = useState(lastView.get);
   const choose = (v: SiteView) => {
-    localStorage.setItem(viewKey, v);
+    lastView.set(v);
     setView(v);
   };
   return [view, choose] as const;

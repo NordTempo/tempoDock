@@ -1,6 +1,7 @@
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { redirect } from "@tanstack/react-router";
 import { api, body, list } from "../../api/client";
+import { remembered } from "../../data/remembered";
 
 // What analytics routes need before their views load: their search
 // params and their loaders' queries. Route definitions are in the first
@@ -10,6 +11,12 @@ import { api, body, list } from "../../api/client";
 /** The named ranges a dashboard offers, ending now. */
 export const statsRanges = ["24h", "7d", "30d", "90d", "12m"] as const;
 export type StatsRange = (typeof statsRanges)[number];
+
+/**
+ * A site's range last picked on this browser, 30d until one is: the
+ * Analytics area's site pages and a service's Visitors view share it.
+ */
+export const siteRange = remembered("analytics.site.range", statsRanges, "30d");
 
 /** A filter as the API takes it: "dimension:op:value". */
 export type Filter = {
@@ -43,6 +50,9 @@ export const sitesQuery = (project: string) =>
 
 /** The ranges the organization's site list takes. */
 export const orgSitesRanges = ["24h", "7d", "30d"] as const;
+
+/** The site list's range last picked on this browser, 24h until one is. */
+export const sitesRange = remembered("analytics.range", orgSitesRanges, "24h");
 export type OrgSitesRange = (typeof orgSitesRanges)[number];
 
 /**

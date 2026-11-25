@@ -30,6 +30,7 @@ import {
   type Point,
   rangeMs,
   ranges,
+  serverRange,
   validateRange,
 } from "../features/stats/series";
 import { useOrg } from "../shell/location";
@@ -54,7 +55,9 @@ const RenameServer = lazy(() => import("../features/servers/RenameServer"));
 // /console/servers/homelab?range=24h
 export const Route = createFileRoute("/_app/console/servers_/$server")({
   validateSearch: validateRange,
-  loaderDeps: ({ search }) => ({ range: search.range ?? "1h" }),
+  loaderDeps: ({ search }) => ({
+    range: search.range ?? serverRange.get(),
+  }),
   loader: async ({ context: { queryClient }, params, deps }) => {
     try {
       await Promise.all([
@@ -108,7 +111,7 @@ function ServerNotFound() {
  */
 function ServerPage() {
   const { server: name } = Route.useParams();
-  const range = Route.useSearch().range ?? "1h";
+  const range = Route.useSearch().range ?? serverRange.get();
   const navigate = Route.useNavigate();
   const detail = useServer(name);
   const { server } = detail;
@@ -203,12 +206,13 @@ function ServerPage() {
               <RangeSwitch
                 value={range}
                 options={ranges}
-                onChange={(r) =>
+                onChange={(r) => {
+                  serverRange.set(r);
                   navigate({
                     search: r === "1h" ? {} : { range: r },
                     replace: true,
-                  })
-                }
+                  });
+                }}
               />
             </span>
           </div>

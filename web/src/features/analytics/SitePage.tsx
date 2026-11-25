@@ -14,6 +14,7 @@ import {
   type Site,
   type StatsRange,
   siteErrorsQuery,
+  siteRange,
   sitesQuery,
 } from "./data";
 import type { AnalyticsSearch } from "./loaders";
@@ -91,10 +92,11 @@ export function SitePage({
       </Page>
     );
   }
-  const range = search.range ?? "30d";
+  const range = search.range ?? siteRange.get();
   const filters = (search.f ?? []).flatMap((f) => parseFilter(f) ?? []);
   const onChange = (change: AnalyticsChange) => {
     // The view's own search (a vital, a funnel) stays.
+    if (change.range) siteRange.set(change.range);
     const { range, f } = applyChange(search, change);
     navigate({ to: ".", search: (s) => ({ ...s, range, f }), replace: true });
   };

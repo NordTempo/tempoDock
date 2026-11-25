@@ -1,3 +1,4 @@
+import { remembered } from "../../data/remembered";
 import type { StatsRange } from "../../data/types";
 
 /** One point of a chart: a time (ms) and a value. */
@@ -17,7 +18,13 @@ export const rangeLabel: Record<StatsRange, string> = {
   "7d": "last 7 days",
 };
 
-/** `?range=` for statistics pages; anything else is 1h. */
+/** A service's Metrics range last picked on this browser, 1h until one is. */
+export const metricsRange = remembered("metrics.range", ranges, "1h");
+
+/** A server's page range last picked on this browser, 1h until one is. */
+export const serverRange = remembered("server.range", ranges, "1h");
+
+/** `?range=` for statistics pages; 1h or none shows the remembered range. */
 export const validateRange = (
   search: Record<string, unknown>,
 ): { range?: StatsRange } => {
