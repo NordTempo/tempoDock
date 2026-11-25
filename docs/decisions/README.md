@@ -111,6 +111,7 @@ line means a later record added to it without changing what it decided.
 | [0095](0095-restore-volume-backups.md) | Volume backups restore from Dock, in place after a safety snapshot; manual backups keep their own last 5; Postgres roles in backups; restore targets unusable until loaded | accepted; in-place restore and manual retention built, the rest in progress |
 | [0096](0096-checked-backups.md) | Checked backups: a weekly `restic check` reading 1 GB of each repository and a restore drill of every template database into a throwaway service, on the backup scheduler's pass; the result on the Backups tab, an alert on failure | accepted |
 | [0098](0098-recovering-a-lost-server.md) | Recovering a lost server: `install.sh --restore-from-bucket` fetches the control plane from the bucket, recovery mode holds backups back, `dock admin recover` plans and restores volumes before services start | accepted |
+| [0100](0100-public-demo.md) | The public demo: `dock serve` on the fake runtime behind `[demo] user`, every visitor signed in to one shared operator account, account and outbound changes refused, seeded by `dock-demo` and reset every hour | accepted |
 
 ## Template
 

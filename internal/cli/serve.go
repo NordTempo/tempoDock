@@ -85,6 +85,11 @@ func serve(ctx context.Context, cfg config.Config, configPath string) error {
 	if err := checkNodeListen(cfg.Node.Listen); err != nil {
 		return err
 	}
+	// The demo signs anyone in as an operator (ADR 0100): never with real
+	// containers behind it.
+	if cfg.Demo.Enabled() && os.Getenv("DOCK_FAKE_RUNTIME") != "1" {
+		return fmt.Errorf("[demo] signs every visitor in as %s, so it runs only on the fake runtime: set DOCK_FAKE_RUNTIME=1, or remove [demo] from %s", cfg.Demo.User, configPath)
+	}
 	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
 		return err
 	}

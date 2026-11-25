@@ -588,6 +588,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/demo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whether the demo is ready
+         * @description Only on the public demo (ADR 0100), 404 elsewhere. 503 while it is being seeded: the demo's health check, so a new demo takes traffic once it is ready.
+         */
+        get: operations["demo-status"];
+        put?: never;
+        /**
+         * Sign in to the demo
+         * @description Only on the public demo (ADR 0100): sets a session cookie for the demo's shared account, no password needed. 404 elsewhere, 503 while the demo is starting.
+         */
+        post: operations["demo-sign-in"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -8702,6 +8726,9 @@ export interface components {
              */
             id?: number;
         };
+        DemoStatus: {
+            ready: boolean;
+        };
         DeployImageRequest: {
             /** @description Image reference; defaults to the service's image setting, which a deploy of another image updates */
             image?: string;
@@ -10062,6 +10089,7 @@ export interface components {
         Me: {
             /** @enum {string} */
             access_model?: "shadow" | "enforce";
+            demo?: boolean;
             display_name?: string;
             email?: string;
             environment?: string;
@@ -11833,6 +11861,7 @@ export interface components {
             name: string;
         };
         SignInMethods: {
+            demo?: boolean;
             password: boolean;
             password_reset: boolean;
             providers: components["schemas"]["SignInButton"][] | null;
@@ -16446,6 +16475,101 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "demo-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemoStatus"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "demo-sign-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResult"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

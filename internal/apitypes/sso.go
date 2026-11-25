@@ -129,6 +129,9 @@ type SignInMethods struct {
 	// and Dock has a public address.
 	PasswordReset bool           `json:"password_reset"`
 	Providers     []SignInButton `json:"providers"`
+	// Demo: this is the public demo (ADR 0100), and the sign-in page
+	// signs visitors in to its shared account (POST /auth/demo).
+	Demo bool `json:"demo,omitempty"`
 }
 
 // SignInButton is a provider on the sign-in page.

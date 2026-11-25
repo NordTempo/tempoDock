@@ -335,7 +335,7 @@ func (c *Core) SignInMethods(ctx context.Context) (apitypes.SignInMethods, error
 	if err != nil {
 		return apitypes.SignInMethods{}, err
 	}
-	out := apitypes.SignInMethods{Password: set.PasswordSignIn, Providers: make([]apitypes.SignInButton, len(rows))}
+	out := apitypes.SignInMethods{Password: set.PasswordSignIn, Providers: make([]apitypes.SignInButton, len(rows)), Demo: c.Demo()}
 	if out.Password {
 		if out.PasswordReset, err = c.canEmailLinks(ctx); err != nil {
 			return apitypes.SignInMethods{}, err

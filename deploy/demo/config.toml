@@ -1,0 +1,30 @@
+# The public demo's daemon (ADR 0100), run by dock-demo in the demo image
+# (deploy/demo/Dockerfile) on the fake runtime: no Docker, Caddy or
+# BuildKit, and every start is a fresh demo, so the data dir lives in the
+# container.
+data_dir = "/tmp/dock-demo"
+# The service's port; Dock's Caddy sends demo.nordtempo.com here.
+listen = "0.0.0.0:7070"
+public_ip = "203.0.113.10"
+base_domain = "apps.example.com"
+
+[demo]
+user = "demo@acme.example"
+
+[caddy]
+admin_socket = "/tmp/dock-demo/caddy-admin.sock"
+upstreams_dir = "/tmp/dock-demo/upstreams"
+disable_tls = true
+
+[analytics]
+# The fake runtime runs the analytics store in memory; this only keeps
+# dock from looking for the store's release.
+store_binary = "/demo/no-store"
+
+[updates]
+# An empty directory: the demo never asks GitHub for releases.
+source = "/demo/releases"
+
+[registry]
+storage_dir = "/tmp/dock-demo/registry"
+config_dir = "/tmp/dock-demo/registry-config"

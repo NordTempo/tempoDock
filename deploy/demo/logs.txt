@@ -1,0 +1,20 @@
+> node server.js
+Listening on :3000 (NODE_ENV=production)
+Connected to postgres at db:5432 (pool 10)
+GET / 200 12ms
+GET /products 200 38ms
+GET /products/42 200 21ms
+POST /api/cart 201 44ms
+GET /healthz 200 1ms
+GET /pricing 200 9ms
+E Error: Stripe webhook signature mismatch (request id 8f2c1a)
+E     at verify (/app/lib/stripe.js:41:11)
+GET /checkout 200 63ms
+POST /api/checkout 502 1032ms
+E Upstream timeout calling payments API after 1000ms
+GET /healthz 200 1ms
+GET /products?page=2 200 35ms
+GET /blog/launch 200 14ms
+POST /api/cart 201 39ms
+GET /healthz 200 1ms
+GET / 200 11ms

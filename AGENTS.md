@@ -78,6 +78,8 @@ cmd/dock-analytics/    the analytics store (ADR 0037): its own Go module with
 cmd/dock-probe/        health probe run inside app containers (ADR 0043)
 cmd/dock-sync/         volume copier run in job containers (ADR 0063); both
                        are embedded into dock by internal/node/probe
+cmd/dock-demo/         the public demo's entrypoint (ADR 0100): seeds a
+                       fake-runtime dock and resets it every hour
 internal/apitypes/     the API's JSON contract; the CLI imports it, no server deps
 internal/api/          Huma handlers, auth, SSE streams, loopback endpoints
 internal/mcp/          the MCP endpoint for agents (ADR 0017): tools over core
@@ -140,7 +142,10 @@ there: `internal/core`, `internal/store`, `internal/node`, `internal/cli`,
   permission its work needs in `internal/mcp/perms.go`.
 - Changing the API: types in `internal/apitypes`, handlers in
   `internal/api`, then `make generate` so `web/openapi.json` and
-  `web/src/api/schema.d.ts` stay in sync (CI checks).
+  `web/src/api/schema.d.ts` stay in sync (CI checks). An operation that
+  makes the daemon connect to an address a user gives, or changes how
+  people sign in, gets a line in `demoRefused` (internal/api/demo.go):
+  the public demo (ADR 0100) must not do it for strangers.
 
 ## Go conventions
 

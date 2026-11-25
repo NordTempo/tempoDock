@@ -88,6 +88,14 @@ type Me struct {
 	// 0080): enforce when they decide, shadow when their role still
 	// does and the model only watches; empty for tokens and the platform.
 	AccessModel AccessModelMode `json:"access_model,omitempty" enum:"shadow,enforce"`
+	// Demo is set on the public demo (ADR 0100), where everyone shares
+	// this account and it starts again every hour.
+	Demo bool `json:"demo,omitempty"`
+}
+
+// DemoStatus says the public demo is ready (ADR 0100).
+type DemoStatus struct {
+	Ready bool `json:"ready"`
 }
 
 // Org is an organization the caller belongs to (ADR 0027). It owns

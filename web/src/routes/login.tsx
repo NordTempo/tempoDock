@@ -1,11 +1,22 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  isRedirect,
+  redirect,
+  useNavigate,
+} from "@tanstack/react-router";
 import { useId, useRef, useState } from "react";
 import { ApiError, api, body, done } from "../api/client";
 import type { components } from "../api/schema";
 import { useAction, useLogin, useLoginVerify } from "../data/mutations";
 import { currentMe, keys, queries } from "../data/queries";
-import { useSignInMethods, useStartSSO } from "../features/sso/data";
+import {
+  demoSignIn,
+  signInMethods,
+  useDemoSignIn,
+  useSignInMethods,
+  useStartSSO,
+} from "../features/sso/data";
 import { ssoFailure } from "../features/sso/failures";
 import { ProviderMark } from "../features/sso/ProviderMark";
 import { CodeInput } from "../ui/CodeInput";
@@ -40,12 +51,23 @@ export const Route = createFileRoute("/login")({
   }),
   // A provider's sign-in started from a session (a step-up) comes back
   // here too: its second step or error is shown, not skipped.
-  beforeLoad: async ({ context, search }) => {
+  // The public demo (ADR 0100) signs visitors in here, so they never
+  // see a form; if it can't yet (starting), the page offers a button.
+  beforeLoad: async ({ context, search, preload }) => {
     if (search.second || search.error) return;
     const session = await context.queryClient.ensureQueryData(
       queries.session(),
     );
     if (session) throw redirect({ to: "/" });
+    if (preload) return;
+    try {
+      const methods = await context.queryClient.ensureQueryData(signInMethods);
+      if (!methods.demo) return;
+      await demoSignIn(context.queryClient);
+      throw redirect({ href: localPath(search.redirect) ?? "/" });
+    } catch (e) {
+      if (isRedirect(e)) throw e;
+    }
   },
   component: Login,
 });
@@ -190,7 +212,10 @@ function Login() {
   // The buttons, one per identity provider, and whether passwords work.
   const methods = useSignInMethods();
   const start = useStartSSO();
-  const passwords = methods.data?.password ?? true;
+  // The public demo (ADR 0100): one button, no form.
+  const demo = methods.data?.demo ?? false;
+  const demoLogin = useDemoSignIn();
+  const passwords = !demo && (methods.data?.password ?? true);
   const providers = methods.data?.providers ?? [];
   // Why a single sign-on failed, in this page's words; nothing for a
   // reason it doesn't know.
@@ -380,7 +405,24 @@ function Login() {
             )}
           </form>
         )}
-        {!factors && !passwords && (
+        {demo && (
+          <div className="flex flex-col gap-3.5">
+            <p className="text-sec">
+              Everyone here shares one account, and the demo starts fresh every
+              hour.
+            </p>
+            <button
+              type="button"
+              disabled={demoLogin.isPending}
+              onClick={() => demoLogin.mutate(undefined, { onSuccess: done })}
+              className="btn pri justify-center px-3.5 py-2.5 text-md"
+            >
+              Open the demo
+            </button>
+            <ErrorText error={demoLogin.error} />
+          </div>
+        )}
+        {!factors && !passwords && !demo && (
           <div className="flex flex-col gap-3.5">
             {passkeys && (
               <button

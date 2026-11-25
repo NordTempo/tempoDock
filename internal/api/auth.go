@@ -228,6 +228,8 @@ func registerAuth(s *Server, a huma.API) {
 		OperationID: "me", Method: http.MethodGet, Path: Prefix + "/me",
 		Summary: "Who the caller is and what it may do", Tags: []string{"auth"},
 	}, func(_ context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.Me], error) {
-		return reply(actor.Me(), nil)
+		me := actor.Me()
+		me.Demo = s.core.Demo()
+		return reply(me, nil)
 	})
 }
