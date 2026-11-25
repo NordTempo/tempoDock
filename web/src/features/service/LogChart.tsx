@@ -1,6 +1,7 @@
 import {
   type KeyboardEvent,
   type PointerEvent,
+  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -73,6 +74,11 @@ export function LogChart({
   // The bar the keyboard is on; the newest until it moves.
   const [current, setCurrent] = useState(BARS - 1);
   const [pick, setPick] = useState<Pick | null>(null);
+  // Bars that go away take their pointer handlers with them: drop the
+  // pick, or a drag cut short would block the next one.
+  useEffect(() => {
+    if (!chart) setPick(null);
+  }, [chart]);
   if (!chart) return null;
   const { start, span, bars, most } = chart;
   const height = (n: number) => `${(n / most) * 100}%`;
