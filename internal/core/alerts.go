@@ -129,10 +129,13 @@ type alertEngine struct {
 	// status pages' updates being posted (status_hooks.go).
 	outbox outbox
 	hooks  deliveryQueue[hookDelivery]
-	// client posts to the platform's webhook and Slack channels
-	// (newChannelClient), never to addresses guard refuses; orgClient to
-	// orgs' channels and status page hooks, never to what orgGuard
-	// refuses, which also keeps private addresses out (ADR 0062).
+	// pushoverURL is Pushover's messages API (defaultPushoverURL); tests
+	// point it at a receiver.
+	pushoverURL string
+	// client posts to the platform's channels (newChannelClient), never
+	// to addresses guard refuses; orgClient to orgs' channels and status
+	// page hooks, never to what orgGuard refuses, which also keeps
+	// private addresses out (ADR 0062).
 	client, orgClient *http.Client
 	guard, orgGuard   egressGuard
 }
@@ -205,7 +208,8 @@ func newAlertEngine(allow []netip.Prefix) *alertEngine {
 	e := &alertEngine{
 		open: map[string]store.Alert{}, restarts: map[string]*restartLog{}, failed: map[string]int64{}, offline: map[int64]time.Time{}, hot: map[string]time.Time{},
 		causes: map[string]alertCause{}, diagnosing: map[string]bool{}, busy: map[string]chan struct{}{},
-		outbox: outbox{queues: map[int64][]apitypes.AlertNotification{}},
+		outbox:      outbox{queues: map[int64][]apitypes.AlertNotification{}},
+		pushoverURL: defaultPushoverURL,
 	}
 	e.guard.what = "alerts"
 	e.orgGuard.what, e.orgGuard.private, e.orgGuard.allow = "alerts", true, allow

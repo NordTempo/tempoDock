@@ -700,7 +700,8 @@ export const topics: Record<TopicId, Topic> = {
     ],
     related: ["errors", "access", "agents"],
     guide: "watching#alerts",
-    words: "notify slack email webhook lock approve request inbox",
+    words:
+      "notify slack discord pushover email webhook lock approve request inbox",
   },
 
   images: {

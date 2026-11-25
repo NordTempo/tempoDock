@@ -233,3 +233,31 @@ Follow-ups, not built:
 - **A second failed deploy of the same service sends nothing:** the open
   alert is updated in place (new release number and error), and only an
   escalation is sent.
+
+## Amendment (2026-11-25): Discord and Pushover channels
+
+Two more channel kinds, asked for by Saile. Both are grouped like Slack
+(ADR 0097): what queues together goes out as one message.
+
+- **`discord`** POSTs `{"content", "allowed_mentions": {"parse": []}}`
+  to a Discord webhook. A `slack` channel on Discord's `/slack` endpoint
+  worked before, but nothing kept an `@everyone` in quoted build output
+  from pinging, and Slack's link syntax came through as text. Here
+  markdown and mention
+  characters are escaped, mentions are off, Dock's own command is a code
+  span and its link `[Open in Dock](<url>)`. A group longer than
+  Discord's 2000 characters keeps whole alerts and says "and N more".
+  Discord's 404 for a deleted webhook marks the channel broken in
+  Discord's words.
+- **`pushover`** posts to `api.pushover.net/1/messages.json` with a user
+  (or group) key and an application token, both sealed like a URL; the
+  list shows `pushover.net`. One alert's headline is the title and its
+  message and command the body; a group's title counts them and its body
+  lists their headlines (1024 characters). A push about an open critical
+  alert has priority 1, past quiet hours; everything else 0. Priority 2
+  (repeat until acknowledged) isn't used: it needs Pushover's receipts
+  API polled, and Dock's reminders (`--renotify`) already repeat. Any
+  final answer (bad key or token) marks the channel broken with
+  "Pushover refused the channel's keys".
+
+Migration 0128 rebuilds `alert_channels` to widen its CHECK on `kind`.

@@ -847,6 +847,8 @@
             "enum": [
               "webhook",
               "slack",
+              "discord",
+              "pushover",
               "email"
             ],
             "type": "string"
@@ -3287,6 +3289,8 @@
             "enum": [
               "webhook",
               "slack",
+              "discord",
+              "pushover",
               "email"
             ],
             "type": "string"
@@ -3325,9 +3329,19 @@
               "null"
             ]
           },
+          "token": {
+            "description": "pushover: the application's API token. Stored encrypted, never returned",
+            "maxLength": 64,
+            "type": "string"
+          },
           "url": {
-            "description": "webhook and slack: where to POST. Stored encrypted, never returned",
+            "description": "webhook, slack and discord: where to POST. Stored encrypted, never returned",
             "maxLength": 2048,
+            "type": "string"
+          },
+          "user": {
+            "description": "pushover: the user or group key. Stored encrypted, never returned",
+            "maxLength": 64,
             "type": "string"
           }
         },
@@ -22135,7 +22149,7 @@
         ]
       },
       "post": {
-        "description": "A webhook (JSON, signed with HMAC-SHA256 in the Dock-Signature header), a Slack-compatible incoming webhook, or email over SMTP, for the organization's alerts (with platform, the platform's). A webhook's generated signing secret is returned once. Organization admins; operators for the platform's.",
+        "description": "A webhook (JSON, signed with HMAC-SHA256 in the Dock-Signature header), a Slack-compatible incoming webhook, a Discord webhook, Pushover (a user or group key and an application token), or email over SMTP, for the organization's alerts (with platform, the platform's). A webhook's generated signing secret is returned once. Organization admins; operators for the platform's.",
         "operationId": "create-alert-channel",
         "parameters": [
           {

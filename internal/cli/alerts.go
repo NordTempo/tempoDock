@@ -115,7 +115,7 @@ condition is still there, a new alert opens.`,
 func newAlertChannelCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{
 		Use:   "channel",
-		Short: "Where alerts are sent: webhooks, Slack, email (admin; --platform: operators)",
+		Short: "Where alerts are sent: webhooks, Slack, Discord, Pushover, email (admin; --platform: operators)",
 	})
 	cmd.AddCommand(newAlertChannelListCmd(g), newAlertChannelAddCmd(g), newAlertChannelRemoveCmd(g), newAlertChannelTestCmd(g))
 	return cmd
@@ -168,12 +168,12 @@ func channelFailing(ch apitypes.AlertChannel) string {
 const maxSecretInput = 4 << 10
 
 func newAlertChannelAddCmd(g *globals) *cobra.Command {
-	var webhook, slack, email, minSeverity, oldSMTP string
+	var webhook, slack, discord, pushover, email, minSeverity, oldSMTP string
 	var oldPasswordStdin bool
 	var renotify time.Duration
 	var req apitypes.CreateAlertChannelRequest
 	cmd := &cobra.Command{
-		Use:   "add <name> (--webhook <url> | --slack <url> | --email <to,...>)",
+		Use:   "add <name> (--webhook <url> | --slack <url> | --discord <url> | --pushover <user key> --pushover-token <token> | --email <to,...>)",
 		Short: "Add an alert channel (admin)",
 		Long: `Add a channel alerts are sent to: when they open, when their severity goes
 up, as reminders while they stay open (--renotify), and when they resolve.
@@ -182,6 +182,11 @@ up, as reminders while they stay open (--renotify), and when they resolve.
 t=<unix time>,v1=<hex HMAC of "<t>.<body>">. Without --secret a signing
 secret is generated and printed once.
 --slack POSTs {"text": ...} to a Slack-compatible incoming webhook.
+--discord POSTs to a Discord webhook (Server Settings > Integrations >
+Webhooks), with mentions off.
+--pushover pushes to a Pushover user or group key, through the
+application whose API token --pushover-token gives (create one at
+pushover.net/apps). Critical alerts get high priority.
 --email sends mail through Dock's email server, which an operator sets
 up with ` + "`dock email set`" + ` (ADR 0079).
 
@@ -189,25 +194,38 @@ URLs often hold tokens: pass - to read the URL from stdin instead of the
 command line. URLs, secrets and passwords are stored encrypted and never
 shown again.`,
 		Example: `  dock alerts channel add ops --slack - < slack-webhook-url
+  dock alerts channel add team --discord - < discord-webhook-url
+  dock alerts channel add phone --pushover uQiRzpo4DXghDmr9QzzfQu27cmVRsG --pushover-token - < pushover-token
   dock alerts channel add pager --webhook https://hooks.example.com/dock --min-severity critical
   dock alerts channel add mail --email ops@example.com,oncall@example.com`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			req.Name = args[0]
 			set := 0
-			for kind, v := range map[apitypes.AlertChannelKind]string{apitypes.ChannelWebhook: webhook, apitypes.ChannelSlack: slack, apitypes.ChannelEmail: email} {
+			for kind, v := range map[apitypes.AlertChannelKind]string{
+				apitypes.ChannelWebhook: webhook, apitypes.ChannelSlack: slack, apitypes.ChannelDiscord: discord,
+				apitypes.ChannelPushover: pushover, apitypes.ChannelEmail: email,
+			} {
 				if v != "" {
 					req.Kind = kind
 					set++
 				}
 			}
 			if set != 1 {
-				return usageError("pass exactly one of --webhook, --slack or --email", "Run `dock alerts channel add --help` for examples.")
+				return usageError("pass exactly one of --webhook, --slack, --discord, --pushover or --email", "Run `dock alerts channel add --help` for examples.")
+			}
+			if (req.Kind == apitypes.ChannelPushover) != (req.Token != "") {
+				return usageError("--pushover and --pushover-token go together", "Pass the user key with --pushover and the application's token with --pushover-token (- reads it from stdin).")
 			}
 			var err error
 			switch req.Kind {
-			case apitypes.ChannelWebhook, apitypes.ChannelSlack:
-				if req.URL, err = g.stdinIfDash(webhook + slack); err != nil {
+			case apitypes.ChannelWebhook, apitypes.ChannelSlack, apitypes.ChannelDiscord:
+				if req.URL, err = g.stdinIfDash(webhook + slack + discord); err != nil {
+					return err
+				}
+			case apitypes.ChannelPushover:
+				req.User = pushover
+				if req.Token, err = g.stdinIfDash(req.Token); err != nil {
 					return err
 				}
 			case apitypes.ChannelEmail:
@@ -254,6 +272,9 @@ shown again.`,
 	f := cmd.Flags()
 	f.StringVar(&webhook, "webhook", "", "POST signed JSON to this URL (- reads it from stdin)")
 	f.StringVar(&slack, "slack", "", "POST to this Slack-compatible incoming webhook (- reads it from stdin)")
+	f.StringVar(&discord, "discord", "", "POST to this Discord webhook (- reads it from stdin)")
+	f.StringVar(&pushover, "pushover", "", "push to this Pushover user or group key")
+	f.StringVar(&req.Token, "pushover-token", "", "the Pushover application's API token (- reads it from stdin)")
 	f.StringVar(&req.Secret, "secret", "", "webhook signing secret (generated when not given)")
 	f.StringVar(&email, "email", "", "send email to these addresses, comma separated")
 	// The SMTP flags from before ADR 0079, hidden, to say where they went.

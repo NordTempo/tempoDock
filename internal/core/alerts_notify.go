@@ -14,10 +14,12 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/mail"
@@ -28,14 +30,14 @@ import (
 
 // Notification channels (ADR 0020). An org's admins add channels for its
 // alerts, operators channels for the platform's (ADR 0062): a generic webhook
-// (JSON, HMAC-signed), a Slack-compatible incoming webhook, or email over
-// SMTP. A channel gets alerts at or above its minimum severity when they
+// (JSON, HMAC-signed), a Slack-compatible incoming webhook, a Discord
+// webhook, Pushover, or email over SMTP. A channel gets alerts at or above its minimum severity when they
 // open, escalate, repeat (ADR 0097) and resolve, and a reminder every
 // renotify_minutes while one stays open. Each channel's notifications are
 // sent in order by a goroutine that runs while it has some queued. It
 // first waits groupWindow, then sends what is queued as one group (ADR
-// 0097): a Slack channel gets one message listing every alert, a webhook
-// one POST per notification as before. Each delivery is retried with
+// 0097): a Slack, Discord or Pushover channel gets one message listing
+// every alert (grouped), a webhook one POST per notification as before. Each delivery is retried with
 // backoff (deliveryBackoff, longer when the receiver asks with
 // Retry-After; never after an answer retrying can't change,
 // deliveryError.final); the outcome is kept on the channel, so failures
@@ -90,6 +92,10 @@ type channelConfig struct {
 	Secret string      `json:"secret,omitempty"`
 	To     []string    `json:"to,omitempty"`
 	SMTP   *legacySMTP `json:"smtp,omitempty"`
+	// User and Token are a Pushover channel's user (or group) key and
+	// application token.
+	User  string `json:"user,omitempty"`
+	Token string `json:"token,omitempty"`
 }
 
 // legacySMTP is an email channel's own SMTP server, as channels stored it
@@ -353,8 +359,9 @@ func (c *Core) deliver(ch store.AlertChannel, n apitypes.AlertNotification) {
 }
 
 // flushGroup is a stopping daemon's last attempt at what channel ch still
-// has queued: once, without retries, within closeFlush, to Slack as one
-// message and to a webhook one POST each. Without it a restart inside the
+// has queued: once, without retries, within closeFlush, to a grouped
+// channel (Slack, Discord, Pushover) as one message and to a webhook one
+// POST each. Without it a restart inside the
 // grouping window lost every alert of the group, and the channels heard
 // of them again only with a reminder. What can't be sent is logged and
 // noted on the channel.
@@ -371,10 +378,10 @@ func (c *Core) flushGroup(ch store.AlertChannel, left []apitypes.AlertNotificati
 	sent := 0
 	switch {
 	case err != nil:
-	case apitypes.AlertChannelKind(cur.Kind) == apitypes.ChannelSlack:
+	case grouped(apitypes.AlertChannelKind(cur.Kind)):
 		var cfg channelConfig
 		if cfg, err = c.openChannel(cur); err == nil {
-			if err = c.postSlack(ctx, cur, cfg, left); err == nil {
+			if err = c.postGroup(ctx, cur, cfg, left); err == nil {
 				sent = len(left)
 			}
 		}
@@ -395,13 +402,14 @@ func (c *Core) flushGroup(ch store.AlertChannel, left []apitypes.AlertNotificati
 	c.channelFailed(ctx, ch.ID, fmt.Errorf("%d notifications weren't sent, because Dock stopped: %s", len(left)-sent, err.Error()))
 }
 
-// sendGroup sends a channel's queued notifications: to Slack as one
-// message, retried as one delivery; to a webhook one POST each, in order,
+// sendGroup sends a channel's queued notifications: to a grouped channel
+// (Slack, Discord, Pushover) as one message, retried as one delivery; to
+// a webhook one POST each, in order,
 // each with its own retries, since receivers parse one alert per body.
 // It returns how many of the group it is done with: all of them, unless
 // the daemon stopped before a delivery came through (unsent).
 func (c *Core) sendGroup(ch store.AlertChannel, group []apitypes.AlertNotification) (done int) {
-	if apitypes.AlertChannelKind(ch.Kind) != apitypes.ChannelSlack {
+	if !grouped(apitypes.AlertChannelKind(ch.Kind)) {
 		for i, n := range group {
 			if c.unsent(c.sendWithRetries(ch.ID, n)) {
 				return i
@@ -420,7 +428,7 @@ func (c *Core) sendGroup(ch store.AlertChannel, group []apitypes.AlertNotificati
 		}
 		ctx, cancel := context.WithTimeout(c.ctx, deliveryTimeout)
 		defer cancel()
-		return c.postSlack(ctx, cur, cfg, group)
+		return c.postGroup(ctx, cur, cfg, group)
 	})
 	c.recordDelivery(ch.ID, group[0].Alert.Title, err)
 	if c.unsent(err) {
@@ -522,9 +530,14 @@ func channelOrg(ch store.AlertChannel) int64 {
 }
 
 // brokenText says why a channel that got a final answer is broken and
-// what to do about it, in Slack's words for a Slack webhook.
+// what to do about it, in the receiver's words for Slack, Discord and
+// Pushover.
 func brokenText(kind apitypes.AlertChannelKind, de *deliveryError) string {
 	switch {
+	case kind == apitypes.ChannelDiscord && de.status == http.StatusNotFound:
+		return fmt.Sprintf("Discord says this webhook no longer exists (404 %s). Nothing reaches the channel: remove it and add it again with a new webhook URL.", de.answer)
+	case kind == apitypes.ChannelPushover:
+		return fmt.Sprintf("Pushover refused the channel's keys (%d %s). Nothing reaches the channel: remove it and add it again with the right user key and application token.", de.status, de.answer)
 	case kind == apitypes.ChannelSlack && de.status == http.StatusNotFound:
 		return fmt.Sprintf("Slack says this webhook no longer exists (404 %s). Nothing reaches the channel: remove it and add it again with a new webhook URL.", de.answer)
 	case kind == apitypes.ChannelSlack && de.status == http.StatusGone:
@@ -553,13 +566,30 @@ func (c *Core) send(ctx context.Context, ch store.AlertChannel, n apitypes.Alert
 		return c.alerts.post(ctx, ch.OrgID != nil, cfg.URL, body, map[string]string{
 			SignatureHeader: signWebhook(cfg.Secret, time.Now(), body), "Dock-Event": n.Event,
 		})
-	case apitypes.ChannelSlack:
-		return c.postSlack(ctx, ch, cfg, []apitypes.AlertNotification{n})
+	case apitypes.ChannelSlack, apitypes.ChannelDiscord, apitypes.ChannelPushover:
+		return c.postGroup(ctx, ch, cfg, []apitypes.AlertNotification{n})
 	case apitypes.ChannelEmail:
 		subject, text := emailText(n)
 		return c.sendNow(ctx, mailAddresses(cfg.To), mail.Content{Subject: subject, Text: text})
 	}
 	return fmt.Errorf("unknown channel kind %q", ch.Kind)
+}
+
+// grouped reports whether a channel of kind gets the notifications queued
+// together as one message (sendGroup) rather than one delivery each.
+func grouped(kind apitypes.AlertChannelKind) bool {
+	return kind == apitypes.ChannelSlack || kind == apitypes.ChannelDiscord || kind == apitypes.ChannelPushover
+}
+
+// postGroup sends notifications to a grouped channel as one message.
+func (c *Core) postGroup(ctx context.Context, ch store.AlertChannel, cfg channelConfig, group []apitypes.AlertNotification) error {
+	switch apitypes.AlertChannelKind(ch.Kind) {
+	case apitypes.ChannelDiscord:
+		return c.postDiscord(ctx, ch, cfg, group)
+	case apitypes.ChannelPushover:
+		return c.postPushover(ctx, ch, cfg, group)
+	}
+	return c.postSlack(ctx, ch, cfg, group)
 }
 
 // postSlack posts notifications to a Slack channel as one message: each
@@ -580,6 +610,139 @@ func (c *Core) postSlack(ctx context.Context, ch store.AlertChannel, cfg channel
 	return c.alerts.post(ctx, ch.OrgID != nil, cfg.URL, body, nil)
 }
 
+// discordLimit is the most characters a Discord message holds.
+const discordLimit = 2000
+
+// postDiscord posts notifications to a Discord webhook as one message,
+// laid out like Slack's (postSlack) and cut to fit discordLimit. Mentions
+// are off (allowed_mentions), so an alert quoting @everyone pings nobody.
+func (c *Core) postDiscord(ctx context.Context, ch store.AlertChannel, cfg channelConfig, group []apitypes.AlertNotification) error {
+	texts := make([]string, len(group))
+	for i, n := range group {
+		texts[i] = discordText(n, c.alertLink(ctx, ch.OrgID, n.Alert))
+	}
+	var msg discordMessage
+	msg.Content = joinFitting(texts, "\n\n", discordLimit)
+	msg.AllowedMentions.Parse = []string{}
+	body, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	return c.alerts.post(ctx, ch.OrgID != nil, cfg.URL, body, nil)
+}
+
+// discordMessage is the body of a Discord webhook's execute call.
+type discordMessage struct {
+	Content         string `json:"content"`
+	AllowedMentions struct {
+		Parse []string `json:"parse"` // none: nobody is pinged
+	} `json:"allowed_mentions"`
+}
+
+// discordText is a Discord message, escaped: alert messages quote release
+// errors and build output, which must not turn into markdown, masked
+// links or mentions. The command is a code span and the link Dock's own
+// [Open in Dock](<url>), without an embed.
+func discordText(n apitypes.AlertNotification, link string) string {
+	text := headline(n)
+	if n.Alert.Message != "" && n.Event != "resolved" {
+		text += "\n" + n.Alert.Message
+	}
+	text = discordEscaper.Replace(text)
+	if n.Alert.Command != "" && n.Event != "resolved" {
+		text += "\n`" + strings.ReplaceAll(n.Alert.Command, "`", "'") + "`"
+	}
+	if link != "" {
+		text += "\n[Open in Dock](<" + link + ">)"
+	}
+	return text
+}
+
+// discordEscaper escapes Discord's markdown and mention characters.
+var discordEscaper = strings.NewReplacer(
+	`\`, `\\`, "*", `\*`, "_", `\_`, "~", `\~`, "`", "\\`", "|", `\|`,
+	">", `\>`, "<", `\<`, "[", `\[`, "]", `\]`, "#", `\#`, "@", "@\u200b",
+)
+
+// defaultPushoverURL is Pushover's messages API.
+const defaultPushoverURL = "https://api.pushover.net/1/messages.json"
+
+// Pushover's limits on a message's parts.
+const (
+	pushoverTitleLimit   = 250
+	pushoverMessageLimit = 1024
+)
+
+// pushoverMessage is the body of a Pushover messages call.
+type pushoverMessage struct {
+	Token    string `json:"token"`
+	User     string `json:"user"`
+	Title    string `json:"title"`
+	Message  string `json:"message"`
+	Priority int    `json:"priority"`
+	URL      string `json:"url,omitempty"`
+	URLTitle string `json:"url_title,omitempty"`
+}
+
+// postPushover sends notifications as one Pushover push. One alert's
+// headline is the title and its details the message; a group's title
+// says how many and its message lists their headlines. A push about a
+// critical alert that is still open has high priority (1, past quiet
+// hours); the rest normal (0). The link opens the alert in Dock.
+func (c *Core) postPushover(ctx context.Context, ch store.AlertChannel, cfg channelConfig, group []apitypes.AlertNotification) error {
+	msg := pushoverMessage{Token: cfg.Token, User: cfg.User}
+	var lines []string
+	first := group[0]
+	if len(group) == 1 {
+		msg.Title = clip(headline(first), pushoverTitleLimit-1)
+		if first.Alert.Message != "" && first.Event != "resolved" {
+			lines = append(lines, first.Alert.Message)
+		}
+		if first.Alert.Command != "" && first.Event != "resolved" {
+			lines = append(lines, first.Alert.Command)
+		}
+		if len(lines) == 0 {
+			lines = append(lines, first.Alert.Title) // Pushover needs a message
+		}
+	} else {
+		msg.Title = strconv.Itoa(len(group)) + " alerts"
+		for _, n := range group {
+			lines = append(lines, headline(n))
+		}
+		first.Alert = apitypes.Alert{} // the link goes to the alerts page
+	}
+	msg.Message = joinFitting(lines, "\n", pushoverMessageLimit)
+	for _, n := range group {
+		if n.Alert.Severity == apitypes.SeverityCritical && n.Event != "resolved" && n.Event != "test" {
+			msg.Priority = 1
+		}
+	}
+	if link := c.alertLink(ctx, ch.OrgID, first.Alert); link != "" {
+		msg.URL, msg.URLTitle = link, "Open in Dock"
+	}
+	body, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	return c.alerts.post(ctx, ch.OrgID != nil, c.alerts.pushoverURL, body, nil)
+}
+
+// joinFitting joins texts with sep, keeping as many whole texts as fit in
+// limit characters and saying how many were left out; a first text too
+// long on its own is cut.
+func joinFitting(texts []string, sep string, limit int) string {
+	if all := strings.Join(texts, sep); utf8.RuneCountInString(all) <= limit {
+		return all
+	}
+	for kept := len(texts) - 1; kept > 0; kept-- {
+		out := strings.Join(texts[:kept], sep) + sep + "and " + strconv.Itoa(len(texts)-kept) + " more"
+		if utf8.RuneCountInString(out) <= limit {
+			return out
+		}
+	}
+	return clip(texts[0], limit-1) // clip adds an ellipsis
+}
+
 // signWebhook signs a webhook body: receivers recompute the HMAC-SHA256
 // of "<t>.<body>" with the channel's secret, compare it in constant time
 // and reject old timestamps, which stops replays.
@@ -592,8 +755,8 @@ func signWebhook(secret string, at time.Time, body []byte) string {
 	return "t=" + t + ",v1=" + hex.EncodeToString(mac.Sum(nil))
 }
 
-// newChannelClient is an HTTP client webhook and Slack channels post
-// with. It never follows redirects: a channel's URL is where alerts go,
+// newChannelClient is an HTTP client webhook, Slack, Discord and
+// Pushover channels post with. It never follows redirects: a channel's URL is where alerts go,
 // nowhere else. It never uses a proxy (that would connect to the proxy,
 // not the channel, past the guard) and never connects to addresses g
 // refuses (checked after DNS), and keeps no idle connections: alerts are
@@ -897,8 +1060,11 @@ const emailNotSetUpWarning = "Email isn't set up on this Dock, so nothing reache
 // sealed, what lists show, and a generated webhook secret.
 func (e *alertEngine) channelSettings(req apitypes.CreateAlertChannelRequest, org bool) (cfg channelConfig, target, generated string, err error) {
 	guard, _ := e.guardFor(org)
+	if req.Kind != apitypes.ChannelPushover && (req.User != "" || req.Token != "") {
+		return cfg, "", "", invalid("a user key and token are for pushover channels")
+	}
 	switch req.Kind {
-	case apitypes.ChannelWebhook, apitypes.ChannelSlack:
+	case apitypes.ChannelWebhook, apitypes.ChannelSlack, apitypes.ChannelDiscord:
 		u, perr := url.Parse(req.URL)
 		if req.URL == "" || perr != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 			return cfg, "", "", invalid("a %s channel needs --url, an http:// or https:// URL", req.Kind)
@@ -920,8 +1086,17 @@ func (e *alertEngine) channelSettings(req apitypes.CreateAlertChannelRequest, or
 				generated = cfg.Secret
 			}
 		} else if req.Secret != "" {
-			return cfg, "", "", invalid("only webhook channels are signed; slack channels take no secret")
+			return cfg, "", "", invalid("only webhook channels are signed; %s channels take no secret", req.Kind)
 		}
+	case apitypes.ChannelPushover:
+		if !pushoverKey.MatchString(req.User) || !pushoverKey.MatchString(req.Token) {
+			return cfg, "", "", invalid("a pushover channel needs a user (or group) key and an application token, 30 letters and digits each, from pushover.net")
+		}
+		if req.URL != "" || req.Secret != "" || len(req.To) > 0 {
+			return cfg, "", "", invalid("pushover channels take a user key and token, not a URL, secret or recipients")
+		}
+		cfg.User, cfg.Token = req.User, req.Token
+		target = "pushover.net"
 	case apitypes.ChannelEmail:
 		if len(req.To) == 0 {
 			return cfg, "", "", invalid("an email channel needs at least one recipient")
@@ -941,7 +1116,7 @@ func (e *alertEngine) channelSettings(req apitypes.CreateAlertChannelRequest, or
 		}
 		target = strings.Join(cfg.To, ", ")
 	default:
-		return cfg, "", "", invalid("channel kind must be webhook, slack or email")
+		return cfg, "", "", invalid("channel kind must be webhook, slack, discord, pushover or email")
 	}
 	return cfg, target, generated, nil
 }
@@ -964,6 +1139,9 @@ func (c *Core) RemoveAlertChannel(ctx context.Context, a Actor, platform bool, n
 	c.audit(ctx, channelAudit(a, org), "alert.channel_remove", nil, nil, "alert channel "+name, "removed alert channel "+name)
 	return nil
 }
+
+// pushoverKey is the form of Pushover's user, group and application keys.
+var pushoverKey = regexp.MustCompile(`^[A-Za-z0-9]{30}$`)
 
 // maxChannelRecipients caps an email channel's recipients, in core as in
 // the API's schema: every alert and every test mails each of them.

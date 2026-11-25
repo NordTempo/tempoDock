@@ -18,6 +18,7 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+	"unicode/utf8"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -360,6 +361,77 @@ func TestSlackTextIsEscaped(t *testing.T) {
 	}}, "https://dock.example.com/a&b")
 	if want := "[warning] Deploy of a/b/c failed\n&lt;!channel&gt; &lt;https://evil.example|log in&gt; &amp; retry\n<https://dock.example.com/a&amp;b|Open in Dock>"; got != want {
 		t.Fatalf("slack text = %q", got)
+	}
+}
+
+// Discord text can't format, link or mention: only Dock's own command and
+// link are markdown.
+func TestDiscordTextIsEscaped(t *testing.T) {
+	got := discordText(apitypes.AlertNotification{Event: "opened", Alert: apitypes.Alert{
+		Severity: apitypes.SeverityWarning, Title: "Deploy of a/b/c failed", Message: "@everyone [log in](https://evil.example) **now**",
+		Command: "dock logs web",
+	}}, "https://dock.example.com/a")
+	want := "\\[warning\\] Deploy of a/b/c failed\n@\u200beveryone \\[log in\\](https://evil.example) \\*\\*now\\*\\*\n`dock logs web`\n[Open in Dock](<https://dock.example.com/a>)"
+	if got != want {
+		t.Fatalf("discord text = %q, want %q", got, want)
+	}
+}
+
+// A group too long for one message keeps whole alerts and counts the rest.
+func TestJoinFitting(t *testing.T) {
+	if got := joinFitting([]string{"aaaa", "bbbb", "cccc"}, "\n", 30); got != "aaaa\nbbbb\ncccc" {
+		t.Fatalf("fits = %q", got)
+	}
+	a, b, c := strings.Repeat("a", 20), strings.Repeat("b", 20), strings.Repeat("c", 20)
+	if got := joinFitting([]string{a, b, c}, "\n", 55); got != a+"\n"+b+"\nand 1 more" {
+		t.Fatalf("cut = %q", got)
+	}
+	if got := joinFitting([]string{strings.Repeat("x", 20)}, "\n", 10); utf8.RuneCountInString(got) != 10 {
+		t.Fatalf("one long text = %q, want 10 characters", got)
+	}
+}
+
+// Discord and Pushover channels get their own bodies: Discord's content
+// with mentions off, Pushover's keys, the alert as title and message, and
+// high priority while a critical alert is open.
+func TestDiscordAndPushoverChannels(t *testing.T) {
+	h := newHarness(t)
+	h.c.AllowLoopbackAlertChannels(true)
+	var mu sync.Mutex
+	bodies := map[string][]string{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies[r.URL.Path] = append(bodies[r.URL.Path], string(body))
+		mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(srv.Close)
+	h.c.alerts.pushoverURL = srv.URL + "/pushover"
+	user, token := strings.Repeat("u", 30), strings.Repeat("t", 30)
+	h.platformChannel(apitypes.CreateAlertChannelRequest{Name: "discord", Kind: apitypes.ChannelDiscord, URL: srv.URL + "/discord"})
+	created := h.platformChannel(apitypes.CreateAlertChannelRequest{Name: "push", Kind: apitypes.ChannelPushover, User: user, Token: token})
+	if created.Channel.Target != "pushover.net" {
+		t.Fatalf("pushover target = %q", created.Channel.Target)
+	}
+	h.c.signalAlert(h.ctx, alertSignal{Key: "k", Kind: "test", Severity: apitypes.SeverityCritical, Title: "Server down", Message: "No answer for 5 minutes."})
+	h.outboxSent()
+	mu.Lock()
+	defer mu.Unlock()
+
+	var d discordMessage
+	if len(bodies["/discord"]) != 1 || json.Unmarshal([]byte(bodies["/discord"][0]), &d) != nil {
+		t.Fatalf("discord got %q", bodies["/discord"])
+	}
+	if d.Content != "\\[critical\\] Server down\nNo answer for 5 minutes." || d.AllowedMentions.Parse == nil || len(d.AllowedMentions.Parse) != 0 {
+		t.Fatalf("discord message = %+v", d)
+	}
+	var p pushoverMessage
+	if len(bodies["/pushover"]) != 1 || json.Unmarshal([]byte(bodies["/pushover"][0]), &p) != nil {
+		t.Fatalf("pushover got %q", bodies["/pushover"])
+	}
+	if want := (pushoverMessage{Token: token, User: user, Title: "[critical] Server down", Message: "No answer for 5 minutes.", Priority: 1}); p != want {
+		t.Fatalf("pushover message = %+v, want %+v", p, want)
 	}
 }
 
@@ -725,6 +797,9 @@ func TestAlertPermissionsAndSecrets(t *testing.T) {
 		{Name: "c", Kind: apitypes.ChannelEmail, To: []string{"not an address"}},
 		{Name: "d", Kind: apitypes.ChannelEmail},
 		{Name: "slack", Kind: apitypes.ChannelSlack, URL: "https://x"},
+		{Name: "e", Kind: apitypes.ChannelPushover, User: "short", Token: strings.Repeat("t", 30)},
+		{Name: "f", Kind: apitypes.ChannelPushover, User: strings.Repeat("u", 30), Token: strings.Repeat("t", 30), URL: "https://x"},
+		{Name: "g", Kind: apitypes.ChannelDiscord, URL: "https://x", User: strings.Repeat("u", 30)},
 	} {
 		if _, err := h.c.CreateAlertChannel(h.ctx, testSystem, false, bad); err == nil {
 			t.Fatalf("channel %+v was accepted", bad)
