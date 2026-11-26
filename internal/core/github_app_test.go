@@ -1038,3 +1038,58 @@ func TestGitHubAppLimitIsCheckedWhenStored(t *testing.T) {
 		t.Fatalf("stored past the limit: %v", err)
 	}
 }
+
+// Listing the org's repositories reads the same queries however many
+// installations it has, of one App or several, with the installation
+// tokens cached or not.
+func TestGitHubReposReadsAFixedNumberOfQueries(t *testing.T) {
+	h, gh, _ := appHarness(t) // installation 7 of the platform's App, org test's
+	gh.withOrgApp(t)
+	admin := h.in(h.member("ann@x", map[string]apitypes.Scope{"test": apitypes.ScopeAdmin}), "test")
+	state, err := h.c.StartGitHubApp(h.ctx, admin, false, apitypes.GitHubAppRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, err := h.c.CompleteGitHubApp(h.ctx, "0rg", state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	install, binding := h.startAppInstall(admin, apitypes.GitHubInstallRequest{App: app.Slug})
+	if _, err := h.c.CompleteGitHubInstall(h.ctx, orgInstall, "install", install, binding, "https://dock.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	// A second installation of the platform's App, so one App has two.
+	if err := h.store.SetGitHubInstallation(h.ctx, store.SetGitHubInstallationParams{InstallationID: 8, AppID: 1, OrgID: 1, Account: "acme", AssignedBy: "test", AssignedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	db := &countingDB{db: h.store.DB}
+	counted := *h.store
+	counted.Queries = store.New(db)
+	h.opts.Store = &counted
+	h.restart()
+	reads := func(cold bool) int64 {
+		t.Helper()
+		if cold {
+			h.c.git.app.forgetTokens(0)
+		}
+		before := db.n.Load()
+		if _, err := h.c.GitHubRepos(countCalls(h.ctx), testSystem); err != nil {
+			t.Fatal(err)
+		}
+		return db.n.Load() - before
+	}
+	coldMany, warmMany := reads(true), reads(false)
+	for _, id := range []int64{8, orgInstall} {
+		if err := h.store.DeleteGitHubInstallation(h.ctx, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	coldOne, warmOne := reads(true), reads(false)
+	if coldOne == 0 {
+		t.Fatal("counted no reads: the listing's queries must run on its context")
+	}
+	if coldMany != coldOne || warmMany != warmOne {
+		t.Errorf("reads with 3 installations (cold, warm): %d, %d; with 1: %d, %d", coldMany, warmMany, coldOne, warmOne)
+	}
+}
