@@ -907,7 +907,16 @@ func (r *Runtime) MemoryOwner(ctx context.Context, id string) (node.MemoryPart, 
 		return node.MemoryPart{Group: node.MemoryApps, Name: name, Service: labels[node.LabelService]}, nil
 	case role == node.RoleBuildKit:
 		return node.MemoryPart{Group: node.MemoryPlatform, Name: "BuildKit"}, nil
+	case role == node.RoleAnalytics:
+		return node.MemoryPart{Group: node.MemoryPlatform, Name: "analytics store"}, nil
+	case role == node.RoleTraces:
+		return node.MemoryPart{Group: node.MemoryPlatform, Name: "trace store"}, nil
+	case role == node.RoleCloudflared:
+		// The same name as dock-cloudflared.service (stats.platformUnits).
+		return node.MemoryPart{Group: node.MemoryPlatform, Name: "cloudflared"}, nil
 	default:
+		// Jobs, backups, scans, volume copies: the containers Dock runs
+		// for a piece of work and removes after.
 		return node.MemoryPart{Group: node.MemoryPlatform, Name: "jobs"}, nil
 	}
 }
