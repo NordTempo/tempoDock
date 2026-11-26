@@ -30,7 +30,7 @@ import { recordLiveEvent } from "./feed";
 import { setLiveStatus, useLiveAttempt } from "./liveStatus";
 import { signedOut } from "./mutations";
 import { followProjectRename, reconcileProjectNames } from "./projectRename";
-import { findService, keys, queries } from "./queries";
+import { findService, forgetEnvironment, keys, queries } from "./queries";
 import type {
   Environment,
   LiveEvent,
@@ -805,13 +805,12 @@ function invalidateForAudit(
     invalidate(keys.overview(audit.project));
     return;
   }
-  // A deleted environment's queries go: refetching them would answer 404.
+  // A deleted environment's queries go (forgetEnvironment): refetching
+  // them would answer 404.
   if (audit.action === "environment.delete" && audit.environment) {
-    queryClient.removeQueries({
-      queryKey: keys.env({
-        project: audit.project,
-        environment: audit.environment,
-      }),
+    forgetEnvironment(queryClient, {
+      project: audit.project,
+      environment: audit.environment,
     });
     invalidate(keys.overview(audit.project));
     return;

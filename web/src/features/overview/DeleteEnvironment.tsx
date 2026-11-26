@@ -3,7 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { api, body } from "../../api/client";
 import { useAction } from "../../data/mutations";
-import { keys, useOrgAdmin } from "../../data/queries";
+import { forgetEnvironment, keys, useOrgAdmin } from "../../data/queries";
 import type { Environment } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { Button, Confirm } from "../../ui/kit";
@@ -12,8 +12,8 @@ import { notify } from "../../ui/notice";
 /**
  * `dock environment delete` (ADR 0103), for the environment's Delete row
  * on its Settings tab: deletes it and everything in it, its name typed
- * again in the dialog. Its own queries are dropped once it's gone, since
- * refetching them answers 404; the overview refetches.
+ * again in the dialog. Its cached queries are dropped once it's gone
+ * (forgetEnvironment): refetching them answers 404. The overview refetches.
  */
 const useDeleteEnvironment = (e: Environment) =>
   useAction(
@@ -89,11 +89,9 @@ export function DeleteEnvironment({
                   params: { org, project: e.project },
                   search: { env: undefined },
                 });
-                client.removeQueries({
-                  queryKey: keys.env({
-                    project: e.project,
-                    environment: e.name,
-                  }),
+                forgetEnvironment(client, {
+                  project: e.project,
+                  environment: e.name,
                 });
               },
             })

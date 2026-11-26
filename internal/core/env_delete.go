@@ -68,14 +68,8 @@ func (c *Core) DeleteEnvironment(ctx context.Context, a Actor, ref EnvRef, req a
 	if open > 0 {
 		return apitypes.EnvironmentDeleted{}, conflict("%s has %s cloned from it; close them first (`dock environment previews -p %s` lists them)", es, count(open, "open preview"), p.Name)
 	}
-	live := 0
-	for _, x := range d.envs {
-		if x.ArchivedAt == nil {
-			live++
-		}
-	}
-	if live <= 1 {
-		return apitypes.EnvironmentDeleted{}, invalid("%s is the only environment of project %s; create another first, or archive the project (`dock project archive %s`)", e.Name, p.Name, p.Name)
+	if left := remainingEnvs(d.envs, pvs, e.ID); left == 0 {
+		return apitypes.EnvironmentDeleted{}, onlyEnvironment(es)
 	}
 	d = d.of("environment "+es.String(), ids)
 	for _, x := range d.envs {
@@ -99,9 +93,10 @@ func (c *Core) DeleteEnvironment(ctx context.Context, a Actor, ref EnvRef, req a
 	if err := c.serversOnline(ctx, a, d); err != nil {
 		return apitypes.EnvironmentDeleted{}, err
 	}
-	// Its live services are archived first: their routes and DNS records
-	// go, and their containers stop before anything is removed.
-	notes, err := c.archiveForDelete(ctx, es, d)
+	// Its live services, and those of closed previews whose archive
+	// waits for a deploy, are archived first: their routes and DNS
+	// records go, and their containers stop before anything is removed.
+	notes, err := c.archiveForDelete(ctx, d)
 	if err != nil {
 		return apitypes.EnvironmentDeleted{}, err
 	}
@@ -131,18 +126,41 @@ func (c *Core) DeleteEnvironment(ctx context.Context, a Actor, ref EnvRef, req a
 	return out, nil
 }
 
-// archiveForDelete archives the environment's live services and waits
-// for their containers to stop, so removeProjectResources finds them
-// stopped. A service that is deploying refuses it, and nothing is
-// archived then. The notes are finishArchive's.
-func (c *Core) archiveForDelete(ctx context.Context, es envScope, d deletion) ([]string, error) {
+// onlyEnvironment refuses deleting the project's last environment that
+// isn't a preview.
+func onlyEnvironment(es envScope) error {
+	return invalid("%s is the only environment of project %s; create another first, or archive the project (`dock project archive %s`)", es.env.Name, es.project.Name, es.project.Name)
+}
+
+// remainingEnvs counts the project's live environments that aren't
+// previews, leaving out the one with ID gone: what a project keeps after
+// deleting it.
+func remainingEnvs(envs []store.Environment, pvs []store.ListProjectPreviewEnvironmentsRow, gone int64) int {
+	preview := map[int64]bool{}
+	for _, pv := range pvs {
+		preview[pv.EnvironmentID] = true
+	}
+	n := 0
+	for _, e := range envs {
+		if e.ArchivedAt == nil && e.ID != gone && !preview[e.ID] {
+			n++
+		}
+	}
+	return n
+}
+
+// archiveForDelete archives the deletion's live services and waits for
+// their containers to stop, so removeProjectResources finds them
+// stopped. A service that is deploying refuses it (a closed preview's
+// too), and nothing is archived then. The notes are finishArchive's.
+func (c *Core) archiveForDelete(ctx context.Context, d deletion) ([]string, error) {
 	var done []archivedService
 	err := c.store.Tx(ctx, func(q *store.Queries) error {
 		for _, s := range d.svcs {
-			if s.EnvironmentID != es.env.ID || s.ArchivedAt != nil {
+			if s.ArchivedAt != nil {
 				continue
 			}
-			as, ok, err := archiveTx(ctx, q, svcScope{es, s})
+			as, ok, err := archiveTx(ctx, q, svcScope{d.scope(s), s})
 			if err != nil {
 				return err
 			}
@@ -161,9 +179,12 @@ func (c *Core) archiveForDelete(ctx context.Context, es envScope, d deletion) ([
 }
 
 // deleteEnvironmentRows deletes the deletion's rows, after checking in
-// the same transaction that the environment is still the one named and
-// no preview opened from it meanwhile, then forgets what memory holds of
-// them. Alert writes wait meanwhile (alertEngine.writes).
+// the same transaction that the environment is still the one named, the
+// project keeps another environment, and nothing was added meanwhile:
+// no preview opened from it and no live service (one created while its
+// resources were removed would lose its rows but keep its container).
+// Then it forgets what memory holds of them. Alert writes wait meanwhile
+// (alertEngine.writes).
 func (c *Core) deleteEnvironmentRows(ctx context.Context, es envScope, d deletion) error {
 	c.alerts.writes.Lock()
 	defer c.alerts.writes.Unlock()
@@ -188,6 +209,28 @@ func (c *Core) deleteEnvironmentRows(ctx context.Context, es envScope, d deletio
 		}
 		if n > 0 {
 			return conflict("a preview of %s opened meanwhile; close it, then delete again", es)
+		}
+		for _, id := range ids {
+			svcs, err := q.ListServices(ctx, id)
+			if err != nil {
+				return err
+			}
+			for _, s := range svcs {
+				if s.ArchivedAt == nil {
+					return conflict("service %s was added to %s meanwhile; delete the environment again", s.Name, es)
+				}
+			}
+		}
+		envs, err := q.ListEnvironments(ctx, es.project.ID)
+		if err != nil {
+			return err
+		}
+		pvs, err := q.ListProjectPreviewEnvironments(ctx, es.project.ID)
+		if err != nil {
+			return err
+		}
+		if remainingEnvs(envs, pvs, es.env.ID) == 0 {
+			return onlyEnvironment(es)
 		}
 		return nil
 	})
