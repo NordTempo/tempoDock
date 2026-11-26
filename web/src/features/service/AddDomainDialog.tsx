@@ -12,7 +12,8 @@ import { defaultName, defaultZone, takenBy } from "./defaultZone";
 /**
  * Adds a hostname: your own (you create its DNS record), or from a zone
  * connected to Dock, which Dock routes through the server's Cloudflare
- * tunnel (ADR 0036). onAdded gets the new domain once it is added.
+ * tunnel (ADR 0036). The Cloudflare choice only shows once a zone is
+ * connected. onAdded gets the new domain once it is added.
  */
 export default function AddDomainDialog({
   serviceRef: ref,
@@ -24,8 +25,7 @@ export default function AddDomainDialog({
   onAdded: (domain: Domain) => void;
 }) {
   const add = useAddDomain();
-  const zonesQuery = useCloudflareZones();
-  const zones = zonesQuery.data ?? [];
+  const zones = useCloudflareZones().data ?? [];
   const [mode, setMode] = useState<"own" | "cloudflare">("own");
   const [hostname, setHostname] = useState("");
   const [redirect, setRedirect] = useState("");
@@ -61,7 +61,11 @@ export default function AddDomainDialog({
     .trim()
     .replace(/\.$/, "")
     .replace(new RegExp(`(^|\\.)${picked.replaceAll(".", "\\.")}$`), "");
-  const fromCloudflare = mode === "cloudflare";
+  // Without a connected zone there is nothing to choose: the dialog is
+  // just your own hostname, with no radio buttons or option box. Only
+  // classes change when zones arrive, so a field being typed in keeps focus.
+  const canCloudflare = zones.length > 0;
+  const fromCloudflare = canCloudflare && mode === "cloudflare";
   const host = fromCloudflare
     ? sub
       ? `${sub}.${picked}`
@@ -75,8 +79,8 @@ export default function AddDomainDialog({
   // answers for the ones outside it.
   const hostError =
     takenBy(host, domains) ?? v.required(!host, "Enter a hostname.");
-  const option = (on: boolean, off = false) =>
-    `flex gap-2.5 rounded-ctl border p-2.5 ${on ? "border-edge bg-sel" : "border-line"} ${off ? "text-mut" : ""}`;
+  const option = (on: boolean) =>
+    `flex gap-2.5 rounded-ctl border p-2.5 ${on ? "border-edge bg-sel" : "border-line"}`;
   return (
     <Dialog title={`Add a domain to ${ref.service}`} onClose={onClose} wide>
       <form
@@ -102,10 +106,11 @@ export default function AddDomainDialog({
           );
         }}
       >
-        <label className={option(!fromCloudflare)}>
+        <label className={canCloudflare ? option(!fromCloudflare) : "flex"}>
           <input
             type="radio"
             name="mode"
+            hidden={!canCloudflare}
             checked={!fromCloudflare}
             onChange={() => setMode("own")}
           />
@@ -147,69 +152,68 @@ export default function AddDomainDialog({
             )}
           </span>
         </label>
-        <label className={option(fromCloudflare, zones.length === 0)}>
-          <input
-            type="radio"
-            name="mode"
-            checked={fromCloudflare}
-            disabled={zones.length === 0}
-            onChange={() => setMode("cloudflare")}
-          />
-          <span className="flex min-w-0 flex-1 flex-col gap-2">
-            <span>
-              From Cloudflare
-              <span className="block text-mut">
-                {zonesQuery.isPending
-                  ? "Looking up the connected zones…"
-                  : zonesQuery.error
-                    ? `Can't list the connected zones: ${zonesQuery.error.message}`
-                    : zones.length === 0
-                      ? "Needs a zone: an operator connects one in Console › Cloudflare."
-                      : "Dock creates the record and routes it through the server's tunnel."}
+        {canCloudflare && (
+          <label className={option(fromCloudflare)}>
+            <input
+              type="radio"
+              name="mode"
+              checked={fromCloudflare}
+              onChange={() => setMode("cloudflare")}
+            />
+            <span className="flex min-w-0 flex-1 flex-col gap-2">
+              <span>
+                From Cloudflare
+                <span className="block text-mut">
+                  Dock creates the record and routes it through the server's
+                  tunnel.
+                </span>
               </span>
-            </span>
-            {fromCloudflare && (
-              <>
-                <span className="flex flex-wrap items-center gap-2">
-                  <input
-                    aria-label="Name"
-                    aria-invalid={!!hostError}
-                    data-autofocus
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="shop, or empty for the zone"
-                    className={`field min-w-0 flex-[1_1_180px] font-mono ${invalid(hostError)}`}
-                  />
-                  <span className="text-mut">.</span>
-                  <select
-                    aria-label="Zone"
-                    value={picked}
-                    onChange={(e) => setZone(e.target.value)}
-                    className="field font-mono"
-                  >
-                    {zones.map((z) => (
-                      <option key={z.name} value={z.name}>
-                        {z.name}
-                      </option>
-                    ))}
-                  </select>
-                  {hostError && (
-                    <span role="alert" className="basis-full text-xs text-fail">
-                      {hostError}
-                    </span>
-                  )}
-                </span>
-                <span className="text-mut">
-                  {zones.length} connected{" "}
-                  {zones.length === 1 ? "zone" : "zones"}:{" "}
-                  <span className="font-mono">
-                    {zones.map((z) => z.name).join(", ")}
+              {fromCloudflare && (
+                <>
+                  <span className="flex flex-wrap items-center gap-2">
+                    <input
+                      aria-label="Name"
+                      aria-invalid={!!hostError}
+                      data-autofocus
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="shop, or empty for the zone"
+                      className={`field min-w-0 flex-[1_1_180px] font-mono ${invalid(hostError)}`}
+                    />
+                    <span className="text-mut">.</span>
+                    <select
+                      aria-label="Zone"
+                      value={picked}
+                      onChange={(e) => setZone(e.target.value)}
+                      className="field font-mono"
+                    >
+                      {zones.map((z) => (
+                        <option key={z.name} value={z.name}>
+                          {z.name}
+                        </option>
+                      ))}
+                    </select>
+                    {hostError && (
+                      <span
+                        role="alert"
+                        className="basis-full text-xs text-fail"
+                      >
+                        {hostError}
+                      </span>
+                    )}
                   </span>
-                </span>
-              </>
-            )}
-          </span>
-        </label>
+                  <span className="text-mut">
+                    {zones.length} connected{" "}
+                    {zones.length === 1 ? "zone" : "zones"}:{" "}
+                    <span className="font-mono">
+                      {zones.map((z) => z.name).join(", ")}
+                    </span>
+                  </span>
+                </>
+              )}
+            </span>
+          </label>
+        )}
         {!target && (
           <span className="flex flex-col gap-0.5">
             <Check
