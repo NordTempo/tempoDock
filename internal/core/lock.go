@@ -196,9 +196,9 @@ func (c *Core) LockEnvironment(ctx context.Context, a Actor, ref EnvRef, req api
 			return apitypes.Environment{}, err
 		}
 	}
-	summary := "locked: tokens can't change anything in it"
+	summary := "locked for agents: their changes go to the Inbox for approval"
 	if req.People {
-		summary = "locked for people too: only its approvers change it; everyone else's changes wait for them"
+		summary = "locked for people too: only its approvers change it; everyone else's changes go to the Inbox for them"
 	}
 	return c.setLock(ctx, a, es, store.SetEnvironmentLockParams{LockedAt: &at, LockedBy: a.Name, LockReason: req.Reason, LockPeople: req.People, ID: es.env.ID},
 		"environment.lock", summary+reasonSuffix(req.Reason))

@@ -9,6 +9,11 @@ Amended 2026-11-26 (Saile: "I was thinking locking it for AI agents"): a lock
 is for agents again, in the UI too, and GitHub pushes deploy through it; only
 a lock for people too (the full freeze) holds pushes. A push is a person's
 merge, and keeping agents from merging is the repository's branch protection.
+Amended 2026-11-26 again (Saile: the "Locked for agents" message is
+duplicate): the strip under the header is gone. The header's lock pill
+says the state and, for admins, how many requests wait; clicking it opens
+who, when, why, where held changes go (the Inbox), Review, Pause for,
+Unlock and the lock in Activity.
 
 ## Context
 
