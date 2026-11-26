@@ -163,8 +163,13 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 func routeKey(serviceID int64) string { return "s" + strconv.FormatInt(serviceID, 10) }
 
 // tunnelOnlyHosts are the hostnames a direct server serves to its
-// Cloudflare tunnel only: the domains Dock routes through it (ADR 0036).
-// None on a tunnel server, where everything comes through the tunnel.
+// Cloudflare tunnel only: the domains Dock routes through it (ADR 0036),
+// also when it is sent through its tunnel (ingressOf), where the rest
+// stay on its public IP too. A hostname under its base domain reaches
+// the IP through the base's wildcard record until its own record is in
+// place, so it goes to the tunnel only once that is ready
+// (routeReadyRecords). None on a server installed in tunnel mode, where
+// everything comes through the tunnel.
 func (c *Core) tunnelOnlyHosts(ctx context.Context, serverID int64) (map[string]bool, error) {
 	c.cf.mu.Lock()
 	connected := len(c.cf.conns) > 0
@@ -180,11 +185,15 @@ func (c *Core) tunnelOnlyHosts(ctx context.Context, serverID int64) (map[string]
 	if err != nil {
 		return nil, err
 	}
-	if c.ingressOf(srv).mode == apitypes.IngressCloudflareTunnel {
+	ing := c.ingressOf(srv)
+	if ing.mode == apitypes.IngressCloudflareTunnel && !ing.listener {
 		return nil, nil
 	}
 	hosts := make(map[string]bool, len(rows))
 	for _, r := range rows {
+		if atOrUnderBase(r.Hostname, ing.baseDomain) && !recordReady(r.Status) {
+			continue
+		}
 		hosts[r.Hostname] = true
 	}
 	return hosts, nil

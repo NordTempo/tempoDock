@@ -8,6 +8,7 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 // A server's disk is grouped for the console: services' volumes by
@@ -147,6 +148,44 @@ func TestPruneServerTargets(t *testing.T) {
 	}
 	if ops := ran(); len(ops) != 0 {
 		t.Errorf("a refused prune ran %v", ops)
+	}
+}
+
+// A server that stopped building needs none of the build cache and
+// scanner database it kept: both are reclaimable in full, and a prune
+// without targets frees them.
+func TestDiskOfServerThatStoppedBuilding(t *testing.T) {
+	h := newHarness(t)
+	const gb = 1 << 30
+	h.rt.SetHostStats(node.HostStats{Disks: []node.Disk{{Paths: []string{"/var/lib/docker", "/var/lib/dock"}, Total: 40 * gb, Used: 20 * gb}}})
+	h.rt.SetDiskUsage(node.DiskUsage{ScanLeftovers: gb / 2, Volumes: []node.VolumeUsage{
+		{Name: node.BuildCacheVolume, Bytes: 3 * gb},
+		{Name: "dock_scan_db_abc", Role: node.VolumeScanDB, Bytes: 2 * gb},
+	}})
+	local, err := h.store.GetLocalServer(h.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.store.UpdateServerSettings(h.ctx, store.UpdateServerSettingsParams{BaseDomain: local.BaseDomain, Builder: false, ID: local.ID}); err != nil {
+		t.Fatal(err)
+	}
+	d, err := h.c.ServerDisk(h.ctx, testSystem, local.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []apitypes.DiskPrune{{Target: apitypes.PruneScanner, Bytes: 2 * gb, Safe: true}, {Target: apitypes.PruneCache, Bytes: 3 * gb, Safe: true}}
+	if !slices.Equal(d.Prunes, want) || d.ReclaimableBytes != 5*gb {
+		t.Fatalf("prunes = %+v, reclaimable %d", d.Prunes, d.ReclaimableBytes)
+	}
+	since := len(h.rt.Ops())
+	if _, err := h.c.PruneServer(h.ctx, testSystem, local.Name, nil); err != nil {
+		t.Fatal(err)
+	}
+	ops := h.rt.Ops()[since:]
+	if !slices.Contains(ops, "prune cache 0") || !slices.ContainsFunc(ops, func(op string) bool {
+		return strings.HasPrefix(op, "scan-database prune") && strings.HasSuffix(op, " all")
+	}) {
+		t.Fatalf("ops = %v; want all of the cache and the database", ops)
 	}
 }
 

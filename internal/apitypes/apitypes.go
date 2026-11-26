@@ -1265,7 +1265,9 @@ type Server struct {
 	// secret); empty for the local server and revoked ones.
 	KeyFingerprint string `json:"key_fingerprint,omitempty"`
 	// Ingress, PublicIPs, TunnelHostname and DockerVersion are facts the
-	// server reports when it connects (read-only).
+	// server reports when it connects (read-only), but a direct server
+	// sent through its tunnel (ThroughTunnel) is cloudflare_tunnel, with
+	// no public IPs, while Dock runs its tunnel.
 	Ingress        Ingress  `json:"ingress" enum:"direct,cloudflare_tunnel"`
 	PublicIPs      []string `json:"public_ips" doc:"What DNS records point at (direct ingress)"`
 	TunnelHostname string   `json:"tunnel_hostname,omitempty" doc:"CNAME target of its Cloudflare tunnel"`
@@ -1297,6 +1299,10 @@ type Server struct {
 	// to; 0 when it can't take a tunnel now (a direct server without a
 	// tunnel listener, or a remote one that is offline).
 	TunnelPort int `json:"tunnel_port"`
+	// ThroughTunnel: the server was installed direct, and the control
+	// plane sends its domains through its tunnel (`dock server update
+	// --tunnel`, ADR 0036).
+	ThroughTunnel bool `json:"through_tunnel,omitempty"`
 }
 
 // EffectiveLimits are the limits a service's releases get.
@@ -1325,6 +1331,12 @@ type UpdateServerRequest struct {
 	// BaseDomain is a domain like up.example.dev with a wildcard DNS
 	// record pointing at the server (or its tunnel); "" removes it.
 	BaseDomain *string `json:"base_domain,omitempty" maxLength:"253"`
+	// Tunnel sends a direct server's domains through the Cloudflare tunnel
+	// Dock runs for it, as if it were installed in tunnel mode: its
+	// generated hostnames get records to the tunnel, and new domains are
+	// told to point there. False sends it back to its public IP. No new
+	// install either way (ADR 0036).
+	Tunnel *bool `json:"tunnel,omitempty"`
 }
 
 // AddServerRequest starts adding a server (`dock server add`): it creates

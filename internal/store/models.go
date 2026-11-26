@@ -991,6 +991,7 @@ type Server struct {
 	ScanError            string
 	ScanDbCheckedAt      *int64
 	ScanDbImport         string
+	ThroughTunnel        bool
 }
 
 type ServerDrain struct {

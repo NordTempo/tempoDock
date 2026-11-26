@@ -1506,7 +1506,9 @@ func (c *Core) cleanupMove(ctx context.Context, es envScope, m store.Environment
 // generated domain per server that can serve it (ADR 0063): the one under
 // the base domain of the server it is on now, made if it has none there,
 // and one under the base of each server that still forwards it; the
-// clean-up removes any other (pruneGeneratedDomains). The other domains
+// clean-up removes any other (pruneGeneratedDomains). On a tunnel
+// target, one it kept gets a record to the tunnel (routeGeneratedDomains),
+// and one it makes gets it from GenerateDomain. The other domains
 // that Dock doesn't route through Cloudflare are listed with the DNS
 // records they need now.
 func (c *Core) moveDomains(ctx context.Context, es envScope, from, to store.Server) ([]string, error) {
@@ -1531,6 +1533,13 @@ func (c *Core) moveDomains(ctx context.Context, es envScope, from, to store.Serv
 		}
 	}
 	var notes, dns []string
+	if toIng.mode == apitypes.IngressCloudflareTunnel {
+		// A generated hostname under a base domain the target shares
+		// with the source gets its own record to the target's tunnel.
+		if _, err := c.routeGeneratedDomains(ctx, to); err != nil {
+			return nil, err
+		}
+	}
 	for _, svc := range svcs {
 		if svc.ArchivedAt != nil || !uses[svc.ID] {
 			continue

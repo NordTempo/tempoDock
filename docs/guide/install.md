@@ -610,6 +610,19 @@ certificates on the public IP; domains from Cloudflare are served only
 through the tunnel, never on the IP. Nothing changes for existing
 domains, and no port opens.
 
+**Switching a direct server to its tunnel.** A server installed direct
+whose ports don't reach it (a homelab behind a router), or that should
+go through Cloudflare only, switches without a new install once Dock runs
+its tunnel: `dock server update homelab --tunnel` (Console › Servers ›
+the server › Tunnel). It then counts as a tunnel server. Its generated
+hostnames each get their own proxied CNAME to its tunnel, so several
+servers can share one base domain without a wildcard record, and new
+domains are told to point at the tunnel. Its base domain must be in a
+zone of a platform connection, in the tunnel's account. Domains whose DNS
+Dock doesn't manage keep working on its public IP until you point them at
+the tunnel. `--no-tunnel` goes back; domains with records stay on the
+tunnel.
+
 A server that already runs a tunnel set up by hand (above) needs no step
 of its own: the first domain from Cloudflare (or `dock server tunnel
 adopt homelab`) has Dock take it over. The tunnel must be in the token's

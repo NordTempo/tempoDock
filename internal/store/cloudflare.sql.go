@@ -1195,6 +1195,47 @@ func (q *Queries) ListStrandedCloudflareRecords(ctx context.Context) ([]ListStra
 	return items, nil
 }
 
+const listUnroutedGeneratedDomains = `-- name: ListUnroutedGeneratedDomains :many
+SELECT domains.id, domains.hostname
+FROM domains
+JOIN services ON services.id = domains.service_id
+JOIN environments ON environments.id = services.environment_id
+LEFT JOIN cloudflare_records ON cloudflare_records.hostname = domains.hostname AND cloudflare_records.want = 'present'
+WHERE environments.server_id = +? AND domains.generated AND services.archived_at IS NULL
+  AND cloudflare_records.id IS NULL
+`
+
+type ListUnroutedGeneratedDomainsRow struct {
+	ID       int64
+	Hostname string
+}
+
+// The generated domains of a server's services that Dock routes through
+// no Cloudflare record (none, or one being deleted): the ones a server
+// that turned into a tunnel server gives records to its tunnel.
+func (q *Queries) ListUnroutedGeneratedDomains(ctx context.Context, serverID int64) ([]ListUnroutedGeneratedDomainsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listUnroutedGeneratedDomains, serverID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUnroutedGeneratedDomainsRow
+	for rows.Next() {
+		var i ListUnroutedGeneratedDomainsRow
+		if err := rows.Scan(&i.ID, &i.Hostname); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const moveCloudflareRecord = `-- name: MoveCloudflareRecord :exec
 UPDATE cloudflare_records
 SET connection_id = ?, status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?

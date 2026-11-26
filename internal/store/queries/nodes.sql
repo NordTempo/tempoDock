@@ -66,8 +66,9 @@ RETURNING *;
 UPDATE servers SET last_seen_at = sqlc.arg(now), disconnect_reason = sqlc.arg(reason) WHERE id = +sqlc.arg(id);
 
 -- name: UpdateServerSettings :one
--- The control plane's own settings for a server (`dock server set`).
-UPDATE servers SET base_domain = sqlc.arg(base_domain), builder = sqlc.arg(builder)
+-- The control plane's own settings for a server (`dock server update`).
+UPDATE servers SET base_domain = sqlc.arg(base_domain), builder = sqlc.arg(builder),
+    through_tunnel = sqlc.arg(through_tunnel)
 WHERE id = +sqlc.arg(id)
 RETURNING *;
 

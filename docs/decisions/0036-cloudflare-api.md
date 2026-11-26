@@ -48,7 +48,7 @@ when there is one.
 | Ownership | Records Dock makes carry the comment `dock:<install id>` (comments fit the Free plan; tags don't). Dock only edits or deletes those, and only the hostname routes it added. A proxied CNAME someone else made that already points at the tunnel is used as it is and never touched |
 | Queue | `cloudflare_tunnels` and `cloudflare_records` hold what Dock wants (`want` present or absent) and how far it is. One worker works through pending rows, one call at a time, then sleeps until kicked or until the earliest retry; nothing is triggered by the lossy event bus alone. Rows carry a generation every other writer bumps, and the worker saves a result only if it is unchanged, so a removal while it works isn't lost |
 | Failures | Cloudflare unreachable, too slow or 5xx: the row retries with backoff, 5 s doubling to 5 min. 429: the worker stops calling Cloudflare until `Retry-After` (5 min, Cloudflare's block, without one). A refused token: Dock verifies it; if Cloudflare refuses the token itself, the connection turns `invalid` and its rows wait, without retries, for `dock cloudflare set`; otherwise the row fails with the permission it needs, until `dock cloudflare retry` |
-| Not now | A records to IPs and wildcards (by choice), switching a running server's ingress (re-run install.sh), Access policies, load balancing, per-org connections or zones (an `org_id` like storage's when orgs need their own; today every org's members see the zones), an alert when a token turns invalid (the console shows it) |
+| Not now | A records to IPs and wildcards (by choice), switching a running server's ingress (re-run install.sh; direct to tunnel since the 2026-11-26 amendment), Access policies, load balancing, per-org connections or zones (an `org_id` like storage's when orgs need their own; today every org's members see the zones), an alert when a token turns invalid (the console shows it) |
 
 ## Why this shape
 
@@ -136,3 +136,47 @@ ACME DNS-01 challenge records (`TXT _acme-challenge.<base>`, with its
 certificate, and deletes them once the CA has checked them
 ([0090](0090-wildcard-certificates.md)). They point nothing anywhere;
 records others made at that name are left alone.
+
+
+## Amendment (2026-11-26): switching a direct server to its tunnel
+
+A homelab joined direct (no `--tunnel`) behind a router: its "public IP"
+was the router's, and a tunnel added later only carried domains from
+Cloudflare. It shared the control plane's base domain, whose hand-made
+wildcard points at the control plane, so every generated hostname of an
+environment drained onto it went there and answered 404 unless the
+control plane forwarded it. Saile wants both servers on tunnels, sharing
+one base domain, without reinstalling.
+
+- **Setting.** `servers.through_tunnel` (migration 0131), set with `dock
+  server update --tunnel|--no-tunnel` or the server's Tunnel section. The
+  control plane owns it; the node keeps its direct install.
+- **Counts as a tunnel server** while Dock runs its tunnel, ready
+  (`ingressOf`): no public IPs, DNS instructions name the tunnel, and its
+  generated hostnames under a platform zone get their own proxied CNAME
+  (`GenerateDomain`). The ones it already had get theirs when it switches,
+  and an environment moved onto it gets them for the names it keeps
+  (`routeGeneratedDomains`). Servers then share a base domain with no
+  wildcard record.
+- **Its Caddy is still the direct one.** Hostnames with records are served
+  on its tunnel listener only, as for domains from Cloudflare; others
+  (typed domains whose DNS Dock doesn't manage, Dock's own address) stay
+  on its public IP too, so switching breaks nothing that worked. A
+  hostname under its base domain can reach the IP through the base's
+  wildcard record, so it stays there too until its own record is ready
+  (or for as long as that record fails); the worker applies the server's
+  routes once per pass when one becomes ready (`routeReadyRecords`). This
+  holds for any direct server's names under its base. Its base domain's
+  wildcard certificate is kept for them (`installedIngress`).
+- **Refused** without a tunnel Dock runs and has ready, or with a base
+  domain outside the platform's zones or in another Cloudflare account
+  than the tunnel: its generated hostnames could get no records. Going
+  back is refused on a server installed in tunnel mode, which has no IP.
+- **Back** (`--no-tunnel`): records stay, their hostnames on the tunnel,
+  which still serves them; new generated ones rely on the wildcard again.
+  Removing the records instead would break those names once the wildcard
+  record is gone.
+- **Retried by asking again.** `--tunnel` (or a base domain change while
+  it is on) gives records to whatever generated hostnames still lack one,
+  changed or not, so a request that failed halfway is finished by its
+  retry.
