@@ -1,0 +1,65 @@
+package build
+
+import (
+	"testing"
+	"testing/synctest"
+	"time"
+)
+
+// BuildKit stops once nothing has used it for idleStop, not while a use
+// holds it, and a use in between starts the wait over.
+func TestIdleStop(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		stops := 0
+		i := &idler{after: idleStop, stop: func() { stops++ }}
+
+		release := i.hold(false)
+		time.Sleep(2 * idleStop)
+		if stops != 0 {
+			t.Fatalf("stopped while held")
+		}
+		release()
+
+		time.Sleep(idleStop - time.Second)
+		i.hold(false)() // a quick use just before the stop
+		time.Sleep(idleStop - time.Second)
+		if stops != 0 {
+			t.Fatalf("stopped %s after a use, want %s", idleStop-time.Second, idleStop)
+		}
+		time.Sleep(2 * time.Second)
+		if stops != 1 {
+			t.Fatalf("stops = %d after idleStop, want 1", stops)
+		}
+		time.Sleep(10 * idleStop)
+		if stops != 1 {
+			t.Fatalf("stops = %d, want 1: an idle BuildKit is stopped once", stops)
+		}
+	})
+}
+
+// A prune of a stopped BuildKit is skipped only when an earlier prune
+// covers every build since; a build during a prune isn't covered by it.
+func TestPruneCoverage(t *testing.T) {
+	i := &idler{after: idleStop, stop: func() {}}
+	if _, covered := i.pruneStart(); covered {
+		t.Fatal("covered before any prune")
+	}
+
+	mark, _ := i.pruneStart()
+	i.prunedAt(mark)
+	if _, covered := i.pruneStart(); !covered {
+		t.Fatal("not covered right after a prune")
+	}
+
+	i.hold(false)()
+	if _, covered := i.pruneStart(); covered {
+		t.Fatal("covered after a build")
+	}
+
+	mark, _ = i.pruneStart()
+	i.hold(false)() // a build while the prune runs
+	i.prunedAt(mark)
+	if _, covered := i.pruneStart(); covered {
+		t.Fatal("covered after a build that ran during the prune")
+	}
+}

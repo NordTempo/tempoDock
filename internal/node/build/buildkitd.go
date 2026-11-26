@@ -25,7 +25,8 @@ import (
 )
 
 const (
-	// ContainerName is the long-lived BuildKit container on a builder server.
+	// ContainerName is the BuildKit container on a builder server, running
+	// while there is building to do (idle.go).
 	ContainerName = "dock-buildkit"
 	// CacheVolume holds BuildKit's state and build cache across restarts.
 	CacheVolume = node.BuildCacheVolume
@@ -228,16 +229,20 @@ func (b *Builder) relayDir() error {
 // PruneBuildCache implements node.Builder with BuildKit's prune API: cache
 // records go, least recently used first, until the cache is down to
 // keepBytes (MaxUsedSpace) and never below it (ReservedSpace). Records a
-// running build uses stay. A BuildKit container that isn't running isn't
-// started for it: nothing has been built since it stopped.
+// running build uses stay. BuildKit is usually stopped between builds
+// (idle.go), so a stopped container is started for the prune, and the idle
+// stop ends it again; unless this runtime pruned since its last build,
+// when there is nothing to remove.
 //
 // Only this runtime's own BuildKit is pruned (checkOwner): the prune runs
 // over `buildctl dial-stdio` in that one container, so other BuildKit
 // daemons on the host (buildx builders, Docker's own builder) and their
 // caches are out of its reach.
 func (b *Builder) PruneBuildCache(ctx context.Context, keepBytes int64) (node.PruneResult, error) {
+	defer b.idle.hold(true)()
+	mark, covered := b.idle.pruneStart()
 	inspect, err := b.docker.ContainerInspect(ctx, b.name, client.ContainerInspectOptions{})
-	if cerrdefs.IsNotFound(err) || (err == nil && !inspect.Container.State.Running) {
+	if cerrdefs.IsNotFound(err) {
 		return node.PruneResult{}, nil
 	}
 	if err != nil {
@@ -245,6 +250,17 @@ func (b *Builder) PruneBuildCache(ctx context.Context, keepBytes int64) (node.Pr
 	}
 	if err := b.checkOwner(inspect.Container.Config.Labels); err != nil {
 		return node.PruneResult{}, err
+	}
+	if !inspect.Container.State.Running {
+		if covered {
+			return node.PruneResult{}, nil
+		}
+		if err := b.relayDir(); err != nil { // its mount fails the start without it
+			return node.PruneResult{}, err
+		}
+		if _, err := b.docker.ContainerStart(ctx, b.name, client.ContainerStartOptions{}); err != nil {
+			return node.PruneResult{}, fmt.Errorf("start %s: %w", b.name, err)
+		}
 	}
 	bk, err := b.connect(ctx)
 	if err != nil {
@@ -267,6 +283,7 @@ func (b *Builder) PruneBuildCache(ctx context.Context, keepBytes int64) (node.Pr
 	if err != nil {
 		return out, fmt.Errorf("prune build cache: %w", err)
 	}
+	b.idle.prunedAt(mark)
 	return out, nil
 }
 

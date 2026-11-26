@@ -83,6 +83,9 @@ func newBuilder(t *testing.T, docker *client.Client, memoryMB int) *Builder {
 	b := New(docker, cfg, t.TempDir())
 	b.name, b.cacheVolume = testContainer, testCache
 	b.Owner = testContainer
+	// Tests share the container through Builders of their own: one's idle
+	// stop would end another's build. Tests stop it with stopIdle.
+	b.idle.stop = func() {}
 	withRelay(t, b)
 	return b
 }
@@ -249,9 +252,19 @@ func TestBuildDockerfile(t *testing.T) {
 	if body := get(t, run(t, docker, "dock-test-dockerfile", id)); body != "hello dockerfile" {
 		t.Fatalf("body = %q", body)
 	}
-	// The prune API answers; a terabyte to keep leaves the shared cache be.
-	if res, err := b.PruneBuildCache(context.Background(), 1<<40); err != nil || res.Removed != 0 {
+	// An idle stop stops BuildKit, and a prune starts it again: the build
+	// since the last prune may have left cache to remove. A terabyte to
+	// keep leaves the shared cache be.
+	ctx := context.Background()
+	b.stopIdle()
+	if c, err := docker.ContainerInspect(ctx, testContainer, client.ContainerInspectOptions{}); err != nil || c.Container.State.Running {
+		t.Fatalf("BuildKit still runs after the idle stop: %v", err)
+	}
+	if res, err := b.PruneBuildCache(ctx, 1<<40); err != nil || res.Removed != 0 {
 		t.Fatalf("PruneBuildCache = %+v, %v", res, err)
+	}
+	if c, err := docker.ContainerInspect(ctx, testContainer, client.ContainerInspectOptions{}); err != nil || !c.Container.State.Running {
+		t.Fatalf("the prune didn't start BuildKit: %v", err)
 	}
 }
 

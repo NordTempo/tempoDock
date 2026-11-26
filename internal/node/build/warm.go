@@ -32,11 +32,14 @@ const warmMarker = "railpack-images"
 // at start); it does nothing when the marker says this set of images was
 // fetched already, and one call at a time runs. It creates and starts
 // the BuildKit container if needed, as the first build would, and leaves
-// it running (about 15 MB, no CPU, while idle). Builds don't wait for
+// it running until the idle stop (idle.go). Builds don't wait for
 // it: one that starts meanwhile shares the fetches. Images the build
 // cache's pruning removes later are fetched by the next build that needs
 // them, as before.
 func (b *Builder) WarmBuilder(ctx context.Context) error {
+	// Held even when there is nothing to fetch: its release arms the idle
+	// stop, so a BuildKit left running by a daemon before this one stops.
+	defer b.idle.hold(false)()
 	b.warmMu.Lock()
 	defer b.warmMu.Unlock()
 	want := warmList()
