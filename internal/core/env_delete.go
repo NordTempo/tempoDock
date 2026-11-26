@@ -71,6 +71,10 @@ func (c *Core) DeleteEnvironment(ctx context.Context, a Actor, ref EnvRef, req a
 		case pv.ClosedAt == nil:
 			open++
 		default:
+			// It goes with its base, but its own lock still holds tokens.
+			if err := a.checkLock(envScope{p, d.env(pv.EnvironmentID)}, action); err != nil {
+				return apitypes.EnvironmentDeleted{}, err
+			}
 			ids = append(ids, pv.EnvironmentID)
 		}
 	}
