@@ -1081,12 +1081,6 @@ main() {
     install -m 0755 "$caddy_new" /usr/local/bin/caddy.new
     mv /usr/local/bin/caddy.new /usr/local/bin/caddy
     caddy_changed=true
-    if [[ "$caddy_forget" == true ]]; then
-      # Stopped first, so the old Caddy can't save a route load in between;
-      # it starts again below.
-      systemctl stop dock-caddy.service 2>/dev/null || true
-      rm -f /var/lib/dock-caddy/caddy/autosave.json
-    fi
   fi
 
   tunnel_changed=false
@@ -1370,6 +1364,13 @@ CONF
     || die "the app firewall failed to apply; see: journalctl -u dock-firewall"
 
   systemctl enable dock-caddy.service
+  if [[ "$caddy_forget" == true ]]; then
+    # Caddy's own build replaced Dock's: it starts on caddy.json. Stopped
+    # before its saved config goes, so the old one can't save a route load
+    # in between; started just below.
+    systemctl stop dock-caddy.service 2>/dev/null || true
+    rm -f /var/lib/dock-caddy/caddy/autosave.json
+  fi
   if [[ "$caddy_unit_changed" == true || "$caddy_changed" == true ]] && systemctl is-active -q dock-caddy.service; then
     # Picks up a new binary, and unit changes such as the dock-caddy
     # user. Routes come back from --resume; traffic blips for a moment.

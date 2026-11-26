@@ -252,8 +252,8 @@ func (c *Core) checkSite(ctx context.Context, hosts []string) apitypes.SiteCheck
 // read two of them. The one Dock's Caddy adds is marked data-dock-auto.
 var (
 	scriptTagRe = regexp.MustCompile(`(?is)<script\b([^>]*)>`)
-	srcRe       = regexp.MustCompile(`(?is)\bsrc\s*=\s*["']?([^"'\s>]+)`)
-	nonceRe     = regexp.MustCompile(`(?is)\bnonce\s*=\s*["']?([^"'\s>]+)`)
+	srcRe       = regexp.MustCompile(`(?is)(?:^|\s)src\s*=\s*["']?([^"'\s>]+)`)
+	nonceRe     = regexp.MustCompile(`(?is)(?:^|\s)nonce\s*=\s*["']?([^"'\s>]+)`)
 )
 
 // checkSiteHost checks one hostname of a site: its page (a redirect to
@@ -387,8 +387,8 @@ func (c *Core) siteGet(ctx context.Context, target string, read bool) (sitePage,
 }
 
 // cspBlocks returns the directive of a Content-Security-Policy that keeps
-// the script out (script-src, or connect-src for its events), falling
-// back to default-src as browsers do; "" when it allows them. The script
+// the script out (script-src-elem or script-src, or connect-src for its
+// events), falling back to default-src as browsers do; "" when it allows them. The script
 // tag's nonce lets the script in when script-src names it, never its
 // events.
 func cspBlocks(csp, nonce string) string {
@@ -411,21 +411,19 @@ func cspBlocks(csp, nonce string) string {
 		}
 		return false
 	}
-	for _, d := range []string{"script-src", "connect-src"} {
-		vals, ok := dirs[d]
-		name := d
-		if !ok {
-			if vals, ok = dirs["default-src"]; !ok {
-				continue
+	// Each governs with the first of its directives the policy has:
+	// script-src-elem goes before script-src for a script tag.
+	for _, c := range []struct {
+		dirs  []string
+		nonce string // a nonce covers the script, never its events
+	}{{[]string{"script-src-elem", "script-src", "default-src"}, nonce}, {[]string{"connect-src", "default-src"}, ""}} {
+		for _, name := range c.dirs {
+			if vals, ok := dirs[name]; ok {
+				if !allows(vals, c.nonce) {
+					return name
+				}
+				break
 			}
-			name = "default-src"
-		}
-		n := nonce
-		if d == "connect-src" {
-			n = ""
-		}
-		if !allows(vals, n) {
-			return name
 		}
 	}
 	return ""

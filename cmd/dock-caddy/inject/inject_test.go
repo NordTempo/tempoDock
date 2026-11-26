@@ -125,11 +125,11 @@ func TestHeadWithAttributesNotHeader(t *testing.T) {
 // one kept with it is confirmed.
 func TestRevalidation(t *testing.T) {
 	r := visit("example.com")
-	r.Header.Set("If-None-Match", `"v1", W/"v2-dock"`)
+	r.Header.Set("If-None-Match", `"v1", W/"v2,b-dock"`)
 	r.Header.Set("If-Modified-Since", "Mon, 02 Jan 2006 15:04:05 GMT")
 	a := &app{status: http.StatusNotModified, hdr: http.Header{"Etag": {`"v2"`}}}
 	rec := serve(t, a, r)
-	if got := a.got.Header.Get("If-None-Match"); got != `W/"v2"` || a.got.Header.Get("If-Modified-Since") != "" {
+	if got := a.got.Header.Get("If-None-Match"); got != `W/"v2,b"` || a.got.Header.Get("If-Modified-Since") != "" {
 		t.Errorf("the upstream got If-None-Match %q, If-Modified-Since %q", got, a.got.Header.Get("If-Modified-Since"))
 	}
 	if rec.Code != http.StatusNotModified || rec.Header().Get("Etag") != `W/"v2-dock"` {

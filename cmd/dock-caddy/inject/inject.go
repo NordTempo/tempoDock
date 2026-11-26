@@ -415,14 +415,32 @@ func dockTag(etag string) string {
 func upstreamTags(values []string) string {
 	var out []string
 	for _, v := range values {
-		for t := range strings.SplitSeq(v, ",") {
-			t = strings.TrimSpace(t)
+		for _, t := range splitTags(v) {
 			if inner, ok := strings.CutPrefix(t, `W/"`); ok && strings.HasSuffix(inner, `-dock"`) {
 				out = append(out, `W/"`+strings.TrimSuffix(inner, `-dock"`)+`"`)
 			}
 		}
 	}
 	return strings.Join(out, ", ")
+}
+
+// splitTags splits an If-None-Match value at the commas between its
+// tags; a tag's quoted value may hold commas of its own.
+func splitTags(v string) []string {
+	var out []string
+	start, quoted := 0, false
+	for i := 0; i < len(v); i++ {
+		switch v[i] {
+		case '"':
+			quoted = !quoted
+		case ',':
+			if !quoted {
+				out = append(out, strings.TrimSpace(v[start:i]))
+				start = i + 1
+			}
+		}
+	}
+	return append(out, strings.TrimSpace(v[start:]))
 }
 
 // Interface guards.
