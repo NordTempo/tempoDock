@@ -175,7 +175,7 @@ func (c *Core) orgAppRepo(ctx context.Context, orgID int64, repo string) (github
 	if err != nil {
 		return githubRepo{}, "", err
 	}
-	token, err := c.installationToken(ctx, inst)
+	token, err := c.installationToken(ctx, inst.app, inst.id)
 	return r, token, err
 }
 

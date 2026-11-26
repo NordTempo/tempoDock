@@ -763,22 +763,28 @@ the UI or `dock git deploy` by a person isn't held.
 
 ### Through Dock's GitHub App
 
-Once an operator has set up Dock's GitHub App
+With a GitHub App installed for the org
 ([ADR 0031](../decisions/0031-github-app.md)), connecting needs nothing
 on GitHub: no webhook, no token, private repositories included, and
 commit statuses are on. One push deploys every service of the repository
 whose branch and directory it touches.
 
+An App is the platform's, made by an operator for every org, or an
+org's own, made by its admins
+([ADR 0105](../decisions/0105-github-apps-per-org.md)):
+
 ```sh
 dock address set dock.example.com     # GitHub delivers pushes here (operator, once)
-dock github app create                # opens GitHub to create the App (operator, once)
-dock github install default           # install it on an account, for an org (operator)
-dock github status                    # the App, its webhook, installations and their orgs
+dock github app create --owner acme   # the org's own App under GitHub org acme (admin)
+dock github app create --platform     # or an App for every org (operator)
+dock github install                   # install it on its account, for the org
+dock github installations             # the org's Apps and installations
 dock github repos                     # what the org can connect
 ```
 
-The console does the same under **System → GitHub**, and **Settings →
-Source** suggests the org's repositories when connecting.
+The org's **Settings → GitHub** does the same, the console's
+**System → GitHub** lists every App, and **Settings → Source** suggests
+the org's repositories when connecting.
 
 ### A new service from a repository
 
@@ -799,12 +805,19 @@ dock service create api --repo acme/shop --dir apps/api --branch staging
 Connecting through the App checks that the branch exists and the
 directory is one on it, so a typo fails at once.
 
-The App is private by default: only the GitHub account that owns it
-(yours, or `--owner acme`) can install it. With `dock github app create
---public`, any GitHub account can, so each org deploys from its own
-([ADR 0066](../decisions/0066-github-apps-for-many-orgs.md)). Each
-installation is assigned to one org, and only that org's services can
-read its repositories. An install link is yours alone: it opens in the
+An org's own App is private: only the GitHub account that owns it can
+install it, and an installation there is the org's at once. No other org
+sees it, and an installation on another account counts for nothing.
+When an org may use several Apps (its own and the platform's), connecting
+a repository goes through its own first, and `dock github install` takes
+`--app <slug>`.
+
+A platform App is private by default too: only the GitHub account that
+owns it (yours, or `--owner acme`) can install it. With `dock github app
+create --platform --public`, any GitHub account can, so each org deploys
+from its own ([ADR 0066](../decisions/0066-github-apps-for-many-orgs.md)).
+Each installation is assigned to one org, and only that org's services
+can read its repositories. An install link is yours alone: it opens in the
 browser you are signed in to Dock with, so sending it to someone else
 installs nothing. After an install, GitHub sends the browser back to
 Dock, then on to GitHub's authorize page for the App: if GitHub says you
@@ -814,17 +827,17 @@ install`. When someone else owns the GitHub account, they install the
 App on GitHub and an operator assigns it. Installations made on GitHub directly are assigned by an
 operator with `dock github assign <id> <org>`.
 
-An App made before Dock kept its client secret (ADR 0066), so only
-operators' install links work. `dock github status` shows the callback URL
-to add in the App's settings on GitHub; generate a client secret there,
-then `printf %s "$SECRET" | dock github app secret`.
+A platform App made before Dock kept its client secret (ADR 0066) lets
+only operators' install links work. `dock github status` shows the
+callback URL to add in the App's settings on GitHub; generate a client
+secret there, then `printf %s "$SECRET" | dock github app secret <slug>`.
 
-Creating a new App (or installing it again) forgets the old
-installations. Services connected through them keep their connection: the
-first push or pull request the new installation delivers for their
-repository moves them to it, if that installation is assigned to their
-org. Until then they don't deploy on push; `dock git connect` again moves
-one right away.
+Removing an App (`dock github app remove <slug>`) or installing it again
+forgets its installations. Services connected through them keep their
+connection: the first push or pull request another installation delivers
+for their repository moves them to it, if that installation is their
+org's. Until then they don't deploy on push; `dock git connect` again
+moves one right away.
 
 ### Through a webhook
 

@@ -562,22 +562,25 @@ type GitDelivery struct {
 
 type GithubApp struct {
 	ID            int64
+	OrgID         *int64
 	AppID         int64
 	HookID        string
 	Slug          string
 	Name          string
 	Owner         string
+	OwnerID       int64
 	HtmlUrl       string
 	PrivateKey    []byte
 	WebhookSecret []byte
-	CreatedBy     string
-	CreatedAt     time.Time
 	ClientID      string
 	ClientSecret  []byte
+	CreatedBy     string
+	CreatedAt     time.Time
 }
 
 type GithubInstallation struct {
 	InstallationID int64
+	AppID          int64
 	OrgID          int64
 	Account        string
 	AssignedBy     string

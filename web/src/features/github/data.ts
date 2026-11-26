@@ -3,12 +3,14 @@ import { api, body, done } from "../../api/client";
 import type { components } from "../../api/schema";
 import { useAction } from "../../data/action";
 
-// Dock's GitHub App for the console's GitHub page (ADR 0031, 0066). Reading it
-// asks GitHub for the App's installations now, so a refetch is "check
-// again"; nothing polls. Creating the App and installing it continue on
+// GitHub Apps for the console's GitHub page and the org's GitHub settings
+// (ADR 0031, 0066, 0105): the platform's Apps and each org's own. Reading
+// them asks GitHub for the Apps' installations now, so a refetch is "check
+// again"; nothing polls. Creating an App and installing it continue on
 // github.com, which sends the browser back to Dock.
 
 export type GitHubStatus = components["schemas"]["GitHubStatus"];
+export type GitHubAppStatus = components["schemas"]["GitHubAppStatus"];
 export type GitHubInstallation = components["schemas"]["GitHubInstallation"];
 
 export const githubKey = ["github"] as const;
@@ -24,46 +26,58 @@ export const useGitHub = () => useSuspenseQuery(githubQuery());
 /** Opens a page in this tab: GitHub sends the browser back afterwards. */
 const go = (link: { url: string }) => window.location.assign(link.url);
 
-/** Starts creating the App: the answer is Dock's page that posts the manifest. */
-export const useCreateApp = () =>
+/**
+ * Starts creating an App, the platform's or the org's own: the answer is
+ * Dock's page that posts the manifest.
+ */
+export const useCreateApp = (platform: boolean) =>
   useAction(
     async (req: components["schemas"]["GitHubAppRequest"]) =>
-      go(await body(api.POST("/api/v1/github/app", { body: req }))),
+      go(
+        await body(
+          api.POST("/api/v1/github/apps", {
+            params: { query: { platform } },
+            body: req,
+          }),
+        ),
+      ),
     () => [],
   );
 
-/** Gives an App made before ADR 0066 its client secret, so installs are checked. */
+/** Gives a platform App made before ADR 0066 its client secret, so installs are checked. */
 export const useSetClientSecret = () =>
   useAction(
-    (client_secret: string) =>
+    ({ slug, secret }: { slug: string; secret: string }) =>
       done(
-        api.PUT("/api/v1/github/app/client-secret", {
-          body: { client_secret },
+        api.PUT("/api/v1/github/apps/{slug}/client-secret", {
+          params: { path: { slug } },
+          body: { client_secret: secret },
         }),
       ),
     () => [githubKey, ["audit"]],
   );
 
-/** Opens the App's install page on GitHub for an org. */
+/**
+ * Opens an App's install page on GitHub, for an org (empty: the caller's
+ * own).
+ */
 export const useInstall = () =>
   useAction(
-    async (org: string) =>
-      go(
-        await body(api.POST("/api/v1/github/installations", { body: { org } })),
-      ),
+    async (req: components["schemas"]["GitHubInstallRequest"]) =>
+      go(await body(api.POST("/api/v1/github/installations", { body: req }))),
     () => [],
   );
 
-/** Assigns an installation to an org, or unassigns it (org ""). */
+/** Assigns a platform App's installation to an org, or unassigns it (org ""). */
 export const useAssign = () =>
   useAction(
-    ({ id, org }: { id: number; org: string }) => {
+    ({ id, org, app }: { id: number; org: string; app?: string }) => {
       const path = { params: { path: { id } } };
       return org
         ? done(
             api.PUT("/api/v1/github/installations/{id}", {
               ...path,
-              body: { org },
+              body: { org, app },
             }),
           )
         : done(api.DELETE("/api/v1/github/installations/{id}", path));
@@ -71,24 +85,21 @@ export const useAssign = () =>
     () => [githubKey, ["audit"]],
   );
 
-/** Forgets the App. */
+/** Forgets an App. */
 export const useRemoveApp = () =>
   useAction(
-    () => done(api.DELETE("/api/v1/github/app")),
+    (slug: string) =>
+      done(
+        api.DELETE("/api/v1/github/apps/{slug}", {
+          params: { path: { slug } },
+        }),
+      ),
     () => [githubKey, ["audit"]],
   );
 
-/** The org's view of GitHub: the platform's App and its own installations. */
+/** The org's view of GitHub: its own Apps and its installations of the platform's. */
 export const githubOrgQuery = () =>
   queryOptions({
     queryKey: [...githubKey, "org"],
     queryFn: () => body(api.GET("/api/v1/github/org")),
   });
-
-/** Opens the App's install page on GitHub for the caller's own org. */
-export const useInstallForOrg = () =>
-  useAction(
-    async () =>
-      go(await body(api.POST("/api/v1/github/installations", { body: {} }))),
-    () => [],
-  );

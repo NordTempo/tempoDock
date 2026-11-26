@@ -34,6 +34,8 @@ type fakeGitHub struct {
 	// installRepos is how many repositories installation 7 covers (0: 1,
 	// acme/shop); withApp's user dev can access only one of them.
 	installRepos int
+	// apps are the GitHub Apps it hosts by App ID (withApp, withOrgApp).
+	apps map[int64]*fakeApp
 	// files are the repository's files at every commit.
 	files map[string]string
 	// branches are the repository's branches besides main.

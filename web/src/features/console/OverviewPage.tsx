@@ -305,15 +305,15 @@ function Connections({ alerts }: { alerts: Alert[] }) {
       to: <Link to="/console/cloudflare">Cloudflare</Link>,
     });
   }
-  if (github?.app) {
-    const alert = failing.get("github:app");
+  for (const { app, installations } of github?.apps ?? []) {
+    const alert = failing.get(`github:${app.slug}`);
     rows.push({
-      key: "github",
+      key: `github-${app.slug}`,
       tone: alert ? "warn" : "ok",
-      name: "GitHub App",
+      name: app.org ? `GitHub App of ${app.org}` : "GitHub App",
       detail:
         alert?.message ??
-        `${github.app.slug} on ${github.app.owner}, ${plural(github.installations?.length ?? 0, "installation")}`,
+        `${app.slug} on ${app.owner}, ${plural(installations?.length ?? 0, "installation")}`,
       to: <Link to="/console/github">GitHub</Link>,
     });
   }

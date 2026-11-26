@@ -13,9 +13,9 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// Checking who installed the GitHub App (ADR 0066). GitHub's redirect
-// after an install names the installation in its URL, which anyone can
-// edit. So when the App has its OAuth client, Dock doesn't claim the
+// Checking who installed a platform GitHub App (ADR 0066). GitHub's
+// redirect after an install names the installation in its URL, which
+// anyone can edit. So when the App has its OAuth client, Dock doesn't claim the
 // installation there: it sends the browser on to the App's authorize page
 // on GitHub with a new single-use state, exchanges the code GitHub comes
 // back with for the person's token, and claims the installation only if
@@ -41,20 +41,22 @@ type GitHubInstallConfirm struct {
 	State, Org, Account string
 }
 
-// errNoAppClient refuses what needs the App's OAuth client while it has
-// none (an App made before ADR 0066).
+// errNoAppClient refuses what needs a platform App's OAuth client while
+// it has none (an App made before ADR 0066).
 func errNoAppClient() error {
-	return errf(apitypes.CodeConflict, "the GitHub App can't check who installs it yet; ask an operator to finish its setup with `dock github app secret`")
+	return errf(apitypes.CodeConflict, "the GitHub App can't check who installs it yet; ask an operator to finish its setup with `dock github app secret <slug>`")
 }
 
-// CompleteGitHubInstall handles GitHub's redirect after the App was
+// CompleteGitHubInstall handles GitHub's redirect after an App was
 // installed or its repositories changed, for a state from
-// StartGitHubInstall, in the browser binding names. An App with its
-// OAuth client goes on to GitHub's authorize page (CompleteGitHubVerify
-// checks the installer); one without asks to confirm the installation
-// for an operator's link and refuses an org admin's. origin is the Dock
-// URL the browser has open, which the App's callback URL was registered
-// under unless Dock has a public address.
+// StartGitHubInstall, in the browser binding names. An org's own App's
+// installation becomes the org's once GitHub says it is on the App's
+// owner account (recordOrgInstallation). A platform App with its OAuth
+// client goes on to GitHub's authorize page (CompleteGitHubVerify checks
+// the installer); one without asks to confirm the installation for an
+// operator's link and refuses an org admin's. origin is the Dock URL the
+// browser has open, which the App's callback URL was registered under
+// unless Dock has a public address.
 func (c *Core) CompleteGitHubInstall(ctx context.Context, installationID int64, setupAction, state, binding, origin string) (GitHubInstallStep, error) {
 	f, err := c.git.app.flow(state, flowInstall, true)
 	if err != nil {
@@ -69,9 +71,12 @@ func (c *Core) CompleteGitHubInstall(ctx context.Context, installationID int64, 
 	if installationID <= 0 {
 		return GitHubInstallStep{}, invalid("GitHub's redirect names no installation; start again with `dock github install <org>`")
 	}
-	app, err := c.githubApp(ctx)
+	app, err := c.githubApp(ctx, f.app)
 	if err != nil {
 		return GitHubInstallStep{}, err
+	}
+	if app.OrgID != nil {
+		return c.recordOrgInstall(ctx, f, app, installationID)
 	}
 	if app.ClientSecret == nil {
 		if !f.actor.Operator {
@@ -87,6 +92,24 @@ func (c *Core) CompleteGitHubInstall(ctx context.Context, installationID int64, 
 	verify := c.git.app.startFlow(f)
 	cfg := c.git.github.userOAuth(app.ClientID, "", f.redirect)
 	return GitHubInstallStep{Redirect: cfg.AuthCodeURL(verify, oauth2.S256ChallengeOption(f.verifier))}, nil
+}
+
+// recordOrgInstall finishes installing an org's own App: GitHub, asked as
+// the App, says which account installation id is on.
+func (c *Core) recordOrgInstall(ctx context.Context, f githubFlow, app store.GithubApp, id int64) (GitHubInstallStep, error) {
+	jwt, err := c.appJWT(app)
+	if err != nil {
+		return GitHubInstallStep{}, err
+	}
+	inst, err := c.git.github.installation(ctx, jwt, id)
+	if err != nil {
+		return GitHubInstallStep{}, err
+	}
+	if err := c.recordOrgInstallation(ctx, f.actor, app, inst); err != nil {
+		return GitHubInstallStep{}, err
+	}
+	account := cleanLine(inst.Account.Login, 39)
+	return GitHubInstallStep{Message: fmt.Sprintf("The GitHub App %s can read %s's repositories, and org %s can now deploy from them: `dock git connect %s/<repo>`.", app.Slug, account, f.org.Slug, account)}, nil
 }
 
 // CompleteGitHubVerify handles GitHub's redirect back from the App's
@@ -114,14 +137,14 @@ func (c *Core) verifyInstaller(ctx context.Context, code, state, binding string)
 	if code == "" {
 		return f, errf(apitypes.CodeForbidden, "GitHub didn't confirm who you are, so Dock can't tell the installation is yours; start again with `dock github install` and authorize the App when GitHub asks")
 	}
-	app, err := c.githubApp(ctx)
+	app, err := c.githubApp(ctx, f.app)
 	if err != nil {
 		return f, err
 	}
 	if app.ClientSecret == nil {
 		return f, errNoAppClient()
 	}
-	secret, err := c.box.Open(app.ClientSecret, appClientSecretAAD)
+	secret, err := c.box.Open(app.ClientSecret, appClientSecretAAD(app.HookID))
 	if err != nil {
 		return f, fmt.Errorf("open the GitHub App's client secret: %w", err)
 	}
@@ -153,7 +176,7 @@ func (c *Core) coversInstallation(ctx context.Context, f githubFlow, userToken s
 	if err != nil {
 		return err
 	}
-	token, err := c.installationToken(ctx, f.installation)
+	token, err := c.installationToken(ctx, f.app, f.installation)
 	if err != nil {
 		return err
 	}
@@ -171,7 +194,11 @@ func (c *Core) coversInstallation(ctx context.Context, f githubFlow, userToken s
 // deploy from installation id, naming its GitHub account (read with the
 // App's own credentials, not from the redirect).
 func (c *Core) confirmStep(ctx context.Context, f githubFlow, id int64) (GitHubInstallStep, error) {
-	jwt, err := c.appJWT(ctx)
+	app, err := c.githubApp(ctx, f.app)
+	if err != nil {
+		return GitHubInstallStep{}, err
+	}
+	jwt, err := c.appJWT(app)
 	if err != nil {
 		return GitHubInstallStep{}, err
 	}
@@ -202,29 +229,42 @@ func (c *Core) ConfirmGitHubInstall(ctx context.Context, state, binding string) 
 // claimInstallation assigns an installation to the org of the install
 // link f, unless another org has it (conflict), and says what happened.
 func (c *Core) claimInstallation(ctx context.Context, f githubFlow, id int64) (string, error) {
-	inst, err := c.assignInstallation(ctx, f.actor, id, f.org, false)
+	app, err := c.githubApp(ctx, f.app)
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("The GitHub App can read %s's repositories, and org %s can now deploy from them: `dock git connect %s/<repo>`.", inst.Account.Login, f.org.Slug, inst.Account.Login), nil
+	jwt, err := c.appJWT(app)
+	if err != nil {
+		return "", err
+	}
+	inst, err := c.git.github.installation(ctx, jwt, id)
+	if err != nil {
+		return "", err
+	}
+	if err := c.assignInstallation(ctx, f.actor, app, inst, f.org, false); err != nil {
+		return "", err
+	}
+	account := cleanLine(inst.Account.Login, 39)
+	return fmt.Sprintf("The GitHub App %s can read %s's repositories, and org %s can now deploy from them: `dock git connect %s/<repo>`.", app.Slug, account, f.org.Slug, account), nil
 }
 
-// SetGitHubAppClientSecret gives an App made before ADR 0066 its OAuth
-// client, so installs are checked: Dock reads the client ID from GitHub
-// and checks the pair before storing the secret, sealed. Operators only.
-func (c *Core) SetGitHubAppClientSecret(ctx context.Context, a Actor, req apitypes.GitHubClientSecretRequest) error {
-	if err := a.requirePlatform(PlatformSettings, "setting the GitHub App's client secret"); err != nil {
+// SetGitHubAppClientSecret gives a platform App made before ADR 0066 its
+// OAuth client, so installs are checked: Dock reads the client ID from
+// GitHub and checks the pair before storing the secret, sealed. Operators
+// only; an org's own App needs no check.
+func (c *Core) SetGitHubAppClientSecret(ctx context.Context, a Actor, slug string, req apitypes.GitHubClientSecretRequest) error {
+	app, err := c.manageApp(ctx, a, slug, "setting a GitHub App's client secret")
+	if err != nil {
 		return err
+	}
+	if app.OrgID != nil {
+		return invalid("the GitHub App %s is an organization's own, which needs no client secret: only its owner account installs it", app.Slug)
 	}
 	secret := strings.TrimSpace(req.ClientSecret)
 	if secret == "" {
 		return invalid("give the client secret generated in the App's settings on GitHub (General > Client secrets)")
 	}
-	app, err := c.githubApp(ctx)
-	if err != nil {
-		return err
-	}
-	jwt, err := c.appJWT(ctx)
+	jwt, err := c.appJWT(app)
 	if err != nil {
 		return err
 	}
@@ -235,17 +275,17 @@ func (c *Core) SetGitHubAppClientSecret(ctx context.Context, a Actor, req apityp
 	if err := c.git.github.checkClient(ctx, clientID, secret); err != nil {
 		return err
 	}
-	sealed, err := c.box.Seal([]byte(secret), appClientSecretAAD)
+	sealed, err := c.box.Seal([]byte(secret), appClientSecretAAD(app.HookID))
 	if err != nil {
 		return err
 	}
-	n, err := c.store.SetGitHubAppClient(ctx, store.SetGitHubAppClientParams{ClientID: cleanLine(clientID, 100), ClientSecret: sealed})
+	n, err := c.store.SetGitHubAppClient(ctx, store.SetGitHubAppClientParams{ClientID: cleanLine(clientID, 100), ClientSecret: sealed, ID: app.ID})
 	if err != nil {
 		return err
 	}
 	if n == 0 {
 		return noGitHubApp()
 	}
-	c.audit(ctx, a.platform(), "github.app_client", nil, nil, app.Slug, "set the GitHub App's client secret, so installs are checked")
+	c.audit(ctx, a.platform(), "github.app_client", nil, nil, app.Slug, "set the client secret of the GitHub App "+app.Slug+", so installs are checked")
 	return nil
 }

@@ -22,8 +22,13 @@ const githubAppNewPath = Prefix + "/github/app/new"
 // installInput asks for an install link, which opens on the Dock origin
 // the caller reached.
 type installInput struct {
-	Body   apitypes.GitHubOrgRequest
+	Body   apitypes.GitHubInstallRequest
 	origin string
+}
+
+// githubAppInput addresses a GitHub App by its slug.
+type githubAppInput struct {
+	Slug string `path:"slug" maxLength:"100"`
 }
 
 // Resolve records the origin the request came to.
@@ -32,70 +37,76 @@ func (in *installInput) Resolve(ctx huma.Context) []error {
 	return nil
 }
 
-// registerGitHub registers the install's GitHub App (ADR 0031): operators
-// create it, install it and assign installations to orgs; an org's admins
-// see and install it for their own org and unassign their own
-// installations (ADR 0062); members list the repositories their org can
-// connect. GitHub's redirects back land on
-// plain pages (githubPages), outside Huma.
+// registerGitHub registers the GitHub Apps (ADR 0031, 0105): operators
+// create the platform's, install them and assign installations to orgs;
+// an org's admins create the org's own, see and install the Apps for
+// their own org and unassign their own installations (ADR 0062); members
+// list the repositories their org can connect. GitHub's redirects back
+// land on plain pages (githubPages), outside Huma.
 func registerGitHub(s *Server, a huma.API, mux *http.ServeMux) {
 	tags := []string{"github"}
 	authed(s, a, huma.Operation{
 		OperationID: "get-github", Method: http.MethodGet, Path: Prefix + "/github",
-		Summary: "Show the GitHub App", Tags: tags,
-		Description: "The install's GitHub App, its webhook URL and its installations (asked of GitHub now) with the org each is assigned to. Operators only.",
+		Summary: "Show the GitHub Apps", Tags: tags,
+		Description: "Every GitHub App, the platform's and each organization's own, with its webhook URL and its installations (asked of GitHub now) and the org each is assigned to. Operators only.",
 	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.GitHubStatus], error) {
 		return reply(s.core.GitHubStatus(ctx, actor))
 	})
 	authed(s, a, huma.Operation{
-		OperationID: "create-github-app", Method: http.MethodPost, Path: Prefix + "/github/app",
-		Summary: "Start creating the GitHub App", Tags: tags,
-		Description: "Returns a page on this server (a path) to open in a browser, valid for an hour: it sends the App's manifest to GitHub, which creates the App and sends the browser back to Dock. Needs Dock's public address. Operators only.",
-	}, func(ctx context.Context, actor core.Actor, in *struct{ Body apitypes.GitHubAppRequest }) (*out[apitypes.GitHubLink], error) {
-		state, err := s.core.StartGitHubApp(ctx, actor, in.Body)
+		OperationID: "create-github-app", Method: http.MethodPost, Path: Prefix + "/github/apps",
+		Summary: "Start creating a GitHub App", Tags: tags,
+		Description: "Returns a page on this server (a path) to open in a browser, valid for an hour: it sends the App's manifest to GitHub, which creates the App and sends the browser back to Dock. Needs Dock's public address. " +
+			"The organization's own App (always private: only its GitHub account installs it, and its installations are the organization's), for its admins; with platform, an App for every organization, for operators.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Platform bool `query:"platform" doc:"An App of the platform's, which operators assign to organizations, instead of the organization's own. Operators only."`
+		Body     apitypes.GitHubAppRequest
+	}) (*out[apitypes.GitHubLink], error) {
+		state, err := s.core.StartGitHubApp(ctx, actor, in.Platform, in.Body)
 		if err != nil {
 			return nil, err
 		}
 		return reply(apitypes.GitHubLink{URL: githubAppNewPath + "?state=" + url.QueryEscape(state)}, nil)
 	})
 	authed(s, a, huma.Operation{
-		OperationID: "remove-github-app", Method: http.MethodDelete, Path: Prefix + "/github/app",
-		Summary: "Remove the GitHub App", Tags: tags, DefaultStatus: http.StatusNoContent,
-		Description: "Forgets the App's key and installations. Services connected through it can't fetch until reconnected. Delete the App on GitHub too. Operators only.",
-	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*struct{}, error) {
-		return nil, s.core.RemoveGitHubApp(ctx, actor)
+		OperationID: "remove-github-app", Method: http.MethodDelete, Path: Prefix + "/github/apps/{slug}",
+		Summary: "Remove a GitHub App", Tags: tags, DefaultStatus: http.StatusNoContent,
+		Description: "Forgets the App's key and installations. Services connected through it can't fetch until reconnected. Delete the App on GitHub too. A platform App: operators; an organization's own: its admins.",
+	}, func(ctx context.Context, actor core.Actor, in *githubAppInput) (*struct{}, error) {
+		return nil, s.core.RemoveGitHubApp(ctx, actor, in.Slug)
 	})
 	authed(s, a, huma.Operation{
-		OperationID: "set-github-app-client-secret", Method: http.MethodPut, Path: Prefix + "/github/app/client-secret",
-		Summary: "Set the GitHub App's client secret", Tags: tags, DefaultStatus: http.StatusNoContent,
-		Description: "For an App made before Dock kept its OAuth client: generate a client secret in the App's settings on GitHub and add the callback URL `GET /github` shows. Dock checks the secret with GitHub, then checks who installs the App. Operators only.",
+		OperationID: "set-github-app-client-secret", Method: http.MethodPut, Path: Prefix + "/github/apps/{slug}/client-secret",
+		Summary: "Set a GitHub App's client secret", Tags: tags, DefaultStatus: http.StatusNoContent,
+		Description: "For a platform App made before Dock kept its OAuth client: generate a client secret in the App's settings on GitHub and add the callback URL `GET /github` shows. Dock checks the secret with GitHub, then checks who installs the App. Operators only.",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Slug string `path:"slug" maxLength:"100"`
 		Body apitypes.GitHubClientSecretRequest
 	}) (*struct{}, error) {
-		return nil, s.core.SetGitHubAppClientSecret(ctx, actor, in.Body)
+		return nil, s.core.SetGitHubAppClientSecret(ctx, actor, in.Slug, in.Body)
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "get-github-org", Method: http.MethodGet, Path: Prefix + "/github/org",
-		Summary: "Show the GitHub App for the organization", Tags: tags,
-		Description: "The platform's GitHub App, if it has one, and the organization's own installations (asked of GitHub now) with the services connected through each. Organization admins.",
+		Summary: "Show the organization's GitHub Apps", Tags: tags,
+		Description: "The organization's own GitHub Apps with their installations, and the platform's with the organization's installations of them (asked of GitHub now) and the services connected through each. Organization admins.",
 	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.GitHubOrg], error) {
 		return reply(s.core.GitHubOrgStatus(ctx, actor))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "install-github-app", Method: http.MethodPost, Path: Prefix + "/github/installations",
-		Summary: "Get the GitHub App's install link for an org", Tags: tags,
-		Description: "Returns the install link, valid for an hour: a page on Dock that only the caller, signed in to Dock in that browser, can open, and which goes on to the App's install page on GitHub. Once it is installed, GitHub sends the browser back to Dock, which checks with GitHub that the person can access the installation and, once they confirm, assigns it to the org, unless another org has it. " +
-			"Organization admins for their own organization (org empty or theirs); operators for any. A person's credential: a UI session or a `dock login` token.",
+		Summary: "Get a GitHub App's install link for an org", Tags: tags,
+		Description: "Returns the install link, valid for an hour: a page on Dock that only the caller, signed in to Dock in that browser, can open, and which goes on to the App's install page on GitHub. Once it is installed, GitHub sends the browser back to Dock. " +
+			"For the organization's own App, the installation is the organization's if it is on the App's owner account. For a platform App, Dock checks with GitHub that the person can access the installation and, once they confirm, assigns it to the org, unless another org has it. " +
+			"app names the App among those the org may use; it may be left out while there is one. Organization admins for their own organization (org empty or theirs); operators for any. A person's credential: a UI session or a `dock login` token.",
 	}, func(ctx context.Context, actor core.Actor, in *installInput) (*out[apitypes.GitHubLink], error) {
 		return reply(s.core.StartGitHubInstall(ctx, actor, in.Body, in.origin))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "assign-github-installation", Method: http.MethodPut, Path: Prefix + "/github/installations/{id}",
 		Summary: "Assign a GitHub App installation to an org", Tags: tags, DefaultStatus: http.StatusNoContent,
-		Description: "The org may then connect the installation's repositories. Moves it from another org, whose services stop fetching from it. Operators only.",
+		Description: "An installation of a platform App (app, or whichever has it): the org may then connect its repositories. Moves it from another org, whose services stop fetching from it. Operators only.",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		ID   int64 `path:"id"`
-		Body apitypes.GitHubOrgRequest
+		Body apitypes.GitHubInstallRequest
 	}) (*struct{}, error) {
 		return nil, s.core.AssignGitHubInstallation(ctx, actor, in.ID, in.Body)
 	})
@@ -111,7 +122,7 @@ func registerGitHub(s *Server, a huma.API, mux *http.ServeMux) {
 	authed(s, a, huma.Operation{
 		OperationID: "list-github-repos", Method: http.MethodGet, Path: Prefix + "/github/repos",
 		Summary: "List the GitHub repositories the org can connect", Tags: tags,
-		Description: "The repositories the GitHub App can read through the org's installations, by name, at most 1000. Scope: deploy.",
+		Description: "The repositories the org's GitHub App installations can read, the newest push first, at most 1000. Scope: deploy.",
 	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.GitHubRepos], error) {
 		return reply(s.core.GitHubRepos(ctx, actor))
 	})
@@ -213,7 +224,7 @@ func githubPages(c *core.Core, log *slog.Logger, mux *http.ServeMux) {
 			return
 		}
 		render(w, http.StatusOK, githubPageData{
-			Title:   "Create Dock's GitHub App",
+			Title:   "Create a GitHub App",
 			Message: "GitHub asks you to confirm the App's name, then sends you back here. The App can read code and post commit statuses, and receives pushes.",
 			Action:  action, Button: "Continue to GitHub", Fields: map[string]string{"manifest": string(manifest)},
 		})
@@ -225,10 +236,18 @@ func githubPages(c *core.Core, log *slog.Logger, mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
+		if app.Org != "" {
+			render(w, http.StatusOK, githubPageData{
+				Title:   "GitHub App created",
+				Message: "Org " + app.Org + " now has its own GitHub App " + app.Name + ". Next, install it on " + app.Owner + " from the organization's GitHub settings, or with dock github install --app " + app.Slug + ".",
+				Link:    "/" + url.PathEscape(app.Org) + "/settings/github", LinkText: "Back to Dock",
+			})
+			return
+		}
 		render(w, http.StatusOK, githubPageData{
 			Title:   "GitHub App created",
-			Message: "Dock now has the GitHub App " + app.Name + ". Next, install it on the GitHub account whose repositories should deploy, for an org: dock github install <org>.",
-			Link:    "/console", LinkText: "Back to Dock",
+			Message: "Dock now has the GitHub App " + app.Name + ". Next, install it on the GitHub account whose repositories should deploy, for an org: dock github install <org> --app " + app.Slug + ".",
+			Link:    "/console/github", LinkText: "Back to Dock",
 		})
 	})
 	// step answers an install step: on to GitHub, the confirm page, or
@@ -280,8 +299,8 @@ func githubPages(c *core.Core, log *slog.Logger, mux *http.ServeMux) {
 			// its own pages, with no state of Dock's.
 			render(w, http.StatusOK, githubPageData{
 				Title:   "GitHub App saved",
-				Message: "GitHub saved the installation. If it is new, an operator assigns it to an org: dock github assign " + strconv.FormatInt(id, 10) + " <org>.",
-				Link:    "/console", LinkText: "Back to Dock",
+				Message: "GitHub saved the installation. An organization's own App's installation on its owner account is the organization's once GitHub tells Dock. A platform App's new installation is assigned by an operator: dock github assign " + strconv.FormatInt(id, 10) + " <org>.",
+				Link:    "/", LinkText: "Back to Dock",
 			})
 			return
 		}

@@ -38,7 +38,12 @@ func TestGitHubQueryPlans(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 	checkPlans(t, s, []planCase{
-		{"GetGitHubApp", getGitHubApp, nil},
+		{"GetGitHubApp", getGitHubApp, []any{1}},
+		{"GetGitHubAppBySlug", getGitHubAppBySlug, []any{"s"}},
+		{"GetGitHubAppByHook", getGitHubAppByHook, []any{"h"}},
+		{"ListOrgGitHubApps", listOrgGitHubApps, []any{1}},
+		{"DeleteGitHubApp", deleteGitHubApp, []any{1}},
+		{"DeleteAppGitHubInstallation", deleteAppGitHubInstallation, []any{7, 1}},
 		{"ListOrgGitHubInstallations", listOrgGitHubInstallations, []any{1}},
 		{"GetGitHubInstallation", getGitHubInstallation, []any{7}},
 		{"DeleteGitHubInstallation", deleteGitHubInstallation, []any{7}},

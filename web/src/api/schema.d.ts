@@ -1710,8 +1710,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Show the GitHub App
-         * @description The install's GitHub App, its webhook URL and its installations (asked of GitHub now) with the org each is assigned to. Operators only.
+         * Show the GitHub Apps
+         * @description Every GitHub App, the platform's and each organization's own, with its webhook URL and its installations (asked of GitHub now) and the org each is assigned to. Operators only.
          */
         get: operations["get-github"];
         put?: never;
@@ -1722,7 +1722,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/github/app": {
+    "/api/v1/github/apps": {
         parameters: {
             query?: never;
             header?: never;
@@ -1732,13 +1732,29 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Start creating the GitHub App
-         * @description Returns a page on this server (a path) to open in a browser, valid for an hour: it sends the App's manifest to GitHub, which creates the App and sends the browser back to Dock. Needs Dock's public address. Operators only.
+         * Start creating a GitHub App
+         * @description Returns a page on this server (a path) to open in a browser, valid for an hour: it sends the App's manifest to GitHub, which creates the App and sends the browser back to Dock. Needs Dock's public address. The organization's own App (always private: only its GitHub account installs it, and its installations are the organization's), for its admins; with platform, an App for every organization, for operators.
          */
         post: operations["create-github-app"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/github/apps/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
         /**
-         * Remove the GitHub App
-         * @description Forgets the App's key and installations. Services connected through it can't fetch until reconnected. Delete the App on GitHub too. Operators only.
+         * Remove a GitHub App
+         * @description Forgets the App's key and installations. Services connected through it can't fetch until reconnected. Delete the App on GitHub too. A platform App: operators; an organization's own: its admins.
          */
         delete: operations["remove-github-app"];
         options?: never;
@@ -1746,7 +1762,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/github/app/client-secret": {
+    "/api/v1/github/apps/{slug}/client-secret": {
         parameters: {
             query?: never;
             header?: never;
@@ -1755,8 +1771,8 @@ export interface paths {
         };
         get?: never;
         /**
-         * Set the GitHub App's client secret
-         * @description For an App made before Dock kept its OAuth client: generate a client secret in the App's settings on GitHub and add the callback URL `GET /github` shows. Dock checks the secret with GitHub, then checks who installs the App. Operators only.
+         * Set a GitHub App's client secret
+         * @description For a platform App made before Dock kept its OAuth client: generate a client secret in the App's settings on GitHub and add the callback URL `GET /github` shows. Dock checks the secret with GitHub, then checks who installs the App. Operators only.
          */
         put: operations["set-github-app-client-secret"];
         post?: never;
@@ -1776,8 +1792,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Get the GitHub App's install link for an org
-         * @description Returns the install link, valid for an hour: a page on Dock that only the caller, signed in to Dock in that browser, can open, and which goes on to the App's install page on GitHub. Once it is installed, GitHub sends the browser back to Dock, which checks with GitHub that the person can access the installation and, once they confirm, assigns it to the org, unless another org has it. Organization admins for their own organization (org empty or theirs); operators for any. A person's credential: a UI session or a `dock login` token.
+         * Get a GitHub App's install link for an org
+         * @description Returns the install link, valid for an hour: a page on Dock that only the caller, signed in to Dock in that browser, can open, and which goes on to the App's install page on GitHub. Once it is installed, GitHub sends the browser back to Dock. For the organization's own App, the installation is the organization's if it is on the App's owner account. For a platform App, Dock checks with GitHub that the person can access the installation and, once they confirm, assigns it to the org, unless another org has it. app names the App among those the org may use; it may be left out while there is one. Organization admins for their own organization (org empty or theirs); operators for any. A person's credential: a UI session or a `dock login` token.
          */
         post: operations["install-github-app"];
         delete?: never;
@@ -1796,7 +1812,7 @@ export interface paths {
         get?: never;
         /**
          * Assign a GitHub App installation to an org
-         * @description The org may then connect the installation's repositories. Moves it from another org, whose services stop fetching from it. Operators only.
+         * @description An installation of a platform App (app, or whichever has it): the org may then connect its repositories. Moves it from another org, whose services stop fetching from it. Operators only.
          */
         put: operations["assign-github-installation"];
         post?: never;
@@ -1818,8 +1834,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Show the GitHub App for the organization
-         * @description The platform's GitHub App, if it has one, and the organization's own installations (asked of GitHub now) with the services connected through each. Organization admins.
+         * Show the organization's GitHub Apps
+         * @description The organization's own GitHub Apps with their installations, and the platform's with the organization's installations of them (asked of GitHub now) and the services connected through each. Organization admins.
          */
         get: operations["get-github-org"];
         put?: never;
@@ -1839,7 +1855,7 @@ export interface paths {
         };
         /**
          * List the GitHub repositories the org can connect
-         * @description The repositories the GitHub App can read through the org's installations, by name, at most 1000. Scope: deploy.
+         * @description The repositories the org's GitHub App installations can read, the newest push first, at most 1000. Scope: deploy.
          */
         get: operations["list-github-repos"];
         put?: never;
@@ -9711,6 +9727,7 @@ export interface components {
              */
             id: number;
             name: string;
+            org?: string;
             /** @description The GitHub account that owns the App */
             owner: string;
             slug: string;
@@ -9722,6 +9739,12 @@ export interface components {
             owner?: string;
             public?: boolean;
         };
+        GitHubAppStatus: {
+            app: components["schemas"]["GitHubApp"];
+            installations: components["schemas"]["GitHubInstallation"][] | null;
+            installations_error?: string;
+            webhook_url: string;
+        };
         GitHubBranches: {
             /** @description The default branch first, then by name; at most 100 */
             branches: string[] | null;
@@ -9732,6 +9755,12 @@ export interface components {
         };
         GitHubClientSecretRequest: {
             client_secret: string;
+        };
+        GitHubInstallRequest: {
+            /** @description The App's slug; may be left out while there is one it can be */
+            app?: string;
+            /** @description The org's slug; empty for the caller's own. Only operators name another org. */
+            org?: string;
         };
         GitHubInstallation: {
             account: string;
@@ -9756,6 +9785,7 @@ export interface components {
         };
         GitHubOrg: {
             app?: components["schemas"]["GitHubOrgApp"];
+            apps: components["schemas"]["GitHubAppStatus"][] | null;
             installations: components["schemas"]["GitHubInstallation"][] | null;
             installations_error?: string;
         };
@@ -9766,10 +9796,6 @@ export interface components {
             slug: string;
             /** @description The App's page on GitHub */
             url: string;
-        };
-        GitHubOrgRequest: {
-            /** @description The org's slug; empty for the caller's own. Only operators name another org. */
-            org?: string;
         };
         GitHubPath: {
             /** @description e.g. Dockerfile, package.json, go.mod */
@@ -9805,6 +9831,7 @@ export interface components {
         };
         GitHubStatus: {
             app?: components["schemas"]["GitHubApp"];
+            apps: components["schemas"]["GitHubAppStatus"][] | null;
             callback_url?: string;
             hooks_hint?: string;
             installations: components["schemas"]["GitHubInstallation"][] | null;
@@ -22865,6 +22892,8 @@ export interface operations {
             query?: {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
+                /** @description An App of the platform's, which operators assign to organizations, instead of the organization's own. Operators only. */
+                platform?: boolean;
             };
             header?: never;
             path?: never;
@@ -22966,7 +22995,9 @@ export interface operations {
                 org?: string;
             };
             header?: never;
-            path?: never;
+            path: {
+                slug: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -23023,6 +23054,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Error"];
                 };
             };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
             /** @description Locked */
             423: {
                 headers: {
@@ -23050,7 +23090,9 @@ export interface operations {
                 org?: string;
             };
             header?: never;
-            path?: never;
+            path: {
+                slug: string;
+            };
             cookie?: never;
         };
         requestBody: {
@@ -23152,7 +23194,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["GitHubOrgRequest"];
+                "application/json": components["schemas"]["GitHubInstallRequest"];
             };
         };
         responses: {
@@ -23253,7 +23295,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["GitHubOrgRequest"];
+                "application/json": components["schemas"]["GitHubInstallRequest"];
             };
         };
         responses: {

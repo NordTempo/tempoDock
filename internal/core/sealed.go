@@ -30,25 +30,28 @@ var (
 	sealedReleaseConfig   = secrets.Column{Table: "releases", Name: "config", Key: []string{"service_id", "number"}}
 	// A platform channel is named by its name, an org's by "<org>/<name>"
 	// (channelAAD): platform channels kept the AAD they had before orgs.
-	sealedAlertChannel                 = secrets.Column{Table: "alert_channels", Name: "config", Key: []string{"ifnull(org_id || '/', '') || name"}}
-	sealedLogDrain                     = secrets.Column{Table: "log_drains", Name: "config", Key: []string{"environment_id", "name"}}
-	sealedStatusHook                   = secrets.Column{Table: "status_hooks", Name: "config", Key: []string{"page_id", "name"}}
-	sealedGitSecret                    = secrets.Column{Table: "git_connections", Name: "secret", Key: []string{"service_id"}}
-	sealedGitToken                     = secrets.Column{Table: "git_connections", Name: "token", Key: []string{"service_id"}}
-	sealedAccessKey                    = secrets.Column{Table: "service_access", Name: "key", Key: []string{"service_id"}}
-	sealedStorageKeys                  = secrets.Column{Table: "storage_connections", Name: "credentials", Key: []string{"name"}}
-	sealedCloudflareToken              = secrets.Column{Table: "cloudflare_connections", Name: "token", Key: []string{"ifnull(org_id || '/', '') || name"}} // as a channel's (cloudflareAAD)
-	sealedTunnelToken                  = secrets.Column{Table: "cloudflare_tunnels", Name: "token", Key: []string{"tunnel_id"}}                             // the tunnel's, wherever its row points
-	sealedWildcardKey                  = secrets.Column{Table: "wildcard_certificates", Name: "key", Key: []string{"base_domain"}}                          // ADR 0090
-	sealedACMEKey                      = secrets.Column{Table: "acme_accounts", Name: "key", Key: []string{"directory"}}
-	sealedAnalyticsSalt                = secrets.Column{Table: "analytics_salts", Name: "salt", Key: []string{"day"}}
-	sealedBackupKeys                   = secrets.Column{Table: "backup_settings", Name: "credentials"}
-	sealedBackupPassword               = secrets.Column{Table: "backup_settings", Name: "password"}
-	sealedAnalyticsToken               = secrets.Column{Table: "analytics_settings", Name: "token"}
-	sealedHeartbeatURL                 = secrets.Column{Table: "heartbeat", Name: "url"} // ADR 0097
-	sealedAppKey                       = secrets.Column{Table: "github_app", Name: "private_key"}
-	sealedAppWebhookSecret             = secrets.Column{Table: "github_app", Name: "webhook_secret"}
-	sealedAppClientSecret              = secrets.Column{Table: "github_app", Name: "client_secret"} // its OAuth client's (ADR 0066)
+	sealedAlertChannel    = secrets.Column{Table: "alert_channels", Name: "config", Key: []string{"ifnull(org_id || '/', '') || name"}}
+	sealedLogDrain        = secrets.Column{Table: "log_drains", Name: "config", Key: []string{"environment_id", "name"}}
+	sealedStatusHook      = secrets.Column{Table: "status_hooks", Name: "config", Key: []string{"page_id", "name"}}
+	sealedGitSecret       = secrets.Column{Table: "git_connections", Name: "secret", Key: []string{"service_id"}}
+	sealedGitToken        = secrets.Column{Table: "git_connections", Name: "token", Key: []string{"service_id"}}
+	sealedAccessKey       = secrets.Column{Table: "service_access", Name: "key", Key: []string{"service_id"}}
+	sealedStorageKeys     = secrets.Column{Table: "storage_connections", Name: "credentials", Key: []string{"name"}}
+	sealedCloudflareToken = secrets.Column{Table: "cloudflare_connections", Name: "token", Key: []string{"ifnull(org_id || '/', '') || name"}} // as a channel's (cloudflareAAD)
+	sealedTunnelToken     = secrets.Column{Table: "cloudflare_tunnels", Name: "token", Key: []string{"tunnel_id"}}                             // the tunnel's, wherever its row points
+	sealedWildcardKey     = secrets.Column{Table: "wildcard_certificates", Name: "key", Key: []string{"base_domain"}}                          // ADR 0090
+	sealedACMEKey         = secrets.Column{Table: "acme_accounts", Name: "key", Key: []string{"directory"}}
+	sealedAnalyticsSalt   = secrets.Column{Table: "analytics_salts", Name: "salt", Key: []string{"day"}}
+	sealedBackupKeys      = secrets.Column{Table: "backup_settings", Name: "credentials"}
+	sealedBackupPassword  = secrets.Column{Table: "backup_settings", Name: "password"}
+	sealedAnalyticsToken  = secrets.Column{Table: "analytics_settings", Name: "token"}
+	sealedHeartbeatURL    = secrets.Column{Table: "heartbeat", Name: "url"} // ADR 0097
+	// A GitHub App's values (ADR 0105), bound to its random hook ID. The
+	// legacy* AADs are the one-row github_app table's, which the migrated
+	// App's values carry until resealGitHubApps binds them.
+	sealedAppKey                       = secrets.Column{Table: "github_apps", Name: "private_key", Key: []string{"hook_id"}}
+	sealedAppWebhookSecret             = secrets.Column{Table: "github_apps", Name: "webhook_secret", Key: []string{"hook_id"}}
+	sealedAppClientSecret              = secrets.Column{Table: "github_apps", Name: "client_secret", Key: []string{"hook_id"}} // its OAuth client's (ADR 0066)
 	sealedDataReader, sealedDataWriter = datapanel.AccessColumns("service_id")
 	// sealedUserFactor is a second factor's key (ADR 0057): one
 	// authenticator app per user, passkeys by credential ID.
@@ -76,14 +79,14 @@ var (
 
 // The AADs of the one-row tables' values.
 var (
-	backupKeysAAD       = sealedBackupKeys.AAD()
-	backupPasswordAAD   = sealedBackupPassword.AAD()
-	analyticsTokenAAD   = sealedAnalyticsToken.AAD()
-	appKeyAAD           = sealedAppKey.AAD()
-	appWebhookSecretAAD = sealedAppWebhookSecret.AAD()
-	appClientSecretAAD  = sealedAppClientSecret.AAD()
-	emailPasswordAAD    = sealedEmailPassword.AAD()
-	heartbeatURLAAD     = sealedHeartbeatURL.AAD()
+	backupKeysAAD             = sealedBackupKeys.AAD()
+	backupPasswordAAD         = sealedBackupPassword.AAD()
+	analyticsTokenAAD         = sealedAnalyticsToken.AAD()
+	legacyAppKeyAAD           = secrets.Bind("github_app.private_key")
+	legacyAppWebhookSecretAAD = secrets.Bind("github_app.webhook_secret")
+	legacyAppClientSecretAAD  = secrets.Bind("github_app.client_secret")
+	emailPasswordAAD          = sealedEmailPassword.AAD()
+	heartbeatURLAAD           = sealedHeartbeatURL.AAD()
 )
 
 // variableAAD binds a variable's live and staged value (serviceID nil:
@@ -182,8 +185,19 @@ func saltAAD(day int64) secrets.AAD {
 	return sealedAnalyticsSalt.AAD(strconv.FormatInt(day, 10))
 }
 
-// secretsBound is install.secrets_format once every value is bound.
-const secretsBound = 2
+// appKeyAAD, appWebhookSecretAAD and appClientSecretAAD bind a GitHub
+// App's private key, webhook secret and OAuth client secret to its row.
+func appKeyAAD(hookID string) secrets.AAD           { return sealedAppKey.AAD(hookID) }
+func appWebhookSecretAAD(hookID string) secrets.AAD { return sealedAppWebhookSecret.AAD(hookID) }
+func appClientSecretAAD(hookID string) secrets.AAD  { return sealedAppClientSecret.AAD(hookID) }
+
+// install.secrets_format: secretsBound once every value is bound,
+// secretsAppsBound once the GitHub App migrated into github_apps is bound
+// to its row too (resealGitHubApps).
+const (
+	secretsBound     = 2
+	secretsAppsBound = 3
+)
 
 // resealSecrets binds the values sealed before ADR 0041 to where they are
 // stored, once per database, then has the box refuse unbound values. New
@@ -206,7 +220,66 @@ func (c *Core) resealSecrets(ctx context.Context) error {
 			return err
 		}
 	}
+	if format < secretsAppsBound {
+		if err := c.resealGitHubApps(ctx); err != nil {
+			return err
+		}
+		if err := c.store.SetSecretsFormat(ctx, secretsAppsBound); err != nil {
+			return err
+		}
+	}
 	c.box.RefuseUnbound()
+	return nil
+}
+
+// resealGitHubApps binds the values of the GitHub App migration 0134
+// moved into github_apps to its row: they were sealed for the one-row
+// github_app table. A value that already opens bound to its row (resealed
+// by an earlier run, or bound from unsealed by ResealColumns) is left as
+// it is, so this is idempotent; one that opens neither way is left to
+// fail when read, as ResealColumns does.
+func (c *Core) resealGitHubApps(ctx context.Context) error {
+	apps, err := c.store.ListGitHubApps(ctx)
+	if err != nil {
+		return err
+	}
+	for _, r := range apps {
+		app := r.GithubApp
+		changed := false
+		for _, v := range []struct {
+			b             *[]byte
+			bound, legacy secrets.AAD
+		}{
+			{&app.PrivateKey, appKeyAAD(app.HookID), legacyAppKeyAAD},
+			{&app.WebhookSecret, appWebhookSecretAAD(app.HookID), legacyAppWebhookSecretAAD},
+			{&app.ClientSecret, appClientSecretAAD(app.HookID), legacyAppClientSecretAAD},
+		} {
+			if *v.b == nil {
+				continue
+			}
+			if _, err := c.box.Open(*v.b, v.bound); err == nil {
+				continue
+			}
+			plain, err := c.box.Open(*v.b, v.legacy)
+			if err != nil {
+				c.log.Warn("secrets: a GitHub App's value doesn't open", "app", app.Slug, "err", err)
+				continue
+			}
+			if *v.b, err = c.box.Seal(plain, v.bound); err != nil {
+				return err
+			}
+			changed = true
+		}
+		if !changed {
+			continue
+		}
+		if err := c.store.SetGitHubAppSealed(ctx, store.SetGitHubAppSealedParams{
+			PrivateKey: app.PrivateKey, WebhookSecret: app.WebhookSecret, ClientSecret: app.ClientSecret, ID: app.ID,
+		}); err != nil {
+			return err
+		}
+		c.log.Info("secrets: bound a GitHub App's values to its row", "app", app.Slug)
+	}
 	return nil
 }
 

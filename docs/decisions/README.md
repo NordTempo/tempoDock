@@ -44,7 +44,7 @@ line means a later record added to it without changing what it decided.
 | [0028](0028-updates-from-the-console.md) | Updating Dock from the console | accepted; amended by [0088](0088-signed-releases.md) |
 | [0029](0029-public-address.md) | Dock's public address | accepted |
 | [0030](0030-access-protection.md) | Access protection for a service's domains | accepted |
-| [0031](0031-github-app.md) | Dock's GitHub App | superseded in part by [0062](0062-org-alerts-and-operators.md), [0066](0066-github-apps-for-many-orgs.md) |
+| [0031](0031-github-app.md) | Dock's GitHub App | superseded in part by [0062](0062-org-alerts-and-operators.md), [0066](0066-github-apps-for-many-orgs.md), [0105](0105-github-apps-per-org.md) |
 | [0032](0032-server-memory-breakdown.md) | Where a server's memory goes | accepted |
 | [0033](0033-traffic-statistics.md) | Traffic statistics for a service's domains | superseded in part by [0040](0040-traffic-counts-requests.md) |
 | [0034](0034-registry-object-storage.md) | The registry's images in S3-compatible object storage | accepted |
@@ -79,7 +79,7 @@ line means a later record added to it without changing what it decided.
 | [0063](0063-moves-without-downtime-and-server-drains.md) | Moves without downtime, and draining a server | accepted; amended by [0091](0091-switches-without-reloads.md) (the hold's fresh port) |
 | [0064](0064-changing-an-org-slug.md) | Changing an organization's slug | accepted |
 | [0065](0065-sign-in-is-the-platforms.md) | Sign-in is the platform's | accepted; amended by [0081](0081-named-identity-providers.md) (named providers) |
-| [0066](0066-github-apps-for-many-orgs.md) | GitHub Apps for many orgs | accepted |
+| [0066](0066-github-apps-for-many-orgs.md) | GitHub Apps for many orgs | accepted; amended by [0105](0105-github-apps-per-org.md) (an org's own App) |
 | [0067](0067-landing-site-and-console-address.md) | The landing site, and the console's address | accepted |
 | [0068](0068-redirects-on-cloudflare-zones.md) | Redirects on Cloudflare zones | accepted |
 | [0069](0069-database-insights.md) | Database insights | accepted |
@@ -118,6 +118,7 @@ line means a later record added to it without changing what it decided.
 | [0102](0102-nodes-over-any-network.md) | Nodes over any network: the node port on every interface, tokens and hellos carry the Tailscale then public address, nodes fall through in order and keep the list current, the console shows the path, a reachability check before install | accepted |
 | [0103](0103-deleting-environments.md) | Deleting an environment: one step from its Settings tab or `dock environment delete`, the gates of a project delete, its services archived then everything of it removed; not the only environment, a preview or one with open previews | accepted |
 | [0104](0104-analytics-belong-to-the-service.md) | Analytics belong to the service: one site per service, every non-redirect domain counted, domain changes never touch a site, history moves later with `dock analytics move` | accepted |
+| [0105](0105-github-apps-per-org.md) | GitHub Apps of the platform or an org: any number per owner, an org's own private App whose installations on its owner account are the org's, the org's own Apps asked first | accepted |
 
 ## Template
 

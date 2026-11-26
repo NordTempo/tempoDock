@@ -11,14 +11,15 @@ import (
 )
 
 const claimGitHubInstallation = `-- name: ClaimGitHubInstallation :execrows
-INSERT INTO github_installations (installation_id, org_id, account, assigned_by, assigned_at) VALUES (?, ?, ?, ?, ?)
+INSERT INTO github_installations (installation_id, app_id, org_id, account, assigned_by, assigned_at) VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT (installation_id) DO UPDATE SET
     account = excluded.account, assigned_by = excluded.assigned_by, assigned_at = excluded.assigned_at
-WHERE github_installations.org_id = excluded.org_id
+WHERE github_installations.org_id = excluded.org_id AND github_installations.app_id = excluded.app_id
 `
 
 type ClaimGitHubInstallationParams struct {
 	InstallationID int64
+	AppID          int64
 	OrgID          int64
 	Account        string
 	AssignedBy     string
@@ -31,6 +32,7 @@ type ClaimGitHubInstallationParams struct {
 func (q *Queries) ClaimGitHubInstallation(ctx context.Context, arg ClaimGitHubInstallationParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, claimGitHubInstallation,
 		arg.InstallationID,
+		arg.AppID,
 		arg.OrgID,
 		arg.Account,
 		arg.AssignedBy,
@@ -76,12 +78,96 @@ func (q *Queries) CountInstallationConnections(ctx context.Context) ([]CountInst
 	return items, nil
 }
 
-const deleteGitHubApp = `-- name: DeleteGitHubApp :exec
-DELETE FROM github_app
+const createGitHubApp = `-- name: CreateGitHubApp :one
+INSERT INTO github_apps (org_id, app_id, hook_id, slug, name, owner, owner_id, html_url, private_key, webhook_secret,
+                         client_id, client_secret, created_by, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, org_id, app_id, hook_id, slug, name, owner, owner_id, html_url, private_key, webhook_secret, client_id, client_secret, created_by, created_at
 `
 
-func (q *Queries) DeleteGitHubApp(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, deleteGitHubApp)
+type CreateGitHubAppParams struct {
+	OrgID         *int64
+	AppID         int64
+	HookID        string
+	Slug          string
+	Name          string
+	Owner         string
+	OwnerID       int64
+	HtmlUrl       string
+	PrivateKey    []byte
+	WebhookSecret []byte
+	ClientID      string
+	ClientSecret  []byte
+	CreatedBy     string
+	CreatedAt     time.Time
+}
+
+// Stores an App registered through the manifest flow. Its sealed values
+// are bound to its hook_id, which is known before the insert.
+func (q *Queries) CreateGitHubApp(ctx context.Context, arg CreateGitHubAppParams) (GithubApp, error) {
+	row := q.db.QueryRowContext(ctx, createGitHubApp,
+		arg.OrgID,
+		arg.AppID,
+		arg.HookID,
+		arg.Slug,
+		arg.Name,
+		arg.Owner,
+		arg.OwnerID,
+		arg.HtmlUrl,
+		arg.PrivateKey,
+		arg.WebhookSecret,
+		arg.ClientID,
+		arg.ClientSecret,
+		arg.CreatedBy,
+		arg.CreatedAt,
+	)
+	var i GithubApp
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.AppID,
+		&i.HookID,
+		&i.Slug,
+		&i.Name,
+		&i.Owner,
+		&i.OwnerID,
+		&i.HtmlUrl,
+		&i.PrivateKey,
+		&i.WebhookSecret,
+		&i.ClientID,
+		&i.ClientSecret,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const deleteAppGitHubInstallation = `-- name: DeleteAppGitHubInstallation :execrows
+DELETE FROM github_installations WHERE installation_id = +? AND app_id = +?
+`
+
+type DeleteAppGitHubInstallationParams struct {
+	InstallationID int64
+	AppID          int64
+}
+
+// Forgets an installation of one App, for that App's uninstall event: a
+// delivery to one App can't unassign another's installation.
+func (q *Queries) DeleteAppGitHubInstallation(ctx context.Context, arg DeleteAppGitHubInstallationParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteAppGitHubInstallation, arg.InstallationID, arg.AppID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteGitHubApp = `-- name: DeleteGitHubApp :exec
+DELETE FROM github_apps WHERE id = +?
+`
+
+// Forgets an App; its installations go with it.
+func (q *Queries) DeleteGitHubApp(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteGitHubApp, id)
 	return err
 }
 
@@ -94,43 +180,94 @@ func (q *Queries) DeleteGitHubInstallation(ctx context.Context, installationID i
 	return err
 }
 
-const deleteGitHubInstallations = `-- name: DeleteGitHubInstallations :exec
-DELETE FROM github_installations
-`
-
-func (q *Queries) DeleteGitHubInstallations(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, deleteGitHubInstallations)
-	return err
-}
-
 const getGitHubApp = `-- name: GetGitHubApp :one
-SELECT id, app_id, hook_id, slug, name, owner, html_url, private_key, webhook_secret, created_by, created_at, client_id, client_secret FROM github_app WHERE id = 1
+
+SELECT id, org_id, app_id, hook_id, slug, name, owner, owner_id, html_url, private_key, webhook_secret, client_id, client_secret, created_by, created_at FROM github_apps WHERE id = +?
 `
 
-// The install's GitHub App; no row until one is registered.
-func (q *Queries) GetGitHubApp(ctx context.Context) (GithubApp, error) {
-	row := q.db.QueryRowContext(ctx, getGitHubApp)
+// GitHub Apps (ADR 0031, 0105): each the platform's (org_id NULL) or one
+// org's, with the installations orgs deploy from.
+func (q *Queries) GetGitHubApp(ctx context.Context, id int64) (GithubApp, error) {
+	row := q.db.QueryRowContext(ctx, getGitHubApp, id)
 	var i GithubApp
 	err := row.Scan(
 		&i.ID,
+		&i.OrgID,
 		&i.AppID,
 		&i.HookID,
 		&i.Slug,
 		&i.Name,
 		&i.Owner,
+		&i.OwnerID,
 		&i.HtmlUrl,
 		&i.PrivateKey,
 		&i.WebhookSecret,
-		&i.CreatedBy,
-		&i.CreatedAt,
 		&i.ClientID,
 		&i.ClientSecret,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getGitHubAppByHook = `-- name: GetGitHubAppByHook :one
+SELECT id, org_id, app_id, hook_id, slug, name, owner, owner_id, html_url, private_key, webhook_secret, client_id, client_secret, created_by, created_at FROM github_apps WHERE hook_id = +?
+`
+
+// The App a delivery to /hooks/github/<hook_id> is for.
+func (q *Queries) GetGitHubAppByHook(ctx context.Context, hookID string) (GithubApp, error) {
+	row := q.db.QueryRowContext(ctx, getGitHubAppByHook, hookID)
+	var i GithubApp
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.AppID,
+		&i.HookID,
+		&i.Slug,
+		&i.Name,
+		&i.Owner,
+		&i.OwnerID,
+		&i.HtmlUrl,
+		&i.PrivateKey,
+		&i.WebhookSecret,
+		&i.ClientID,
+		&i.ClientSecret,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getGitHubAppBySlug = `-- name: GetGitHubAppBySlug :one
+SELECT id, org_id, app_id, hook_id, slug, name, owner, owner_id, html_url, private_key, webhook_secret, client_id, client_secret, created_by, created_at FROM github_apps WHERE slug = +?
+`
+
+// An App by its slug on GitHub, which is unique there.
+func (q *Queries) GetGitHubAppBySlug(ctx context.Context, slug string) (GithubApp, error) {
+	row := q.db.QueryRowContext(ctx, getGitHubAppBySlug, slug)
+	var i GithubApp
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.AppID,
+		&i.HookID,
+		&i.Slug,
+		&i.Name,
+		&i.Owner,
+		&i.OwnerID,
+		&i.HtmlUrl,
+		&i.PrivateKey,
+		&i.WebhookSecret,
+		&i.ClientID,
+		&i.ClientSecret,
+		&i.CreatedBy,
+		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getGitHubInstallation = `-- name: GetGitHubInstallation :one
-SELECT installation_id, org_id, account, assigned_by, assigned_at FROM github_installations WHERE installation_id = +?
+SELECT installation_id, app_id, org_id, account, assigned_by, assigned_at FROM github_installations WHERE installation_id = +?
 `
 
 func (q *Queries) GetGitHubInstallation(ctx context.Context, installationID int64) (GithubInstallation, error) {
@@ -138,6 +275,7 @@ func (q *Queries) GetGitHubInstallation(ctx context.Context, installationID int6
 	var i GithubInstallation
 	err := row.Scan(
 		&i.InstallationID,
+		&i.AppID,
 		&i.OrgID,
 		&i.Account,
 		&i.AssignedBy,
@@ -146,14 +284,68 @@ func (q *Queries) GetGitHubInstallation(ctx context.Context, installationID int6
 	return i, err
 }
 
+const listGitHubApps = `-- name: ListGitHubApps :many
+SELECT a.id, a.org_id, a.app_id, a.hook_id, a.slug, a.name, a.owner, a.owner_id, a.html_url, a.private_key, a.webhook_secret, a.client_id, a.client_secret, a.created_by, a.created_at, CAST(coalesce(o.slug, '') AS TEXT) AS org_slug
+FROM github_apps a LEFT JOIN orgs o ON o.id = a.org_id
+ORDER BY a.org_id IS NOT NULL, a.org_id, a.id
+`
+
+type ListGitHubAppsRow struct {
+	GithubApp GithubApp
+	OrgSlug   string
+}
+
+// Every App with its org's slug (empty for the platform's): the platform's
+// first, then by org, oldest first.
+func (q *Queries) ListGitHubApps(ctx context.Context) ([]ListGitHubAppsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listGitHubApps)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListGitHubAppsRow
+	for rows.Next() {
+		var i ListGitHubAppsRow
+		if err := rows.Scan(
+			&i.GithubApp.ID,
+			&i.GithubApp.OrgID,
+			&i.GithubApp.AppID,
+			&i.GithubApp.HookID,
+			&i.GithubApp.Slug,
+			&i.GithubApp.Name,
+			&i.GithubApp.Owner,
+			&i.GithubApp.OwnerID,
+			&i.GithubApp.HtmlUrl,
+			&i.GithubApp.PrivateKey,
+			&i.GithubApp.WebhookSecret,
+			&i.GithubApp.ClientID,
+			&i.GithubApp.ClientSecret,
+			&i.GithubApp.CreatedBy,
+			&i.GithubApp.CreatedAt,
+			&i.OrgSlug,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listGitHubInstallations = `-- name: ListGitHubInstallations :many
-SELECT i.installation_id, i.org_id, i.account, i.assigned_by, i.assigned_at, o.slug AS org_slug
+SELECT i.installation_id, i.app_id, i.org_id, i.account, i.assigned_by, i.assigned_at, o.slug AS org_slug
 FROM github_installations i JOIN orgs o ON o.id = i.org_id
 ORDER BY i.installation_id
 `
 
 type ListGitHubInstallationsRow struct {
 	InstallationID int64
+	AppID          int64
 	OrgID          int64
 	Account        string
 	AssignedBy     string
@@ -173,6 +365,7 @@ func (q *Queries) ListGitHubInstallations(ctx context.Context) ([]ListGitHubInst
 		var i ListGitHubInstallationsRow
 		if err := rows.Scan(
 			&i.InstallationID,
+			&i.AppID,
 			&i.OrgID,
 			&i.Account,
 			&i.AssignedBy,
@@ -192,8 +385,53 @@ func (q *Queries) ListGitHubInstallations(ctx context.Context) ([]ListGitHubInst
 	return items, nil
 }
 
+const listOrgGitHubApps = `-- name: ListOrgGitHubApps :many
+SELECT id, org_id, app_id, hook_id, slug, name, owner, owner_id, html_url, private_key, webhook_secret, client_id, client_secret, created_by, created_at FROM github_apps WHERE org_id = +? OR org_id IS NULL
+`
+
+// The Apps an org may deploy through, its own and the platform's, in no
+// order (a handful; core sorts them).
+func (q *Queries) ListOrgGitHubApps(ctx context.Context, orgID *int64) ([]GithubApp, error) {
+	rows, err := q.db.QueryContext(ctx, listOrgGitHubApps, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GithubApp
+	for rows.Next() {
+		var i GithubApp
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.AppID,
+			&i.HookID,
+			&i.Slug,
+			&i.Name,
+			&i.Owner,
+			&i.OwnerID,
+			&i.HtmlUrl,
+			&i.PrivateKey,
+			&i.WebhookSecret,
+			&i.ClientID,
+			&i.ClientSecret,
+			&i.CreatedBy,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOrgGitHubInstallations = `-- name: ListOrgGitHubInstallations :many
-SELECT installation_id, org_id, account, assigned_by, assigned_at FROM github_installations WHERE org_id = +? ORDER BY installation_id
+SELECT installation_id, app_id, org_id, account, assigned_by, assigned_at FROM github_installations WHERE org_id = +? ORDER BY installation_id
 `
 
 func (q *Queries) ListOrgGitHubInstallations(ctx context.Context, orgID int64) ([]GithubInstallation, error) {
@@ -207,6 +445,7 @@ func (q *Queries) ListOrgGitHubInstallations(ctx context.Context, orgID int64) (
 		var i GithubInstallation
 		if err := rows.Scan(
 			&i.InstallationID,
+			&i.AppID,
 			&i.OrgID,
 			&i.Account,
 			&i.AssignedBy,
@@ -225,78 +464,58 @@ func (q *Queries) ListOrgGitHubInstallations(ctx context.Context, orgID int64) (
 	return items, nil
 }
 
-const setGitHubApp = `-- name: SetGitHubApp :exec
-INSERT INTO github_app (id, app_id, hook_id, slug, name, owner, html_url, private_key, webhook_secret, client_id, client_secret, created_by, created_at)
-VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT (id) DO UPDATE SET
-    app_id = excluded.app_id, hook_id = excluded.hook_id, slug = excluded.slug, name = excluded.name, owner = excluded.owner,
-    html_url = excluded.html_url, private_key = excluded.private_key, webhook_secret = excluded.webhook_secret,
-    client_id = excluded.client_id, client_secret = excluded.client_secret,
-    created_by = excluded.created_by, created_at = excluded.created_at
-`
-
-type SetGitHubAppParams struct {
-	AppID         int64
-	HookID        string
-	Slug          string
-	Name          string
-	Owner         string
-	HtmlUrl       string
-	PrivateKey    []byte
-	WebhookSecret []byte
-	ClientID      string
-	ClientSecret  []byte
-	CreatedBy     string
-	CreatedAt     time.Time
-}
-
-// Stores the App registered through the manifest flow, replacing any
-// earlier one.
-func (q *Queries) SetGitHubApp(ctx context.Context, arg SetGitHubAppParams) error {
-	_, err := q.db.ExecContext(ctx, setGitHubApp,
-		arg.AppID,
-		arg.HookID,
-		arg.Slug,
-		arg.Name,
-		arg.Owner,
-		arg.HtmlUrl,
-		arg.PrivateKey,
-		arg.WebhookSecret,
-		arg.ClientID,
-		arg.ClientSecret,
-		arg.CreatedBy,
-		arg.CreatedAt,
-	)
-	return err
-}
-
 const setGitHubAppClient = `-- name: SetGitHubAppClient :execrows
-UPDATE github_app SET client_id = ?, client_secret = ? WHERE id = 1
+UPDATE github_apps SET client_id = ?, client_secret = ? WHERE id = +?
 `
 
 type SetGitHubAppClientParams struct {
 	ClientID     string
 	ClientSecret []byte
+	ID           int64
 }
 
-// Gives the App its OAuth client (ADR 0066), for Apps made before Dock
-// kept it. No row affected: there is no App.
+// Gives an App its OAuth client (ADR 0066), for Apps made before Dock
+// kept it. No row affected: there is no such App.
 func (q *Queries) SetGitHubAppClient(ctx context.Context, arg SetGitHubAppClientParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, setGitHubAppClient, arg.ClientID, arg.ClientSecret)
+	result, err := q.db.ExecContext(ctx, setGitHubAppClient, arg.ClientID, arg.ClientSecret, arg.ID)
 	if err != nil {
 		return 0, err
 	}
 	return result.RowsAffected()
 }
 
+const setGitHubAppSealed = `-- name: SetGitHubAppSealed :exec
+UPDATE github_apps SET private_key = ?, webhook_secret = ?, client_secret = ? WHERE id = +?
+`
+
+type SetGitHubAppSealedParams struct {
+	PrivateKey    []byte
+	WebhookSecret []byte
+	ClientSecret  []byte
+	ID            int64
+}
+
+// Rewrites an App's sealed values, for resealGitHubApps.
+func (q *Queries) SetGitHubAppSealed(ctx context.Context, arg SetGitHubAppSealedParams) error {
+	_, err := q.db.ExecContext(ctx, setGitHubAppSealed,
+		arg.PrivateKey,
+		arg.WebhookSecret,
+		arg.ClientSecret,
+		arg.ID,
+	)
+	return err
+}
+
 const setGitHubInstallation = `-- name: SetGitHubInstallation :exec
-INSERT INTO github_installations (installation_id, org_id, account, assigned_by, assigned_at) VALUES (?, ?, ?, ?, ?)
+INSERT INTO github_installations (installation_id, app_id, org_id, account, assigned_by, assigned_at) VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT (installation_id) DO UPDATE SET
-    org_id = excluded.org_id, account = excluded.account, assigned_by = excluded.assigned_by, assigned_at = excluded.assigned_at
+    app_id = excluded.app_id, org_id = excluded.org_id, account = excluded.account,
+    assigned_by = excluded.assigned_by, assigned_at = excluded.assigned_at
 `
 
 type SetGitHubInstallationParams struct {
 	InstallationID int64
+	AppID          int64
 	OrgID          int64
 	Account        string
 	AssignedBy     string
@@ -307,6 +526,7 @@ type SetGitHubInstallationParams struct {
 func (q *Queries) SetGitHubInstallation(ctx context.Context, arg SetGitHubInstallationParams) error {
 	_, err := q.db.ExecContext(ctx, setGitHubInstallation,
 		arg.InstallationID,
+		arg.AppID,
 		arg.OrgID,
 		arg.Account,
 		arg.AssignedBy,

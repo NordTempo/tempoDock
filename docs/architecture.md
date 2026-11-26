@@ -169,9 +169,10 @@ Other ways a release starts: rollback, restart, `service start`, a config
 apply, `dock promote` (an image by digest, no rebuild) and preview
 environments, which clone a base environment per GitHub pull request and
 deploy its commits ([ADR 0056](decisions/0056-preview-environments.md)).
-GitHub pushes arrive through Dock's GitHub App, one App shared by every
-org with installations assigned to orgs
-([ADR 0031](decisions/0031-github-app.md), [0066](decisions/0066-github-apps-for-many-orgs.md)),
+GitHub pushes arrive through a GitHub App: the platform's, shared by every
+org with installations assigned to orgs, or an org's own, whose
+installations on its owner account are that org's
+([ADR 0031](decisions/0031-github-app.md), [0066](decisions/0066-github-apps-for-many-orgs.md), [0105](decisions/0105-github-apps-per-org.md)),
 or through a per-service webhook ([ADR 0018](decisions/0018-git-push-deploy.md)).
 GitHub delivers to `/hooks/github/` on `[hooks] public_host` or Dock's
 public address; Caddy routes only that path to a loopback listener.

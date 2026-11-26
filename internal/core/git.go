@@ -367,14 +367,14 @@ func (c *Core) resolveAppTarget(ctx context.Context, orgID int64, repo, branch, 
 			return nil, err
 		}
 	}
-	token, err := c.installationToken(ctx, inst)
+	token, err := c.installationToken(ctx, inst.app, inst.id)
 	if err != nil {
 		return nil, err
 	}
 	if err := c.checkAppTarget(ctx, token, r.FullName, branch, dir); err != nil {
 		return nil, err
 	}
-	return &appRepoTarget{installationID: inst, repo: r, branch: branch}, nil
+	return &appRepoTarget{installationID: inst.id, repo: r, branch: branch}, nil
 }
 
 // appTarget fills in an App connection from its resolved repository: its

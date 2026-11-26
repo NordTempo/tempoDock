@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/secrets"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -33,23 +34,60 @@ const (
 	// octo is a GitHub user who can access installation 7; mallory can't;
 	// dev can access some of its repositories (fakeGitHub.installRepos).
 	octo, mallory, dev = "octo", "mallory", "dev"
+	// acmeID is the GitHub account ID of acme, which installation 7 is on.
+	acmeID = 500
+	// The org's own App (withOrgApp): App 100, owned by acme, with
+	// installation 9 on acme and 10 on another account.
+	orgAppID, orgInstall, foreignInstall = 100, 9, 10
+	orgAppToken                          = "ghs_orginstall"
 )
 
-// withApp makes the fake GitHub host a GitHub App: it converts manifest
-// code "c0de", has installation 7 on account acme, which reads acme/shop
-// (repository 42), and checks the App's JWTs against its key. Its OAuth
-// client turns a code into the token of the user the code names, and
-// only octo's token lists installation 7.
-func (g *fakeGitHub) withApp(t *testing.T) {
+// fakeApp is a GitHub App the fake GitHub hosts: its key, what its
+// manifest code converts to, and its installations.
+type fakeApp struct {
+	key       *rsa.PrivateKey
+	code      string
+	created   map[string]any
+	installs  []map[string]any
+	tokenOf   map[string]string // installation ID to its token
+	readsShop int64             // the installation that reads acme/shop
+}
+
+// fakeInstallation is an installation as GitHub describes it.
+func fakeInstallation(id int64, login string, accountID int64) map[string]any {
+	return map[string]any{"id": id, "account": map[string]any{"id": accountID, "login": login, "type": "Organization"},
+		"repository_selection": "all", "html_url": fmt.Sprintf("https://github.com/organizations/%s/settings/installations/%d", login, id)}
+}
+
+// newFakeApp makes an App with a new key, its manifest code converting to
+// the App with slug, owned by acme.
+func newFakeApp(t *testing.T, id int64, code, slug string) *fakeApp {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
 	}
 	pemKey := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
-	installation := map[string]any{"id": fakeInstall, "account": map[string]string{"login": "acme", "type": "Organization"},
-		"repository_selection": "all", "html_url": "https://github.com/organizations/acme/settings/installations/7"}
-	// jwtOK checks the request carries a valid JWT of the App's.
-	jwtOK := func(w http.ResponseWriter, r *http.Request) bool {
+	return &fakeApp{key: key, code: code, tokenOf: map[string]string{}, created: map[string]any{
+		"id": id, "slug": slug, "name": slug, "html_url": "https://github.com/apps/" + slug,
+		"owner": map[string]any{"login": "acme", "id": acmeID}, "webhook_secret": "app-secret", "pem": string(pemKey),
+		"client_id": fakeClientID, "client_secret": fakeClientSecret,
+	}}
+}
+
+// withApp makes the fake GitHub host a GitHub App: it converts manifest
+// code "c0de", has installation 7 on account acme, which reads acme/shop
+// (repository 42), and checks the App's JWTs against its key. Its OAuth
+// client turns a code into the token of the user the code names, and
+// only octo's token lists installation 7. Each App's endpoints answer for
+// the App the JWT is of, so withOrgApp can add another.
+func (g *fakeGitHub) withApp(t *testing.T) {
+	platform := newFakeApp(t, fakeAppID, "c0de", "tempo-dock-test")
+	installation := fakeInstallation(fakeInstall, "acme", acmeID)
+	platform.installs, platform.tokenOf[fmt.Sprint(fakeInstall)], platform.readsShop = []map[string]any{installation}, fakeAppToken, fakeInstall
+	g.apps = map[int64]*fakeApp{fakeAppID: platform}
+	// appOf is the App whose valid JWT the request carries, or nil after
+	// answering 401.
+	appOf := func(w http.ResponseWriter, r *http.Request) *fakeApp {
 		parts := strings.Split(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "), ".")
 		if len(parts) == 3 {
 			sig, _ := base64.RawURLEncoding.DecodeString(parts[2])
@@ -60,27 +98,35 @@ func (g *fakeGitHub) withApp(t *testing.T) {
 				Exp int64  `json:"exp"`
 			}
 			_ = json.Unmarshal(claims, &c)
-			if rsa.VerifyPKCS1v15(&key.PublicKey, crypto.SHA256, sum[:], sig) == nil && c.Iss == fmt.Sprint(fakeAppID) && c.Exp > time.Now().Unix() {
-				return true
+			g.mu.Lock()
+			var app *fakeApp
+			for id, a := range g.apps {
+				if fmt.Sprint(id) == c.Iss {
+					app = a
+				}
+			}
+			g.mu.Unlock()
+			if app != nil && rsa.VerifyPKCS1v15(&app.key.PublicKey, crypto.SHA256, sum[:], sig) == nil && c.Exp > time.Now().Unix() {
+				return app
 			}
 		}
 		http.Error(w, `{"message":"bad JWT"}`, http.StatusUnauthorized)
-		return false
+		return nil
 	}
 	g.mux.HandleFunc("POST /app-manifests/{code}/conversions", func(w http.ResponseWriter, r *http.Request) {
-		if r.PathValue("code") != "c0de" {
-			http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
-			return
+		g.mu.Lock()
+		defer g.mu.Unlock()
+		for _, app := range g.apps {
+			if app.code == r.PathValue("code") {
+				_ = json.NewEncoder(w).Encode(app.created)
+				return
+			}
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"id": fakeAppID, "slug": "tempo-dock-test", "name": "Tempo Dock test", "html_url": "https://github.com/apps/tempo-dock-test",
-			"owner": map[string]string{"login": "acme"}, "webhook_secret": "app-secret", "pem": string(pemKey),
-			"client_id": fakeClientID, "client_secret": fakeClientSecret,
-		})
+		http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
 	})
 	g.mux.HandleFunc("GET /app", func(w http.ResponseWriter, r *http.Request) {
-		if jwtOK(w, r) {
-			_ = json.NewEncoder(w).Encode(map[string]any{"id": fakeAppID, "client_id": fakeClientID})
+		if app := appOf(w, r); app != nil {
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": app.created["id"], "client_id": fakeClientID})
 		}
 	})
 	g.mux.HandleFunc("POST /applications/{client}/token", func(w http.ResponseWriter, r *http.Request) {
@@ -122,29 +168,50 @@ func (g *fakeGitHub) withApp(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"total_count": n, "repositories": []any{}})
 	})
 	g.mux.HandleFunc("GET /app/installations", func(w http.ResponseWriter, r *http.Request) {
-		if jwtOK(w, r) {
-			_ = json.NewEncoder(w).Encode([]any{installation})
+		if app := appOf(w, r); app != nil {
+			_ = json.NewEncoder(w).Encode(app.installs)
 		}
 	})
 	g.mux.HandleFunc("GET /app/installations/{id}", func(w http.ResponseWriter, r *http.Request) {
-		if !jwtOK(w, r) {
+		app := appOf(w, r)
+		if app == nil {
 			return
 		}
-		if r.PathValue("id") != fmt.Sprint(fakeInstall) {
+		for _, i := range app.installs {
+			if fmt.Sprint(i["id"]) == r.PathValue("id") {
+				_ = json.NewEncoder(w).Encode(i)
+				return
+			}
+		}
+		http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
+	})
+	g.mux.HandleFunc("GET /repos/acme/shop/installation", func(w http.ResponseWriter, r *http.Request) {
+		app := appOf(w, r)
+		if app == nil {
+			return
+		}
+		for _, i := range app.installs {
+			if fmt.Sprint(i["id"]) == fmt.Sprint(app.readsShop) {
+				_ = json.NewEncoder(w).Encode(i)
+				return
+			}
+		}
+		http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
+	})
+	g.mux.HandleFunc("POST /app/installations/{id}/access_tokens", func(w http.ResponseWriter, r *http.Request) {
+		app := appOf(w, r)
+		if app == nil {
+			return
+		}
+		token, ok := app.tokenOf[r.PathValue("id")]
+		if !ok && app.code == "c0de" {
+			token, ok = fakeAppToken, true // the platform App's other installations (TestGitAppAdoptsStaleConnections)
+		}
+		if !ok {
 			http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(installation)
-	})
-	g.mux.HandleFunc("GET /repos/acme/shop/installation", func(w http.ResponseWriter, r *http.Request) {
-		if jwtOK(w, r) {
-			_ = json.NewEncoder(w).Encode(installation)
-		}
-	})
-	g.mux.HandleFunc("POST /app/installations/{id}/access_tokens", func(w http.ResponseWriter, r *http.Request) {
-		if jwtOK(w, r) {
-			_ = json.NewEncoder(w).Encode(map[string]any{"token": fakeAppToken, "expires_at": time.Now().Add(time.Hour)})
-		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"token": token, "expires_at": time.Now().Add(time.Hour)})
 	})
 	g.mux.HandleFunc("GET /repos/acme/shop", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"id": fakeRepoID, "full_name": "acme/shop", "default_branch": "main", "private": true})
@@ -159,12 +226,26 @@ func (g *fakeGitHub) withApp(t *testing.T) {
 	})
 }
 
+// withOrgApp adds an org's own App to the fake GitHub (after withApp):
+// manifest code "0rg", App 100 owned by acme, with installation 9 on acme,
+// which reads acme/shop, and installation 10 on another account.
+func (g *fakeGitHub) withOrgApp(t *testing.T) {
+	app := newFakeApp(t, orgAppID, "0rg", "tempo-dock-test-org")
+	delete(app.created, "client_id")
+	delete(app.created, "client_secret")
+	app.installs = []map[string]any{fakeInstallation(orgInstall, "acme", acmeID), fakeInstallation(foreignInstall, "elsewhere", 600)}
+	app.tokenOf[fmt.Sprint(orgInstall)], app.tokenOf[fmt.Sprint(foreignInstall)], app.readsShop = orgAppToken, "ghs_foreign", orgInstall
+	g.mu.Lock()
+	g.apps[orgAppID] = app
+	g.mu.Unlock()
+}
+
 // appHarness is a git harness whose Dock has created the GitHub App and
 // assigned installation 7 to org 1. It returns the App's hook ID.
 func appHarness(t *testing.T) (*harness, *fakeGitHub, string) {
 	h, gh := gitHarness(t)
 	gh.withApp(t)
-	state, err := h.c.StartGitHubApp(h.ctx, testSystem, apitypes.GitHubAppRequest{})
+	state, err := h.c.StartGitHubApp(h.ctx, testSystem, true, apitypes.GitHubAppRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +298,7 @@ func (h *harness) installApp(a Actor, org string, id int64, login string) error 
 // browser: the flow's state and the browser's binding.
 func (h *harness) startInstall(a Actor, org string) (state, binding string, err error) {
 	h.t.Helper()
-	link, err := h.c.StartGitHubInstall(h.ctx, a, apitypes.GitHubOrgRequest{Org: org}, "https://dock.example.com")
+	link, err := h.c.StartGitHubInstall(h.ctx, a, apitypes.GitHubInstallRequest{Org: org}, "https://dock.example.com")
 	if err != nil {
 		return "", "", err
 	}
@@ -233,13 +314,13 @@ func TestGitHubAppSetup(t *testing.T) {
 	h, gh := gitHarness(t)
 	gh.withApp(t)
 	member := Actor{Kind: "user", Name: "ada", UserID: 5, OrgID: 1, Scope: apitypes.ScopeAdmin}
-	if _, err := h.c.StartGitHubApp(h.ctx, member, apitypes.GitHubAppRequest{}); CodeOf(err) != apitypes.CodeForbidden {
-		t.Fatalf("org admin started the App: %v", err)
+	if _, err := h.c.StartGitHubApp(h.ctx, member, true, apitypes.GitHubAppRequest{}); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("org admin started a platform App: %v", err)
 	}
-	if _, err := h.c.StartGitHubApp(h.ctx, testSystem, apitypes.GitHubAppRequest{Owner: "not/an/org"}); CodeOf(err) != apitypes.CodeValidation {
+	if _, err := h.c.StartGitHubApp(h.ctx, testSystem, true, apitypes.GitHubAppRequest{Owner: "not/an/org"}); CodeOf(err) != apitypes.CodeValidation {
 		t.Fatalf("bad owner: %v", err)
 	}
-	state, err := h.c.StartGitHubApp(h.ctx, testSystem, apitypes.GitHubAppRequest{Owner: "acme"})
+	state, err := h.c.StartGitHubApp(h.ctx, testSystem, true, apitypes.GitHubAppRequest{Owner: "acme"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,9 +354,6 @@ func TestGitHubAppSetup(t *testing.T) {
 	if _, err := h.c.CompleteGitHubApp(h.ctx, "c0de", state); CodeOf(err) != apitypes.CodeUnauthorized {
 		t.Fatalf("state used twice: %v", err)
 	}
-	if _, err := h.c.StartGitHubApp(h.ctx, testSystem, apitypes.GitHubAppRequest{}); CodeOf(err) != apitypes.CodeConflict {
-		t.Fatalf("second App: %v", err)
-	}
 
 	st, err := h.c.GitHubStatus(h.ctx, testSystem)
 	if err != nil {
@@ -286,15 +364,15 @@ func TestGitHubAppSetup(t *testing.T) {
 		t.Fatalf("status before install: %+v", st)
 	}
 	op := h.operator("ops@x")
-	if _, err := h.c.StartGitHubInstall(h.ctx, op, apitypes.GitHubOrgRequest{Org: "nope"}, ""); CodeOf(err) != apitypes.CodeNotFound {
+	if _, err := h.c.StartGitHubInstall(h.ctx, op, apitypes.GitHubInstallRequest{Org: "nope"}, ""); CodeOf(err) != apitypes.CodeNotFound {
 		t.Fatalf("install for a missing org: %v", err)
 	}
 	// A credential of no one's has no browser to finish in.
-	if _, err := h.c.StartGitHubInstall(h.ctx, testSystem, apitypes.GitHubOrgRequest{Org: "test"}, ""); CodeOf(err) != apitypes.CodeValidation {
+	if _, err := h.c.StartGitHubInstall(h.ctx, testSystem, apitypes.GitHubInstallRequest{Org: "test"}, ""); CodeOf(err) != apitypes.CodeValidation {
 		t.Fatalf("install by the system: %v", err)
 	}
 	// The link is Dock's start page, where Dock was reached.
-	link, err := h.c.StartGitHubInstall(h.ctx, op, apitypes.GitHubOrgRequest{Org: "test"}, "http://100.64.0.1:7070")
+	link, err := h.c.StartGitHubInstall(h.ctx, op, apitypes.GitHubInstallRequest{Org: "test"}, "http://100.64.0.1:7070")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +429,10 @@ func TestGitHubAppSetup(t *testing.T) {
 		t.Fatalf("still assigned: %+v", st.Installations)
 	}
 
-	if err := h.c.RemoveGitHubApp(h.ctx, testSystem); err != nil {
+	if err := h.c.RemoveGitHubApp(h.ctx, member, "tempo-dock-test"); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("org admin removed the platform's App: %v", err)
+	}
+	if err := h.c.RemoveGitHubApp(h.ctx, testSystem, "tempo-dock-test"); err != nil {
 		t.Fatal(err)
 	}
 	if err := h.c.GitHookExists(h.ctx, hookID); CodeOf(err) != apitypes.CodeNotFound {
@@ -482,7 +563,7 @@ func TestGitAppStaysInItsOrg(t *testing.T) {
 		t.Fatalf("deploy through an unassigned installation: %v", err)
 	}
 	// Assigned to the other org instead, it still doesn't serve this one.
-	if err := h.c.AssignGitHubInstallation(h.ctx, testSystem, fakeInstall, apitypes.GitHubOrgRequest{Org: "other"}); err != nil {
+	if err := h.c.AssignGitHubInstallation(h.ctx, testSystem, fakeInstall, apitypes.GitHubInstallRequest{Org: "other"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := h.c.GitDeploy(h.ctx, testSystem, web, apitypes.GitDeployRequest{}); CodeOf(err) != apitypes.CodeForbidden {
@@ -511,7 +592,7 @@ func TestGitAppAdoptsStaleConnections(t *testing.T) {
 	}
 	assign := func(org int64) {
 		t.Helper()
-		if err := h.store.SetGitHubInstallation(h.ctx, store.SetGitHubInstallationParams{InstallationID: newInstall, OrgID: org, Account: "acme", AssignedBy: "test", AssignedAt: time.Now()}); err != nil {
+		if err := h.store.SetGitHubInstallation(h.ctx, store.SetGitHubInstallationParams{InstallationID: newInstall, AppID: 1, OrgID: org, Account: "acme", AssignedBy: "test", AssignedAt: time.Now()}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -552,7 +633,7 @@ func TestGitAppInstallationReplay(t *testing.T) {
 	if msg, err := deliver("d1"); err != nil || msg != "installation 7 removed" {
 		t.Fatalf("installation deleted: %q, %v", msg, err)
 	}
-	if err := h.c.AssignGitHubInstallation(h.ctx, testSystem, fakeInstall, apitypes.GitHubOrgRequest{Org: "test"}); err != nil {
+	if err := h.c.AssignGitHubInstallation(h.ctx, testSystem, fakeInstall, apitypes.GitHubInstallRequest{Org: "test"}); err != nil {
 		t.Fatal(err)
 	}
 	if msg, err := deliver("d2"); err != nil || !strings.Contains(msg, "already received") {
@@ -643,7 +724,7 @@ func TestGitHubInstallChecksTheInstaller(t *testing.T) {
 	// Dock's start page it is someone else's link, and GitHub's redirect
 	// in octo's browser, which the admin's binding cookie isn't in, gets
 	// nowhere, nor does a confirm from it.
-	link, err := h.c.StartGitHubInstall(h.ctx, admin, apitypes.GitHubOrgRequest{}, "https://dock.example.com")
+	link, err := h.c.StartGitHubInstall(h.ctx, admin, apitypes.GitHubInstallRequest{}, "https://dock.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -688,7 +769,7 @@ func TestGitHubInstallChecksTheInstaller(t *testing.T) {
 // secret, which Dock checks with GitHub first.
 func TestGitHubAppClientSecret(t *testing.T) {
 	h, _, _ := appHarness(t)
-	h.exec(`UPDATE github_app SET client_id = '', client_secret = NULL`)
+	h.exec(`UPDATE github_apps SET client_id = '', client_secret = NULL`)
 	if err := h.c.UnassignGitHubInstallation(h.ctx, testSystem, fakeInstall); err != nil {
 		t.Fatal(err)
 	}
@@ -696,7 +777,7 @@ func TestGitHubAppClientSecret(t *testing.T) {
 	if st, err := h.c.GitHubStatus(h.ctx, testSystem); err != nil || st.App.VerifiesInstalls || !strings.HasSuffix(st.CallbackURL, GitHubUserCallbackPath) {
 		t.Fatalf("status of an App without its client: %+v, %v", st, err)
 	}
-	if _, err := h.c.StartGitHubInstall(h.ctx, admin, apitypes.GitHubOrgRequest{}, ""); CodeOf(err) != apitypes.CodeConflict {
+	if _, err := h.c.StartGitHubInstall(h.ctx, admin, apitypes.GitHubInstallRequest{}, ""); CodeOf(err) != apitypes.CodeConflict {
 		t.Fatalf("org admin's install link without the client: %v", err)
 	}
 	// An operator's link claims it straight away, as before.
@@ -704,13 +785,13 @@ func TestGitHubAppClientSecret(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := h.c.SetGitHubAppClientSecret(h.ctx, admin, apitypes.GitHubClientSecretRequest{ClientSecret: fakeClientSecret}); CodeOf(err) != apitypes.CodeForbidden {
+	if err := h.c.SetGitHubAppClientSecret(h.ctx, admin, "tempo-dock-test", apitypes.GitHubClientSecretRequest{ClientSecret: fakeClientSecret}); CodeOf(err) != apitypes.CodeForbidden {
 		t.Fatalf("org admin set the client secret: %v", err)
 	}
-	if err := h.c.SetGitHubAppClientSecret(h.ctx, testSystem, apitypes.GitHubClientSecretRequest{ClientSecret: "wrong"}); CodeOf(err) != apitypes.CodeValidation {
+	if err := h.c.SetGitHubAppClientSecret(h.ctx, testSystem, "tempo-dock-test", apitypes.GitHubClientSecretRequest{ClientSecret: "wrong"}); CodeOf(err) != apitypes.CodeValidation {
 		t.Fatalf("wrong client secret: %v", err)
 	}
-	if err := h.c.SetGitHubAppClientSecret(h.ctx, testSystem, apitypes.GitHubClientSecretRequest{ClientSecret: fakeClientSecret}); err != nil {
+	if err := h.c.SetGitHubAppClientSecret(h.ctx, testSystem, "tempo-dock-test", apitypes.GitHubClientSecretRequest{ClientSecret: fakeClientSecret}); err != nil {
 		t.Fatal(err)
 	}
 	if st, err := h.c.GitHubStatus(h.ctx, testSystem); err != nil || !st.App.VerifiesInstalls {
@@ -743,5 +824,272 @@ func TestGitHubInstallNeedsEveryRepository(t *testing.T) {
 	}
 	if err := h.installApp(admin, "", fakeInstall, octo); err != nil || !assigned() {
 		t.Fatalf("someone who can access every repository: %v", err)
+	}
+}
+
+// startAppInstall is startInstall for an install request naming the App.
+func (h *harness) startAppInstall(a Actor, req apitypes.GitHubInstallRequest) (state, binding string) {
+	h.t.Helper()
+	link, err := h.c.StartGitHubInstall(h.ctx, a, req, "https://dock.example.com")
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	u, _ := url.Parse(link.URL)
+	state = u.Query().Get("state")
+	if _, binding, err = h.c.BindGitHubInstall(h.ctx, a, state); err != nil {
+		h.t.Fatal(err)
+	}
+	return state, binding
+}
+
+// An org's admins make the org's own App (ADR 0105): it is private, its
+// installation on the owner account is the org's with nothing to assign
+// or check, one on another account counts for nothing, connecting
+// prefers it to the platform's App, and other orgs don't see it.
+func TestGitHubOrgApp(t *testing.T) {
+	h, gh, _ := appHarness(t) // the platform's App, installation 7 org test's
+	gh.withOrgApp(t)
+	admin := h.in(h.member("ann@x", map[string]apitypes.Scope{"test": apitypes.ScopeAdmin}), "test")
+	if _, err := h.c.StartGitHubApp(h.ctx, admin, false, apitypes.GitHubAppRequest{Public: true}); CodeOf(err) != apitypes.CodeValidation {
+		t.Fatalf("a public org App: %v", err)
+	}
+	state, err := h.c.StartGitHubApp(h.ctx, admin, false, apitypes.GitHubAppRequest{Owner: "acme"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, manifest, err := h.c.GitHubManifest(state, "https://dock.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m githubManifest
+	if err := json.Unmarshal(manifest, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m.Public || m.CallbackURLs != nil || m.Name != "Tempo Dock test" {
+		t.Errorf("org App's manifest: %s", manifest)
+	}
+	app, err := h.c.CompleteGitHubApp(h.ctx, "0rg", state)
+	if err != nil || app.Org != "test" || app.VerifiesInstalls {
+		t.Fatalf("org App: %+v, %v", app, err)
+	}
+	orgHook := path.Base(m.HookAttributes.URL)
+
+	// The org may install two Apps now: it names one.
+	if _, err := h.c.StartGitHubInstall(h.ctx, admin, apitypes.GitHubInstallRequest{}, ""); CodeOf(err) != apitypes.CodeValidation {
+		t.Fatalf("install without naming the App: %v", err)
+	}
+	install := func(id int64) (GitHubInstallStep, error) {
+		state, binding := h.startAppInstall(admin, apitypes.GitHubInstallRequest{App: app.Slug})
+		return h.c.CompleteGitHubInstall(h.ctx, id, "install", state, binding, "https://dock.example.com")
+	}
+	if _, err := install(foreignInstall); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("installation on another account: %v", err)
+	}
+	if step, err := install(orgInstall); err != nil || !strings.Contains(step.Message, "org test can now deploy") {
+		t.Fatalf("installation on the owner account: %+v, %v", step, err)
+	}
+	if inst, err := h.store.GetGitHubInstallation(h.ctx, orgInstall); err != nil || inst.AppID == 1 || inst.OrgID != 1 {
+		t.Fatalf("org App's installation: %+v, %v", inst, err)
+	}
+
+	// Both Apps read acme/shop; the org's own wins.
+	web := h.service("web", apitypes.CreateServiceRequest{Name: "web"})
+	if _, err := h.c.GitConnect(h.ctx, testSystem, web, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main"}); err != nil {
+		t.Fatal(err)
+	}
+	var through int64
+	if err := h.store.DB.QueryRowContext(h.ctx, "SELECT installation_id FROM git_connections").Scan(&through); err != nil || through != orgInstall {
+		t.Fatalf("connected through installation %d, %v; want the org App's", through, err)
+	}
+	if repos, err := h.c.GitHubRepos(h.ctx, testSystem); err != nil || len(repos.Repos) != 1 {
+		t.Fatalf("a repository two Apps read, listed: %+v, %v", repos, err)
+	}
+
+	st, err := h.c.GitHubOrgStatus(h.ctx, admin)
+	if err != nil || len(st.Apps) != 2 || st.Apps[0].App.Org != "test" || st.Apps[1].App.Org != "" || st.App == nil || st.App.Slug != "tempo-dock-test" {
+		t.Fatalf("org status: %+v, %v", st, err)
+	}
+	if own := st.Apps[0].Installations; len(own) != 2 || own[0].ID != orgInstall || own[0].Org != "test" || own[0].Connections != 1 || own[1].Org != "" {
+		t.Fatalf("the org App's installations: %+v", own)
+	}
+
+	other, err := h.store.CreateOrg(h.ctx, store.CreateOrgParams{Slug: "other", Name: "other"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	theirs := h.in(h.member("bob@x", map[string]apitypes.Scope{other.Slug: apitypes.ScopeAdmin}), other.Slug)
+	if st, err := h.c.GitHubOrgStatus(h.ctx, theirs); err != nil || len(st.Apps) != 1 || st.Apps[0].App.Org != "" {
+		t.Fatalf("another org's view: %+v, %v", st, err)
+	}
+	if _, err := h.c.StartGitHubInstall(h.ctx, theirs, apitypes.GitHubInstallRequest{App: app.Slug}, ""); CodeOf(err) != apitypes.CodeNotFound {
+		t.Fatalf("another org installs this org's App: %v", err)
+	}
+	if err := h.c.RemoveGitHubApp(h.ctx, theirs, app.Slug); CodeOf(err) != apitypes.CodeNotFound {
+		t.Fatalf("another org removed this org's App: %v", err)
+	}
+
+	// The App's own deliveries: an uninstall forgets its installation (and
+	// can't touch the platform App's), an install on the owner account is
+	// the org's again, one on another account is ignored.
+	deliver := func(id, body string) string {
+		t.Helper()
+		msg, err := h.c.GitWebhook(h.ctx, GitDelivery{HookID: orgHook, Event: "installation", ID: id, Signature: sign("app-secret", []byte(body)), Body: []byte(body)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return msg
+	}
+	assigned := func(id int64) bool {
+		_, err := h.store.GetGitHubInstallation(h.ctx, id)
+		return err == nil
+	}
+	deliver("o1", `{"action":"deleted","installation":{"id":9}}`)
+	deliver("o2", `{"action":"deleted","installation":{"id":7}}`)
+	if assigned(orgInstall) || !assigned(fakeInstall) {
+		t.Fatalf("after uninstall events: 9 %v, 7 %v", assigned(orgInstall), assigned(fakeInstall))
+	}
+	if msg := deliver("o3", `{"action":"created","installation":{"id":10,"account":{"id":600,"login":"elsewhere"}},"sender":{"login":"octo"}}`); !strings.HasPrefix(msg, "ignored") || assigned(foreignInstall) {
+		t.Fatalf("installed on another account: %q", msg)
+	}
+	deliver("o4", `{"action":"created","installation":{"id":9,"account":{"id":500,"login":"acme"}},"sender":{"login":"octo"}}`)
+	if !assigned(orgInstall) {
+		t.Fatal("installed on the owner account: not the org's")
+	}
+
+	if err := h.c.RemoveGitHubApp(h.ctx, admin, app.Slug); err != nil {
+		t.Fatal(err)
+	}
+	if assigned(orgInstall) || !assigned(fakeInstall) {
+		t.Fatalf("after removing the org App: 9 %v, 7 %v", assigned(orgInstall), assigned(fakeInstall))
+	}
+}
+
+// The App migration 0134 moved into github_apps carries values sealed for
+// the one-row table; the next start binds them to its row.
+func TestGitHubAppValuesBoundToTheirRow(t *testing.T) {
+	h, _, _ := appHarness(t)
+	app, err := h.store.GetGitHubApp(h.ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := func(v []byte, bound, old secrets.AAD) []byte {
+		plain, err := h.c.box.Open(v, bound)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sealed, err := h.c.box.Seal(plain, old)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return sealed
+	}
+	h.exec(`UPDATE github_apps SET private_key = ?, webhook_secret = ?, client_secret = ?`,
+		legacy(app.PrivateKey, appKeyAAD(app.HookID), legacyAppKeyAAD),
+		legacy(app.WebhookSecret, appWebhookSecretAAD(app.HookID), legacyAppWebhookSecretAAD),
+		legacy(app.ClientSecret, appClientSecretAAD(app.HookID), legacyAppClientSecretAAD))
+	h.exec(`UPDATE install SET secrets_format = 2`)
+	if err := h.c.resealSecrets(h.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if app, err = h.store.GetGitHubApp(h.ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range []struct {
+		b   []byte
+		aad secrets.AAD
+	}{{app.PrivateKey, appKeyAAD(app.HookID)}, {app.WebhookSecret, appWebhookSecretAAD(app.HookID)}, {app.ClientSecret, appClientSecretAAD(app.HookID)}} {
+		if _, err := h.c.box.Open(v.b, v.aad); err != nil {
+			t.Errorf("not bound to its row: %v", err)
+		}
+	}
+	if format, err := h.store.GetSecretsFormat(h.ctx); err != nil || format != secretsAppsBound {
+		t.Errorf("secrets format %d, %v", format, err)
+	}
+}
+
+// The App limit holds when an App is stored, not only when its flow
+// starts: a flow started with room left is refused if the owner filled up
+// meanwhile.
+func TestGitHubAppLimitIsCheckedWhenStored(t *testing.T) {
+	h, gh := gitHarness(t)
+	gh.withApp(t)
+	gh.withOrgApp(t)
+	admin := h.in(h.member("ann@x", map[string]apitypes.Scope{"test": apitypes.ScopeAdmin}), "test")
+	state, err := h.c.StartGitHubApp(h.ctx, admin, false, apitypes.GitHubAppRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	org := int64(1)
+	for i := range maxGitHubApps {
+		if _, err := h.store.CreateGitHubApp(h.ctx, store.CreateGitHubAppParams{
+			OrgID: &org, AppID: int64(1000 + i), HookID: fmt.Sprint("hook", i), Slug: fmt.Sprint("app", i),
+			PrivateKey: []byte{1}, WebhookSecret: []byte{1}, CreatedAt: time.Now(),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := h.c.StartGitHubApp(h.ctx, admin, false, apitypes.GitHubAppRequest{}); CodeOf(err) != apitypes.CodeConflict {
+		t.Fatalf("an App past the limit: %v", err)
+	}
+	if _, err := h.c.CompleteGitHubApp(h.ctx, "0rg", state); CodeOf(err) != apitypes.CodeConflict || !strings.Contains(err.Error(), "delete it in its settings on GitHub") {
+		t.Fatalf("a flow started before the limit was reached: %v", err)
+	}
+	if _, err := h.store.GetGitHubAppBySlug(h.ctx, "tempo-dock-test-org"); !store.IsNotFound(err) {
+		t.Fatalf("stored past the limit: %v", err)
+	}
+}
+
+// Listing the org's repositories reads the same queries however many
+// installations it has, of one App or several, with the installation
+// tokens cached or not.
+func TestGitHubReposReadsAFixedNumberOfQueries(t *testing.T) {
+	h, gh, _ := appHarness(t) // installation 7 of the platform's App, org test's
+	gh.withOrgApp(t)
+	admin := h.in(h.member("ann@x", map[string]apitypes.Scope{"test": apitypes.ScopeAdmin}), "test")
+	state, err := h.c.StartGitHubApp(h.ctx, admin, false, apitypes.GitHubAppRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, err := h.c.CompleteGitHubApp(h.ctx, "0rg", state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	install, binding := h.startAppInstall(admin, apitypes.GitHubInstallRequest{App: app.Slug})
+	if _, err := h.c.CompleteGitHubInstall(h.ctx, orgInstall, "install", install, binding, "https://dock.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	// A second installation of the platform's App, so one App has two.
+	if err := h.store.SetGitHubInstallation(h.ctx, store.SetGitHubInstallationParams{InstallationID: 8, AppID: 1, OrgID: 1, Account: "acme", AssignedBy: "test", AssignedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	db := &countingDB{db: h.store.DB}
+	counted := *h.store
+	counted.Queries = store.New(db)
+	h.opts.Store = &counted
+	h.restart()
+	reads := func(cold bool) int64 {
+		t.Helper()
+		if cold {
+			h.c.git.app.forgetTokens(0)
+		}
+		before := db.n.Load()
+		if _, err := h.c.GitHubRepos(countCalls(h.ctx), testSystem); err != nil {
+			t.Fatal(err)
+		}
+		return db.n.Load() - before
+	}
+	coldMany, warmMany := reads(true), reads(false)
+	for _, id := range []int64{8, orgInstall} {
+		if err := h.store.DeleteGitHubInstallation(h.ctx, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	coldOne, warmOne := reads(true), reads(false)
+	if coldOne == 0 {
+		t.Fatal("counted no reads: the listing's queries must run on its context")
+	}
+	if coldMany != coldOne || warmMany != warmOne {
+		t.Errorf("reads with 3 installations (cold, warm): %d, %d; with 1: %d, %d", coldMany, warmMany, coldOne, warmOne)
 	}
 }
