@@ -20,7 +20,6 @@ import { useOrg } from "../../shell/location";
 import { Icon } from "../../ui/icons";
 import {
   Act,
-  lockHolds,
   Menu,
   MoreItem,
   MoreMenu,
@@ -34,7 +33,7 @@ import { openCreate } from "../create/open";
 import { MoveStrip } from "../move/MoveStrip";
 import { previewsCli } from "../previews/data";
 import { ClosePreview } from "../previews/PreviewParts";
-import { LockForm, LockStrip } from "./EnvironmentLock";
+import { LockForm, LockPill } from "./EnvironmentLock";
 import {
   duration,
   SleepForm,
@@ -57,10 +56,11 @@ export type ProjectTab = "services" | "activity" | "settings" | "project";
  * The header every project page shares (Services, Activity, Settings,
  * Project settings), one row per scope. The project's row: its name,
  * servers, Project settings and a "···" with what changes the whole
- * project. The environment's row: the switch, its tabs, then its lock,
- * New service and a "···" with what changes that environment. Under it,
- * whatever the picked environment needs said or asked: its lock, a
- * running move, and the forms its menu opens. On Project settings, which
+ * project. The environment's row: the switch, its tabs, then its lock
+ * (a pill that opens the lock's details and controls) or Lock, New
+ * service and a "···" with what changes that environment. Under it,
+ * whatever the picked environment needs said or asked: a running move,
+ * and the forms its menu or Lock opens. On Project settings, which
  * no environment scopes, no environment is marked and its actions, lock
  * and strips stay away.
  */
@@ -149,7 +149,6 @@ export function ProjectHeader({
     !!env?.services.some((s) => s.service.status.state === "running");
   const canSetSleep = admin && e?.kind === "non_production" && !pr;
   const envCli = (args: string) => `dock environment ${args} -p ${project}`;
-  const locked = e?.lock && lockHolds(e.lock);
   const projectWide = tab === "project";
 
   return (
@@ -227,14 +226,9 @@ export function ProjectHeader({
             <div className="ml-auto flex flex-wrap items-center gap-2">
               {e &&
                 (e.lock ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-tag border border-warn-edge bg-stage-bg px-2 py-0.5 text-xs text-warn-text">
-                    <Icon name="lock" size={12} />
-                    {locked
-                      ? e.lock.people
-                        ? "Locked for people too"
-                        : "Locked for agents"
-                      : "Lock paused"}
-                  </span>
+                  // Keyed: an open Unlock question never carries over to
+                  // another environment.
+                  <LockPill key={e.id} envRef={ref} lock={e.lock} />
                 ) : (
                   admin && (
                     <Act
@@ -352,8 +346,8 @@ export function ProjectHeader({
 }
 
 /**
- * What the picked environment says or asks under the header: its lock
- * (with Unlock), a running move, and the form its "···" item opened.
+ * What the picked environment says or asks under the header: a running
+ * move, and the form its "···" item or Lock opened.
  * Nothing when there's nothing to say.
  */
 function EnvironmentStrips({
@@ -386,10 +380,9 @@ function EnvironmentStrips({
         />
       </Suspense>
     ));
-  if (!e.lock && !form && !children) return null;
+  if (!form && !children) return null;
   return (
     <div className="flex w-full max-w-[1400px] flex-col px-4 pt-4 empty:hidden sm:px-7 [&>*:last-child]:mb-0">
-      {e.lock && <LockStrip envRef={ref} lock={e.lock} />}
       {children}
       {form}
     </div>

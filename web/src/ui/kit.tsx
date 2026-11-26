@@ -3,6 +3,7 @@ import {
   type ReactNode,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -617,29 +618,63 @@ export function Fact({
  * role="presentation", dividers role="separator". Arrow keys move
  * between items. It is fixed to the viewport, so a
  * panel's overflow can't clip it; scrolling, Escape or a click outside
- * closes it.
+ * closes it. `dialog` makes it a small panel of details and buttons
+ * instead (role="dialog"), as the environment lock's pill opens: it takes
+ * focus when it opens and gives it back to its button when an action in
+ * it closes it. Either is capped at the viewport's height and scrolls
+ * inside.
  */
 export function Menu({
   label,
   button,
   right,
+  dialog,
   className = "",
+  popupClassName = "min-w-44 p-1",
   children,
 }: {
   label: string;
   button: ReactNode;
   /** Line up with the button's right edge, for menus at the end of a row. */
   right?: boolean;
+  /** A panel of details and buttons rather than a list of items. */
+  dialog?: boolean;
   className?: string;
+  /** The popup's size and padding. */
+  popupClassName?: string;
   children: (close: () => void) => ReactNode;
 }) {
   const [at, setAt] = useState<DOMRect | null>(null);
   const root = useRef<HTMLSpanElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const popup = useRef<HTMLDivElement>(null);
+  // Kept inside the viewport: a wide popup lined up with a button near the
+  // other edge (the lock pill on a phone) would start off screen.
+  useLayoutEffect(() => {
+    const el = popup.current;
+    if (!at || !el) return;
+    const edge = 8;
+    const box = el.getBoundingClientRect();
+    const room = document.documentElement.clientWidth - edge;
+    if (box.left < edge) el.style.translate = `${edge - box.left}px`;
+    else if (box.right > room) el.style.translate = `${room - box.right}px`;
+    if (dialog) el.focus({ preventScroll: true });
+  }, [at, dialog]);
+  // An action in a dialog closes it and leaves focus where it was opened;
+  // a Confirm or a page it opens takes focus after this.
+  const close = () => {
+    setAt(null);
+    if (dialog) trigger.current?.focus();
+  };
   useEffect(() => {
     if (!at) return;
     const close = () => setAt(null);
+    // Scrolling inside the popup (a capped one) leaves it open.
+    const onScroll = (event: Event) => {
+      const inside =
+        event.target instanceof Node && popup.current?.contains(event.target);
+      if (!inside) close();
+    };
     const onMouse = (event: MouseEvent) => {
       const inside =
         event.target instanceof Node && root.current?.contains(event.target);
@@ -666,12 +701,12 @@ export function Menu({
     };
     document.addEventListener("mousedown", onMouse);
     document.addEventListener("keydown", onKey);
-    window.addEventListener("scroll", close, true);
+    window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", close);
     return () => {
       document.removeEventListener("mousedown", onMouse);
       document.removeEventListener("keydown", onKey);
-      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", close);
     };
   }, [at]);
@@ -681,7 +716,7 @@ export function Menu({
         ref={trigger}
         type="button"
         aria-label={label}
-        aria-haspopup="menu"
+        aria-haspopup={dialog ? "dialog" : "menu"}
         aria-expanded={!!at}
         onClick={(e) =>
           setAt(at ? null : e.currentTarget.getBoundingClientRect())
@@ -693,17 +728,20 @@ export function Menu({
       {at && (
         <div
           ref={popup}
-          role="menu"
-          aria-label={label}
+          // Spread: Biome reads a role it can't know statically as none,
+          // and then refuses the label both roles take.
+          {...{ role: dialog ? "dialog" : "menu", "aria-label": label }}
+          tabIndex={dialog ? -1 : undefined}
           style={{
             top: at.bottom + 4,
+            maxHeight: `calc(100dvh - ${at.bottom + 12}px)`,
             ...(right
               ? { right: document.documentElement.clientWidth - at.right }
               : { left: at.left }),
           }}
-          className="fixed z-40 flex min-w-44 flex-col rounded-ctl border border-edge bg-panel p-1 shadow-lg shadow-black/40"
+          className={`fixed z-40 flex flex-col overflow-y-auto rounded-ctl border border-edge bg-panel shadow-lg shadow-black/40 outline-none ${popupClassName}`}
         >
-          {children(() => setAt(null))}
+          {children(close)}
         </div>
       )}
     </span>
