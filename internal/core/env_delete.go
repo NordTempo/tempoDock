@@ -190,8 +190,10 @@ func (c *Core) archiveForDelete(ctx context.Context, d deletion) ([]string, erro
 // deleteEnvironmentRows deletes the deletion's rows, after checking in
 // the same transaction that the environment is still the one named, the
 // project keeps another environment, and nothing was added meanwhile:
-// no preview opened from it and no live service (one created while its
-// resources were removed would lose its rows but keep its container).
+// no preview opened from it, and no service or volume that wasn't in d
+// (one made while the resources were removed would lose its rows but
+// keep its container or volume). A refusal keeps every row, so deleting
+// again picks it up.
 // Then it forgets what memory holds of them. Alert writes wait meanwhile
 // (alertEngine.writes).
 func (c *Core) deleteEnvironmentRows(ctx context.Context, es envScope, d deletion) error {
@@ -219,13 +221,37 @@ func (c *Core) deleteEnvironmentRows(ctx context.Context, es envScope, d deletio
 		if n > 0 {
 			return conflict("a preview of %s opened meanwhile; close it, then delete again", es)
 		}
+		// Only what was removed from the server may lose its rows: a
+		// service or volume made since (deployed, maybe archived again)
+		// stops the delete, and deleting again removes it too.
+		knownSvcs, knownVols := map[int64]bool{}, map[int64]bool{}
+		for _, s := range d.svcs {
+			knownSvcs[s.ID] = true
+		}
+		for _, v := range d.vols {
+			knownVols[v.ID] = true
+		}
 		svcs, err := q.ListProjectServices(ctx, es.project.ID)
 		if err != nil {
 			return err
 		}
+		inSet := map[int64]bool{}
 		for _, s := range svcs {
-			if s.ArchivedAt == nil && slices.Contains(ids, s.EnvironmentID) {
+			if !slices.Contains(ids, s.EnvironmentID) {
+				continue
+			}
+			if !knownSvcs[s.ID] {
 				return conflict("service %s was added to %s meanwhile; delete the environment again", s.Name, es)
+			}
+			inSet[s.ID] = true
+		}
+		vols, err := q.ListProjectVolumes(ctx, es.project.ID)
+		if err != nil {
+			return err
+		}
+		for _, v := range vols {
+			if inSet[v.ServiceID] && !v.Pending && !knownVols[v.ID] {
+				return conflict("volume %s was added in %s meanwhile; delete the environment again", v.Name, es)
 			}
 		}
 		envs, err := q.ListEnvironments(ctx, es.project.ID)

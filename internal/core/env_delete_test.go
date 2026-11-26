@@ -129,3 +129,35 @@ func TestDeleteEnvironmentWithPreviews(t *testing.T) {
 		t.Errorf("volumes left: %v", left)
 	}
 }
+
+// A service made after the delete read what it removes (deployed and
+// archived again meanwhile) stops the delete's final step, which keeps
+// every row: its container or volume would be left without them.
+func TestDeleteEnvironmentRefusesWhatCameMeanwhile(t *testing.T) {
+	h := newHarness(t)
+	h.service("web", apitypes.CreateServiceRequest{})
+	staging := EnvRef{"shop", "staging"}
+	if _, err := h.c.CreateEnvironment(h.ctx, testSystem, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
+		t.Fatal(err)
+	}
+	es, err := h.c.loadEnv(h.ctx, 1, staging)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := h.c.loadDeletion(h.ctx, es.project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d = d.of("environment shop/staging", []int64{es.env.ID})
+	late := ServiceRef{"shop", "staging", "late"}
+	if _, err := h.c.CreateService(h.ctx, testSystem, staging, apitypes.CreateServiceRequest{Name: "late"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.ArchiveService(h.ctx, testSystem, late); err != nil {
+		t.Fatal(err)
+	}
+	wantCode(t, "a service made meanwhile", h.c.deleteEnvironmentRows(h.ctx, es, d), apitypes.CodeConflict)
+	if _, err := h.c.GetEnvironment(h.ctx, testSystem, staging); err != nil {
+		t.Errorf("the refused delete deleted: %v", err)
+	}
+}
