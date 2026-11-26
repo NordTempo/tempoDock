@@ -139,6 +139,7 @@ func (c *Core) GetAppTemplate(ctx context.Context, a Actor, name string) (apityp
 // another service has with the --domain that does. After the services
 // exist, a domain or first deploy that fails is listed in Failed rather
 // than undoing them; they deploy like any other service once it's fixed.
+// With req.Detach it returns once they exist and their deploys run on.
 func (c *Core) UseAppTemplate(ctx context.Context, a Actor, ref EnvRef, name string, req apitypes.UseTemplateRequest) (apitypes.UseTemplateResult, error) {
 	out := apitypes.UseTemplateResult{Plan: newPlan(ref.Project), Services: []string{}, Releases: []apitypes.Release{}, Failed: []string{}}
 	es, err := c.envFor(ctx, a, ref, apitypes.ScopeDeploy, "using a template")
@@ -268,7 +269,7 @@ func (c *Core) UseAppTemplate(ctx context.Context, a Actor, ref EnvRef, name str
 	c.applyStagedDomains(ctx, a, es, domains, &applied)
 	out.Failed = append(out.Failed, applied.Failed...)
 
-	rels, failed := c.deployInOrder(ctx, a, es, created, deps)
+	rels, failed := c.deployInOrder(ctx, a, es, created, deps, !req.Detach)
 	out.Releases = append(out.Releases, rels...)
 	out.Failed = append(out.Failed, failed...)
 	return out, nil
@@ -279,8 +280,9 @@ func (c *Core) UseAppTemplate(ctx context.Context, a Actor, ref EnvRef, name str
 // database doesn't accept connections yet often exits at start, and its
 // deploy's health check fails on that. One whose dependency failed still
 // starts, and its release says why. The sequence runs on the daemon's
-// context; the caller waits for it unless its own context ends first.
-func (c *Core) deployInOrder(ctx context.Context, a Actor, es envScope, svcs []store.Service, deps map[string][]string) ([]apitypes.Release, []string) {
+// context; with wait the caller waits for it unless its own context ends
+// first, and without it a deploy that couldn't start is only logged.
+func (c *Core) deployInOrder(ctx context.Context, a Actor, es envScope, svcs []store.Service, deps map[string][]string, wait bool) ([]apitypes.Release, []string) {
 	type result struct {
 		rels   []apitypes.Release
 		failed []string
@@ -288,7 +290,14 @@ func (c *Core) deployInOrder(ctx context.Context, a Actor, es envScope, svcs []s
 	res := make(chan result, 1)
 	c.goCounted("deploying a template's services", func() {
 		var r result
-		defer func() { res <- r }()
+		defer func() {
+			if !wait {
+				for _, f := range r.failed {
+					c.log.Warn("a template's first deploy didn't start", "environment", es.String(), "err", f)
+				}
+			}
+			res <- r
+		}()
 		// finished holds each started service's outcome, put back after
 		// every read so later dependents read it too.
 		finished := map[string]chan bool{}
@@ -320,6 +329,9 @@ func (c *Core) deployInOrder(ctx context.Context, a Actor, es envScope, svcs []s
 			}
 		}
 	})
+	if !wait {
+		return nil, nil
+	}
 	select {
 	case r := <-res:
 		return r.rels, r.failed

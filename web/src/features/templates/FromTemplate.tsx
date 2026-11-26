@@ -218,6 +218,8 @@ export function FromTemplate({
       name,
       ...(t.domain && domain.trim() && { domain: domain.trim() }),
       inputs: filled,
+      // Don't hold the dialog open while the database deploys first.
+      detach: true,
     });
     const failures = res.failed ?? [];
     if (failures.length > 0) {

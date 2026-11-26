@@ -20529,6 +20529,10 @@
       "UseTemplateRequest": {
         "additionalProperties": false,
         "properties": {
+          "detach": {
+            "description": "Return once the services exist; their first deploys run in the background and releases is empty",
+            "type": "boolean"
+          },
           "domain": {
             "description": "Hostname for the main service; empty for a generated one",
             "type": "string"
