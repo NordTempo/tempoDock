@@ -47,6 +47,11 @@ type gitState struct {
 	// starts after shutdown began.
 	mu      sync.Mutex
 	workers map[int64]*gitWorker // by service ID, while one runs
+	// eventMu orders gitEventIn's write and publish, so two deliveries
+	// for one connection reach the bus in the order the store took them
+	// and a page never ends on the older last event. Only gitEventIn
+	// takes it.
+	eventMu sync.Mutex
 	// limit throttles webhook deliveries per hook; appLimit the App's,
 	// which carry every App connection's pushes. Both count only
 	// deliveries whose signature checked out, so ones with a wrong
@@ -554,6 +559,8 @@ func (c *Core) gitEvent(connID int64, msg string) { c.gitEventIn(nil, connID, ms
 // scope already (an App delivery's loop over its connections); nil looks
 // it up.
 func (c *Core) gitEventIn(ss *svcScope, connID int64, msg string) {
+	c.git.eventMu.Lock()
+	defer c.git.eventMu.Unlock()
 	t := now()
 	conn, err := c.store.SetGitLastEvent(c.ctx, store.SetGitLastEventParams{LastEvent: cleanLine(msg, 500), LastEventAt: &t, ID: connID})
 	if err != nil {
