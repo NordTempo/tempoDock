@@ -387,14 +387,17 @@ toml_set() {
 toml_unset() {
   local out
   out="$(awk -v section="$2" -v key="$3" '
+    # bare: the line without its strings and comment, so a "]" in an
+    # address ("[2001:db8::1]:7443") does not end the array.
+    function bare(l) { gsub(/"[^"]*"/, "", l); sub(/#.*$/, "", l); return l }
     BEGIN { in_section = (section == "") }
-    skipping { if ($0 ~ /\]/) skipping = 0; next }
+    skipping { if (bare($0) ~ /\]/) skipping = 0; next }
     /^[[:space:]]*\[/ {
       hdr = $0; gsub(/^[[:space:]]*\[[[:space:]]*|[[:space:]]*\].*$/, "", hdr)
       in_section = (hdr == section)
     }
     in_section && $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
-      v = $0; sub(/^[^=]*=/, "", v); sub(/#.*$/, "", v)
+      v = $0; sub(/^[^=]*=/, "", v); v = bare(v)
       if (v ~ /\[/ && v !~ /\]/) skipping = 1
       next
     }
@@ -1173,7 +1176,8 @@ CONF
       done
       # Nodes need an address here; the old one is on the old server.
       old_node_listen="$(toml_get "$old_config" node listen)"
-      if [[ -z "${NODE_LISTEN:-}" ]]; then
+      # NODE_LISTEN set, even to empty (no nodes), decides below.
+      if [[ -z "${NODE_LISTEN+x}" ]]; then
         if [[ "$old_node_listen" == :* || "$old_node_listen" == 0.0.0.0:* || "$old_node_listen" == "[::]:"* ]]; then
           NODE_LISTEN="$old_node_listen" # every interface: the same here
         elif [[ -n "$old_node_listen" ]]; then
