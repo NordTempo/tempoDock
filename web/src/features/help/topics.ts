@@ -696,7 +696,7 @@ export const topics: Record<TopicId, Topic> = {
     ],
     watch: [
       "Most alerts resolve themselves once the cause goes away.",
-      "A lock stops agents (any token, CI too), not people or GitHub pushes.",
+      "A lock stops agents (any token, CI too); locked for people too, it holds people and GitHub pushes as well.",
     ],
     related: ["errors", "access", "agents"],
     guide: "watching#alerts",
