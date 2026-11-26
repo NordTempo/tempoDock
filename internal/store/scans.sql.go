@@ -127,15 +127,17 @@ func (q *Queries) ClearTrimmedReleaseScan(ctx context.Context, id int64) error {
 }
 
 const countImageScans = `-- name: CountImageScans :many
-SELECT state, count(*) AS n FROM image_scans GROUP BY state
+SELECT state, production, count(*) AS n FROM image_scans GROUP BY state, production
 `
 
 type CountImageScansRow struct {
-	State string
-	N     int64
+	State      string
+	Production int64
+	N          int64
 }
 
-// Scans by state, for the console. One row per image in use.
+// Scans by state and whether production uses them, for the console. One
+// row per image in use.
 func (q *Queries) CountImageScans(ctx context.Context) ([]CountImageScansRow, error) {
 	rows, err := q.db.QueryContext(ctx, countImageScans)
 	if err != nil {
@@ -145,7 +147,7 @@ func (q *Queries) CountImageScans(ctx context.Context) ([]CountImageScansRow, er
 	var items []CountImageScansRow
 	for rows.Next() {
 		var i CountImageScansRow
-		if err := rows.Scan(&i.State, &i.N); err != nil {
+		if err := rows.Scan(&i.State, &i.Production, &i.N); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

@@ -151,8 +151,9 @@ DELETE FROM image_scans WHERE id = +sqlc.arg(id);
 UPDATE releases SET image_scan_id = NULL WHERE id = +sqlc.arg(id) AND image_scan_id IS NOT NULL;
 
 -- name: CountImageScans :many
--- Scans by state, for the console. One row per image in use.
-SELECT state, count(*) AS n FROM image_scans GROUP BY state;
+-- Scans by state and whether production uses them, for the console. One
+-- row per image in use.
+SELECT state, production, count(*) AS n FROM image_scans GROUP BY state, production;
 
 -- name: SetServerScanDatabase :exec
 UPDATE servers SET scan_db_built_at = ?, scan_error = ? WHERE id = +sqlc.arg(id);

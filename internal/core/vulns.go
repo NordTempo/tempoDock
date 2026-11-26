@@ -480,8 +480,12 @@ func (c *Core) ScanningStatus(ctx context.Context, a Actor) (apitypes.ScanningSt
 		Images: map[apitypes.ScanState]int{}, Builders: []apitypes.ScanningServer{}}
 	busy := c.scans.busy > 0 || time.Since(c.scans.lastBusy) < c.quietFor()
 	c.scans.mu.Unlock()
+	queuedProd, queuedNonProd := false, false
 	for _, n := range counts {
-		out.Images[apitypes.ScanState(n.State)] = int(n.N)
+		out.Images[apitypes.ScanState(n.State)] += int(n.N)
+		if n.State == string(apitypes.ScanQueued) && n.N > 0 {
+			queuedProd, queuedNonProd = queuedProd || n.Production != 0, queuedNonProd || n.Production == 0
+		}
 	}
 	for _, s := range servers {
 		if !c.canBuild(s) {
@@ -494,12 +498,12 @@ func (c *Core) ScanningStatus(ctx context.Context, a Actor) (apitypes.ScanningSt
 		}
 		out.Builders = append(out.Builders, b)
 	}
-	scanning, _, _ := c.scanners(servers)
+	_, prod, nonProd := c.scanners(servers)
 	switch {
 	case !out.Enabled:
 	case len(out.Builders) == 0:
 		out.Waiting = "No server builds images, and only builders scan"
-	case out.Images[apitypes.ScanQueued] > 0 && len(scanning) == 0:
+	case queuedProd && !prod, queuedNonProd && !nonProd:
 		out.Waiting = "Waiting for a builder to come back online, or for its disk to have room"
 	case out.Images[apitypes.ScanQueued] > 0 && busy:
 		out.Waiting = "Waiting for a quiet minute: builds and deploys come first"
