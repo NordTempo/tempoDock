@@ -359,7 +359,7 @@ func (c *Core) SetAnalyticsServer(ctx context.Context, a Actor, req apitypes.Set
 		if err != nil {
 			return apitypes.AnalyticsStatus{}, err
 		}
-		if err := c.startStoreMove(ctx, a, from, target, req.StartEmpty); err != nil {
+		if err := c.startStoreMove(ctx, a, cl, from, target, req.StartEmpty); err != nil {
 			return apitypes.AnalyticsStatus{}, err
 		}
 	}
@@ -399,8 +399,10 @@ func (c *Core) settingsServer(st store.AnalyticsSetting) int64 {
 	return c.localID
 }
 
-// startStoreMove checks a move can run and starts it in the background.
-func (c *Core) startStoreMove(ctx context.Context, a Actor, from, to store.Server, startEmpty bool) error {
+// startStoreMove checks a move can run and starts it in the background:
+// still from the store whose client cl the caller saw, which turning
+// analytics off takes away under the same lock.
+func (c *Core) startStoreMove(ctx context.Context, a Actor, cl *analytics.Client, from, to store.Server, startEmpty bool) error {
 	if !c.online(to.ID) {
 		return errf(apitypes.CodeServerOffline, "server %s is offline; move the analytics store once it is back", to.Name)
 	}
@@ -415,6 +417,12 @@ func (c *Core) startStoreMove(ctx context.Context, a Actor, from, to store.Serve
 	}
 	c.analytics.mu.Lock()
 	switch {
+	case c.analytics.client != cl:
+		// Turned off (or moved) since the caller looked: turning off
+		// takes the client away under this lock, after checking no move
+		// is reserved, so one of the two goes through.
+		c.analytics.mu.Unlock()
+		return conflict("analytics was turned off or moved meanwhile; see `dock analytics`")
 	case c.analytics.moving != nil:
 		m := c.analytics.moving
 		c.analytics.mu.Unlock()
