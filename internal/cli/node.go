@@ -110,9 +110,18 @@ anything.`,
 }
 
 // joinOutput prints a `dock node join` result: v as JSON under the root's
-// --json (server commands don't get the client's output settings), else
-// text.
+// --json, else text; --json-file gets the JSON either way. Server commands
+// don't get the client's output settings, so it reads the flags.
 func joinOutput(cmd *cobra.Command, v any, text string) error {
+	if f := cmd.Flag("json-file"); f != nil && f.Value.String() != "" {
+		b, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(f.Value.String(), append(b, '\n'), 0o600); err != nil {
+			return err
+		}
+	}
 	if f := cmd.Flag("json"); f != nil && f.Value.String() == "true" {
 		return json.NewEncoder(cmd.OutOrStdout()).Encode(v)
 	}
