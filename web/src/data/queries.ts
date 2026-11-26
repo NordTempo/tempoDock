@@ -504,6 +504,15 @@ export const queries = {
 // rarely suspend in practice.
 export const useSession = () => useSuspenseQuery(queries.session()).data;
 export const useIsAdmin = () => useSession()?.scope === "admin";
+
+/**
+ * Whether the session is an admin of the whole org, not limited to a
+ * project or environment: who may delete projects and environments.
+ */
+export function useOrgAdmin() {
+  const session = useSession();
+  return session?.scope === "admin" && !session.project && !session.environment;
+}
 /** Platform operators run the console: servers, backups, accounts (ADR 0027). */
 export const useIsOperator = () => useSession()?.operator === true;
 /**

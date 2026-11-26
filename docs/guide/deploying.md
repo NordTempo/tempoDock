@@ -941,6 +941,27 @@ them, should you want them gone too. Only an archived project can be
 deleted, by an admin of the whole organization, with every server it is on
 online. It can't be undone ([ADR 0078](../decisions/0078-deleting-archived-projects.md)).
 
+## Delete an environment
+
+On the environment's **Settings** tab, choose **Delete** at the bottom and
+type its name, or run:
+
+```sh
+dock environment delete staging -p shop --confirm staging
+```
+
+Its services are archived, then their containers, its network, volumes
+and volume snapshots are removed from its server, its sites' analytics
+events from the analytics store, and everything Dock knows of it
+(releases, variables, domains, jobs, the tokens limited to it) is deleted,
+which frees its name and its domains. Closed previews cloned from it go
+too. Its activity stays in the audit log and its backups in their restic
+repository; the answer says where. It takes an admin of the whole
+organization, with its server online, and can't be undone. The project's
+only environment can't be deleted (archive the project instead), a
+preview is closed rather than deleted, and open previews cloned from it
+are closed first ([ADR 0103](../decisions/0103-deleting-environments.md)).
+
 ## Rename a project
 
 On the project overview, choose **Rename project**, or run:

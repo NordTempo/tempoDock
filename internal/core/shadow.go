@@ -61,6 +61,7 @@ var actionPerms = map[actionKey]Perm{
 	{apitypes.ScopeDeploy, "changing an incident"}:                                  PermStatusPagesPost,
 	{apitypes.ScopeAdmin, "changing roles"}:                                         PermMembersManage,
 	{apitypes.ScopeAdmin, "deleting a project"}:                                     PermProjectManage,
+	{apitypes.ScopeAdmin, "deleting an environment"}:                                PermProjectManage,
 	{apitypes.ScopeDeploy, "ignoring a vulnerability"}:                              PermConfigWrite,
 	{apitypes.ScopeRead, "ignoring a vulnerability"}:                                PermEnvView,
 	{apitypes.ScopeAdmin, "ignoring a vulnerability in the whole organization"}:     PermOrgSettings,

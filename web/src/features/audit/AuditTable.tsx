@@ -115,6 +115,7 @@ const words: Record<string, readonly [label: string, past: string]> = {
   "domain.verify": ["verify domain", "verified a domain of"],
   "environment.clone": ["clone environment", "cloned an environment into"],
   "environment.create": ["create environment", "created"],
+  "environment.delete": ["delete environment", "deleted environment"],
   "environment.lock": ["lock environment", "locked"],
   "environment.move": ["move environment", "started moving"],
   "environment.move_failed": ["environment move failed", "failed to move"],

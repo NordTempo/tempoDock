@@ -175,8 +175,9 @@ UPDATE environments SET archived_at = ?, name = ? WHERE id = +? AND archived_at 
 
 -- name: ListProjectPreviewEnvironments :many
 -- The pull request behind each of a project's preview environments, open
--- or closed, for annotating environments.
-SELECT environment_id, repo, number, title, author, html_url, closed_at FROM previews WHERE project_id = +?;
+-- or closed, for annotating environments, and the environment each was
+-- cloned from, for deleting that one with them.
+SELECT environment_id, base_environment_id, repo, number, title, author, html_url, closed_at FROM previews WHERE project_id = +?;
 
 -- name: ListArchivedPreviewVolumes :many
 -- The volumes archived previews still have: their removal was cut short

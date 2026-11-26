@@ -123,6 +123,74 @@ func TestDeleteProject(t *testing.T) {
 	}
 }
 
+// DeleteEnvironments deletes the environments' rows and nothing of the
+// project's other environments or of the project itself.
+func TestDeleteEnvironments(t *testing.T) {
+	ctx := context.Background()
+	st := openTest(t)
+	srv, err := st.CreateServer(ctx, CreateServerParams{Name: "local", Local: true, AcceptsProduction: true, AcceptsNonProduction: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := st.CreateProject(ctx, CreateProjectParams{OrgID: 1, Name: "shop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed := func(name string) Environment {
+		e, err := st.CreateEnvironment(ctx, CreateEnvironmentParams{ProjectID: p.ID, Name: name, Kind: "non_production", ServerID: srv.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		s, err := st.CreateService(ctx, CreateServiceParams{EnvironmentID: e.ID, Name: "web"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, q := range []string{
+			`INSERT INTO releases (service_id, number, source, config, created_by) VALUES (?1, 1, 'image', x'00', 'test')`,
+			`INSERT INTO volumes (service_id, name, docker_name, mount_path) VALUES (?1, 'data', 'v' || ?1, '/data')`,
+			`INSERT INTO domains (hostname, service_id) VALUES ('x' || ?1 || '.example.com', ?1)`,
+			`INSERT INTO variables (environment_id, service_id, key, value) SELECT environment_id, id, 'K', x'00' FROM services WHERE id = ?1`,
+		} {
+			if _, err := st.DB.ExecContext(ctx, q, s.ID); err != nil {
+				t.Fatalf("%s: %v", q, err)
+			}
+		}
+		return e
+	}
+	keep, gone, preview := seed("production"), seed("staging"), seed("pr-1")
+	if _, err := st.DB.ExecContext(ctx, `INSERT INTO previews (project_id, environment_id, base_environment_id, repo, number, title, author, html_url, head_branch, head_sha, created_at, updated_at, pr_updated_at)
+		VALUES (?, ?, ?, 'o/r', 1, 't', 'a', 'u', 'b', 's', 0, 0, 0)`, p.ID, preview.ID, gone.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteEnvironments(ctx, []int64{gone.ID, preview.ID}, func(*Queries) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	count := func(q string, args ...any) int {
+		var n int
+		if err := st.DB.QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+		return n
+	}
+	for _, table := range []string{"releases", "volumes", "domains", "variables", "services", "environments"} {
+		if n := count("SELECT count(*) FROM " + table); n != 1 {
+			t.Errorf("%s has %d rows, want only %s's", table, n, keep.Name)
+		}
+	}
+	if n := count("SELECT count(*) FROM previews"); n != 0 {
+		t.Errorf("previews has %d rows", n)
+	}
+	if n := count("SELECT count(*) FROM pragma_foreign_key_check"); n != 0 {
+		t.Errorf("%d dangling foreign keys", n)
+	}
+	if _, err := st.GetEnvironment(ctx, keep.ID); err != nil {
+		t.Errorf("the other environment: %v", err)
+	}
+	if _, err := st.GetProject(ctx, p.ID); err != nil {
+		t.Errorf("the project: %v", err)
+	}
+}
+
 // Migration 0103 keeps every row of the tables it rebuilds, and IDs keep
 // counting from the highest one there was.
 func TestAutoincrementMigrationKeepsRows(t *testing.T) {

@@ -274,6 +274,24 @@ type ProjectDeleted struct {
 	Notes        []string `json:"notes,omitempty" doc:"What stays: backups in restic repositories (with the tags that find them), and analytics events when the analytics store couldn't be reached"`
 }
 
+// DeleteEnvironmentRequest confirms deleting an environment for good
+// (ADR 0103).
+type DeleteEnvironmentRequest struct {
+	Confirm string `json:"confirm" doc:"The environment's name, typed again to confirm"`
+	ID      int64  `json:"id,omitempty" minimum:"1" doc:"Expected environment ID; prevents deleting an environment that took a reused name"`
+}
+
+// EnvironmentDeleted is what deleting an environment removed, and what
+// stays.
+type EnvironmentDeleted struct {
+	Project     string   `json:"project"`
+	Environment string   `json:"environment"`
+	Services    int      `json:"services"`
+	Volumes     int      `json:"volumes" doc:"Docker volumes removed from the environment's server"`
+	Previews    int      `json:"previews" doc:"Closed preview environments cloned from it, deleted with it"`
+	Notes       []string `json:"notes,omitempty" doc:"What stays: backups in restic repositories (with the tags that find them), containers on a server that couldn't be reached, and analytics events when the analytics store couldn't be reached"`
+}
+
 // ProjectRenamed lets open clients follow a project to its new address.
 type ProjectRenamed struct {
 	PreviousName string  `json:"previous_name"`

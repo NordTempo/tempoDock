@@ -3,7 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { lazy, Suspense, useState } from "react";
 import { api, body } from "../../api/client";
 import { useAction } from "../../data/mutations";
-import { keys, useSession } from "../../data/queries";
+import { keys, useOrgAdmin } from "../../data/queries";
 import type { Project } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { Act, Confirm } from "../../ui/kit";
@@ -14,12 +14,6 @@ import { notify } from "../../ui/notice";
 // org; the server checks again.
 
 const RenameProject = lazy(() => import("./RenameProject"));
-
-/** Whether the session may rename and delete projects: an unlimited admin. */
-function useOrgAdmin() {
-  const session = useSession();
-  return session?.scope === "admin" && !session.project && !session.environment;
-}
 
 /**
  * `dock project delete`: deletes the project and everything in it, its

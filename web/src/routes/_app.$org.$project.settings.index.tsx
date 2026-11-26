@@ -4,6 +4,7 @@ import { queries, useProjectOverview, useSeesPlatform } from "../data/queries";
 import type { Environment } from "../data/types";
 import { logDrainQueries } from "../features/logdrains/data";
 import { LogDrains } from "../features/logdrains/LogDrains";
+import { DeleteEnvironment } from "../features/overview/DeleteEnvironment";
 import { defaultEnvironment } from "../features/overview/load";
 import { projectScoped } from "../features/overview/sections";
 import { VariablesEditor } from "../features/variables/VariablesEditor";
@@ -13,8 +14,8 @@ import { SettingRow } from "../ui/sections";
 const MovePanel = lazy(() => import("../features/move/MovePanel"));
 
 // The Settings tab: the environment picked in the header and nothing
-// else (ADR 0099): its shared variables, the server it runs on and its
-// log drains. What applies to every environment is on Project settings;
+// else (ADR 0099): its shared variables, the server it runs on, its
+// log drains and deleting it (ADR 0103). What applies to every environment is on Project settings;
 // old links to those sections (#previews, #archive...) land there.
 export const Route = createFileRoute("/_app/$org/$project/settings/")({
   beforeLoad: ({ params, location, search }) => {
@@ -96,6 +97,17 @@ function Settings() {
             <LogDrains key={env.environment} env={env} />
           </Suspense>
         </SettingRow>
+        {!view.environment.preview && (
+          <SettingRow id="delete" label="Delete" danger>
+            <DeleteEnvironment
+              environment={view.environment}
+              only={
+                overview.environments.filter((x) => !x.environment.preview)
+                  .length <= 1
+              }
+            />
+          </SettingRow>
+        )}
       </div>
     </Page>
   );

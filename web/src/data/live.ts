@@ -805,6 +805,17 @@ function invalidateForAudit(
     invalidate(keys.overview(audit.project));
     return;
   }
+  // A deleted environment's queries go: refetching them would answer 404.
+  if (audit.action === "environment.delete" && audit.environment) {
+    queryClient.removeQueries({
+      queryKey: keys.env({
+        project: audit.project,
+        environment: audit.environment,
+      }),
+    });
+    invalidate(keys.overview(audit.project));
+    return;
+  }
   // Everything else in a project (settings, changes, services,
   // environments) refetches.
   invalidate(

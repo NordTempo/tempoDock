@@ -3300,7 +3300,11 @@ export interface paths {
         get: operations["get-environment"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete an environment
+         * @description Deletes an environment for good (ADR 0103): its services are archived, then its containers, network, volumes and volume snapshots on its server, its sites' analytics events and everything Dock knows of it go, which frees its name and its domains. Closed previews cloned from it go too. Its activity stays in the audit log; its backups stay in their restic repositories (`notes` says where). `confirm` is the environment's name. Refused for the project's only environment, a preview (close it instead) and an environment with open previews. Every server it has something on must be online. Scope: admin, unlimited; a session needs a recent sign-in.
+         */
+        delete: operations["delete-environment"];
         options?: never;
         head?: never;
         patch?: never;
@@ -8782,6 +8786,15 @@ export interface components {
             /** @description Shown to the requester and in the audit log */
             comment?: string;
         };
+        DeleteEnvironmentRequest: {
+            /** @description The environment's name, typed again to confirm */
+            confirm: string;
+            /**
+             * Format: int64
+             * @description Expected environment ID; prevents deleting an environment that took a reused name
+             */
+            id?: number;
+        };
         DeleteProjectRequest: {
             /** @description The project's name, typed again to confirm */
             confirm: string;
@@ -9245,6 +9258,24 @@ export interface components {
             failed?: string[] | null;
             releases: components["schemas"]["Release"][] | null;
             skipped: string[] | null;
+        };
+        EnvironmentDeleted: {
+            environment: string;
+            /** @description What stays: backups in restic repositories (with the tags that find them), containers on a server that couldn't be reached, and analytics events when the analytics store couldn't be reached */
+            notes?: string[] | null;
+            /**
+             * Format: int64
+             * @description Closed preview environments cloned from it, deleted with it
+             */
+            previews: number;
+            project: string;
+            /** Format: int64 */
+            services: number;
+            /**
+             * Format: int64
+             * @description Docker volumes removed from the environment's server
+             */
+            volumes: number;
         };
         EnvironmentExport: {
             kind: string;
@@ -32290,6 +32321,113 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "delete-environment": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteEnvironmentRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvironmentDeleted"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
                 headers: {
                     [name: string]: unknown;
                 };

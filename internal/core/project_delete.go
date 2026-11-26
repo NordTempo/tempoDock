@@ -106,20 +106,28 @@ func (c *Core) DeleteProject(ctx context.Context, a Actor, name string, req apit
 	return out, nil
 }
 
-// deletion is what deleting a project removes, read before anything goes.
+// deletion is what deleting a project, or some of its environments
+// (only), removes, read before anything goes.
 type deletion struct {
 	project store.Project
+	// what names it in errors: "project shop", "environment shop/staging".
+	what string
+	// only holds the deleted environments' IDs as container labels have
+	// them; nil when the whole project goes.
+	only    map[string]bool
 	envs    []store.Environment
 	svcs    []store.Service
 	vols    []store.Volume
 	snaps   []store.VolumeSnapshot
 	domains []store.Domain
 	sites   []int64
-	backups []store.ListProjectKeptBackupsRow
+	// siteEnvs maps a site to its environment.
+	siteEnvs map[int64]int64
+	backups  []store.ListProjectKeptBackupsRow
 }
 
 func (c *Core) loadDeletion(ctx context.Context, p store.Project) (deletion, error) {
-	d := deletion{project: p}
+	d := deletion{project: p, what: "project " + p.Name}
 	var err error
 	if d.envs, err = c.store.ListAllProjectEnvironments(ctx, p.ID); err != nil {
 		return d, err
@@ -140,11 +148,42 @@ func (c *Core) loadDeletion(ctx context.Context, p store.Project) (deletion, err
 	if err != nil {
 		return d, err
 	}
+	d.siteEnvs = map[int64]int64{}
 	for _, s := range sites {
 		d.sites = append(d.sites, s.ID)
+		d.siteEnvs[s.ID] = s.EnvironmentID
 	}
 	d.backups, err = c.store.ListProjectKeptBackups(ctx, p.ID)
 	return d, err
+}
+
+// of narrows d to the environments ids and what is theirs, for deleting
+// them (what names them in errors).
+func (d deletion) of(what string, ids []int64) deletion {
+	envs := map[int64]bool{}
+	d.only = map[string]bool{}
+	for _, id := range ids {
+		envs[id] = true
+		d.only[strconv.FormatInt(id, 10)] = true
+	}
+	d.what = what
+	d.envs = slices.DeleteFunc(d.envs, func(e store.Environment) bool { return !envs[e.ID] })
+	d.svcs = slices.DeleteFunc(d.svcs, func(s store.Service) bool { return !envs[s.EnvironmentID] })
+	svcs := map[int64]bool{}
+	for _, s := range d.svcs {
+		svcs[s.ID] = true
+	}
+	d.vols = slices.DeleteFunc(d.vols, func(v store.Volume) bool { return !svcs[v.ServiceID] })
+	d.snaps = slices.DeleteFunc(d.snaps, func(s store.VolumeSnapshot) bool { return !svcs[s.ServiceID] })
+	d.domains = slices.DeleteFunc(d.domains, func(dm store.Domain) bool { return !svcs[dm.ServiceID] })
+	d.backups = slices.DeleteFunc(d.backups, func(b store.ListProjectKeptBackupsRow) bool { return !svcs[b.ServiceID] })
+	d.sites = slices.DeleteFunc(d.sites, func(id int64) bool { return !envs[d.siteEnvs[id]] })
+	return d
+}
+
+// owns reports whether a container with labels l is one of what goes.
+func (d deletion) owns(l node.Labels) bool {
+	return l.Project == strconv.FormatInt(d.project.ID, 10) && (d.only == nil || d.only[l.Environment])
 }
 
 // env is the environment with ID id.
@@ -207,11 +246,11 @@ func (c *Core) serversOnline(ctx context.Context, a Actor, d deletion) error {
 	if len(down) == 0 {
 		return nil
 	}
-	return conflict("project %s has containers, volumes or snapshots on %s, which can't be reached; delete it once the server is back, or have a platform operator remove the server (`dock server remove`), which leaves what is on that machine",
-		d.project.Name, strings.Join(down, ", "))
+	return conflict("%s has containers, volumes or snapshots on %s, which can't be reached; delete it once the server is back, or have a platform operator remove the server (`dock server remove`), which leaves what is on that machine",
+		d.what, strings.Join(down, ", "))
 }
 
-// removeProjectResources removes what the project has on its servers, one
+// removeProjectResources removes what the deletion has on its servers, one
 // server after another: its containers (found by label, so ones Dock lost
 // track of go too), then its environments' networks, its volumes and its
 // snapshots' files. Each is idempotent: one already gone counts as
@@ -222,23 +261,23 @@ func (c *Core) removeProjectResources(ctx context.Context, d deletion) error {
 	for _, sid := range d.servers() {
 		rt := c.connected(sid)
 		if rt == nil {
-			return conflict("a server of project %s went offline; delete it again once the server is back", p.Name)
+			return conflict("a server of %s went offline; delete it again once the server is back", d.what)
 		}
 		ctrs, err := rt.List(ctx)
 		if err != nil {
-			return fmt.Errorf("list the containers on a server of project %s: %w", p.Name, err)
+			return fmt.Errorf("list the containers on a server of %s: %w", d.what, err)
 		}
 		var mine []node.Container
 		for _, ct := range ctrs {
-			if ct.Labels.Project == pid && !c.foreign(ct.Labels) {
+			if d.owns(ct.Labels) && !c.foreign(ct.Labels) {
 				mine = append(mine, ct)
 			}
 		}
 		if err := c.awaitRemovals(ctx, mine); err != nil {
-			return fmt.Errorf("wait for the containers of project %s to stop: %w", p.Name, err)
+			return fmt.Errorf("wait for the containers of %s to stop: %w", d.what, err)
 		}
 		if err := c.removeContainers(ctx, sid, mine, node.RemoveOptions{}); err != nil {
-			return fmt.Errorf("remove the containers of project %s: %w", p.Name, err)
+			return fmt.Errorf("remove the containers of %s: %w", d.what, err)
 		}
 		for _, e := range d.envs {
 			if e.ServerID != sid {
@@ -266,7 +305,7 @@ func (c *Core) removeProjectResources(ctx context.Context, d deletion) error {
 			}
 		}
 		if err := c.deleteSnapshots(ctx, sid, snaps); err != nil {
-			return fmt.Errorf("delete the volume snapshots of project %s: %w", p.Name, err)
+			return fmt.Errorf("delete the volume snapshots of %s: %w", d.what, err)
 		}
 	}
 	return nil
@@ -343,13 +382,21 @@ func (c *Core) deleteProjectRows(ctx context.Context, p store.Project, d deletio
 	if err != nil {
 		return err
 	}
+	c.forgetDeleted(d)
+	return nil
+}
+
+// forgetDeleted forgets what memory holds of a deletion's rows once they
+// are gone: open alerts (the project's own too when it goes whole),
+// domain checks and service statuses. The caller holds alerts.writes.
+func (c *Core) forgetDeleted(d deletion) {
 	svcs := map[int64]bool{}
 	for _, s := range d.svcs {
 		svcs[s.ID] = true
 	}
 	c.alerts.mu.Lock()
 	maps.DeleteFunc(c.alerts.open, func(_ string, al store.Alert) bool {
-		return al.ProjectID != nil && *al.ProjectID == p.ID || al.ServiceID != nil && svcs[*al.ServiceID]
+		return d.only == nil && al.ProjectID != nil && *al.ProjectID == d.project.ID || al.ServiceID != nil && svcs[*al.ServiceID]
 	})
 	c.alerts.mu.Unlock()
 	c.checksMu.Lock()
@@ -362,7 +409,6 @@ func (c *Core) deleteProjectRows(ctx context.Context, p store.Project, d deletio
 		delete(c.status, id)
 	}
 	c.statusMu.Unlock()
-	return nil
 }
 
 // keptBackupNotes says where the deleted services' backups stay, one note

@@ -174,10 +174,71 @@ Type the project's name when asked, or pass it with --confirm.`,
 	return cmd
 }
 
+// newEnvironmentDeleteCmd deletes an environment for good (ADR 0103).
+// The name is required, never taken from the directory's link, and typed
+// again to confirm (--confirm without a terminal).
+func newEnvironmentDeleteCmd(g *globals) *cobra.Command {
+	var confirm string
+	var flags targetFlags
+	cmd := &cobra.Command{
+		Use:   "delete <name> [--confirm <name>]",
+		Short: "Delete an environment for good: its services, volumes and history",
+		Long: `Delete an environment and everything in it, which frees its name and its
+domains: its services are archived, then on its server its containers,
+network, volumes and volume snapshots go; its sites' analytics events; its
+releases, variables, domains, backup records and the tokens limited to it.
+Closed previews cloned from it go too. Its activity stays in the audit log.
+Its backups stay in their restic repositories, and the answer says where.
+Not the project's only environment, not a preview (close it with
+dock environment previews close), and not one with open previews. Takes an
+org admin, with every server it has something on online. This can't be
+undone.
+
+Type the environment's name when asked, or pass it with --confirm.`,
+		Example:           "  dock environment delete staging -p shop --confirm staging",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeEnvironmentArg,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, t, err := g.open(flags, needProject)
+			if err != nil {
+				return err
+			}
+			t.Environment = args[0]
+			current, err := get[apitypes.Environment](cmd.Context(), s, t.envPath())
+			if err != nil {
+				return err
+			}
+			if confirm == "" {
+				if confirm, err = g.io.Prompt(fmt.Sprintf("This deletes environment %s/%s, its volumes and its history for good. Type its name to confirm", t.Project, t.Environment), "confirm"); err != nil {
+					return err
+				}
+			}
+			d, err := send[apitypes.EnvironmentDeleted](cmd.Context(), s, http.MethodDelete, t.envPath(), apitypes.DeleteEnvironmentRequest{Confirm: confirm, ID: current.ID})
+			if err != nil {
+				return err
+			}
+			return g.io.Print(d, func() error {
+				msg := fmt.Sprintf("Deleted environment %s/%s: %s, %s", d.Project, d.Environment, plural(d.Services, "service"), plural(d.Volumes, "volume"))
+				if d.Previews > 0 {
+					msg += ", with " + plural(d.Previews, "closed preview")
+				}
+				g.io.Successf("%s. Its name is free.", msg)
+				for _, n := range d.Notes {
+					g.io.Warnf("%s", n)
+				}
+				return nil
+			})
+		},
+	}
+	flags.add(cmd, needProject)
+	cmd.Flags().StringVar(&confirm, "confirm", "", "the environment's name, to confirm without a prompt")
+	return cmd
+}
+
 func newEnvironmentCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{
 		Use:   "environment",
-		Short: "List, create, clone, lock and unlock environments, and preview pull requests",
+		Short: "List, create, clone, lock, unlock and delete environments, and preview pull requests",
 		Long:  "Environments of a project. (`dock env` manages variables.)",
 	})
 	var listFlags, createFlags targetFlags
@@ -267,7 +328,7 @@ eligible server with the most free memory.`,
 	}
 	createFlags.add(create, needProject)
 	create.Flags().StringVar(&kind, "kind", "", "production or non-production (default: from the name)")
-	cmd.AddCommand(list, create, newEnvironmentCloneCmd(g), newEnvironmentLockCmd(g), newEnvironmentUnlockCmd(g), newPreviewsCmd(g), newEnvironmentMoveCmd(g),
+	cmd.AddCommand(list, create, newEnvironmentCloneCmd(g), newEnvironmentDeleteCmd(g), newEnvironmentLockCmd(g), newEnvironmentUnlockCmd(g), newPreviewsCmd(g), newEnvironmentMoveCmd(g),
 		newEnvironmentSleepCmd(g), newEnvironmentWakeCmd(g), newEnvironmentSleepAfterCmd(g))
 	return cmd
 }
