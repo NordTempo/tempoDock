@@ -118,9 +118,7 @@ func (c *Core) checkTag(ctx context.Context, srv store.Server, rt node.Runtime, 
 	if err != nil {
 		return nil, fmt.Errorf("record %s's digest: %w", tag, err)
 	}
-	for _, row := range rows {
-		c.publishScan(ctx, row)
-	}
+	c.publishScans(ctx, rows)
 	return rows, nil
 }
 

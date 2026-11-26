@@ -98,20 +98,23 @@ export function ImageUpdatesRow({
             )}
             {base && (
               <span className="block text-mut">
-                {base.moved && base.latest ? (
-                  <span className="text-warn">
-                    Newer image{" "}
-                    <span className="font-mono">
-                      {base.latest.replace(/^sha256:/, "").slice(0, 7)}
-                    </span>
-                  </span>
+                {!base.checked_at ? (
+                  "Not checked yet"
                 ) : (
-                  "Up to date"
+                  <>
+                    {base.moved && base.latest ? (
+                      <span className="text-warn">
+                        Newer image{" "}
+                        <span className="font-mono">
+                          {base.latest.replace(/^sha256:/, "").slice(0, 7)}
+                        </span>
+                      </span>
+                    ) : (
+                      "Up to date"
+                    )}
+                    {` · checked ${ago(base.checked_at)}`}
+                  </>
                 )}
-                {" · "}
-                {base.checked_at
-                  ? `checked ${ago(base.checked_at)}`
-                  : "not checked yet"}
               </span>
             )}
           </OpenValue>

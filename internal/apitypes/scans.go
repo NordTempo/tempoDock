@@ -127,6 +127,11 @@ type ImageUse struct {
 	// AutoUpdate: the service updates to its tag's newer image on its own
 	// (Service.AutoUpdate).
 	AutoUpdate bool `json:"auto_update,omitempty"`
+	// Follows is the tag the release's image was deployed by
+	// (postgres:17-alpine), when it names one. A scan is kept by digest,
+	// so releases of one image may follow different tags: only those that
+	// follow its base's tag take its newer image.
+	Follows string `json:"follows,omitempty"`
 }
 
 // AutoUpdateRequest turns a service's automatic image updates on or off

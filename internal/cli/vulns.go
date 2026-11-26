@@ -606,10 +606,7 @@ it points at a newer image and whether the service updates on its own.
 				return err
 			}
 			st := imageUpdates{Service: svc.Name, AutoUpdate: svc.AutoUpdate, Base: detail.Scan.Base}
-			return g.io.Print(st, func() error {
-				printImageUpdates(g, st)
-				return nil
-			})
+			return g.io.Print(st, func() error { return printImageUpdates(g, st) })
 		},
 	}
 	f.add(cmd, needService)
@@ -625,33 +622,45 @@ type imageUpdates struct {
 	Base       *apitypes.ImageBase `json:"base,omitempty"`
 }
 
-func printImageUpdates(g *globals, st imageUpdates) {
+// printImageUpdates prints the status as fields on stdout, and what to
+// run next as a hint.
+func printImageUpdates(g *globals, st imageUpdates) error {
 	mode := "manual"
 	if st.AutoUpdate {
 		mode = "automatic"
 	}
 	b := st.Base
-	switch {
-	case b == nil:
-		g.io.Detail(fmt.Sprintf("Image updates: %s. Dock doesn't know which tag %s's image follows yet: it is known once the image is scanned, and only for images deployed by tag or built from a Dockerfile.", mode, st.Service))
-		return
-	case !b.Own:
-		g.io.Detail(fmt.Sprintf("%s is built on %s.", st.Service, b.Image))
-	default:
-		g.io.Detail(fmt.Sprintf("%s follows %s. Image updates: %s.", st.Service, b.Image, mode))
+	if b == nil {
+		if err := g.io.Fields("service", st.Service, "updates", mode, "follows", "not known yet"); err != nil {
+			return err
+		}
+		g.io.Detail("Dock learns which tag an image follows once it is scanned, for images deployed by tag or built from a Dockerfile.")
+		return nil
 	}
-	checked := "not checked yet"
+	follows, image, checked := b.Image, "up to date", "not yet"
+	if !b.Own {
+		follows = "built on " + b.Image
+	}
+	switch {
+	case b.CheckedAt == nil:
+		image = "not checked yet"
+	case b.Moved:
+		short := strings.TrimPrefix(b.Latest, "sha256:")
+		image = "newer image " + short[:min(7, len(short))]
+	}
 	if b.CheckedAt != nil {
-		checked = "checked " + ago(*b.CheckedAt)
+		checked = ago(*b.CheckedAt)
+	}
+	if err := g.io.Fields("service", st.Service, "updates", mode, "follows", follows, "image", image, "checked", checked); err != nil {
+		return err
 	}
 	switch {
 	case b.Moved && b.Own:
-		g.io.Detail(fmt.Sprintf("The tag has a newer image (%s): `dock deploy -s %s --image %s@%s` updates it.", checked, st.Service, b.Image, b.Latest))
+		g.io.Detail(fmt.Sprintf("Update: dock deploy -s %s --image %s@%s", st.Service, b.Image, b.Latest))
 	case b.Moved:
-		g.io.Detail(fmt.Sprintf("The tag has a newer image (%s): deploying again builds on it.", checked))
-	default:
-		g.io.Detail(fmt.Sprintf("Up to date (%s).", checked))
+		g.io.Detail("Deploying again builds on the newer base image.")
 	}
+	return nil
 }
 
 // newSBOMCmd is `dock sbom [-r N]`: a service's image's SBOM to stdout.

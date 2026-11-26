@@ -10383,6 +10383,9 @@
           "environment": {
             "type": "string"
           },
+          "follows": {
+            "type": "string"
+          },
           "live": {
             "type": "boolean"
           },

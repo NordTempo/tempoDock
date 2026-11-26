@@ -153,13 +153,14 @@ func (c *Core) startScans(ctx context.Context) {
 	if err != nil && !store.IsNotFound(err) {
 		c.log.Error("read the imported database", "err", err)
 	}
-	// The last answer any registry gave stands for the last check: a day
-	// after it, the next is due, also across restarts.
+	// The oldest answer a live image's tag has stands for the last
+	// finished check: a day after it the next is due, also across
+	// restarts, and a check a restart cut short runs again.
 	var tagsChecked time.Time
-	if last, err := c.store.GetLastBaseCheck(ctx); err != nil {
+	if oldest, err := c.store.GetOldestLiveBaseCheck(ctx); err != nil {
 		c.log.Error("read the last base image check", "err", err)
-	} else if last > 0 {
-		tagsChecked = time.Unix(last, 0)
+	} else if oldest > 0 {
+		tagsChecked = time.Unix(oldest, 0)
 	}
 	c.scans.mu.Lock()
 	c.scans.enabled = on != 0
@@ -978,6 +979,34 @@ func (c *Core) publishScan(ctx context.Context, row store.ImageScan) {
 		return
 	}
 	for _, u := range uses {
+		scan := toImageScan(row, c.imageName(u.ImageRef, apitypes.ImageUse{Project: u.Project, Service: u.Service, Release: u.Number}))
+		c.bus.publish(busEvent{orgID: u.OrgID, projectID: u.ProjectID, envID: u.EnvironmentID, serviceID: u.ServiceID, ev: apitypes.Event{
+			Type: apitypes.EventScan, Time: now(), Project: u.Project, Environment: u.Environment, Service: u.Service, Scan: &scan,
+		}})
+	}
+}
+
+// publishScans is publishScan for several images, their live releases
+// read at once: the scans one tag check updated.
+func (c *Core) publishScans(ctx context.Context, rows []store.ImageScan) {
+	if len(rows) == 0 {
+		return
+	}
+	ids := make([]*int64, len(rows))
+	byID := make(map[int64]store.ImageScan, len(rows))
+	for i, row := range rows {
+		ids[i] = &row.ID
+		byID[row.ID] = row
+	}
+	uses, err := c.store.ListImageScansLiveUses(context.WithoutCancel(ctx), ids)
+	if err != nil {
+		return
+	}
+	for _, u := range uses {
+		row, ok := byID[*u.ImageScanID]
+		if !ok {
+			continue
+		}
 		scan := toImageScan(row, c.imageName(u.ImageRef, apitypes.ImageUse{Project: u.Project, Service: u.Service, Release: u.Number}))
 		c.bus.publish(busEvent{orgID: u.OrgID, projectID: u.ProjectID, envID: u.EnvironmentID, serviceID: u.ServiceID, ev: apitypes.Event{
 			Type: apitypes.EventScan, Time: now(), Project: u.Project, Environment: u.Environment, Service: u.Service, Scan: &scan,

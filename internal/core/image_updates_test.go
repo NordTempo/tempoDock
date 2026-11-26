@@ -73,6 +73,12 @@ func TestAutoUpdate(t *testing.T) {
 	if _, err := h.c.SetAutoUpdate(h.ctx, testSystem, web, apitypes.AutoUpdateRequest{AutoUpdate: true}); CodeOf(err) != apitypes.CodeValidation {
 		t.Fatalf("a built service turned auto updates on: %v", err)
 	}
+	// A restart still runs the image deployed by tag.
+	rel, err := h.c.Restart(h.ctx, testSystem, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.waitStatus(db, rel.Number, apitypes.ReleaseActive)
 	if svc, err := h.c.SetAutoUpdate(h.ctx, testSystem, db, apitypes.AutoUpdateRequest{AutoUpdate: true}); err != nil || !svc.AutoUpdate {
 		t.Fatalf("auto update = %v, %v", svc.AutoUpdate, err)
 	}
@@ -85,7 +91,7 @@ func TestAutoUpdate(t *testing.T) {
 	h.rt.SetRemoteDigest(tag, newer)
 	h.dueTagCheck()
 	h.waitTagCheck()
-	if rels, _ := h.c.ListReleases(h.ctx, testSystem, db, 5); len(rels) != 1 {
+	if rels, _ := h.c.ListReleases(h.ctx, testSystem, db, 5); len(rels) != 2 {
 		t.Fatalf("a frozen environment was updated: %d releases", len(rels))
 	}
 
@@ -94,10 +100,10 @@ func TestAutoUpdate(t *testing.T) {
 	}
 	h.dueTagCheck()
 	h.waitTagCheck()
-	h.waitStatus(db, 2, apitypes.ReleaseActive)
+	h.waitStatus(db, 3, apitypes.ReleaseActive)
 	rels, err := h.c.ListReleases(h.ctx, testSystem, db, 5)
 	if err != nil || rels[0].ImageRef != tag+"@"+newer || rels[0].CreatedBy != autoUpdateActor {
-		t.Fatalf("release 2 = %+v, %v", rels[0], err)
+		t.Fatalf("release 3 = %+v, %v", rels[0], err)
 	}
 	snaps, err := h.c.ServiceSnapshots(h.ctx, testSystem, db)
 	if err != nil || len(snaps.Snapshots) != 1 || snaps.Snapshots[0].Trigger != apitypes.SnapshotBeforeDeploy {

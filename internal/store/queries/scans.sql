@@ -175,6 +175,17 @@ JOIN environments e ON e.id = s.environment_id
 JOIN projects p ON p.id = e.project_id
 WHERE r.image_scan_id = +sqlc.arg(scan_id) AND r.status = 'active';
 
+-- name: ListImageScansLiveUses :many
+-- ListImageScanLiveUses for several images at once (sqlc.slice), with the
+-- scan each release runs: one read for the scans a tag check updated.
+SELECT r.image_scan_id, p.org_id, p.id AS project_id, p.name AS project, e.id AS environment_id, e.name AS environment,
+       s.id AS service_id, s.name AS service, r.number, r.image_ref
+FROM releases r
+JOIN services s ON s.id = r.service_id AND s.archived_at IS NULL
+JOIN environments e ON e.id = s.environment_id
+JOIN projects p ON p.id = e.project_id
+WHERE r.image_scan_id IN (sqlc.slice(scan_ids)) AND r.status = 'active';
+
 -- name: ListServicesLiveUses :many
 -- The live releases of some services and the scan of each (NULL before
 -- it is scanned), for rechecking their vulnerability alerts at once.
@@ -293,10 +304,13 @@ UPDATE image_scans SET base_moved = CAST(base_digest != sqlc.arg(digest) AS INTE
 WHERE base_image = +sqlc.arg(base_image) AND base_image != '' AND base_digest != ''
 RETURNING *;
 
--- name: GetLastBaseCheck :one
--- When the daily check last got an answer for any base image, 0 for
--- never: at start-up, whether the next check is due.
-SELECT CAST(coalesce(max(base_checked_at), 0) AS INTEGER) FROM image_scans WHERE base_image != '';
+-- name: GetOldestLiveBaseCheck :one
+-- The oldest answer among the base images live images follow, 0 when one
+-- has none: at start-up, a day after it the daily check is due, so a
+-- check a restart cut short isn't taken for a finished one.
+SELECT CAST(coalesce(min(coalesce(i.base_checked_at, 0)), 0) AS INTEGER) FROM image_scans i
+WHERE i.base_image != '' AND i.base_digest != ''
+  AND EXISTS (SELECT 1 FROM releases r WHERE r.image_scan_id = i.id AND r.status = 'active');
 
 -- name: GetTagDigest :one
 -- What a tag pointed at at its last daily check since checked_after: the

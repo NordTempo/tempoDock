@@ -92,14 +92,18 @@ func (c *Core) SetAutoUpdate(ctx context.Context, a Actor, ref ServiceRef, req a
 		return apitypes.Service{}, err
 	}
 	if req.AutoUpdate {
+		// What the live release runs decides, whatever made it: a restart
+		// or a rollback of an image deployed by tag still follows it.
 		r, err := c.store.GetActiveRelease(ctx, ss.svc.ID)
 		switch {
 		case store.IsNotFound(err):
 			return apitypes.Service{}, invalid("%s has no live release; deploy an image by tag first, then turn image updates on", ss)
 		case err != nil:
 			return apitypes.Service{}, err
-		case apitypes.ReleaseSource(r.Source) != apitypes.SourceImage || imageTag(r.ImageRef) == "" || c.dockNamed(r.ImageRef):
-			return apitypes.Service{}, invalid("%s's live image doesn't follow a tag: automatic updates are for images deployed by tag, like postgres:17-alpine; a service Dock builds picks up a newer base image when it deploys again", ss)
+		case c.dockNamed(r.ImageRef):
+			return apitypes.Service{}, invalid("Dock builds %s's image, so there is no tag to follow; deploying it again builds on the newest base image", ss)
+		case imageTag(r.ImageRef) == "":
+			return apitypes.Service{}, invalid("%s's live image %s names no tag to follow; deploy it by tag (like postgres:17-alpine), then turn image updates on", ss, r.ImageRef)
 		}
 	}
 	if err := c.store.SetServiceAutoUpdate(ctx, store.SetServiceAutoUpdateParams{AutoUpdate: boolInt(req.AutoUpdate), ID: ss.svc.ID}); err != nil {
@@ -177,6 +181,11 @@ func (c *Core) autoUpdate(ctx context.Context, serviceID int64, image string) {
 	if _, err := c.SnapshotBefore(ctx, actor, ss, apitypes.SnapshotBeforeDeploy, "before the automatic update to "+short); err != nil {
 		c.audit(ctx, actor, "service.auto_update_skipped", &ss.project, &ss.env, ss.String(),
 			fmt.Sprintf("didn't update to %s: the snapshot before it failed: %s", short, c.errorLine(err)))
+		return
+	}
+	// The snapshot may have waited on a backup: someone may have deployed
+	// another tag meanwhile, which this must not take back.
+	if live, err := c.store.GetActiveRelease(ctx, ss.svc.ID); err != nil || imageTag(live.ImageRef) != imageTag(image) || live.ImageRef == image {
 		return
 	}
 	rel, err := c.startRelease(ctx, actor, ss, releaseSpec{source: apitypes.SourceImage, imageRef: image})

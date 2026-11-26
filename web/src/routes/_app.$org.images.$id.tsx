@@ -129,7 +129,6 @@ function ImagePage() {
                   base={scan.base}
                   lead={!!scan.distro}
                   detail={detail}
-                  use={use}
                 />
               )}
             </Prop>
@@ -164,21 +163,22 @@ function ImagePage() {
  * postgres:17-alpine") or the image a Dockerfile build was built on
  * ("· built on node:22-alpine"), and once the tag has a newer image what
  * picks it up: Update, or a rebuild. Check now asks the registry at once,
- * through the first service that runs the image live.
+ * through the first live service the reader may deploy.
  */
 function BaseLine({
   base,
   lead,
   detail,
-  use,
 }: {
   base: NonNullable<ImageDetail["scan"]["base"]>;
   lead: boolean;
   detail: ImageDetail;
-  use: ImageUse | undefined;
 }) {
   const session = useSession();
-  const mayCheck = !!use && canDeploy(session, refOf(use));
+  // Check now asks through a live service the reader may deploy.
+  const via = (detail.used_by ?? []).find(
+    (u) => u.live && canDeploy(session, refOf(u)),
+  );
   const check = useCheckImage();
   const word = base.own ? "follows" : "built on";
   return (
@@ -188,7 +188,9 @@ function BaseLine({
         {base.image}
       </span>
       <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-        {base.moved ? (
+        {!base.checked_at ? (
+          <span className="text-mut">Not checked yet</span>
+        ) : base.moved ? (
           <span className="text-warn">
             {base.own
               ? "The tag has a newer image"
@@ -202,18 +204,17 @@ function BaseLine({
         ) : (
           <span className="text-mut">Up to date</span>
         )}
-        <span className="text-mut" title={base.checked_at}>
-          ·{" "}
-          {base.checked_at
-            ? `checked ${ago(base.checked_at)}`
-            : "not checked yet"}
-        </span>
-        {use?.live && mayCheck && (
+        {base.checked_at && (
+          <span className="text-mut" title={base.checked_at}>
+            · checked {ago(base.checked_at)}
+          </span>
+        )}
+        {via && (
           <Act
             small
-            cli={`dock image-updates check -s ${use.service} -e ${use.environment}`}
+            cli={`dock image-updates check -p ${via.project} -s ${via.service} -e ${via.environment}`}
             disabled={check.isPending}
-            onClick={() => check.mutate(refOf(use))}
+            onClick={() => check.mutate(refOf(via))}
           >
             Check now
           </Act>

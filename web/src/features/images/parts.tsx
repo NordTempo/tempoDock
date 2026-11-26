@@ -147,12 +147,12 @@ export function worstFixSentence(scan: ImageScan) {
   const word = scan.critical > 0 ? "critical" : "high";
   switch (scan.worst_fix) {
     case "rebuild":
-      // An image deployed by tag can't be rebuilt here: a newer image of
-      // its tag carries the fixed packages, once there is one.
+      // An image deployed by tag can't be rebuilt here: its fixes come
+      // with a newer image of its tag, whose scan after Update tells.
       if (scan.base?.own)
         return scan.base.moved
-          ? `Updating to the newer ${scan.base.image} picks up the fixed packages.`
-          : `No newer ${scan.base.image} with the fixed packages yet.`;
+          ? `A newer ${scan.base.image} is out; its scan after Update shows what it fixes.`
+          : `No newer ${scan.base.image} yet.`;
       return n === 1
         ? `The ${word} is fixed by rebuilding on a newer base image.`
         : `Rebuilding on a newer base image fixes some of the ${word}s.`;

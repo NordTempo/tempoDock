@@ -10095,6 +10095,7 @@ export interface components {
         ImageUse: {
             auto_update?: boolean;
             environment: string;
+            follows?: string;
             live: boolean;
             production: boolean;
             project: string;

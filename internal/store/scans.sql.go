@@ -280,14 +280,17 @@ func (q *Queries) GetImageScanByKey(ctx context.Context, imageKey string) (Image
 	return i, err
 }
 
-const getLastBaseCheck = `-- name: GetLastBaseCheck :one
-SELECT CAST(coalesce(max(base_checked_at), 0) AS INTEGER) FROM image_scans WHERE base_image != ''
+const getOldestLiveBaseCheck = `-- name: GetOldestLiveBaseCheck :one
+SELECT CAST(coalesce(min(coalesce(i.base_checked_at, 0)), 0) AS INTEGER) FROM image_scans i
+WHERE i.base_image != '' AND i.base_digest != ''
+  AND EXISTS (SELECT 1 FROM releases r WHERE r.image_scan_id = i.id AND r.status = 'active')
 `
 
-// When the daily check last got an answer for any base image, 0 for
-// never: at start-up, whether the next check is due.
-func (q *Queries) GetLastBaseCheck(ctx context.Context) (int64, error) {
-	row := q.db.QueryRowContext(ctx, getLastBaseCheck)
+// The oldest answer among the base images live images follow, 0 when one
+// has none: at start-up, a day after it the daily check is due, so a
+// check a restart cut short isn't taken for a finished one.
+func (q *Queries) GetOldestLiveBaseCheck(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getOldestLiveBaseCheck)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -742,6 +745,75 @@ func (q *Queries) ListImageScansByID(ctx context.Context, ids []int64) ([]ImageS
 			&i.BaseMoved,
 			&i.BaseCheckedAt,
 			&i.BaseLatest,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listImageScansLiveUses = `-- name: ListImageScansLiveUses :many
+SELECT r.image_scan_id, p.org_id, p.id AS project_id, p.name AS project, e.id AS environment_id, e.name AS environment,
+       s.id AS service_id, s.name AS service, r.number, r.image_ref
+FROM releases r
+JOIN services s ON s.id = r.service_id AND s.archived_at IS NULL
+JOIN environments e ON e.id = s.environment_id
+JOIN projects p ON p.id = e.project_id
+WHERE r.image_scan_id IN (/*SLICE:scan_ids*/?) AND r.status = 'active'
+`
+
+type ListImageScansLiveUsesRow struct {
+	ImageScanID   *int64
+	OrgID         int64
+	ProjectID     int64
+	Project       string
+	EnvironmentID int64
+	Environment   string
+	ServiceID     int64
+	Service       string
+	Number        int64
+	ImageRef      string
+}
+
+// ListImageScanLiveUses for several images at once (sqlc.slice), with the
+// scan each release runs: one read for the scans a tag check updated.
+func (q *Queries) ListImageScansLiveUses(ctx context.Context, scanIds []*int64) ([]ListImageScansLiveUsesRow, error) {
+	query := listImageScansLiveUses
+	var queryParams []interface{}
+	if len(scanIds) > 0 {
+		for _, v := range scanIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:scan_ids*/?", strings.Repeat(",?", len(scanIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:scan_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListImageScansLiveUsesRow
+	for rows.Next() {
+		var i ListImageScansLiveUsesRow
+		if err := rows.Scan(
+			&i.ImageScanID,
+			&i.OrgID,
+			&i.ProjectID,
+			&i.Project,
+			&i.EnvironmentID,
+			&i.Environment,
+			&i.ServiceID,
+			&i.Service,
+			&i.Number,
+			&i.ImageRef,
 		); err != nil {
 			return nil, err
 		}

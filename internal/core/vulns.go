@@ -67,7 +67,8 @@ func (c *Core) ListImages(ctx context.Context, a Actor, production bool) (apityp
 	byScan := map[int64]int{}
 	for _, r := range rows {
 		use := apitypes.ImageUse{Project: r.Project, Environment: r.Environment, Service: r.Service, Release: r.Number,
-			Production: r.EnvKind == string(apitypes.KindProduction), Live: true, AutoUpdate: r.AutoUpdate != 0}
+			Production: r.EnvKind == string(apitypes.KindProduction), Live: true, AutoUpdate: r.AutoUpdate != 0,
+			Follows: c.followedTag(r.ImageRef)}
 		if r.ImageScanID != nil {
 			if i, ok := byScan[*r.ImageScanID]; ok {
 				out.Images[i].UsedBy = append(out.Images[i].UsedBy, use)
@@ -205,6 +206,16 @@ func (c *Core) scanWaitFor(servers []store.Server) func(production bool) string 
 	}
 }
 
+// followedTag is the tag an image deployed by tag follows, "" for one
+// deployed by digest alone or one Dock built (its build tag moves with
+// each build, not upstream).
+func (c *Core) followedTag(ref string) string {
+	if c.dockNamed(ref) {
+		return ""
+	}
+	return imageTag(ref)
+}
+
 // imageName is how an image is named on the Images page: a registry
 // reference as written, or for the platform's own builds the service
 // and release that built it ("shop/web r42").
@@ -256,6 +267,7 @@ func (c *Core) imageDetail(ctx context.Context, a Actor, scanID int64, name stri
 		u := apitypes.ImageUse{Project: r.Project, Environment: r.Environment, Service: r.Service, Release: r.Number,
 			Production: r.EnvKind == string(apitypes.KindProduction), Live: r.Status == string(apitypes.ReleaseActive)}
 		u.AutoUpdate = u.Live && r.AutoUpdate != 0
+		u.Follows = c.followedTag(r.ImageRef)
 		out.UsedBy = append(out.UsedBy, u)
 		vu := vulnUse{r.ProjectID, r.ServiceID}
 		if u.Live && !slices.Contains(live, vu) {
