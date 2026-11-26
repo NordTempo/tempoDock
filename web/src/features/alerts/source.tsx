@@ -15,17 +15,12 @@ const legacy = (a: Alert) => a.command === undefined && !a.target;
 /** A backticked `dock …` command in a legacy message. */
 const command = /`(dock [^`]+)`/;
 
-/** The site and error group a site alert points at. */
+/** The site a site alert points at. */
 function siteOf(a: Alert) {
-  if (a.target?.site) {
-    return { site: a.target.site, group: a.target.error_group };
-  }
+  if (a.target?.site) return a.target.site;
   if (!legacy(a)) return undefined;
-  const [, site, group] =
-    a.message?.match(/`dock analytics errors (\S+)(?: ([0-9a-f]{16}))?`/) ??
-    a.title.match(/^(?:Errors spiking|Traffic dropped) on (\S+)/) ??
-    [];
-  return site ? { site, group } : undefined;
+  return (a.message?.match(/`dock analytics errors ([^\s`]+)/) ??
+    a.title.match(/^(?:Errors spiking|Traffic dropped) on (\S+)/))?.[1];
 }
 
 /**
@@ -99,15 +94,17 @@ export function AlertLink({
             Open errors
           </Link>
         );
+      // A site's browser errors: the Errors page, picked to its
+      // environment, where they are issues like the rest.
       if (!a.project || !site) break;
       return (
         <Link
-          to="/$org/analytics/$project/$site/errors"
-          params={{ org, project: a.project, site: site.site }}
-          search={site.group ? { g: site.group } : {}}
+          to="/$org/errors"
+          params={{ org }}
+          search={{ project: a.project, environment: a.environment }}
           {...props}
         >
-          {site.group ? "Open error" : "Open errors"}
+          Open errors
         </Link>
       );
     case "traffic_drop":
@@ -115,7 +112,7 @@ export function AlertLink({
       return (
         <Link
           to="/$org/analytics/$project/$site"
-          params={{ org, project: a.project, site: site.site }}
+          params={{ org, project: a.project, site }}
           search={{ range: "24h" }}
           {...props}
         >

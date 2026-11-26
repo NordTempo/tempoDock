@@ -4,13 +4,13 @@ import { ErrorBlock } from "../../ui/ErrorBlock";
 import { Panel } from "../../ui/kit";
 import { LineChart } from "../stats/LineChart";
 import {
-  errorDimensions,
   type Filter,
   type SiteVitals,
   type StatsRange,
   siteVitalsQuery,
   type Vital,
   type VitalStat,
+  vitalDimensions,
   vitals,
 } from "./data";
 import { Labeled } from "./icons";
@@ -115,11 +115,11 @@ export function VitalsView({
 }) {
   const usable = filters.filter(
     (f) =>
-      (errorDimensions as readonly string[]).includes(f.dimension) &&
+      (vitalDimensions as readonly string[]).includes(f.dimension) &&
       f.dimension !== "device",
   );
   const skipped = filters.filter(
-    (f) => !(errorDimensions as readonly string[]).includes(f.dimension),
+    (f) => !(vitalDimensions as readonly string[]).includes(f.dimension),
   );
   const query = device
     ? [...usable, { dimension: "device", op: "is" as const, value: device }]

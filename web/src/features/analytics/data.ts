@@ -350,15 +350,12 @@ export const searchOf = (
   ...(filters.length > 0 && { f: filters.map(filterParam) }),
 });
 
-export type SiteErrors = Schemas["SiteErrors"];
-export type ErrorGroup = Schemas["ErrorGroup"];
-export type SiteError = Schemas["SiteError"];
 export type SiteVitals = Schemas["SiteVitals"];
 export type VitalsRow = Schemas["VitalsRow"];
 export type VitalStat = Schemas["VitalStat"];
 
-/** What errors and vitals filter by: what they record. */
-export const errorDimensions = [
+/** What Web Vitals filter by: what they record. */
+export const vitalDimensions = [
   "page",
   "hostname",
   "country",
@@ -369,63 +366,6 @@ export const errorDimensions = [
   "service",
   "release",
 ] as const;
-
-/** A site's error groups for a range and filters, with the totals. */
-export const siteErrorsQuery = (
-  project: string,
-  site: string,
-  range: StatsRange,
-  filters: readonly Filter[],
-) =>
-  queryOptions({
-    queryKey: [
-      "analytics",
-      "errors",
-      project,
-      site,
-      range,
-      filters.map(filterParam),
-    ],
-    queryFn: () =>
-      body(
-        api.GET("/api/v1/projects/{project}/sites/{site}/errors", {
-          params: {
-            path: { project, site },
-            query: { range, filter: filters.map(filterParam), limit: 100 },
-          },
-        }),
-      ),
-    placeholderData: keepPreviousData,
-  });
-
-/** One error group: its stack, where it happened, latest occurrences. */
-export const siteErrorQuery = (
-  project: string,
-  site: string,
-  group: string,
-  range: StatsRange,
-  filters: readonly Filter[],
-) =>
-  queryOptions({
-    queryKey: [
-      "analytics",
-      "error",
-      project,
-      site,
-      group,
-      range,
-      filters.map(filterParam),
-    ],
-    queryFn: () =>
-      body(
-        api.GET("/api/v1/projects/{project}/sites/{site}/errors/{group}", {
-          params: {
-            path: { project, site, group },
-            query: { range, filter: filters.map(filterParam) },
-          },
-        }),
-      ),
-  });
 
 /** A site's Web Vitals with one metric over time and its breakdowns. */
 export const siteVitalsQuery = (
