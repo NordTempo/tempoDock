@@ -87,7 +87,7 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 	if err != nil {
 		return err
 	}
-	// A counted service's site, by service (ADR 0103).
+	// A counted service's site, by service (ADR 0104).
 	siteOf := make(map[int64]int64, len(counted))
 	for _, s := range counted {
 		if s.ServiceID != nil {

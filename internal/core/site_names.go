@@ -7,7 +7,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// newSiteName is the name of a new site for a service (ADR 0103): its
+// newSiteName is the name of a new site for a service (ADR 0104): its
 // first custom domain that doesn't redirect, verified ones first, else
 // the service's name (a generated hostname says nothing). createSite
 // numbers a name the project's live sites took already. The name is a

@@ -172,7 +172,7 @@ function Main({
             ["Exit", "exit_page"],
           ]}
         />
-        {/* Next to Pages: a service's domains told apart (ADR 0103). */}
+        {/* Next to Pages: a service's domains told apart (ADR 0104). */}
         <Breakdown
           {...panel}
           title="Domains"

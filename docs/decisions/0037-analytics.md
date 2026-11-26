@@ -8,7 +8,7 @@ Amended by [0085](0085-analytics-consent.md): "no banner needed" below
 was too broad. Session replay needs the visitor's consent and waits for
 `dock.consent(true)` by default, and Norwegian law has no explicit
 exemption for the cookieless basics either.
-Amended by [0103](0103-analytics-belong-to-the-service.md): a site is one
+Amended by [0104](0104-analytics-belong-to-the-service.md): a site is one
 service's analytics; history no longer follows a hostname, and moves
 between services with `dock analytics move`.
 Amended by [0087](0087-unguessable-generated-hostnames.md): new sites'

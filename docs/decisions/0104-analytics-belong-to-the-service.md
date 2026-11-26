@@ -1,4 +1,4 @@
-# 0103: Analytics belong to the service
+# 0104: Analytics belong to the service
 
 Status: accepted (Saile and the agent, 2026-11-26). Amends
 [0037](0037-analytics.md): its "Sites", "Turning it on" and "Moves" rows.

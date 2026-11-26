@@ -371,7 +371,7 @@ func archiveTx(ctx context.Context, q *store.Queries, ss svcScope) (archivedServ
 	if err := q.SetServiceRecordsAbsent(ctx, store.SetServiceRecordsAbsentParams{UpdatedAt: n, ServiceID: ss.svc.ID}); err != nil {
 		return as, false, err
 	}
-	// Its site stops counting and keeps its history (ADR 0103).
+	// Its site stops counting and keeps its history (ADR 0104).
 	sites, err := q.ArchiveServiceSite(ctx, store.ArchiveServiceSiteParams{ArchivedAt: &n, ServiceID: &ss.svc.ID})
 	if err != nil {
 		return as, false, err

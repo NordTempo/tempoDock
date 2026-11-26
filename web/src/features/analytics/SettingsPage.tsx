@@ -578,7 +578,7 @@ function SharingForm({
 
 /**
  * The service whose visits the site counts and the hostnames that are:
- * its domains that don't redirect (ADR 0103), changed on the service.
+ * its domains that don't redirect (ADR 0104), changed on the service.
  */
 function Hostnames({ project, site }: { project: string; site: Site }) {
   const org = useOrg();

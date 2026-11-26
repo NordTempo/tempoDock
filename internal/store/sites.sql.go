@@ -825,7 +825,7 @@ SELECT id, environment_id, name, settings, archived_at, created_by, created_at, 
 `
 
 // LiveSiteOfService returns the service's live site: the one its domains
-// count for (ADR 0103).
+// count for (ADR 0104).
 func (q *Queries) LiveSiteOfService(ctx context.Context, serviceID *int64) (Site, error) {
 	row := q.db.QueryRowContext(ctx, liveSiteOfService, serviceID)
 	var i Site

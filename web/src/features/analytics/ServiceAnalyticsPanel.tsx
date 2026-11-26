@@ -11,7 +11,7 @@ import { sitesQuery } from "./loaders";
 import { scriptTag } from "./ServiceSite";
 
 /**
- * Settings' Analytics section (ADR 0103): whether Dock Analytics counts
+ * Settings' Analytics section (ADR 0104): whether Dock Analytics counts
  * the service's visits, the site they count for and the domains it
  * counts, the script its pages load, and moving the site with its history
  * to another service that replaced this one.

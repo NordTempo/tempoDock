@@ -378,7 +378,7 @@ func registerSites(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "enable-service-analytics", Method: http.MethodPut, Path: servicePathT + "/analytics",
 		Summary: "Count a service's visits", Tags: tags,
-		Description: "Its domains that don't redirect count for its site (ADR 0103): the one it had before, with that history, else a new one named after it. Its pages then need <script src=\"/_dock/a/s.js\" defer></script>. The first site starts the analytics store. Needs deploy.",
+		Description: "Its domains that don't redirect count for its site (ADR 0104): the one it had before, with that history, else a new one named after it. Its pages then need <script src=\"/_dock/a/s.js\" defer></script>. The first site starts the analytics store. Needs deploy.",
 	}, func(ctx context.Context, actor core.Actor, in *ServicePath) (*out[apitypes.Site], error) {
 		return reply(s.core.EnableServiceAnalytics(ctx, actor, in.ref()))
 	})

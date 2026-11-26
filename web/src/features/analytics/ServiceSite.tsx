@@ -20,7 +20,7 @@ import { SiteBar } from "./SiteBar";
 /** The script a counted hostname's pages load. */
 export const scriptTag = '<script src="/_dock/a/s.js" defer></script>';
 
-/** The service's live site, as a list (at most one, ADR 0103). */
+/** The service's live site, as a list (at most one, ADR 0104). */
 export const sitesOf = (all: Site[], ref: ServiceRef) =>
   all.filter(
     (s) =>

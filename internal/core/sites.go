@@ -18,7 +18,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// Sites (ADR 0037, 0103): a site is one service's analytics, counting
+// Sites (ADR 0037, 0104): a site is one service's analytics, counting
 // every domain of it that doesn't redirect. Domains coming and going
 // never touch it; its history moves to another service only when asked
 // (MoveSite).
@@ -393,7 +393,7 @@ func (c *Core) toSites(ctx context.Context, sites []store.Site, envs map[int64]s
 	return out, nil
 }
 
-// EnableServiceAnalytics turns analytics on for a service (ADR 0103): its
+// EnableServiceAnalytics turns analytics on for a service (ADR 0104): its
 // domains that don't redirect count for its site, the one it had before
 // if analytics was on for it once (with that history), else a new one
 // named after its custom domain or it (newSiteName). The first site turns analytics on for
@@ -492,7 +492,7 @@ func (c *Core) DisableServiceAnalytics(ctx context.Context, a Actor, ref Service
 }
 
 // MoveSite hands a site with its history, settings, goals and funnels to
-// another service of the org (ADR 0103), for one that replaced its own:
+// another service of the org (ADR 0104), for one that replaced its own:
 // the target's domains count for it from now on and its old service
 // stops counting. A target that counts visits already is refused. Needs
 // deploy on both environments.

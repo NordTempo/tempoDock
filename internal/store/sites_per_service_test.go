@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// Sites become their service's (ADR 0103): a site takes the service with
+// Sites become their service's (ADR 0104): a site takes the service with
 // most of its hostnames, another service it counted gets a site of its
 // own, a service that led two live sites keeps the older, and a live site
 // with no service left is archived.

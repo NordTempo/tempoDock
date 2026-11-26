@@ -1,4 +1,4 @@
--- Analytics belong to the service (ADR 0103): a site is one service's,
+-- Analytics belong to the service (ADR 0104): a site is one service's,
 -- and counts every domain of it that doesn't redirect. site_hostnames,
 -- which tied history to a hostname, goes.
 ALTER TABLE sites ADD COLUMN service_id INTEGER REFERENCES services (id);

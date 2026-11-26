@@ -134,7 +134,7 @@ const useAnalyticsAction = <Vars, Data>(
   also: QueryKey[] = [],
 ) => useAction(mutationFn, () => [analyticsKey, ["audit"], ...also]);
 
-/** Turns counting on for a service (ADR 0103): its site, new or brought back. */
+/** Turns counting on for a service (ADR 0104): its site, new or brought back. */
 export const useCountVisits = () =>
   useAnalyticsAction((ref: ServiceRef) =>
     body(

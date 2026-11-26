@@ -52,7 +52,7 @@ type SetAnalyticsServerRequest struct {
 type Site struct {
 	Name        string `json:"name"`
 	Environment string `json:"environment"`
-	// Service is the service whose analytics it is (ADR 0103).
+	// Service is the service whose analytics it is (ADR 0104).
 	Service string `json:"service"`
 	// Hostnames are the ones it counts: the service's domains that don't
 	// redirect.
@@ -160,7 +160,7 @@ type UpdateSiteRequest struct {
 	Reset []string `json:"reset,omitempty"`
 }
 
-// MoveSiteRequest names the service a site moves to (ADR 0103).
+// MoveSiteRequest names the service a site moves to (ADR 0104).
 type MoveSiteRequest struct {
 	Project     string `json:"project,omitempty" doc:"The service's project; empty for the site's own"`
 	Environment string `json:"environment" minLength:"1"`

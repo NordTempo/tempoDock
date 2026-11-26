@@ -50984,7 +50984,7 @@
         ]
       },
       "put": {
-        "description": "Its domains that don't redirect count for its site (ADR 0103): the one it had before, with that history, else a new one named after it. Its pages then need \u003cscript src=\"/_dock/a/s.js\" defer\u003e\u003c/script\u003e. The first site starts the analytics store. Needs deploy.",
+        "description": "Its domains that don't redirect count for its site (ADR 0104): the one it had before, with that history, else a new one named after it. Its pages then need \u003cscript src=\"/_dock/a/s.js\" defer\u003e\u003c/script\u003e. The first site starts the analytics store. Needs deploy.",
         "operationId": "enable-service-analytics",
         "parameters": [
           {

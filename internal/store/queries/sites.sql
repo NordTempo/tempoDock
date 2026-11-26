@@ -5,7 +5,7 @@ INSERT INTO sites (environment_id, service_id, name, public_slug, created_by, cr
 RETURNING *;
 
 -- LiveSiteOfService returns the service's live site: the one its domains
--- count for (ADR 0103).
+-- count for (ADR 0104).
 -- name: LiveSiteOfService :one
 SELECT * FROM sites WHERE service_id = +? AND archived_at IS NULL;
 

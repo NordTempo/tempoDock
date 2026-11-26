@@ -3721,7 +3721,7 @@ export interface paths {
         get?: never;
         /**
          * Count a service's visits
-         * @description Its domains that don't redirect count for its site (ADR 0103): the one it had before, with that history, else a new one named after it. Its pages then need <script src="/_dock/a/s.js" defer></script>. The first site starts the analytics store. Needs deploy.
+         * @description Its domains that don't redirect count for its site (ADR 0104): the one it had before, with that history, else a new one named after it. Its pages then need <script src="/_dock/a/s.js" defer></script>. The first site starts the analytics store. Needs deploy.
          */
         put: operations["enable-service-analytics"];
         post?: never;
