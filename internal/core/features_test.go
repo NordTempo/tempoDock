@@ -145,3 +145,23 @@ func TestAnalyticsOffBeforeItRan(t *testing.T) {
 	}
 	eventually(t, "the salts still withheld after a restart", func() bool { return len(h.rt.AnalyticsSalts()) == 0 })
 }
+
+// While analytics is off its data stays on its server: choosing another
+// server is refused until it runs again; choosing its own turns it on.
+func TestAnalyticsServerWhileOff(t *testing.T) {
+	p, _ := analyticsPool(t)
+	if err := p.c.EnableAnalytics(p.ctx, testSystem); err != nil {
+		t.Fatal(err)
+	}
+	waitStoreStarted(t, p.c, p.c.localName())
+	if _, err := p.c.SetAnalytics(p.ctx, testSystem, apitypes.AnalyticsSwitch{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.c.SetAnalyticsServer(p.ctx, testSystem, apitypes.SetAnalyticsServerRequest{Server: "homelab"}); CodeOf(err) != apitypes.CodeConflict {
+		t.Fatalf("moved a turned-off store away from its data: %v", err)
+	}
+	if _, err := p.c.SetAnalyticsServer(p.ctx, testSystem, apitypes.SetAnalyticsServerRequest{Server: p.c.localName()}); err != nil {
+		t.Fatal(err)
+	}
+	waitStoreStarted(t, p.c, p.c.localName())
+}

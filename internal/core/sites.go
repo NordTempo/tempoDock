@@ -424,6 +424,19 @@ func (c *Core) EnableHostnameAnalytics(ctx context.Context, a Actor, hostname st
 			if site.EnvironmentID != es.env.ID {
 				return apitypes.Site{}, conflict("%s collects for site %s in another environment; turn it off there first with `dock analytics disable %s`", d.Hostname, site.Name, d.Hostname)
 			}
+			if cl, _ := c.analyticsClient(); cl == nil {
+				// An earlier call joined it but stopped before turning
+				// analytics on (an operator turned it off meanwhile):
+				// finish that now.
+				if err := c.enableAnalytics(ctx, a.Name, nil, true); err != nil {
+					return apitypes.Site{}, err
+				}
+				c.analyticsSitesChanged(ctx)
+				if err := c.applyRoutes(ctx, d.ServerID); err != nil {
+					c.log.Error("apply routes after turning analytics on", "domain", d.Hostname, "err", err)
+				}
+				c.audit(ctx, a, "analytics.enable", &es.project, &es.env, d.Hostname, "analytics on for "+d.Hostname+" (site "+site.Name+")")
+			}
 			return c.GetSite(ctx, a, es.project.Name, site.Name)
 		}
 	} else if !store.IsNotFound(err) {

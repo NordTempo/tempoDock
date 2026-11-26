@@ -145,15 +145,28 @@ func (c *Core) SetAnalytics(ctx context.Context, a Actor, req apitypes.Analytics
 		}
 		return c.AnalyticsStatus(ctx, a)
 	}
+	if !c.online(serverID) {
+		return apitypes.AnalyticsStatus{}, errf(apitypes.CodeServerOffline, "the analytics server is offline; turn analytics off once it is back, so its store stops there")
+	}
+	// The client goes first, under the lock a start checks it under
+	// (ensureAnalyticsStore): no start begins once it is gone, and one
+	// running is refused here.
 	c.analytics.mu.Lock()
 	busy := c.analytics.starting || c.analytics.moving != nil || c.analytics.restoring
+	if !busy {
+		if c.analytics.runCancel != nil {
+			c.analytics.runCancel() // ends the forwarders' tails
+		}
+		c.analytics.client, c.analytics.storeErr = nil, ""
+	}
 	c.analytics.mu.Unlock()
 	if busy {
 		return apitypes.AnalyticsStatus{}, conflict("the analytics store is starting or moving; turn analytics off once that is done (`dock analytics`)")
 	}
-	if !c.online(serverID) {
-		return apitypes.AnalyticsStatus{}, errf(apitypes.CodeServerOffline, "the analytics server is offline; turn analytics off once it is back, so its store stops there")
-	}
+	c.wakeForwarders()
+	// Past here it goes through: the caller going away doesn't leave it
+	// half off.
+	ctx = context.WithoutCancel(ctx)
 	rctx, cancel := context.WithTimeout(ctx, storeStartTimeout)
 	defer cancel()
 	rt := c.runtime(serverID)
@@ -162,21 +175,30 @@ func (c *Core) SetAnalytics(ctx context.Context, a Actor, req apitypes.Analytics
 		stop, what = rt.RemoveAnalyticsStore, "removed the store with its data"
 	}
 	if err := stop(rctx, node.StoreAnalytics); err != nil {
+		c.resumeAnalytics(ctx)
 		return apitypes.AnalyticsStatus{}, fmt.Errorf("stop the analytics store: %w", c.nodeErr(serverID, err))
 	}
-	if err := c.recordAnalyticsOff(ctx, a); err != nil {
-		return apitypes.AnalyticsStatus{}, err
+	if err := c.recordAnalyticsOff(rctx, a); err != nil {
+		// Still on as far as the settings go: run it again.
+		c.resumeAnalytics(ctx)
+		return apitypes.AnalyticsStatus{}, fmt.Errorf("record analytics as off; it runs again: %w", err)
 	}
-	c.analytics.mu.Lock()
-	if c.analytics.runCancel != nil {
-		c.analytics.runCancel() // ends the forwarders' tails
-	}
-	c.analytics.client, c.analytics.storeErr = nil, ""
-	c.analytics.mu.Unlock()
-	c.wakeForwarders()
 	c.audit(ctx, a.platform(), "analytics.off", nil, nil, "analytics", "turned Dock Analytics off; "+what)
 	c.publishAnalytics()
 	return c.AnalyticsStatus(ctx, a)
+}
+
+// resumeAnalytics runs analytics again from its settings, after turning
+// it off failed part way; a failure is logged, and the next status read
+// starts the store.
+func (c *Core) resumeAnalytics(ctx context.Context) {
+	st, err := c.store.GetAnalyticsSettings(ctx)
+	if err == nil {
+		err = c.runAnalytics(ctx, st)
+	}
+	if err != nil {
+		c.log.Error("analytics: run it again after turning it off failed", "err", err)
+	}
 }
 
 // recordAnalyticsOff stores that an operator turned analytics off, making

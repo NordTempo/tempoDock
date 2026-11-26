@@ -67,7 +67,9 @@ func (c *Core) ensureAnalyticsStore(serverID int64) {
 		return
 	}
 	c.analytics.mu.Lock()
-	if c.analytics.starting || c.analytics.moving != nil {
+	// The client again, under the lock turning analytics off takes it
+	// away under (SetAnalytics): a start never begins after that.
+	if c.analytics.starting || c.analytics.moving != nil || c.analytics.client != cl {
 		c.analytics.mu.Unlock()
 		return
 	}
@@ -338,6 +340,20 @@ func (c *Core) SetAnalyticsServer(ctx context.Context, a Actor, req apitypes.Set
 	}
 	cl, old := c.analyticsClient()
 	switch {
+	case cl == nil && c.analyticsOff():
+		// Turned off: its data may still be on its server, and a store
+		// started elsewhere would have it removed as a stray.
+		prev, err := c.store.GetAnalyticsSettings(ctx)
+		if err != nil {
+			return apitypes.AnalyticsStatus{}, err
+		}
+		if c.settingsServer(prev) != target.ID {
+			return apitypes.AnalyticsStatus{}, conflict("analytics is turned off and its data stays on its server; turn it on there first (`dock analytics on`), then move it to %s", target.Name)
+		}
+		if err := c.enableAnalytics(ctx, a.Name, id, false); err != nil {
+			return apitypes.AnalyticsStatus{}, err
+		}
+		c.audit(ctx, a, "analytics.server", nil, nil, target.Name, "analytics store on "+target.Name)
 	case cl == nil:
 		// The first time: straight onto the chosen server. Tracing may
 		// have made the settings with another server: the trace store
