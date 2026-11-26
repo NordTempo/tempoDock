@@ -16,6 +16,14 @@ func (h *harness) lock(env string) {
 	}
 }
 
+// freeze locks shop/<env> for people too, as the system.
+func (h *harness) freeze(env string) {
+	h.t.Helper()
+	if _, err := h.c.LockEnvironment(h.ctx, testSystem, EnvRef{"shop", env}, apitypes.LockEnvironmentRequest{People: true}); err != nil {
+		h.t.Fatal(err)
+	}
+}
+
 // TestLockStopsTokensOnly: in a locked environment a token's change is
 // refused with environment_locked, whether an API token or a `dock login`
 // token, while a person in the UI and the daemon change it freely and

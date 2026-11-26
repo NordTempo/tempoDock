@@ -109,7 +109,9 @@ export function LockMark({ lock }: { lock: EnvironmentLock | undefined }) {
       className={`inline-flex align-[-1px] ${holds ? "text-warn-text" : "text-faint"}`}
       title={
         holds
-          ? "locked"
+          ? lock.people
+            ? "locked for people too"
+            : "locked for agents"
           : `lock paused until ${clock(lock.open_until ?? "")}, then locked again`
       }
     >

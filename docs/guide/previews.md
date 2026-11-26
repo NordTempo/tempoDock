@@ -176,8 +176,9 @@ the control plane's, previews stay awake until it is updated.
 
 A preview starts unlocked, even when its base is locked: it is
 throwaway, and it never reaches the base's data, unlisted values or
-domains. Lock one (`dock env lock pr-12`) and its pull request's new
-commits wait for approval like any push into a locked environment.
+domains. Lock one (`dock env lock pr-12`) and agents can't change it;
+lock it for people too (`--people`) and its pull request's new commits
+wait for approval like any push into a frozen environment.
 
 `dock project export` leaves previews out, and `dock apply` never
 touches them.
