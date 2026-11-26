@@ -15,11 +15,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
+
+	"github.com/pelletier/go-toml/v2"
 
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/version"
@@ -242,12 +245,12 @@ func (n *Node) serveOnce(ctx context.Context) outcome {
 	}
 	n.mu.Unlock()
 	ka := or(n.KeepAlive, DefaultKeepAlive)
-	conn, err := dialControlPlane(ctx, link.Addrs, id, link.ControlPlaneKey, or(n.alpn, ALPN), ka)
+	conn, addr, err := dialControlPlane(ctx, link.Addrs, id, link.ControlPlaneKey, or(n.alpn, ALPN), ka)
 	if err != nil {
 		err, stuck := explainDial(err)
 		return outcome{err: err, stuck: stuck}
 	}
-	st := &connState{usingNext: usingNext}
+	st := &connState{usingNext: usingNext, addr: addr}
 	firstErr := serveConn(ctx, conn, n.handler(st), ka, n.logger())
 	if st.helloed.Load() {
 		return outcome{err: errors.New("connection closed"), helloed: true}
@@ -265,22 +268,32 @@ func (n *Node) serveOnce(ctx context.Context) outcome {
 	return outcome{err: err, stuck: stuck}
 }
 
-// dialControlPlane connects to the first address that answers, pinning
-// the control plane's key in the handshake.
-func dialControlPlane(ctx context.Context, addrs []string, id Identity, controlPlane, proto string, ka time.Duration) (*tls.Conn, error) {
-	d := tls.Dialer{
-		NetDialer: &net.Dialer{Timeout: 10 * time.Second, KeepAlive: ka},
-		Config:    nodeTLS(id, controlPlane, proto),
-	}
+// Dial timeouts per address: the first ones are the private paths
+// (Tailscale, LAN; ADR 0102), which answer at once when they work and
+// black-hole when this server isn't on them, so they get a short one.
+const (
+	dialFirstTimeout = 3 * time.Second
+	dialLastTimeout  = 10 * time.Second
+)
+
+// dialControlPlane connects to the first address that answers, in order,
+// pinning the control plane's key in the handshake, and says which one.
+func dialControlPlane(ctx context.Context, addrs []string, id Identity, controlPlane, proto string, ka time.Duration) (*tls.Conn, string, error) {
+	cfg := nodeTLS(id, controlPlane, proto)
 	var errs []error
-	for _, addr := range addrs {
+	for i, addr := range addrs {
+		timeout := dialFirstTimeout
+		if i == len(addrs)-1 {
+			timeout = dialLastTimeout
+		}
+		d := tls.Dialer{NetDialer: &net.Dialer{Timeout: timeout, KeepAlive: ka}, Config: cfg}
 		c, err := d.DialContext(ctx, "tcp", addr)
 		if err == nil {
-			return c.(*tls.Conn), nil
+			return c.(*tls.Conn), addr, nil
 		}
 		errs = append(errs, fmt.Errorf("%s: %w", addr, err))
 	}
-	return nil, errors.Join(errs...)
+	return nil, "", errors.Join(errs...)
 }
 
 // explainDial turns a failed connection into words, and says whether
@@ -309,7 +322,9 @@ func remoteAlert(err error, a tls.AlertError) bool {
 // connState is what the node learns about one connection.
 type connState struct {
 	usingNext bool
-	helloed   atomic.Bool
+	// addr is the address this connection was dialed on.
+	addr    string
+	helloed atomic.Bool
 }
 
 // handler serves the control plane's calls on one connection.
@@ -345,12 +360,47 @@ func (n *Node) hello(ctx context.Context, req helloRequest, st *connState) (Hell
 	if st.usingNext && !st.helloed.Load() {
 		n.promoteNext()
 	}
+	n.learnAddrs(req.Addrs, st.addr)
 	st.helloed.Store(true)
 	if gone, say := n.watch.back(time.Now()); say {
 		n.logger().Info("control plane reachable again", "gone_for", gone.Round(time.Second))
 	}
 	n.markConnected()
 	return h, nil
+}
+
+// learnAddrs keeps the addresses the control plane sent in hello (ADR
+// 0102) as the ones to dial from the next connection on, with the one this
+// connection used kept (mergeAddrs). A node whose address is set in its
+// config ([node] control_plane) keeps that.
+func (n *Node) learnAddrs(pushed []string, used string) {
+	if n.Addr != "" || len(pushed) == 0 {
+		return
+	}
+	for _, a := range pushed {
+		if checkAddr(a) != nil {
+			n.logger().Warn("the control plane sent a bad address; kept the old ones", "addr", a)
+			return
+		}
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	addrs := mergeAddrs(pushed, used)
+	if slices.Equal(addrs, n.link.Addrs) {
+		return
+	}
+	l := n.link
+	l.Addrs = addrs
+	raw, err := toml.Marshal(l)
+	if err == nil {
+		err = writeFileAtomic(filepath.Join(n.DataDir, StateFile), raw)
+	}
+	if err != nil {
+		n.logger().Warn("save the control plane's addresses", "err", err)
+		return
+	}
+	n.link = l
+	n.logger().Info("control plane addresses updated", "addrs", addrs)
 }
 
 // gatherHello builds the hello for this binary and machine.

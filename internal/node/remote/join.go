@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/pelletier/go-toml/v2"
@@ -89,7 +91,7 @@ func Join(ctx context.Context, token, dataDir string, facts Facts) (Link, error)
 	}
 	ctx, cancel := context.WithTimeout(ctx, joinWait)
 	defer cancel()
-	conn, err := dialControlPlane(ctx, t.Addrs, id, t.ControlPlane, joinALPN, DefaultKeepAlive)
+	conn, _, err := dialControlPlane(ctx, t.Addrs, id, t.ControlPlane, joinALPN, DefaultKeepAlive)
 	if err != nil {
 		var pe *pinError
 		if errors.As(err, &pe) {
@@ -98,7 +100,7 @@ func Join(ctx context.Context, token, dataDir string, facts Facts) (Link, error)
 		if remoteAlert(err, 120) {
 			return Link{}, errVersion
 		}
-		return Link{}, fmt.Errorf("connect to the control plane: %w", err)
+		return Link{}, unreachable(t.Addrs, err)
 	}
 
 	answer := make(chan joinedRequest, 1)
@@ -148,6 +150,38 @@ func Join(ctx context.Context, token, dataDir string, facts Facts) (Link, error)
 		return Link{}, fmt.Errorf("joined as %s, but saving the key failed (remove the server and join again): %w", link.Server, err)
 	}
 	return link, nil
+}
+
+// unreachable is a join that reached none of the control plane's
+// addresses, with what to do about it.
+func unreachable(addrs []string, err error) error {
+	return fmt.Errorf("can't reach the control plane at %s. Open that port on the control plane's firewall, or put this server on the same Tailscale network or LAN: %w",
+		strings.Join(addrs, " or "), err)
+}
+
+// CheckReach dials the addresses in token over TCP and returns the first
+// that answers, without a handshake: install.sh runs it (`dock node join
+// --check`) before installing anything, so a server that can't reach the
+// control plane fails in seconds. The token stays unused.
+func CheckReach(ctx context.Context, token string) (string, error) {
+	t, err := ParseJoinToken(token)
+	if err != nil {
+		return "", err
+	}
+	var errs []error
+	for i, addr := range t.Addrs {
+		timeout := dialFirstTimeout
+		if i == len(t.Addrs)-1 {
+			timeout = dialLastTimeout
+		}
+		c, err := (&net.Dialer{Timeout: timeout}).DialContext(ctx, "tcp", addr)
+		if err == nil {
+			_ = c.Close()
+			return addr, nil
+		}
+		errs = append(errs, err)
+	}
+	return "", unreachable(t.Addrs, errors.Join(errs...))
 }
 
 // saveJoin writes the node's key and link, replacing any earlier join.

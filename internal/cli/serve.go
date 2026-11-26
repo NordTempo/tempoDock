@@ -82,9 +82,6 @@ func serve(ctx context.Context, cfg config.Config, configPath string) error {
 	if err := checkLoopback("public_listen", cfg.PublicListen); err != nil {
 		return err
 	}
-	if err := checkNodeListen(cfg.Node.Listen); err != nil {
-		return err
-	}
 	// The demo signs anyone in as an operator (ADR 0100): never with real
 	// containers behind it.
 	if cfg.Demo.Enabled() && os.Getenv("DOCK_FAKE_RUNTIME") != "1" {
@@ -229,6 +226,11 @@ func serve(ctx context.Context, cfg config.Config, configPath string) error {
 			return fmt.Errorf("[node] listen: %w", err)
 		}
 		go func() { errc <- hub.Serve(ctx, ln) }()
+		if addrs := remote.ListenAddrs(cfg.Node.Listen, cfg.PublicIP, cfg.Node.Addrs)(); len(addrs) > 0 {
+			log.Info("nodes dial this control plane", "addrs", addrs)
+		} else {
+			log.Warn("[node] listen is on every interface, but there is no address to give nodes (no Tailscale, no public_ip): adding a server fails until you set [node] addrs")
+		}
 	}
 	log.Info("dock daemon listening", "version", version.Version, "api", cfg.Listen, "internal", cfg.InternalListen, "public", cfg.PublicListen,
 		"nodes", cfg.Node.Listen, "link_key", linkID.Fingerprint(), "data", cfg.DataDir)
@@ -269,7 +271,7 @@ func startCore(ctx context.Context, opts core.Options, linkID remote.Identity) (
 		hub = remote.NewHub(remote.HubOptions{
 			Identity: linkID,
 			Store:    c.NodeStore(),
-			Addrs:    []string{cfg.Node.Listen},
+			Addrs:    remote.ListenAddrs(cfg.Node.Listen, cfg.PublicIP, cfg.Node.Addrs),
 			Registry: reg,
 			OnStatus: c.NodeStatus,
 			Logger:   opts.Logger.With("component", "hub"),
@@ -294,20 +296,6 @@ func checkLoopback(key, addr string) error {
 	}
 	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
 		return fmt.Errorf("%s %q must be a loopback address (127.0.0.1 or ::1)", key, addr)
-	}
-	return nil
-}
-
-// checkNodeListen requires a specific address for the node port: join
-// tokens carry it as the address nodes dial, and "0.0.0.0" or ":7443"
-// would send them nowhere.
-func checkNodeListen(addr string) error {
-	if addr == "" {
-		return nil
-	}
-	host, _, _ := net.SplitHostPort(addr) // config.Load checked the form
-	if ip := net.ParseIP(host); host == "" || (ip != nil && ip.IsUnspecified()) {
-		return fmt.Errorf("[node] listen %q must name the address nodes dial, e.g. the Tailscale IP: \"100.64.0.10:7443\"", addr)
 	}
 	return nil
 }

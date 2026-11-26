@@ -15,7 +15,7 @@ control plane.
 | Tools | `curl` (downloads, detects the public IP), `iptables` (the app firewall; installed with Docker on Debian and Ubuntu), OpenSSL 3 for the signature check |
 | Access | root (`sudo`) |
 | Size | 2 vCPU / 4 GB is comfortable. Idle platform is about 490 MB including Docker, Caddy and BuildKit ([measured](../experience.md#measured-in-the-m0-spike-2026-10)). Builds are capped at 2 GB by default |
-| Ports | 80/tcp, 443/tcp and 443/udp public. The API port (7070) and node port (7443) private: Dock goes public only through Caddy, at its [public address](#public-address). None on a [Cloudflare Tunnel](#cloudflare-tunnel) server |
+| Ports | 80/tcp, 443/tcp and 443/udp public. The API port (7070) private: Dock goes public only through Caddy, at its [public address](#public-address). The control plane's node port (7443) for [nodes](#add-a-server) off its Tailscale network. None on a [Cloudflare Tunnel](#cloudflare-tunnel) server |
 | cgroups | cgroup v2 (the default on current distributions) for per-service statistics. Docker's systemd and cgroupfs drivers both work |
 | Optional | Tailscale, so the API listens on the tailnet by default. Recommended for every server once there's more than one |
 
@@ -224,7 +224,7 @@ the others also change an existing config, touching only their own keys.
 | `CLOUDFLARE_TUNNEL_TOKEN` | empty | Serve public traffic through a [Cloudflare Tunnel](#cloudflare-tunnel): installs `cloudflared` and `dock-cloudflared.service`, sets `[ingress]` |
 | `CLOUDFLARED_VERSION`, `CLOUDFLARED_SHA256` | `2026.10.3`, pinned | Another `cloudflared` release and the SHA-256 of `cloudflared-linux-<arch>` from its release notes |
 | `INGRESS` | `direct` | `cloudflare_tunnel` without a token: tunnel mode, with the tunnel made and run by Dock ([Tunnels managed by Dock](#tunnels-managed-by-dock)); `dock server add --tunnel` prints it. Once Dock runs a tunnel this script installed, a re-run removes `dock-cloudflared.service` |
-| `NODE_LISTEN` | empty | Accept nodes on this address, e.g. `100.64.0.10:7443` → `[node] listen`. Control plane only |
+| `NODE_LISTEN` | `:7443` on a new control plane | Accept nodes on this address → `[node] listen`: `:7443` every interface, `100.64.0.10:7443` Tailscale only, empty no nodes. Control plane only |
 | `REGISTRY` | empty | `1` runs the [image registry](#registry) → `[registry] enabled`. Control plane only |
 | `REGISTRY_NAME` | `dock-registry` with `REGISTRY=1` | The registry's name in its tokens → `[registry] public_name` |
 | `REGISTRY_LISTEN` | `127.0.0.1:5000` | Host address the registry container is published on → `[registry] listen` |
@@ -322,7 +322,8 @@ running).
 | `[ingress] mode` | `direct` | `direct`: public IP, Caddy issues certificates. `cloudflare_tunnel`: Caddy serves plain HTTP on `127.0.0.1:<http_port>` only, for the local `cloudflared`; `disable_tls` must stay `false` (apps are `https://` at Cloudflare) |
 | `[ingress] tunnel_hostname` | empty | `<tunnel-id>.cfargotunnel.com`, the CNAME target for hostnames on a tunnel server. Set by `install.sh` from the tunnel token |
 | `[ingress] cloudflared_image` | `cloudflare/cloudflared:2026.10.3@sha256:…` | The `cloudflared` image of the `dock-cloudflared` container, when Dock runs the server's tunnel ([Tunnels managed by Dock](#tunnels-managed-by-dock)). Pin it by digest |
-| `[node] listen` | empty | Control plane: where nodes connect, e.g. `100.64.0.10:7443` on Tailscale. Join tokens carry it, so it must be an address nodes can dial, not `0.0.0.0`. Empty: no nodes |
+| `[node] listen` | empty (`:7443` on new installs) | Control plane: where nodes connect. Every interface (`:7443`), or one address (`100.64.0.10:7443`, Tailscale only). Empty: no nodes |
+| `[node] addrs` | empty | Control plane: where nodes dial it, in order (`["100.64.0.10:7443", "cp.example.com:7443"]`), written into join tokens and sent to nodes on every connect. Empty: `listen` when it names an address; on every interface, this server's Tailscale address, then `public_ip` |
 | `[node] control_plane` | empty | Node: overrides the control plane address in `node.toml` (`host:port`). Its key stays pinned. When the control plane moves, `dock node set-control-plane` is the usual way |
 | `[registry] enabled` | `false` | Control plane: run the image registry |
 | `[registry] listen` | `127.0.0.1:5000` | Control plane: where the `dock-registry` container listens, on the host's network. Node: where `dock node` serves the registry over the link. Image references use it on every server |
@@ -692,18 +693,25 @@ the most recently created.
 A node runs apps and builds for the control plane: Docker, Caddy, BuildKit
 and `dock node`, but no API, UI or database. It dials out to the control
 plane over TLS with pinned keys ([ADR 0014](../decisions/0014-node-protocol.md)),
-so it works behind NAT and needs no inbound ports. Put every server on the
-same Tailscale tailnet: the control plane's node port is only meant to be
-reachable there. Images travel over the same link, so nodes need nothing
-else.
+so it works behind NAT and needs no inbound ports. Images travel over the
+same link, so nodes need nothing else.
 
-1. **Control plane, once:** open the node port on its Tailscale address,
-   and run the [registry](#registry) so images can move between servers.
-   `NODE_LISTEN` must be an address nodes can dial, not `0.0.0.0`: join
-   tokens carry it.
+A node reaches the control plane over whatever works
+([ADR 0102](../decisions/0102-nodes-over-any-network.md)): it tries the
+control plane's Tailscale address first, then its public address. The
+link pins keys on both sides, so the public path is as safe; Tailscale
+only keeps port 7443 off the internet. The server page shows which path
+each node uses ("connected 3h ago via Tailscale").
+
+1. **Control plane, once:** a new control plane takes nodes on port 7443
+   of every interface (`[node] listen = ":7443"`). Allow 7443/tcp in a
+   cloud firewall in front of it for nodes off its tailnet, and run the
+   [registry](#registry) so images can move between servers. To keep the
+   port on Tailscale only, set `NODE_LISTEN="$(tailscale ip -4):7443"`
+   instead.
 
    ```sh
-   sudo NODE_LISTEN="$(tailscale ip -4):7443" REGISTRY=1 DOCK_BINARY=./dock ./deploy/install.sh
+   sudo REGISTRY=1 DOCK_BINARY=./dock ./deploy/install.sh
    ```
 
 2. **Anywhere you're logged in as an admin:** add the server. Choose the
@@ -717,10 +725,11 @@ else.
    dock server add homelab --non-production --builder
    ```
 
-3. **The new server:** join the tailnet, then run the printed command. On
-   a bare Debian or Ubuntu server it does everything else: it downloads the
-   control plane's release, checks it against its signed SHA256SUMS,
-   installs Docker when it is missing, and joins. Add
+3. **The new server:** run the printed command. On a bare Debian or
+   Ubuntu server it does everything: it checks that the server reaches the
+   control plane (and stops there, with nothing installed, if it doesn't),
+   downloads the control plane's release, checks it against its signed
+   SHA256SUMS, installs Docker when it is missing, and joins. Add
    `CLOUDFLARE_TUNNEL_TOKEN` (and `BASE_DOMAIN`) for a
    [tunnel](#cloudflare-tunnel) server.
 

@@ -101,12 +101,24 @@ export function LinkSection({ server: s }: { server: Server }) {
   );
 }
 
-/** When the status began, and why the link ended if it did. */
+/** How a node's link reaches the control plane, by its source address. */
+const VIA = {
+  tailscale: "Tailscale",
+  lan: "LAN",
+  internet: "the internet",
+} as const satisfies Record<NonNullable<Server["link_via"]>, string>;
+
+/** When the status began, how the link runs, and why it ended if it did. */
 function statusDetail(s: Server) {
   switch (s.status) {
     case "online":
     case "incompatible":
-      return s.connected_at && `connected ${ago(s.connected_at)}`;
+      return [
+        s.connected_at && `connected ${ago(s.connected_at)}`,
+        s.link_via && `via ${VIA[s.link_via]}`,
+      ]
+        .filter(Boolean)
+        .join(" ");
     case "offline":
       return [
         s.last_seen_at && `since ${ago(s.last_seen_at)}`,

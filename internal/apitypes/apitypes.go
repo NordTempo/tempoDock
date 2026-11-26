@@ -1254,6 +1254,9 @@ type Server struct {
 	// DisconnectReason why the last one ended.
 	ConnectedAt      *time.Time `json:"connected_at,omitempty"`
 	DisconnectReason string     `json:"disconnect_reason,omitempty"`
+	// LinkVia is the path a connected node's link came over, by its
+	// source address (ADR 0102); empty while it isn't connected.
+	LinkVia string `json:"link_via,omitempty" enum:"tailscale,lan,internet" doc:"How a connected node reaches the control plane"`
 	// RevokedAt is set while the server is revoked.
 	RevokedAt *time.Time `json:"revoked_at,omitempty"`
 	// JoinExpiresAt is when the join token of a joining server expires.
@@ -1342,9 +1345,12 @@ type AddServerRequest struct {
 // AddedServer is a new join token. Token is shown only this once; run
 // Command on the new server before ExpiresAt.
 type AddedServer struct {
-	Server    Server    `json:"server"`
-	Token     string    `json:"token"`
-	Command   string    `json:"command" doc:"Install command to run on the new server"`
+	Server  Server `json:"server"`
+	Token   string `json:"token"`
+	Command string `json:"command" doc:"Install command to run on the new server"`
+	// Addrs are where the new server dials the control plane, in the
+	// order it tries them (ADR 0102).
+	Addrs     []string  `json:"addrs" doc:"Control plane addresses the new server tries, in order"`
 	ExpiresAt time.Time `json:"expires_at"`
 }
 

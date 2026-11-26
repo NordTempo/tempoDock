@@ -59,6 +59,7 @@ policy and keep serving.`,
 // stdin (--token-file -) so it never shows in the process list.
 func newNodeJoinCmd(configPath *string) *cobra.Command {
 	var tokenFile string
+	var check bool
 	cmd := &cobra.Command{
 		Use:   "join [<token>]",
 		Short: "Join this server to a control plane with a token from `dock server add`",
@@ -68,11 +69,23 @@ and node.toml), then prints the server name the control plane assigned.
 A new join replaces an earlier one. Tokens work once, for an hour.
 
 Pass the token with --token-file (a path, or - for stdin) to keep it off
-the command line, where other users of this machine could see it.`,
+the command line, where other users of this machine could see it.
+
+--check only tries to reach the control plane's addresses in the token
+and leaves the token unused: install.sh runs it before installing
+anything.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			token, err := joinToken(cmd.InOrStdin(), args, tokenFile)
 			if err != nil {
+				return err
+			}
+			if check {
+				addr, err := remote.CheckReach(cmd.Context(), token)
+				if err != nil {
+					return err
+				}
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "The control plane answers at %s\n", addr)
 				return err
 			}
 			cfg, err := config.Load(*configPath)
@@ -88,6 +101,7 @@ the command line, where other users of this machine could see it.`,
 		},
 	}
 	cmd.Flags().StringVar(&tokenFile, "token-file", "", "read the join token from this file (- for stdin)")
+	cmd.Flags().BoolVar(&check, "check", false, "only check that the control plane is reachable; the token stays unused")
 	return cmd
 }
 

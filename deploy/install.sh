@@ -94,7 +94,9 @@
 #                     this script installed, a re-run removes dock-cloudflared.service
 # Control plane only:
 #   LISTEN            API/UI address (default: Tailscale IP:7070 if present, else 127.0.0.1:7070)
-#   NODE_LISTEN       accept nodes on this address, e.g. "$(tailscale ip -4):7443" → [node] listen
+#   NODE_LISTEN       accept nodes on this address → [node] listen. A new control plane
+#                     takes them on every interface (":7443", ADR 0102); an address
+#                     ("$(tailscale ip -4):7443") keeps them on it, empty turns nodes off
 #   REGISTRY          "1" runs the image registry (dock-registry container) → [registry] enabled
 #   REGISTRY_NAME     the registry's name in its tokens (default dock-registry) → [registry] public_name
 #   REGISTRY_LISTEN   host address the registry is published on (default 127.0.0.1:5000)
@@ -872,6 +874,24 @@ main() {
     die "set CLOUDFLARED_SHA256 to the SHA-256 of cloudflared-linux-$ARCH from the $CLOUDFLARED_VERSION release notes"
   fi
 
+  if [[ -z "${DOCK_BINARY:-}" ]]; then
+    download_dir="$(mktemp -d)"
+    dock_version="$(release_info "${DOCK_VERSION:-$(cat "$SRC_DIR/VERSION" 2>/dev/null || echo latest)}" "$download_dir")"
+    say "==> download dock $dock_version"
+    download_assets "$download_dir" "$dock_version" "dock-linux-$ARCH"
+    DOCK_BINARY="$download_dir/dock-linux-$ARCH"
+    chmod 0755 "$DOCK_BINARY"
+  fi
+  [[ -x "$DOCK_BINARY" ]] || die "$DOCK_BINARY is not an executable file"
+
+  # A new node must reach the control plane: find out before installing
+  # anything (ADR 0102). The token stays unused.
+  if [[ "$node_mode" == true && -n "${NODE_JOIN_TOKEN:-}" ]]; then
+    say "==> reach the control plane"
+    printf '%s\n' "$NODE_JOIN_TOKEN" | "$DOCK_BINARY" node join --check --token-file - \
+      || die "nothing was installed. Once this server reaches the control plane, run this again"
+  fi
+
   ensure_prereqs
 
   # Dock runs the tunnel in its dock-cloudflared container once it adopted it
@@ -885,16 +905,6 @@ main() {
     systemctl daemon-reload
     tunnel_unit=false
   fi
-
-  if [[ -z "${DOCK_BINARY:-}" ]]; then
-    download_dir="$(mktemp -d)"
-    dock_version="$(release_info "${DOCK_VERSION:-$(cat "$SRC_DIR/VERSION" 2>/dev/null || echo latest)}" "$download_dir")"
-    say "==> download dock $dock_version"
-    download_assets "$download_dir" "$dock_version" "dock-linux-$ARCH"
-    DOCK_BINARY="$download_dir/dock-linux-$ARCH"
-    chmod 0755 "$DOCK_BINARY"
-  fi
-  [[ -x "$DOCK_BINARY" ]] || die "$DOCK_BINARY is not an executable file"
 
   docker_version="$(docker version --format '{{.Server.Version}}' 2>/dev/null || true)"
   if [[ "${docker_version%%.*}" =~ ^[0-9]+$ ]] && (( ${docker_version%%.*} < 28 )); then
@@ -1143,12 +1153,20 @@ CONF
       # Nodes need an address here; the old one is on the old server.
       old_node_listen="$(toml_get "$old_config" node listen)"
       if [[ -z "${NODE_LISTEN:-}" ]]; then
-        if [[ -n "$old_node_listen" ]]; then
+        if [[ "$old_node_listen" == :* || "$old_node_listen" == 0.0.0.0:* || "$old_node_listen" == "[::]:"* ]]; then
+          NODE_LISTEN="$old_node_listen" # every interface: the same here
+        elif [[ -n "$old_node_listen" ]]; then
           ts_ip="$(tailscale ip -4 2>/dev/null | head -1 || true)"
           [[ -n "$ts_ip" ]] || die "the old control plane took nodes on $old_node_listen; set NODE_LISTEN to this server's address for them, e.g. 100.64.0.20:7443"
           NODE_LISTEN="$ts_ip:${old_node_listen##*:}"
         fi
         toml_set "$merged" node listen "\"${NODE_LISTEN:-}\""
+      fi
+      # [node] addrs named the old server's addresses; this one's are
+      # found again (ADR 0102).
+      if [[ "$(toml_get_raw "$old_config" node addrs)" =~ [^][[:space:]] ]]; then
+        toml_set "$merged" node addrs '[]'
+        say "  [node] addrs named the old server's addresses; cleared, so nodes get this server's"
       fi
       if [[ "$(toml_get "$old_config" ingress mode)" == cloudflare_tunnel && "$tunnel" == false ]]; then
         say "warning: the old control plane served apps through a Cloudflare Tunnel and this one serves them directly."
@@ -1176,6 +1194,12 @@ CONF
     toml_set "$staged" "" public_ip '""'
   fi
   [[ -z "${NODE_LISTEN:-}" ]] || toml_set "$staged" node listen "\"$NODE_LISTEN\""
+  # A new control plane takes nodes on every interface (ADR 0102): they
+  # dial its Tailscale address when they can, else its public one. The link
+  # pins keys, so the open port exposes nothing. NODE_LISTEN= turns it off.
+  if [[ "$fresh" == true && -z "$restore" && "$node_mode" == false && -z "${NODE_LISTEN+x}" ]]; then
+    toml_set "$staged" node listen '":7443"'
+  fi
   if [[ "${REGISTRY:-}" == 1 ]]; then
     toml_set "$staged" registry enabled true
     # The name only has to be set; this one is as good as any.
@@ -1353,13 +1377,20 @@ CONF
   else
     summary
     node_listen="$(toml_get "$CONF" node listen)"
-    if [[ -n "$node_listen" ]]; then
+    if [[ "$node_listen" == :* || "$node_listen" == 0.0.0.0:* || "$node_listen" == "[::]:"* ]]; then
+      say "  Nodes connect on port ${node_listen##*:}: open it in this server's firewall for nodes"
+      say "  outside its Tailscale network or LAN. Add a server: dock server add <name>"
+    elif [[ -n "$node_listen" ]]; then
       say "  Nodes connect to $node_listen. Add a server: dock server add <name>"
     fi
     if [[ -n "$restore" ]]; then
       say "  Restored from $restore."
       [[ ! -f /etc/dock/config.from-backup.toml ]] || say "  The old config.toml is in /etc/dock/config.from-backup.toml for reference."
-      [[ -z "$node_listen" ]] || say "  On each node that should follow: sudo dock node set-control-plane $node_listen"
+      if [[ "$node_listen" == :* || "$node_listen" == 0.0.0.0:* || "$node_listen" == "[::]:"* ]]; then
+        say "  On each node that should follow: sudo dock node set-control-plane <this server's address>:${node_listen##*:}"
+      elif [[ -n "$node_listen" ]]; then
+        say "  On each node that should follow: sudo dock node set-control-plane $node_listen"
+      fi
       if [[ "$from_bucket" == true ]]; then
         fetched="" # the install is through: the archive stays until the user deletes it
         say "  The control plane is back; the apps are not yet. Next:"

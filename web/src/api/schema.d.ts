@@ -7217,6 +7217,8 @@ export interface components {
             name: string;
         };
         AddedServer: {
+            /** @description Control plane addresses the new server tries, in order */
+            addrs: string[] | null;
             /** @description Install command to run on the new server */
             command: string;
             /** Format: date-time */
@@ -11280,6 +11282,11 @@ export interface components {
             key_fingerprint?: string;
             /** Format: date-time */
             last_seen_at?: string;
+            /**
+             * @description How a connected node reaches the control plane
+             * @enum {string}
+             */
+            link_via?: "tailscale" | "lan" | "internet";
             /** @description Runs the control plane */
             local: boolean;
             /** Format: int64 */
