@@ -129,7 +129,7 @@ open ports, and domains added from Cloudflare go through the tunnel.`,
 					builds = " and builds images"
 				}
 				g.io.Successf("Server %s added; it accepts %s%s", a.Server.Name, accepts(a.Server), builds)
-				_, _ = fmt.Fprintf(g.io.Out, "\nOn the new server, with Docker installed and the dock binary and deploy/ copied over, run:\n\n  %s\n\n", a.Command)
+				_, _ = fmt.Fprintf(g.io.Out, "\nOn the new server (Debian or Ubuntu; Docker is installed if missing), run:\n\n  %s\n\n", a.Command)
 				_, _ = fmt.Fprintf(g.io.Out, "The token works once, until %s, and is not shown again.\nThen check it is online: dock server list\n", a.ExpiresAt.Local().Format("15:04"))
 				return nil
 			})

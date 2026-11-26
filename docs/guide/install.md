@@ -717,28 +717,35 @@ else.
    dock server add homelab --non-production --builder
    ```
 
-3. **The new server:** install Docker, join the tailnet, copy the `dock`
-   binary and `deploy/` over (the control plane's release, as in
-   [Install](#install)), then install with the printed token. Add
+3. **The new server:** join the tailnet, then run the printed command. On
+   a bare Debian or Ubuntu server it does everything else: it downloads the
+   control plane's release, checks it against its signed SHA256SUMS,
+   installs Docker when it is missing, and joins. Add
    `CLOUDFLARE_TUNNEL_TOKEN` (and `BASE_DOMAIN`) for a
    [tunnel](#cloudflare-tunnel) server.
 
    ```sh
-   read -rs NODE_JOIN_TOKEN && export NODE_JOIN_TOKEN   # paste the token, Enter
-   sudo --preserve-env=NODE_JOIN_TOKEN DOCK_BINARY=./dock ./deploy/install.sh --node
+   export NODE_JOIN_TOKEN=dockjoin1_... && curl -fsSL https://dock.nordtempo.com/install.sh | sudo --preserve-env=NODE_JOIN_TOKEN DOCK_VERSION=v0.72.0 bash -s -- --yes
    ```
 
-   Read like this, the token is in neither the shell's history nor the
-   process list. The printed command has it after `sudo` instead, where
-   other users of the server can see it while the install runs.
-
-   The one-line install does the same on a bare Debian or Ubuntu server,
-   Docker included, with nothing copied over. Name the control plane's
-   version, or the node gets the latest release:
+   The token goes through sudo's environment, so other users of the server
+   can't see it in the process list. To keep it out of the shell's history
+   too, read it instead (paste the token, Enter) and run the rest:
 
    ```sh
    read -rs NODE_JOIN_TOKEN && export NODE_JOIN_TOKEN
-   curl -fsSL https://dock.nordtempo.com/install.sh | sudo --preserve-env=NODE_JOIN_TOKEN DOCK_VERSION=v0.61.0 bash -s -- --yes
+   curl -fsSL https://dock.nordtempo.com/install.sh | sudo --preserve-env=NODE_JOIN_TOKEN DOCK_VERSION=v0.72.0 bash -s -- --yes
+   ```
+
+   To install from a copy of the control plane's release instead (a build
+   of your own, say), copy the `dock` binary and `deploy/` over (as in
+   [Install](#install)) and, with Docker installed, run the command below.
+   It still downloads Caddy from github.com unless `/usr/local/bin/caddy`
+   already is the release's version.
+
+   ```sh
+   read -rs NODE_JOIN_TOKEN && export NODE_JOIN_TOKEN
+   sudo --preserve-env=NODE_JOIN_TOKEN DOCK_BINARY=./dock ./deploy/install.sh --node
    ```
 
    The script installs the same binaries, Caddy and app firewall as on the

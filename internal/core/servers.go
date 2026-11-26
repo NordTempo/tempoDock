@@ -13,6 +13,8 @@ import (
 	"github.com/NordTempo/tempoDock/internal/config"
 	"github.com/NordTempo/tempoDock/internal/node/remote"
 	"github.com/NordTempo/tempoDock/internal/store"
+	"github.com/NordTempo/tempoDock/internal/update"
+	"github.com/NordTempo/tempoDock/internal/version"
 )
 
 // ListServers returns every server with its link status, facts,
@@ -385,11 +387,23 @@ func (c *Core) AddServer(ctx context.Context, a Actor, req apitypes.AddServerReq
 	}
 	return apitypes.AddedServer{
 		Server: srv, Token: token, ExpiresAt: row.ExpiresAt,
-		// The token is set by the shell and passed through sudo's
-		// environment: on sudo's command line every user of that server
-		// could read it in the process list.
-		Command: "export NODE_JOIN_TOKEN=" + token + " && sudo --preserve-env=NODE_JOIN_TOKEN DOCK_BINARY=./dock " + ingress + "./deploy/install.sh --node",
+		Command: nodeInstallCommand(token, ingress, version.Version),
 	}, nil
+}
+
+// nodeInstallCommand is the one line a new server runs to join: the hosted
+// bootstrap downloads and verifies the release, installs Docker when it is
+// missing, and installs a node (NODE_JOIN_TOKEN implies --node). The node
+// gets the control plane's own release; a dev build, which has none, gets
+// the latest. The token is set by the shell and passed through sudo's
+// environment: on sudo's command line every user of that server could read
+// it in the process list.
+func nodeInstallCommand(token, ingress, running string) string {
+	pin := ""
+	if update.IsRelease(running) {
+		pin = "DOCK_VERSION=" + running + " "
+	}
+	return "export NODE_JOIN_TOKEN=" + token + " && curl -fsSL https://dock.nordtempo.com/install.sh | sudo --preserve-env=NODE_JOIN_TOKEN " + pin + ingress + "bash -s -- --yes"
 }
 
 // cancelJoins deletes the unused join tokens for a server name.

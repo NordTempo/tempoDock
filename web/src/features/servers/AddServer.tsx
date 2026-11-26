@@ -159,10 +159,9 @@ function Added({ added, onDone }: { added: AddedServer; onDone: () => void }) {
       <p>
         <b className="font-semibold">Run this on the new server</b>{" "}
         <span className="text-mut">
-          in the unpacked release, next to{" "}
-          <code className="font-mono">dock</code> and{" "}
-          <code className="font-mono">deploy/</code>. The join token in it works
-          once, expires in {until(added.expires_at)} and is not shown again.
+          (Debian or Ubuntu). It downloads this release, installs Docker if
+          missing and joins. The join token in it works once, expires in{" "}
+          {until(added.expires_at)} and is not shown again.
         </span>
       </p>
       <Secret label="Install command" text={added.command} />
