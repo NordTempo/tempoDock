@@ -68,7 +68,7 @@ func (c *Core) setStatusHostname(ctx context.Context, a Actor, p store.StatusPag
 	if host == statusHostname(p.Slug, p.AddressKey, ing.baseDomain) {
 		return "", invalid("%s is the page's own address already; a custom hostname is one of yours, like status.example.com", host)
 	}
-	if ing.baseDomain != "" && strings.HasPrefix(host, "status-") && strings.HasSuffix(host, "."+ing.baseDomain) {
+	if isStatusAddress(host, ing.baseDomain) {
 		// Pages' own addresses, taken or not: another org's page may get it.
 		return "", errf(apitypes.CodeHostnameTaken, "%s is a status page's own address; a custom hostname is one of yours, like status.example.com", host)
 	}
@@ -135,6 +135,13 @@ func (c *Core) setStatusHostname(ctx context.Context, a Actor, p store.StatusPag
 		what += " (waiting for its TXT record)"
 	}
 	return what, nil
+}
+
+// isStatusAddress reports whether host has the form of a page's own
+// address under base (status-*.<base>), taken or not: never a custom
+// hostname (setStatusHostname refuses those).
+func isStatusAddress(host, base string) bool {
+	return base != "" && strings.HasPrefix(host, "status-") && strings.HasSuffix(host, "."+base)
 }
 
 // statusVerifyRecord is the TXT record that proves control of a page's
@@ -244,14 +251,13 @@ func (c *Core) statusHostnameView(ctx context.Context, p store.StatusPage, base 
 // hostnames there) a Cloudflare record to its tunnel, while it is a
 // tunnel server whose tunnel Dock runs, as generated hostnames get
 // theirs (GenerateDomain, routeGeneratedDomains). With no wildcard
-// record, nothing else sends them there. Records of addresses no page
-// has any more are deleted: pages' addresses only (status-*, which no
-// custom hostname under the base may be), since a custom hostname's
-// record is added and deleted with it (setStatusHostname) and may be
-// saved before the hosts map has it. Otherwise records stay as they
-// are, as for a server sent back to its public IP (ADR 0036). Called when the pages'
-// addresses change, on start and when the control plane switches; one
-// query when nothing is missing.
+// record, nothing else sends them there. Records of pages' addresses
+// (isStatusAddress) no page has any more are deleted; a custom
+// hostname's record is added and deleted with it (setStatusHostname),
+// and may be saved before the hosts map has it. Otherwise records stay
+// as they are, as for a server sent back to its public IP (ADR 0036).
+// Called when the pages' addresses change, on start and when the
+// control plane switches; one query when nothing is missing.
 func (c *Core) syncStatusRecords(ctx context.Context) {
 	srv, err := c.store.GetLocalServer(ctx)
 	if err != nil {
@@ -278,7 +284,7 @@ func (c *Core) syncStatusRecords(ctx context.Context) {
 	have := make(map[string]bool, len(rows))
 	for _, r := range rows {
 		have[r.Hostname] = true
-		if _, ok := hosts[r.Hostname]; ok || !strings.HasPrefix(r.Hostname, "status-") || !atOrUnderBase(r.Hostname, ing.baseDomain) {
+		if _, ok := hosts[r.Hostname]; ok || !isStatusAddress(r.Hostname, ing.baseDomain) {
 			continue
 		}
 		if err := c.store.SetStatusHostRecordAbsent(ctx, store.SetStatusHostRecordAbsentParams{UpdatedAt: t, Hostname: r.Hostname, StatusPageID: r.StatusPageID}); err != nil {
@@ -299,7 +305,7 @@ func (c *Core) syncStatusRecords(ctx context.Context) {
 		// older than a hostname's removal), and never over a live record
 		// of a service's domain: 0 rows then.
 		n, err := c.store.SyncStatusPageRecord(ctx, store.SyncStatusPageRecordParams{Hostname: host, PageID: page.id, ServerID: &srv.ID,
-			ConnectionID: z.ConnectionID, ZoneID: z.ZoneID, UpdatedAt: t, Custom: !strings.HasPrefix(host, "status-")})
+			ConnectionID: z.ConnectionID, ZoneID: z.ZoneID, UpdatedAt: t, Custom: !isStatusAddress(host, ing.baseDomain)})
 		if err != nil {
 			c.log.Error("status pages: add a record in Cloudflare", "hostname", host, "err", err)
 			return
