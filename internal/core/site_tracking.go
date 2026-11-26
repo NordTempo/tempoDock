@@ -222,7 +222,11 @@ func (c *Core) CheckSiteTracking(ctx context.Context, a Actor, project, name str
 		}
 		names := make([]string, 0, len(hosts))
 		for _, h := range hosts {
-			names = append(names, h.Hostname)
+			// Only the environment the caller was allowed to read: a
+			// site moved since counts another's hostnames.
+			if h.EnvironmentID == s.site.EnvironmentID {
+				names = append(names, h.Hostname)
+			}
 		}
 		c.tracking.put(s.site.ID, c.checkSite(ctx, names))
 	}

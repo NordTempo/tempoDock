@@ -86,8 +86,9 @@ function Sites() {
 
 /**
  * Projects with no site: analytics is off for them. Each links to the
- * Analytics section of its first service with a domain of its own
- * (generated ones count too): a service without one has nothing to count. The table keeps the default page
+ * Analytics section of a service with a domain, one whose domain would
+ * count now (verified, no redirect) first: a service without one has
+ * nothing to count. The table keeps the default page
  * width (1400px less its padding) when the tiles above run wider.
  */
 function WithoutAnalytics({ counted }: { counted: Set<string> }) {
@@ -107,7 +108,16 @@ function WithoutAnalytics({ counted }: { counted: Set<string> }) {
               const services = (overviews.get(p.name) ?? []).flatMap(
                 (e) => e.services ?? [],
               );
+              // One whose domain would count now first: verified, no redirect.
               const withDomain =
+                services.find((s) =>
+                  s.domains?.some(
+                    (d) => d.verified && !d.redirect_to && !d.generated,
+                  ),
+                ) ??
+                services.find((s) =>
+                  s.domains?.some((d) => d.verified && !d.redirect_to),
+                ) ??
                 services.find((s) => s.domains?.some((d) => !d.generated)) ??
                 services.find((s) => s.domains?.length);
               return (
