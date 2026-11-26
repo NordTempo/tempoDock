@@ -15,7 +15,7 @@ control plane.
 | Tools | `curl` (downloads, detects the public IP), `iptables` (the app firewall; installed with Docker on Debian and Ubuntu), OpenSSL 3 for the signature check |
 | Access | root (`sudo`) |
 | Size | 2 vCPU / 4 GB is comfortable. Idle platform is about 490 MB including Docker, Caddy and BuildKit ([measured](../experience.md#measured-in-the-m0-spike-2026-10)). Builds are capped at 2 GB by default |
-| Ports | 80/tcp, 443/tcp and 443/udp public. The API port (7070) private: Dock goes public only through Caddy, at its [public address](#public-address). The control plane's node port (7443) for [nodes](#add-a-server) off its Tailscale network. None on a [Cloudflare Tunnel](#cloudflare-tunnel) server |
+| Ports | 80/tcp, 443/tcp and 443/udp public. The API port (7070) private: Dock goes public only through Caddy, at its [public address](#public-address). No app ports on a [Cloudflare Tunnel](#cloudflare-tunnel) server. The control plane's node port (7443) for [nodes](#add-a-server) off its Tailscale network, tunnel or not: the node link doesn't go through a tunnel |
 | cgroups | cgroup v2 (the default on current distributions) for per-service statistics. Docker's systemd and cgroupfs drivers both work |
 | Optional | Tailscale, so the API listens on the tailnet by default. Recommended for every server once there's more than one |
 

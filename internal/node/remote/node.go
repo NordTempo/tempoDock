@@ -62,6 +62,9 @@ type Node struct {
 	// next is the key of a rotation in progress (nextKeyFile): the node
 	// connects with it first, and its first hello makes it the key.
 	next *Identity
+	// conn is the current connection's state: a hello still running on an
+	// older one must not change what the node keeps (learnAddrs).
+	conn *connState
 
 	regOnce  sync.Once
 	regConns chan net.Conn
@@ -251,6 +254,9 @@ func (n *Node) serveOnce(ctx context.Context) outcome {
 		return outcome{err: err, stuck: stuck}
 	}
 	st := &connState{usingNext: usingNext, addr: addr}
+	n.mu.Lock()
+	n.conn = st
+	n.mu.Unlock()
 	firstErr := serveConn(ctx, conn, n.handler(st), ka, n.logger())
 	if st.helloed.Load() {
 		return outcome{err: errors.New("connection closed"), helloed: true}
@@ -360,7 +366,7 @@ func (n *Node) hello(ctx context.Context, req helloRequest, st *connState) (Hell
 	if st.usingNext && !st.helloed.Load() {
 		n.promoteNext()
 	}
-	n.learnAddrs(req.Addrs, st.addr)
+	n.learnAddrs(req.Addrs, st)
 	st.helloed.Store(true)
 	if gone, say := n.watch.back(time.Now()); say {
 		n.logger().Info("control plane reachable again", "gone_for", gone.Round(time.Second))
@@ -370,10 +376,11 @@ func (n *Node) hello(ctx context.Context, req helloRequest, st *connState) (Hell
 }
 
 // learnAddrs keeps the addresses the control plane sent in hello (ADR
-// 0102) as the ones to dial from the next connection on, with the one this
-// connection used kept (mergeAddrs). A node whose address is set in its
-// config ([node] control_plane) keeps that.
-func (n *Node) learnAddrs(pushed []string, used string) {
+// 0102) as the ones to dial from the next connection on, with the one
+// connection st used kept (mergeAddrs). Only the current connection's
+// hello counts. A node whose address is set in its config ([node]
+// control_plane) keeps that.
+func (n *Node) learnAddrs(pushed []string, st *connState) {
 	if n.Addr != "" || len(pushed) == 0 {
 		return
 	}
@@ -385,7 +392,10 @@ func (n *Node) learnAddrs(pushed []string, used string) {
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	addrs := mergeAddrs(pushed, used)
+	if n.conn != st {
+		return
+	}
+	addrs := mergeAddrs(pushed, st.addr)
 	if slices.Equal(addrs, n.link.Addrs) {
 		return
 	}

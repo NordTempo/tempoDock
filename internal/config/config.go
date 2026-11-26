@@ -658,8 +658,11 @@ func (c *Config) validate() error {
 		if err := CheckHostPort("[node] addrs", a); err != nil {
 			return err
 		}
-		if strings.Contains(a, ",") || a == "" {
-			return fmt.Errorf("[node] addrs %q must be host:port", a)
+		// Nodes dial these: a missing or unspecified host would send a
+		// node to itself.
+		host, _, _ := net.SplitHostPort(a)
+		if ip := net.ParseIP(host); strings.Contains(a, ",") || host == "" || (ip != nil && ip.IsUnspecified()) {
+			return fmt.Errorf("[node] addrs %q must be an address nodes can dial, like \"100.64.0.10:7443\" or \"cp.example.com:7443\"", a)
 		}
 	}
 	if c.Registry.Enabled {

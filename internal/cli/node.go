@@ -4,6 +4,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -85,8 +86,9 @@ anything.`,
 				if err != nil {
 					return err
 				}
-				_, err = fmt.Fprintf(cmd.OutOrStdout(), "The control plane answers at %s\n", addr)
-				return err
+				return joinOutput(cmd, struct {
+					Addr string `json:"addr"`
+				}{addr}, "The control plane answers at "+addr)
 			}
 			cfg, err := config.Load(*configPath)
 			if err != nil {
@@ -96,13 +98,26 @@ anything.`,
 			if err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Joined the control plane at %s as server %s\n", link.Addrs[0], link.Server)
-			return err
+			return joinOutput(cmd, struct {
+				ServerID int64  `json:"server_id"`
+				Server   string `json:"server"`
+			}{link.ServerID, link.Server}, "Joined the control plane as server "+link.Server)
 		},
 	}
 	cmd.Flags().StringVar(&tokenFile, "token-file", "", "read the join token from this file (- for stdin)")
 	cmd.Flags().BoolVar(&check, "check", false, "only check that the control plane is reachable; the token stays unused")
 	return cmd
+}
+
+// joinOutput prints a `dock node join` result: v as JSON under the root's
+// --json (server commands don't get the client's output settings), else
+// text.
+func joinOutput(cmd *cobra.Command, v any, text string) error {
+	if f := cmd.Flag("json"); f != nil && f.Value.String() == "true" {
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(v)
+	}
+	_, err := fmt.Fprintln(cmd.OutOrStdout(), text)
+	return err
 }
 
 // newNodeSetControlPlaneCmd is `dock node set-control-plane host:port`:

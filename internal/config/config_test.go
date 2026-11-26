@@ -105,6 +105,8 @@ func TestLinkSectionsInvalid(t *testing.T) {
 	for _, toml := range []string{
 		`node.listen = "7443"`,                                           // no host part
 		`node.control_plane = "cp.example.dev:http"`,                     // port not numeric
+		`node.addrs = [":7443"]`,                                         // nodes would dial themselves
+		`node.addrs = ["0.0.0.0:7443"]`,                                  // same
 		`registry.enabled = true`,                                        // no public_name
 		`ingress.mode = "tunnel"`,                                        // unknown mode
 		"ingress.mode = \"cloudflare_tunnel\"\ncaddy.disable_tls = true", // apps would show http:// URLs

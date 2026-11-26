@@ -382,6 +382,27 @@ toml_set() {
   printf '%s\n' "$out" > "$1"
 }
 
+# toml_unset FILE SECTION KEY removes KEY from [SECTION], with the rest of
+# an array value written over several lines. Everything else stays.
+toml_unset() {
+  local out
+  out="$(awk -v section="$2" -v key="$3" '
+    BEGIN { in_section = (section == "") }
+    skipping { if ($0 ~ /\]/) skipping = 0; next }
+    /^[[:space:]]*\[/ {
+      hdr = $0; gsub(/^[[:space:]]*\[[[:space:]]*|[[:space:]]*\].*$/, "", hdr)
+      in_section = (hdr == section)
+    }
+    in_section && $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
+      v = $0; sub(/^[^=]*=/, "", v); sub(/#.*$/, "", v)
+      if (v ~ /\[/ && v !~ /\]/) skipping = 1
+      next
+    }
+    { print }
+  ' "$1")"
+  printf '%s\n' "$out" > "$1"
+}
+
 # refresh_buildkit_image FILE moves [buildkit] image in an existing config
 # to this release's pinned image: config.toml is written once, so without
 # this a server would build with the image of the release it was installed
@@ -1164,8 +1185,9 @@ CONF
       fi
       # [node] addrs named the old server's addresses; this one's are
       # found again (ADR 0102).
-      if [[ "$(toml_get_raw "$old_config" node addrs)" =~ [^][[:space:]] ]]; then
-        toml_set "$merged" node addrs '[]'
+      old_addrs="$(toml_get_raw "$old_config" node addrs)"
+      if [[ -n "$old_addrs" && ! "$old_addrs" =~ ^\[[[:space:]]*\]$ ]]; then
+        toml_unset "$merged" node addrs
         say "  [node] addrs named the old server's addresses; cleared, so nodes get this server's"
       fi
       if [[ "$(toml_get "$old_config" ingress mode)" == cloudflare_tunnel && "$tunnel" == false ]]; then
@@ -1193,7 +1215,10 @@ CONF
     # The home IP never goes into DNS or the control plane.
     toml_set "$staged" "" public_ip '""'
   fi
-  [[ -z "${NODE_LISTEN:-}" ]] || toml_set "$staged" node listen "\"$NODE_LISTEN\""
+  # Set, even to empty (no nodes), NODE_LISTEN replaces [node] listen.
+  if [[ -n "${NODE_LISTEN+x}" && "$node_mode" == false ]]; then
+    toml_set "$staged" node listen "\"$NODE_LISTEN\""
+  fi
   # A new control plane takes nodes on every interface (ADR 0102): they
   # dial its Tailscale address when they can, else its public one. The link
   # pins keys, so the open port exposes nothing. NODE_LISTEN= turns it off.
