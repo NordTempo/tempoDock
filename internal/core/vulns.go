@@ -177,6 +177,12 @@ func (c *Core) scanWaitReason(ctx context.Context) func(production bool) string 
 	if err != nil {
 		return func(bool) string { return "" }
 	}
+	return c.scanWaitFor(servers)
+}
+
+// scanWaitFor is scanWaitReason over servers already read: what a queued
+// scan of a production or non-production image waits for.
+func (c *Core) scanWaitFor(servers []store.Server) func(production bool) string {
 	any, prod, nonProd := false, false, false
 	for _, s := range servers {
 		if c.canBuild(s) {
@@ -503,8 +509,10 @@ func (c *Core) ScanningStatus(ctx context.Context, a Actor) (apitypes.ScanningSt
 	case !out.Enabled:
 	case len(out.Builders) == 0:
 		out.Waiting = "No server builds images, and only builders scan"
-	case queuedProd && !prod, queuedNonProd && !nonProd:
-		out.Waiting = "Waiting for a builder to come back online, or for its disk to have room"
+	case queuedProd && !prod:
+		out.Waiting = c.scanWaitFor(servers)(true)
+	case queuedNonProd && !nonProd:
+		out.Waiting = c.scanWaitFor(servers)(false)
 	case out.Images[apitypes.ScanQueued] > 0 && busy:
 		out.Waiting = "Waiting for a quiet minute: builds and deploys come first"
 	}
