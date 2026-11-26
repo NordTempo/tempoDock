@@ -116,6 +116,14 @@ func (c *Core) DeleteEnvironment(ctx context.Context, a Actor, ref EnvRef, req a
 	if err := c.removeProjectResources(ctx, d); err != nil {
 		return apitypes.EnvironmentDeleted{}, fmt.Errorf("%w; its services are archived but nothing was deleted from Dock yet, so deleting again picks up where this stopped", err)
 	}
+	// Its servers' routes are rendered from the store again, which
+	// holds no route of an archived service: finishArchive's render may
+	// have failed, or been an earlier attempt's.
+	for _, sid := range d.servers() {
+		if err := c.applyRoutes(ctx, sid); err != nil {
+			return apitypes.EnvironmentDeleted{}, fmt.Errorf("remove the routes of %s: %w; nothing was deleted from Dock yet, so deleting again picks up where this stopped", es, err)
+		}
+	}
 	notes = append(notes, c.deleteProjectAnalytics(ctx, d.sites)...)
 	if err := c.deleteEnvironmentRows(ctx, es, d); err != nil {
 		return apitypes.EnvironmentDeleted{}, err
@@ -217,6 +225,16 @@ func (c *Core) deleteEnvironmentRows(ctx context.Context, es envScope, d deletio
 		}
 		if now.Name != es.env.Name {
 			return conflict("environment %s changed meanwhile; refresh it before deleting", es)
+		}
+		// What was removed was on the server it was on then: a move that
+		// started or ended since leaves resources elsewhere.
+		if now.ServerID != es.env.ServerID {
+			return conflict("environment %s moved to another server meanwhile; delete it again", es)
+		}
+		if _, err := q.GetOpenEnvironmentMove(ctx, es.env.ID); err == nil {
+			return conflict("environment %s started moving meanwhile; delete it once the move ends", es)
+		} else if !store.IsNotFound(err) {
+			return err
 		}
 		n, err := q.CountOpenBasePreviews(ctx, es.env.ID)
 		if err != nil {

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 // Deleting an environment archives its services, removes its containers,
@@ -122,8 +123,8 @@ func TestDeleteEnvironmentWithPreviews(t *testing.T) {
 	if got.Services != 6 || got.Previews != 1 {
 		t.Errorf("deleted = %+v", got)
 	}
-	if _, err := h.store.GetEnvironment(h.ctx, id); err == nil {
-		t.Error("the closed preview's environment is still there")
+	if _, err := h.store.GetEnvironment(h.ctx, id); !store.IsNotFound(err) {
+		t.Errorf("the closed preview's environment after the delete: %v, want not found", err)
 	}
 	if left := h.rt.Volumes(); slices.ContainsFunc(left, func(v string) bool { return strings.HasPrefix(v, "dock_p") }) {
 		t.Errorf("volumes left: %v", left)
