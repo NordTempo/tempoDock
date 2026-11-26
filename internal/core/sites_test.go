@@ -149,13 +149,14 @@ func TestSiteMove(t *testing.T) {
 	h.deploy(v2, "nginx:1")
 	h.domain(v1, "old.example.com")
 	h.domain(v2, "shop.example.com")
-	// web-v2 counted once, so it has a site archived since.
+	h.countVisits(v1)
+	before, _ := analyticsRoute(h, "old.example.com")
+	// web-v2 counted for a while too, so it has a site, newer than web's,
+	// archived since: the site moved in must win over it.
 	early := h.countVisits(v2)
 	if err := h.c.DisableServiceAnalytics(h.ctx, testSystem, v2); err != nil {
 		t.Fatal(err)
 	}
-	h.countVisits(v1)
-	before, _ := analyticsRoute(h, "old.example.com")
 
 	to := apitypes.MoveSiteRequest{Environment: "production", Service: "web-v2"}
 	reader := Actor{Name: "reader", Kind: "token", Scope: apitypes.ScopeRead, OrgID: 1}
