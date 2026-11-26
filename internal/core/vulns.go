@@ -183,7 +183,7 @@ func (c *Core) scanWaitReason(ctx context.Context) func(production bool) string 
 			any, prod, nonProd = true, prod || s.BuildsProduction, nonProd || s.BuildsNonProduction
 		}
 	}
-	_, onlineProd, onlineNonProd := c.scanners(servers)
+	onlineProd, onlineNonProd := c.scanKinds(servers)
 	return func(production bool) string {
 		switch {
 		case !any:
@@ -498,7 +498,7 @@ func (c *Core) ScanningStatus(ctx context.Context, a Actor) (apitypes.ScanningSt
 		}
 		out.Builders = append(out.Builders, b)
 	}
-	_, prod, nonProd := c.scanners(servers)
+	prod, nonProd := c.scanKinds(servers)
 	switch {
 	case !out.Enabled:
 	case len(out.Builders) == 0:
