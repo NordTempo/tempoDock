@@ -825,6 +825,7 @@ type PlatformSetting struct {
 	Scanning           int64
 	ScanDbImport       string
 	AccessModel        string
+	TagsCheckedAt      int64
 }
 
 type Preview struct {

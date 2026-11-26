@@ -77,7 +77,8 @@ type scanState struct {
 	// last, "" for none (ADR 0074 phase 3).
 	imported string
 	// tagsChecked is when the daily check of base images' tags last
-	// finished (checkTags); zero for never.
+	// finished (checkTags; platform_settings.tags_checked_at); zero for
+	// never.
 	tagsChecked time.Time
 }
 
@@ -153,14 +154,14 @@ func (c *Core) startScans(ctx context.Context) {
 	if err != nil && !store.IsNotFound(err) {
 		c.log.Error("read the imported database", "err", err)
 	}
-	// The oldest answer a live image's tag has stands for the last
-	// finished check: a day after it the next is due, also across
-	// restarts, and a check a restart cut short runs again.
+	// The last finished daily tag check: a day after it the next is due,
+	// also across restarts. A check a restart cut short never recorded
+	// one, so it runs again.
 	var tagsChecked time.Time
-	if oldest, err := c.store.GetOldestLiveBaseCheck(ctx); err != nil {
-		c.log.Error("read the last base image check", "err", err)
-	} else if oldest > 0 {
-		tagsChecked = time.Unix(oldest, 0)
+	if last, err := c.store.GetTagsChecked(ctx); err != nil && !store.IsNotFound(err) {
+		c.log.Error("read the last tag check", "err", err)
+	} else if last > 0 {
+		tagsChecked = time.Unix(last, 0)
 	}
 	c.scans.mu.Lock()
 	c.scans.enabled = on != 0

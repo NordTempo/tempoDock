@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 // The daily tag check is a step of its own: it runs when it is due
@@ -53,6 +54,32 @@ func TestTagCheck(t *testing.T) {
 	if _, err := h.c.CheckImageTag(h.ctx, testSystem, pinned); CodeOf(err) != apitypes.CodeValidation {
 		t.Fatalf("checked an image without a tag: %v", err)
 	}
+}
+
+// The daily check is due a day after the last one that finished, across
+// restarts: a newer answer for one tag (Check now) doesn't count as one.
+func TestTagCheckAcrossRestart(t *testing.T) {
+	h := scanHarness(t)
+	db := h.service("db", apitypes.CreateServiceRequest{Template: apitypes.TemplatePostgres})
+	h.waitStatus(db, 1, apitypes.ReleaseActive)
+	h.waitScan(db, apitypes.ScanScanned)
+	h.rt.SetRemoteDigest(imageTag(templates[apitypes.TemplatePostgres].image), "sha256:"+strings.Repeat("e", 64))
+	h.dueTagCheck()
+	h.waitTagCheck()
+
+	dayAgo := now().Add(-25 * time.Hour)
+	if err := h.c.store.SetTagsChecked(h.ctx, store.SetTagsCheckedParams{TagsCheckedAt: dayAgo.Unix(), UpdatedAt: dayAgo}); err != nil {
+		t.Fatal(err)
+	}
+	h.agoTagChecks(time.Hour)
+	if _, err := h.c.CheckImageTag(h.ctx, testSystem, db); err != nil {
+		t.Fatal(err)
+	}
+	h.restart()
+	eventually(t, "the daily check after the restart", func() bool {
+		last, err := h.c.store.GetTagsChecked(h.ctx)
+		return err == nil && last > dayAgo.Unix()
+	})
 }
 
 // With auto_update on, the daily check updates a service to its tag's

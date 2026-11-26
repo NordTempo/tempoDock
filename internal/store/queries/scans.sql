@@ -304,13 +304,16 @@ UPDATE image_scans SET base_moved = CAST(base_digest != sqlc.arg(digest) AS INTE
 WHERE base_image = +sqlc.arg(base_image) AND base_image != '' AND base_digest != ''
 RETURNING *;
 
--- name: GetOldestLiveBaseCheck :one
--- The oldest answer among the base images live images follow, 0 when one
--- has none: at start-up, a day after it the daily check is due, so a
--- check a restart cut short isn't taken for a finished one.
-SELECT CAST(coalesce(min(coalesce(i.base_checked_at, 0)), 0) AS INTEGER) FROM image_scans i
-WHERE i.base_image != '' AND i.base_digest != ''
-  AND EXISTS (SELECT 1 FROM releases r WHERE r.image_scan_id = i.id AND r.status = 'active');
+-- name: GetTagsChecked :one
+-- When the daily tag check last finished (0 for never): at start-up, a
+-- day after it the next is due.
+SELECT tags_checked_at FROM platform_settings WHERE id = 1;
+
+-- name: SetTagsChecked :exec
+-- Records a finished daily tag check. Not an operator's change: an
+-- existing row keeps its updated_by and updated_at.
+INSERT INTO platform_settings (id, tags_checked_at, updated_by, updated_at) VALUES (1, ?, 'system', ?)
+ON CONFLICT (id) DO UPDATE SET tags_checked_at = excluded.tags_checked_at;
 
 -- name: GetTagDigest :one
 -- What a tag pointed at at its last daily check since checked_after: the

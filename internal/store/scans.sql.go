@@ -280,22 +280,6 @@ func (q *Queries) GetImageScanByKey(ctx context.Context, imageKey string) (Image
 	return i, err
 }
 
-const getOldestLiveBaseCheck = `-- name: GetOldestLiveBaseCheck :one
-SELECT CAST(coalesce(min(coalesce(i.base_checked_at, 0)), 0) AS INTEGER) FROM image_scans i
-WHERE i.base_image != '' AND i.base_digest != ''
-  AND EXISTS (SELECT 1 FROM releases r WHERE r.image_scan_id = i.id AND r.status = 'active')
-`
-
-// The oldest answer among the base images live images follow, 0 when one
-// has none: at start-up, a day after it the daily check is due, so a
-// check a restart cut short isn't taken for a finished one.
-func (q *Queries) GetOldestLiveBaseCheck(ctx context.Context) (int64, error) {
-	row := q.db.QueryRowContext(ctx, getOldestLiveBaseCheck)
-	var column_1 int64
-	err := row.Scan(&column_1)
-	return column_1, err
-}
-
 const getOrgVulnAlerts = `-- name: GetOrgVulnAlerts :one
 SELECT vuln_alerts FROM orgs WHERE id = +?1
 `
@@ -349,6 +333,19 @@ func (q *Queries) GetTagDigest(ctx context.Context, arg GetTagDigestParams) (str
 	var base_latest string
 	err := row.Scan(&base_latest)
 	return base_latest, err
+}
+
+const getTagsChecked = `-- name: GetTagsChecked :one
+SELECT tags_checked_at FROM platform_settings WHERE id = 1
+`
+
+// When the daily tag check last finished (0 for never): at start-up, a
+// day after it the next is due.
+func (q *Queries) GetTagsChecked(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getTagsChecked)
+	var tags_checked_at int64
+	err := row.Scan(&tags_checked_at)
+	return tags_checked_at, err
 }
 
 const getVulnIgnore = `-- name: GetVulnIgnore :one
@@ -2038,6 +2035,23 @@ type SetServiceAutoUpdateParams struct {
 // at once, never staged.
 func (q *Queries) SetServiceAutoUpdate(ctx context.Context, arg SetServiceAutoUpdateParams) error {
 	_, err := q.db.ExecContext(ctx, setServiceAutoUpdate, arg.AutoUpdate, arg.ID)
+	return err
+}
+
+const setTagsChecked = `-- name: SetTagsChecked :exec
+INSERT INTO platform_settings (id, tags_checked_at, updated_by, updated_at) VALUES (1, ?, 'system', ?)
+ON CONFLICT (id) DO UPDATE SET tags_checked_at = excluded.tags_checked_at
+`
+
+type SetTagsCheckedParams struct {
+	TagsCheckedAt int64
+	UpdatedAt     time.Time
+}
+
+// Records a finished daily tag check. Not an operator's change: an
+// existing row keeps its updated_by and updated_at.
+func (q *Queries) SetTagsChecked(ctx context.Context, arg SetTagsCheckedParams) error {
+	_, err := q.db.ExecContext(ctx, setTagsChecked, arg.TagsCheckedAt, arg.UpdatedAt)
 	return err
 }
 

@@ -27,9 +27,11 @@ import (
 // the check has seen (templateImage).
 //
 // The check is a scan step of its own (amendment 2026-11-26), due a day
-// after the last one finished: a build or deploy that cuts it short
-// leaves it due, so it runs again after the next quiet minute instead of
-// a day later. CheckImageTag asks for one service's tag at once.
+// after the last one finished, its automatic updates started
+// (platform_settings.tags_checked_at): a build, deploy or restart that
+// cuts it short leaves it due, so it runs again after the next quiet
+// minute instead of a day later. CheckImageTag asks for one service's tag
+// at once and doesn't move that.
 
 // maxBaseChecks bounds the base images one daily check asks about.
 const maxBaseChecks = 200
@@ -73,8 +75,15 @@ func (c *Core) checkTags(ctx context.Context, srv store.Server) {
 		return
 	}
 	c.autoUpdateImages(c.ctx)
+	if c.ctx.Err() != nil {
+		return // stopped before its updates were started: due again
+	}
+	at := now()
+	if err := c.store.SetTagsChecked(c.ctx, store.SetTagsCheckedParams{TagsCheckedAt: at.Unix(), UpdatedAt: at}); err != nil {
+		c.log.Error("record the tag check", "err", err)
+	}
 	c.scans.mu.Lock()
-	c.scans.tagsChecked = now()
+	c.scans.tagsChecked = at
 	c.scans.mu.Unlock()
 }
 
