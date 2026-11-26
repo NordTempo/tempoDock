@@ -106,7 +106,8 @@ func Assets(version string, archs ...string) []string {
 // asset, hashed while it streams to disk and refused (deleted) unless it
 // matches. Assets already there and matching are kept, so staging again
 // for another arch only downloads its binary. Other staged versions are
-// removed once this one is complete. It returns the sums.
+// removed once this one is complete. Each arch's CaddyAsset is staged too
+// when the release has one. It returns the sums.
 func Stage(ctx context.Context, src Source, dataDir, version string, archs ...string) (Sums, error) {
 	if !IsRelease(version) {
 		return nil, fmt.Errorf("%q is not a release version", version)
@@ -126,6 +127,13 @@ func Stage(ctx context.Context, src Source, dataDir, version string, archs ...st
 	for _, name := range Assets(version, archs...)[1:] {
 		if err := stageAsset(ctx, src, dir, version, name, sums); err != nil {
 			return nil, err
+		}
+	}
+	for _, a := range archs {
+		if _, ok := sums[CaddyAsset(a)]; ok {
+			if err := stageAsset(ctx, src, dir, version, CaddyAsset(a), sums); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return sums, pruneReleases(filepath.Dir(dir), version)
@@ -298,6 +306,10 @@ func Receive(dataDir, version, arch string, files []File, body io.Reader) error 
 	want := Assets(version, arch)
 	if len(files) > 1 && files[1].Name == SigAsset {
 		want = slices.Insert(want, 1, SigAsset)
+	}
+	// Dock's Caddy comes last, when the release has one.
+	if len(files) == len(want)+1 && files[len(want)].Name == CaddyAsset(arch) {
+		want = append(want, CaddyAsset(arch))
 	}
 	if len(files) != len(want) {
 		return fmt.Errorf("an update for linux/%s needs %d files, got %d", arch, len(want), len(files))

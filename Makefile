@@ -1,7 +1,7 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/NordTempo/tempoDock/internal/version.Version=$(VERSION)
 
-.PHONY: build probe build-cli build-tempobase tempobase-deps build-analytics test-analytics lint-analytics analytics-binary analytics-deps release-local web test test-race test-integration lint generate dev perf perf-bench perf-artifacts perf-baseline agent-eval
+.PHONY: build probe build-cli build-tempobase tempobase-deps build-analytics test-analytics lint-analytics analytics-binary caddy-binary test-caddy lint-caddy analytics-deps release-local web test test-race test-integration lint generate dev perf perf-bench perf-artifacts perf-baseline agent-eval
 
 ## build: the single static binary (UI embedded if web/dist is built, and
 ## dock-probe)
@@ -60,6 +60,16 @@ lint-analytics:
 ## [analytics] store_binary at it to run a development build's store
 analytics-binary:
 	docker build -f deploy/analytics/Dockerfile --target binary --build-arg VERSION=$(VERSION) --output type=local,dest=bin .
+
+## caddy-binary: bin/dock-caddy, Caddy with Dock's handlers (cmd/dock-caddy,
+## ADR 0105), built as the release builds it; install it as caddy (on PATH,
+## or /usr/local/bin/caddy) to run Dock's own handlers
+caddy-binary:
+	cd cmd/dock-caddy && CGO_ENABLED=0 go build -trimpath -buildvcs=false -tags nobadger,nomysql,nopgx -ldflags '-s -w' -o ../../bin/dock-caddy .
+test-caddy:
+	cd cmd/dock-caddy && go test ./...
+lint-caddy:
+	cd cmd/dock-caddy && golangci-lint run ./... && go vet ./...
 
 ## analytics-deps: fail if cmd/dock links DuckDB or CGO code, or if
 ## internal/analytics (which dock links) imports anything outside the

@@ -1006,6 +1006,51 @@ func TestIntegrationAnalytics(t *testing.T) {
 	}
 }
 
+// Analytics hostnames with Script get the script tag in their pages from
+// Dock's Caddy (cmd/dock-caddy, ADR 0105), gzipped for a client that
+// takes it; a stock Caddy loads the same routes without it.
+func TestIntegrationScriptInject(t *testing.T) {
+	bin, err := exec.LookPath("caddy")
+	if err != nil {
+		t.Skip("caddy binary not on PATH")
+	}
+	mods, err := exec.Command(bin, "list-modules").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	docks := strings.Contains(string(mods), injectModule)
+	app := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = io.WriteString(w, "<html><head><title>shop</title></head></html>")
+	}))
+	t.Cleanup(app.Close)
+	tc := startCaddyWith(t, func(o *Options) {
+		o.DisableTLS = true
+		o.AnalyticsAddr = "127.0.0.1:1"
+	})
+	tc.applyRoutes(t, []node.Route{{
+		Hostnames: []string{"shop.test", "admin.test"}, Upstream: strings.TrimPrefix(app.URL, "http://"),
+		Analytics: []node.AnalyticsHosts{{Hostnames: []string{"shop.test"}, Tag: "3.40.981", Script: true}},
+	}})
+	// The client asks for gzip and unpacks it (Uncompressed).
+	resp, err := tc.client.Get(tc.url("http", "shop.test", "/"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	tagged := "<html><head><script src=\"/_dock/a/s.js\" defer data-dock-auto></script><title>shop</title></head></html>"
+	switch {
+	case docks && (string(b) != tagged || !resp.Uncompressed):
+		t.Errorf("shop.test / = %q (gzipped %v), want %q gzipped", b, resp.Uncompressed, tagged)
+	case !docks && string(b) != "<html><head><title>shop</title></head></html>":
+		t.Errorf("on a stock Caddy, shop.test / = %q, want the page as it was", b)
+	}
+	if _, _, body := tc.get(t, tc.url("http", "admin.test", "/")); strings.Contains(body, "script") {
+		t.Errorf("admin.test / = %q, without the script", body)
+	}
+}
+
 // An asleep environment's route holds each request at the wake check
 // (Route.Wake) and passes it on, body and all and without the check's
 // headers, once the check answers 2xx; another answer (the waking page)

@@ -1,9 +1,12 @@
 package update
 
 import (
+	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -313,9 +316,11 @@ func TestInstallShTakesOnlyAnAddress(t *testing.T) {
 	}
 }
 
-// install.sh and CI install the same Caddy tarball by the same checksum:
-// a version or a checksum changed in one and not the other fails here.
-func TestInstallShCaddyMatchesCI(t *testing.T) {
+// install.sh's Caddy (the stock build, for a dock binary given without
+// its release) is the version Dock's Caddy builds on (cmd/dock-caddy,
+// ADR 0105): install.sh keeps a Caddy of its version, so a stock one of
+// another version would replace Dock's. Both arches have a checksum.
+func TestInstallShCaddyMatchesDockCaddy(t *testing.T) {
 	read := func(path string) string {
 		b, err := os.ReadFile(path)
 		if err != nil {
@@ -323,19 +328,18 @@ func TestInstallShCaddyMatchesCI(t *testing.T) {
 		}
 		return string(b)
 	}
-	ci := regexp.MustCompile(`caddyserver/caddy v([0-9.]+) caddy_[0-9.]+_linux_amd64\.tar\.gz ([0-9a-f]{64})`).FindStringSubmatch(read("../../.github/workflows/ci.yml"))
-	if ci == nil {
-		t.Fatal("ci.yml no longer installs Caddy by a checksum")
+	mod := regexp.MustCompile(`github\.com/caddyserver/caddy/v2 v([0-9.]+)\n`).FindStringSubmatch(read("../../cmd/dock-caddy/go.mod"))
+	if mod == nil {
+		t.Fatal("cmd/dock-caddy/go.mod requires no Caddy")
 	}
 	script := read("../../deploy/install.sh")
-	if !strings.Contains(script, `CADDY_VERSION="${CADDY_VERSION:-`+ci[1]+`}"`) {
-		t.Errorf("install.sh's default Caddy isn't CI's %s", ci[1])
+	if !strings.Contains(script, `CADDY_VERSION="${CADDY_VERSION:-`+mod[1]+`}"`) {
+		t.Errorf("install.sh's default Caddy isn't Dock Caddy's %s", mod[1])
 	}
-	if !strings.Contains(script, ci[1]+"/amd64) caddy_sha256="+ci[2]+" ;;") {
-		t.Errorf("install.sh has no checksum %s for Caddy %s on amd64, as CI has", ci[2], ci[1])
-	}
-	if !regexp.MustCompile(regexp.QuoteMeta(ci[1]) + `/arm64\) caddy_sha256=[0-9a-f]{64} ;;`).MatchString(script) {
-		t.Errorf("install.sh has no checksum for Caddy %s on arm64", ci[1])
+	for _, arch := range []string{"amd64", "arm64"} {
+		if !regexp.MustCompile(regexp.QuoteMeta(mod[1]+"/"+arch) + `\) caddy_sha256=[0-9a-f]{64} ;;`).MatchString(script) {
+			t.Errorf("install.sh has no checksum for Caddy %s on %s", mod[1], arch)
+		}
 	}
 }
 
@@ -399,5 +403,56 @@ func TestInstallShUnsetsNodeAddrs(t *testing.T) {
 		if want := "listen = \"127.0.0.1:7070\"\n\n[node]\nlisten = \":7443\"\n\n[registry]\nenabled = true\n"; string(got) != want {
 			t.Errorf("%q: the config is now\n%s", addrs, got)
 		}
+	}
+}
+
+// A dock binary that came without Dock's Caddy gets its release's, checked
+// against the signed sums; a release from before it has none to get, and
+// one that doesn't match its sums is left out with a warning.
+func TestInstallShFetchesDockCaddy(t *testing.T) {
+	needOpenSSL3(t)
+	pub, key, _ := ed25519.GenerateKey(nil)
+	const v = "v0.80.0"
+	for _, c := range []struct {
+		name         string
+		caddy, sums  string // the release's Caddy, and what its SHA256SUMS says it is
+		want, warned bool
+	}{
+		{name: "in the release", caddy: "dock's caddy", sums: "dock's caddy", want: true},
+		{name: "a release from before it"},
+		{name: "not what the sums say", caddy: "dock's caddy", sums: "another", warned: true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			o := newOffline(t)
+			files := map[string]string{InstallAsset(v): "tarball"}
+			if c.caddy != "" {
+				files[CaddyAsset("amd64")] = c.sums
+			}
+			var sums strings.Builder
+			for name, body := range files {
+				h := sha256.Sum256([]byte(body))
+				fmt.Fprintf(&sums, "%s  %s\n", hex.EncodeToString(h[:]), name)
+			}
+			files[SumsAsset] = sums.String()
+			files[SigAsset] = Sign(key, []byte(sums.String()))
+			if c.caddy != "" {
+				files[CaddyAsset("amd64")] = c.caddy
+			}
+			for name, body := range files {
+				o.write(t, "release/"+name, body, 0o644)
+			}
+			vars := []string{"ARCH=amd64", "DOCK_RELEASE_DIR=" + filepath.Join(o.dir, "release"), "DOCK_TRUSTED_KEYS=" + base64.StdEncoding.EncodeToString(pub)}
+			out, err := o.installSh(t, vars, "eval", `fetch_caddy `+v+`; echo "got [$(cat "${DOCK_CADDY:-/dev/null}")]"`)
+			if err != nil {
+				t.Fatalf("%v: %s", err, out)
+			}
+			want := "got []"
+			if c.want {
+				want = "got [" + c.caddy + "]"
+			}
+			if !strings.Contains(out, want) || strings.Contains(out, "warning: could not download Dock's Caddy") != c.warned {
+				t.Errorf("want %q (warned %t) in:\n%s", want, c.warned, out)
+			}
+		})
 	}
 }

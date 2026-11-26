@@ -15,6 +15,7 @@ import (
 	"unicode"
 
 	"github.com/NordTempo/tempoDock/internal/access"
+	"github.com/NordTempo/tempoDock/internal/analytics/ingest"
 	"github.com/NordTempo/tempoDock/internal/node"
 )
 
@@ -176,6 +177,9 @@ type handler struct {
 	// Routes are a subroute handler's: each one whose matchers fit adds
 	// its handlers to the chain (passwordAccess).
 	Routes []route `json:"routes,omitempty"`
+	// Hosts and Src configure dock_inject (scriptInject).
+	Hosts []string `json:"hosts,omitempty"`
+	Src   string   `json:"src,omitempty"`
 }
 
 // loadBalancing is reverse_proxy's retry settings: Caddy tries the
@@ -485,6 +489,11 @@ func Render(opts Options, routes []node.Route, certs []node.Certificate) ([]byte
 			// make no trace.
 			handle = append(handle, edgeTrace()...)
 		}
+		if inject := scriptInject(opts, r); inject != nil {
+			// Last before the upstream: refused, held and stopped
+			// requests never reach it.
+			handle = append(handle, *inject)
+		}
 		if r.QuietProbes && r.RedirectTo == "" {
 			// Ahead of the route and not terminal: Dock's uptime probes go
 			// on to it, without an access log line.
@@ -737,6 +746,26 @@ func analyticsRoute(a node.AnalyticsHosts, addr string) route {
 		},
 		Terminal: true,
 	}
+}
+
+// scriptInject is the dock_inject handler (cmd/dock-caddy, ADR 0105) that
+// adds the analytics script to the HTML pages of r's hostnames whose
+// groups have Script set, or nil for none, for a route that redirects or
+// is stopped, and on a Caddy without the handler (Options.noInject).
+func scriptInject(opts Options, r node.Route) *handler {
+	if opts.noInject || opts.AnalyticsAddr == "" || r.RedirectTo != "" || r.Stopped != "" {
+		return nil
+	}
+	var hosts []string
+	for _, a := range r.Analytics {
+		if a.Script {
+			hosts = append(hosts, a.Hostnames...)
+		}
+	}
+	if len(hosts) == 0 {
+		return nil
+	}
+	return &handler{Handler: "dock_inject", Hosts: hosts, Src: ingest.ScriptPath}
 }
 
 // privateRanges are where apps' containers reach the server from: their

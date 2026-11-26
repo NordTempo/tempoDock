@@ -102,8 +102,9 @@ const (
 	// versions of the platform's own images, older rollbacks and the
 	// vulnerability database's leftovers (ADR 0035 amendment 2,
 	// PruneProtocol). 35 adds stop-analytics-store: analytics turned off
-	// with its data kept (ADR 0101, StopStoreProtocol).
-	Protocol = 35
+	// with its data kept (ADR 0101, StopStoreProtocol). 36 takes Dock's
+	// Caddy with an update (ADR 0105, CaddyUpdateProtocol).
+	Protocol = 36
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1

@@ -25,6 +25,7 @@ func fakeRelease(t *testing.T, dir, v string, archs ...string) map[string][]byte
 	for _, a := range archs {
 		files[BinaryAsset(a)] = []byte("binary " + v + " " + a)
 		files[AnalyticsAsset(a)] = []byte("analytics " + v + " " + a)
+		files[CaddyAsset(a)] = []byte("caddy " + a)
 	}
 	var sums strings.Builder
 	for name, b := range files {
@@ -80,8 +81,11 @@ func TestStageVerifiesAndReuses(t *testing.T) {
 	if _, err := Stage(ctx, cs, data, "v1.2.0", "amd64", "arm64"); err != nil {
 		t.Fatal(err)
 	}
-	if cs.opened[BinaryAsset("amd64")] != 1 || cs.opened[InstallAsset("v1.2.0")] != 1 || cs.opened[BinaryAsset("arm64")] != 1 {
+	if cs.opened[BinaryAsset("amd64")] != 1 || cs.opened[InstallAsset("v1.2.0")] != 1 || cs.opened[BinaryAsset("arm64")] != 1 || cs.opened[CaddyAsset("arm64")] != 1 {
 		t.Errorf("opened %v; want each asset once", cs.opened)
+	}
+	if got, _ := os.ReadFile(filepath.Join(ReleaseDir(data, "v1.2.0"), CaddyAsset("arm64"))); !bytes.Equal(got, files[CaddyAsset("arm64")]) {
+		t.Errorf("staged Caddy %q", got)
 	}
 }
 
@@ -242,6 +246,23 @@ func TestReceiveChecksEachFile(t *testing.T) {
 	}
 	if err := Receive(data, "v1.2.0", "amd64", files, bytes.NewReader(all.Bytes())); err == nil {
 		t.Error("files for another arch were accepted")
+	}
+
+	// Dock's Caddy may come last.
+	h := sha256.Sum256([]byte("bin"))
+	files[3].SHA256 = hex.EncodeToString(h[:])
+	h = sha256.Sum256([]byte("caddy"))
+	files = append(files, File{Name: CaddyAsset("arm64"), Size: 5, SHA256: hex.EncodeToString(h[:])})
+	all.WriteString("caddy")
+	if err := Receive(data, "v1.2.0", "arm64", files, bytes.NewReader(all.Bytes())); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(ReleaseDir(data, "v1.2.0"), CaddyAsset("arm64"))); string(b) != "caddy" {
+		t.Errorf("received Caddy %q", b)
+	}
+	files[4].Name = CaddyAsset("amd64")
+	if err := Receive(data, "v1.2.0", "arm64", files, bytes.NewReader(all.Bytes())); err == nil {
+		t.Error("another arch's Caddy was accepted")
 	}
 }
 

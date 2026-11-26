@@ -60,6 +60,12 @@ const SumsAsset = "SHA256SUMS"
 // BinaryAsset is the server binary for linux/arch.
 func BinaryAsset(arch string) string { return "dock-linux-" + arch }
 
+// CaddyAsset is Dock's Caddy for linux/arch (cmd/dock-caddy, ADR 0105),
+// which install.sh installs as /usr/local/bin/caddy. Releases from before
+// it have none, so an update stages and sends it only when the release's
+// SHA256SUMS lists it.
+func CaddyAsset(arch string) string { return "dock-caddy-linux-" + arch }
+
 // CLIAsset is the CLI-only build (dock-cli) for goos/goarch, as
 // install-cli.sh picks it; "" for a platform releases have no build for.
 func CLIAsset(goos, goarch string) string {

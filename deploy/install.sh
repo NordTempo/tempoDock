@@ -73,12 +73,18 @@
 #                 (with sudo, pass them through: sudo --preserve-env=DOCK_RESTORE_PASSWORD,...)
 #   GITHUB_TOKEN  for that download from a private repository: a token that can read its releases
 #   DOCK_RELEASE_DIR  take the release from this directory instead of GitHub: its
-#                 dock-install-<version>.tar.gz, dock-linux-<arch>, SHA256SUMS and
-#                 SHA256SUMS.sig, as `make release-local` or e2e/nightly.sh build them
+#                 dock-install-<version>.tar.gz, dock-linux-<arch>, dock-caddy-linux-<arch>,
+#                 SHA256SUMS and SHA256SUMS.sig, as `make release-local` or
+#                 e2e/nightly.sh build them
 #   DOCK_TRUSTED_KEYS  more release keys to trust (base64 Ed25519, space separated),
 #                 as [updates] trusted_keys: for builds signed with your own key
-#   CADDY_VERSION, CADDY_SHA256  another Caddy release and the SHA-256 of
-#                     its caddy_<version>_linux_<arch>.tar.gz
+#   DOCK_CADDY    path to Dock's Caddy (a release's dock-caddy-linux-<arch>, or make
+#                 caddy-binary): Caddy with Dock's handlers, which add the analytics
+#                 script to pages (ADR 0105). Default: the release's, downloaded with
+#                 its binary; a dock binary given without its release keeps the Caddy
+#                 there is, or gets Caddy's own build (CADDY_VERSION)
+#   CADDY_VERSION, CADDY_SHA256  without Dock's Caddy: another Caddy release and the
+#                     SHA-256 of its caddy_<version>_linux_<arch>.tar.gz
 #   PUBLIC_IP         address users point DNS at (default: auto-detect; empty on tunnel servers)
 #   BASE_DOMAIN       base for generated hostnames, needs wildcard DNS (optional; asked
 #                     on a fresh install with a terminal)
@@ -183,13 +189,15 @@ warn() { printf 'warning: %s\n' "$*" >&2; }
 # Temporary files, removed on exit.
 staged=""
 download_dir=""
+# Where fetch_caddy downloads Dock's Caddy.
+caddy_dir=""
 bootstrap_err=""
 # The archive --restore-from-bucket fetched, until the install is through:
 # it holds every secret, so a failed run doesn't leave it lying around.
 fetched=""
 # What the install downloads before it changes anything (Caddy, cloudflared).
 prefetched=""
-cleanup() { rm -rf ${fetched:+"$fetched"} ${prefetched:+"$prefetched"} ${staged:+"$staged"} ${download_dir:+"$download_dir"} ${old_config:+"$old_config"} ${merged:+"$merged"} ${bootstrap_err:+"$bootstrap_err"}; }
+cleanup() { rm -rf ${fetched:+"$fetched"} ${prefetched:+"$prefetched"} ${staged:+"$staged"} ${download_dir:+"$download_dir"} ${caddy_dir:+"$caddy_dir"} ${old_config:+"$old_config"} ${merged:+"$merged"} ${bootstrap_err:+"$bootstrap_err"}; }
 trap cleanup EXIT
 
 # github CURL-ARGS... runs curl against GitHub, https only (redirects
@@ -328,6 +336,38 @@ download_assets() {
     (cd "$dir" && awk -v n="$name" '$2 == n' SHA256SUMS | sha256sum --check --quiet --strict) \
       || die "$name does not match the release's SHA256SUMS"
   done
+}
+
+# release_has DIR NAME reports whether the release in DIR/release.json
+# (release_info), or in DOCK_RELEASE_DIR, has an asset NAME.
+release_has() {
+  if [[ -n "${DOCK_RELEASE_DIR:-}" ]]; then
+    [[ -f "$DOCK_RELEASE_DIR/$2" ]]
+  else
+    grep -q "\"name\": *\"$2\"" "$1/release.json"
+  fi
+}
+
+# fetch_caddy VERSION downloads release VERSION's Dock Caddy (ADR 0105)
+# and sets DOCK_CADDY to it, for a dock binary that came without it: the
+# one-line install's bootstrap, an updater from before Dock's Caddy, or a
+# release tarball run by hand. A release from before it has none. A
+# failed download only warns: the server keeps the Caddy it has, and
+# pages load the analytics script themselves until the next update.
+fetch_caddy() {
+  local rc=0
+  caddy_dir="$(mktemp -d)"
+  # errexit is off on the left of ||: each step must pass for the next.
+  (
+    release_info "$1" "$caddy_dir" > /dev/null \
+      && { release_has "$caddy_dir" "dock-caddy-linux-$ARCH" || exit 3; } \
+      && download_assets "$caddy_dir" "$1" "dock-caddy-linux-$ARCH"
+  ) || rc=$?
+  case "$rc" in
+    0) DOCK_CADDY="$caddy_dir/dock-caddy-linux-$ARCH" ;;
+    3) ;;
+    *) warn "could not download Dock's Caddy for $1 (above); keeping the Caddy this server has" ;;
+  esac
 }
 
 # toml_get_raw FILE SECTION KEY prints KEY's value in [SECTION] ("" is the
@@ -902,9 +942,16 @@ main() {
     download_dir="$(mktemp -d)"
     dock_version="$(release_info "${DOCK_VERSION:-$(cat "$SRC_DIR/VERSION" 2>/dev/null || echo latest)}" "$download_dir")"
     say "==> download dock $dock_version"
-    download_assets "$download_dir" "$dock_version" "dock-linux-$ARCH"
+    assets=("dock-linux-$ARCH")
+    if [[ -z "${DOCK_CADDY:-}" ]] && release_has "$download_dir" "dock-caddy-linux-$ARCH"; then
+      assets+=("dock-caddy-linux-$ARCH")
+      DOCK_CADDY="$download_dir/dock-caddy-linux-$ARCH"
+    fi
+    download_assets "$download_dir" "$dock_version" "${assets[@]}"
     DOCK_BINARY="$download_dir/dock-linux-$ARCH"
     chmod 0755 "$DOCK_BINARY"
+  elif [[ -z "${DOCK_CADDY:-}" && -f "$SRC_DIR/VERSION" ]]; then
+    fetch_caddy "$(cat "$SRC_DIR/VERSION")"
   fi
   [[ -x "$DOCK_BINARY" ]] || die "$DOCK_BINARY is not an executable file"
 
@@ -941,7 +988,14 @@ main() {
   # says so.
   prefetched="$(mktemp -d)"
   caddy_new=""
-  if ! /usr/local/bin/caddy version 2>/dev/null | grep -q "v$CADDY_VERSION"; then
+  caddy_forget=false
+  caddy_name="caddy $CADDY_VERSION"
+  if [[ -n "${DOCK_CADDY:-}" ]]; then
+    # Dock's Caddy (ADR 0105), checked with its release or by the updater.
+    [[ -f "$DOCK_CADDY" ]] || die "$DOCK_CADDY is not a file"
+    caddy_name="Dock's caddy"
+    cmp -s "$DOCK_CADDY" /usr/local/bin/caddy || caddy_new="$DOCK_CADDY"
+  elif ! /usr/local/bin/caddy version 2>/dev/null | grep -q "v$CADDY_VERSION"; then
     say "==> download caddy $CADDY_VERSION"
     base="https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}"
     tarball="caddy_${CADDY_VERSION}_linux_${ARCH}.tar.gz"
@@ -962,6 +1016,12 @@ main() {
       || die "$tarball does not match its checksum"
     tar -xzf "$prefetched/$tarball" -C "$prefetched" caddy
     caddy_new="$prefetched/caddy"
+    # Replacing Dock's Caddy (ADR 0105): Caddy's own can't resume a config
+    # with Dock's handlers, and wouldn't start. It starts from caddy.json
+    # instead, and the daemon loads the routes again.
+    if /usr/local/bin/caddy list-modules 2>/dev/null | grep -q '^http\.handlers\.dock_inject$'; then
+      caddy_forget=true
+    fi
   fi
   cloudflared_new=""
   if [[ "$tunnel_unit" == true ]] \
@@ -1015,10 +1075,13 @@ main() {
     fetched=$restore
   fi
 
-  say "==> caddy $CADDY_VERSION"
+  say "==> $caddy_name"
+  caddy_changed=false
   if [[ -n "$caddy_new" ]]; then
     install -m 0755 "$caddy_new" /usr/local/bin/caddy.new
     mv /usr/local/bin/caddy.new /usr/local/bin/caddy
+    caddy_changed=true
+    [[ "$caddy_forget" == false ]] || rm -f /var/lib/dock-caddy/caddy/autosave.json
   fi
 
   tunnel_changed=false
@@ -1302,11 +1365,12 @@ CONF
     || die "the app firewall failed to apply; see: journalctl -u dock-firewall"
 
   systemctl enable dock-caddy.service
-  if [[ "$caddy_unit_changed" == true ]] && systemctl is-active -q dock-caddy.service; then
-    # Picks up unit changes such as the dock-caddy user. Routes come back
-    # from --resume; traffic blips for a moment. Listener changes (tunnel
-    # mode's 127.0.0.1) need no restart: the daemon loads them on start.
-    say "    restarting caddy (unit changed)"
+  if [[ "$caddy_unit_changed" == true || "$caddy_changed" == true ]] && systemctl is-active -q dock-caddy.service; then
+    # Picks up a new binary, and unit changes such as the dock-caddy
+    # user. Routes come back from --resume; traffic blips for a moment.
+    # Listener changes (tunnel mode's 127.0.0.1) need no restart: the
+    # daemon loads them on start, after this.
+    say "    restarting caddy (binary or unit changed)"
     systemctl restart dock-caddy.service
   else
     systemctl start dock-caddy.service

@@ -39,8 +39,9 @@ func TestUpdateNode(t *testing.T) {
 
 	staged := t.TempDir()
 	sums := update.Sums{}
-	// The signature goes along; the node's updater checks it.
-	for _, name := range append(update.Assets("v9.9.9", runtime.GOARCH), update.SigAsset) {
+	// The signature and Dock's Caddy go along; the node's updater checks
+	// them.
+	for _, name := range append(update.Assets("v9.9.9", runtime.GOARCH), update.SigAsset, update.CaddyAsset(runtime.GOARCH)) {
 		b := []byte(strings.Repeat(name, 1000))
 		if err := os.WriteFile(filepath.Join(staged, name), b, 0o600); err != nil {
 			t.Fatal(err)
@@ -95,8 +96,10 @@ func TestUpdateNode(t *testing.T) {
 	if err != nil || got != sums[update.BinaryAsset(runtime.GOARCH)] {
 		t.Errorf("received binary %s, %v", got, err)
 	}
-	if !update.Exists(update.ReleaseDir(h.dataDir, "v9.9.9"), update.SigAsset) {
-		t.Errorf("the node didn't get %s", update.SigAsset)
+	for _, name := range []string{update.SigAsset, update.CaddyAsset(runtime.GOARCH)} {
+		if !update.Exists(update.ReleaseDir(h.dataDir, "v9.9.9"), name) {
+			t.Errorf("the node didn't get %s", name)
+		}
 	}
 	var c update.Connected
 	waitFor(t, "the connected file", func() bool {

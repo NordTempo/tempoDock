@@ -143,6 +143,10 @@ type Options struct {
 	accessCheck accessCheck
 	wakeCheck   accessCheck
 
+	// noInject leaves dock_inject out: Caddy refused a config with it, so
+	// it isn't Dock's build (Proxy.ApplyRoutes).
+	noInject bool
+
 	// internalCA makes Caddy issue certificates from its own local CA
 	// instead of ACME. Tests only, so they never contact a real CA.
 	internalCA bool
@@ -263,6 +267,12 @@ type Proxy struct {
 	// shows for them (OpenRequests).
 	dials atomic.Pointer[map[string]string]
 
+	// noInject is set once Caddy refuses dock_inject: it is a stock
+	// build, not Dock's (cmd/dock-caddy), so pages load the analytics
+	// script themselves until the daemon starts again (after an update
+	// that installs Dock's build).
+	noInject atomic.Bool
+
 	// Overridable in tests.
 	lookupIP   func(ctx context.Context, host string) ([]net.IPAddr, error)
 	rootCAs    *x509.CertPool // nil means the system roots
@@ -311,7 +321,9 @@ func (p *Proxy) ApplyRoutes(ctx context.Context, routes []node.Route, certs []no
 	if p.opts.plainHTTP() {
 		certs = nil
 	}
-	cfg, err := Render(p.opts, routes, certs)
+	opts := p.opts
+	opts.noInject = p.noInject.Load()
+	cfg, err := Render(opts, routes, certs)
 	if err != nil {
 		return err
 	}
@@ -328,7 +340,17 @@ func (p *Proxy) ApplyRoutes(ctx context.Context, routes []node.Route, certs []no
 	if err := p.files.before(files); err != nil {
 		return err
 	}
-	if err := p.load(ctx, cfg); err != nil {
+	err = p.load(ctx, cfg)
+	if err != nil && !opts.noInject && strings.Contains(err.Error(), injectModule) {
+		// A stock Caddy: load the routes without the handler.
+		p.noInject.Store(true)
+		opts.noInject = true
+		if cfg, err = Render(opts, routes, certs); err != nil {
+			return err
+		}
+		err = p.load(ctx, cfg)
+	}
+	if err != nil {
 		return err
 	}
 	// The config runs either way: a file that couldn't change keeps its
@@ -364,6 +386,10 @@ func (p *Proxy) TraceToken(host string) string {
 	}
 	return ""
 }
+
+// injectModule is dock_inject's module ID, which a stock Caddy names in
+// its error for a config that uses it.
+const injectModule = "http.handlers.dock_inject"
 
 // load POSTs cfg to Caddy's /load endpoint, which validates it and swaps
 // it in atomically.

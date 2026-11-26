@@ -694,6 +694,7 @@ type wireRoute struct {
 type wireAnalyticsHosts struct {
 	Hostnames []string `json:"hostnames"`
 	Tag       string   `json:"tag"`
+	Script    bool     `json:"script,omitempty"`
 }
 
 // wireAccess is node.Access; the key travels as base64.

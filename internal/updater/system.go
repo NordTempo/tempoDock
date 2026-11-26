@@ -71,12 +71,15 @@ func (h Host) BinaryVersion(ctx context.Context, bin string) (string, error) {
 
 // Install runs install.sh as an upgrade: DOCK_BINARY and nothing else,
 // so it keeps config.toml and the server's role as they are.
-func (h Host) Install(ctx context.Context, script, bin string, log io.Writer) error {
+func (h Host) Install(ctx context.Context, script, bin, caddy string, log io.Writer) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "/bin/bash", script)
 	cmd.Dir = filepath.Dir(script)
 	cmd.Env = []string{"PATH=" + systemPath, "HOME=/root", "LANG=C.UTF-8", "DOCK_BINARY=" + bin}
+	if caddy != "" {
+		cmd.Env = append(cmd.Env, "DOCK_CADDY="+caddy)
+	}
 	cmd.Stdout, cmd.Stderr = log, log
 	return cmd.Run()
 }

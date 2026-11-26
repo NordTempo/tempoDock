@@ -24,6 +24,11 @@ const UpdateProtocol = 4
 // don't check signatures anyway.
 const SignedUpdateProtocol = 30
 
+// CaddyUpdateProtocol is the first that takes the release's Dock Caddy
+// (update.CaddyAsset, ADR 0105) with its update; older nodes refuse it,
+// and their install.sh fetches it from the release itself.
+const CaddyUpdateProtocol = 36
+
 // updateTimeout bounds sending a release to a node: three or four files, ~40 MB.
 const updateTimeout = 10 * time.Minute
 
@@ -62,6 +67,9 @@ func (h *Hub) UpdateNode(ctx context.Context, serverID int64, u NodeUpdate) (Hel
 	names := update.Assets(u.Version, s.hello.Arch)
 	if s.hello.Protocol >= SignedUpdateProtocol && update.Exists(u.Dir, update.SigAsset) {
 		names = slices.Insert(names, 1, update.SigAsset)
+	}
+	if _, ok := u.Sums[update.CaddyAsset(s.hello.Arch)]; ok && s.hello.Protocol >= CaddyUpdateProtocol {
+		names = append(names, update.CaddyAsset(s.hello.Arch))
 	}
 	readers := make([]io.Reader, 0, len(names))
 	for _, name := range names {

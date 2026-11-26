@@ -4,6 +4,8 @@
 #
 #   dock-linux-{amd64,arm64}            server binary with the UI, dock-probe and dock-sync embedded
 #   dock-cli-{darwin,linux}-{arm64,amd64}  CLI only (-tags dockcli)
+#   dock-caddy-linux-{amd64,arm64}      Caddy with Dock's handlers (cmd/dock-caddy, ADR 0105),
+#                                       which install.sh installs as /usr/local/bin/caddy
 #   dock-install-VERSION.tar.gz         deploy/ (install.sh, systemd units, VERSION)
 #   install.sh                          deploy/install.sh on its own, for `curl | sudo bash`:
 #                                       it fetches and checks the rest of its release
@@ -57,6 +59,12 @@ for arch in amd64 arm64; do
   build "dock-linux-$arch" linux "$arch"
 done
 rm -f "$probe.gz" "$sync.gz"
+# Dock's Caddy is its own module; the tags are Caddy's release build's.
+for arch in amd64 arm64; do
+  echo "dist/dock-caddy-linux-$arch"
+  (cd cmd/dock-caddy && GOOS=linux GOARCH="$arch" go build -trimpath -buildvcs=false -tags nobadger,nomysql,nopgx \
+    -ldflags "-s -w -buildid=" -o "../../dist/dock-caddy-linux-$arch" .)
+done
 for platform in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64; do
   build "dock-cli-${platform%/*}-${platform#*/}" "${platform%/*}" "${platform#*/}" dockcli
 done
