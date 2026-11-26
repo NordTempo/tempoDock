@@ -308,22 +308,29 @@ func (c *Core) scanPreempted(ctx context.Context) bool {
 	return ctx.Err() != nil && c.ctx.Err() == nil
 }
 
-// scanBuilders are the servers that may scan now: online builders whose
-// disk isn't past the prune threshold. Each comes back with its builds
-// flags (buildsKind) saying which images it may scan: production ones
-// only on builders that build production. The control plane scans a kind
-// only while no other server builds it, online or not: a scan can wait,
-// and every scanner keeps a database of gigabytes. prod and nonProd say
-// whether any of them may scan that kind.
+// scanBuilders are the servers that may scan now (scanners), read once.
 func (c *Core) scanBuilders(ctx context.Context) (out []store.Server, prod, nonProd bool) {
 	servers, err := c.store.ListServers(ctx)
 	if err != nil {
 		c.log.Error("list servers for scans", "err", err)
 		return nil, false, false
 	}
+	return c.scanners(servers)
+}
+
+// scanners are the servers among servers that may scan now: online
+// builders whose disk isn't past the prune threshold. Each comes back with
+// its builds flags (buildsKind) saying which images it may scan:
+// production ones only on builders that build production. With the
+// registry, the control plane scans a kind only while no other server
+// builds it, online or not: a scan can wait, and every scanner keeps a
+// database of gigabytes. Without it images stay where they were built, so
+// the control plane scans its own. prod and nonProd say whether any of
+// them may scan that kind.
+func (c *Core) scanners(servers []store.Server) (out []store.Server, prod, nonProd bool) {
 	var remoteProd, remoteNonProd bool
 	for _, s := range servers {
-		if !s.Local && c.canBuild(s) {
+		if !s.Local && c.canBuild(s) && c.reg != nil {
 			remoteProd = remoteProd || s.BuildsProduction
 			remoteNonProd = remoteNonProd || s.BuildsNonProduction
 		}

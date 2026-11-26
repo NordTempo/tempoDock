@@ -183,6 +183,7 @@ func (c *Core) scanWaitReason(ctx context.Context) func(production bool) string 
 			any, prod, nonProd = true, prod || s.BuildsProduction, nonProd || s.BuildsNonProduction
 		}
 	}
+	_, onlineProd, onlineNonProd := c.scanners(servers)
 	return func(production bool) string {
 		switch {
 		case !any:
@@ -191,6 +192,8 @@ func (c *Core) scanWaitReason(ctx context.Context) func(production bool) string 
 			return "Production images are scanned only on builders that build production, and none does; let one with `dock server update NAME --builds all`"
 		case !production && !nonProd:
 			return "Non-production images are scanned only on builders that build non-production, and none does; let one with `dock server update NAME --builds all`"
+		case production && !onlineProd, !production && !onlineNonProd:
+			return "Waiting for a builder that scans these images to come back online, or for its disk to have room"
 		}
 		return "Waiting for a quiet minute: builds and deploys come first"
 	}
@@ -491,10 +494,13 @@ func (c *Core) ScanningStatus(ctx context.Context, a Actor) (apitypes.ScanningSt
 		}
 		out.Builders = append(out.Builders, b)
 	}
+	scanning, _, _ := c.scanners(servers)
 	switch {
 	case !out.Enabled:
 	case len(out.Builders) == 0:
 		out.Waiting = "No server builds images, and only builders scan"
+	case out.Images[apitypes.ScanQueued] > 0 && len(scanning) == 0:
+		out.Waiting = "Waiting for a builder to come back online, or for its disk to have room"
 	case out.Images[apitypes.ScanQueued] > 0 && busy:
 		out.Waiting = "Waiting for a quiet minute: builds and deploys come first"
 	}

@@ -1020,3 +1020,19 @@ func TestControlPlaneScansLast(t *testing.T) {
 		t.Fatalf("scanners %v with homelab offline, want none", got)
 	}
 }
+
+// Without the registry images stay where they were built: the control
+// plane keeps scanning its own though homelab builds every kind too.
+func TestControlPlaneScansItsOwnWithoutRegistry(t *testing.T) {
+	p, _ := labPool(t)
+	p.opts.Config.BuildKit.Enabled = true
+	p.restart()
+	on := true
+	if _, err := p.c.UpdateServer(p.ctx, testSystem, "homelab", apitypes.UpdateServerRequest{Builder: &on, BuildsProduction: &on}); err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ := p.c.scanBuilders(p.ctx)
+	if !slices.ContainsFunc(got, func(s store.Server) bool { return s.Local && s.BuildsProduction && s.BuildsNonProduction }) {
+		t.Fatalf("scanners %+v: want the control plane for both kinds", got)
+	}
+}

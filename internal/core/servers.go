@@ -302,6 +302,9 @@ func (c *Core) UpdateServer(ctx context.Context, a Actor, name string, req apity
 		if settings.Builder && !srv.Builder {
 			c.warmBuilder(ctx, srv.ID)
 		}
+		if settings.Builder != srv.Builder || settings.BuildsProduction != srv.BuildsProduction || settings.BuildsNonProduction != srv.BuildsNonProduction {
+			c.kickScans() // queued scans may have a scanner now, or another one
+		}
 		if srv.Local && settings.BaseDomain != srv.BaseDomain {
 			c.publicSitesChanged(ctx) // stats-<site>.<base domain> moved
 			c.statusPagesChanged(ctx) // and status pages' addresses

@@ -223,11 +223,15 @@ export function useServerSwitches(server: Server) {
                 const others = servers.filter(
                   (s) => s.name !== name && s.builder,
                 );
+                const noProduction =
+                  losesProduction &&
+                  prodOthers.length === 0 &&
+                  others.length > 0;
                 return setAsk({
                   patch: { builder: false },
                   action: "Stop building",
                   cli: `dock server update ${name} --no-builder`,
-                  last: others.length === 0,
+                  last: others.length === 0 || noProduction,
                   text: (
                     <>
                       Stop building images on{" "}
@@ -238,6 +242,12 @@ export function useServerSwitches(server: Server) {
                           ? `New builds go to ${others.map((s) => s.name).join(", ")}.`
                           : "No other server builds images."}
                       </span>
+                      {noProduction && (
+                        <span className="mt-2 block text-warn-text">
+                          No other server builds production images: production
+                          deploys from source will fail until one does.
+                        </span>
+                      )}
                     </>
                   ),
                 });
