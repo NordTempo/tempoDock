@@ -39,15 +39,24 @@ WHERE archived_at IS NULL AND EXISTS (
 -- A live service that a site counted but that leads no live site now gets
 -- a site of its own, counting from now. It is named after its first such
 -- hostname (with the service's ID when the project has a live site of
--- that name) and takes that hostname's site's settings, but not its
+-- that name, and a random part too if even that is taken, so the
+-- upgrade never fails on a name) and takes that hostname's site's
+-- settings, but not its
 -- public domain, which is one site's. The public address comes when
 -- analytics starts (assignPublicSlugs).
 INSERT INTO sites (environment_id, name, settings, created_by, created_at, service_id)
 SELECT s.environment_id,
-       CASE WHEN EXISTS (
-           SELECT 1 FROM sites o JOIN environments oe ON oe.id = o.environment_id
-           WHERE oe.project_id = e.project_id AND o.name = c.hostname AND o.archived_at IS NULL
-       ) THEN c.hostname || '-' || s.id ELSE c.hostname END,
+       CASE
+           WHEN NOT EXISTS (
+               SELECT 1 FROM sites o JOIN environments oe ON oe.id = o.environment_id
+               WHERE oe.project_id = e.project_id AND o.name = c.hostname AND o.archived_at IS NULL
+           ) THEN c.hostname
+           WHEN NOT EXISTS (
+               SELECT 1 FROM sites o JOIN environments oe ON oe.id = o.environment_id
+               WHERE oe.project_id = e.project_id AND o.name = c.hostname || '-' || s.id AND o.archived_at IS NULL
+           ) THEN c.hostname || '-' || s.id
+           ELSE c.hostname || '-' || s.id || '-' || lower(hex(randomblob(4)))
+       END,
        json_remove(c.settings, '$.public_domain'), 'dock', CURRENT_TIMESTAMP, s.id
 FROM counted_before c
 JOIN services s ON s.id = c.service_id
