@@ -411,6 +411,7 @@ end) are not listed.
 | Docker disk usage retry | `internal/node/docker/disk.go` | 500 ms, at most 3 tries | a disk breakdown or prune met a container removed meanwhile | one `system df` |
 | Caddy admin retry | `internal/node/caddy/caddy.go` | 100, 200, 400, 800 ms | Caddy's admin socket can't be reached (Caddy restarting) | one request |
 | Registry migration upload retry | `internal/registry/migrate.go` | 1 s, then 2 s | one object of a migration to or from a bucket failed (ADR 0034) | one upload |
+| BuildKit idle stop | `internal/node/build/idle.go` | once, 5 min after BuildKit's last use (a build, the warm-up, a prune) | a builder used BuildKit since it last stopped; while one uses it, or once it stopped, there is no timer | one inspect and a `docker stop` of the BuildKit container: buildkitd keeps the memory builds grew it to (314 MB on prod with 13 projects, 15 MB fresh), and the next build starts it again in about 0.25 s |
 | BuildKit readiness | `internal/node/build/buildkitd.go` | 250 ms | BuildKit is starting for a build | one gRPC call |
 | Registry relay start | `internal/node/build/relay.go` | once, at most 10 s | a build that pushes starts its export (ADR 0089 amendment) | one timer, stopped once dock-probe relay listens in the BuildKit container |
 | Node event stream retry | `internal/node/remote/client.go` | 1 s | a node's event stream failed | one reconnect |

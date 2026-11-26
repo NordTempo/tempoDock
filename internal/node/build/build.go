@@ -1,9 +1,11 @@
 // Package build implements node.Builder with a capped BuildKit container.
 //
-// BuildKit runs as one long-lived container (ContainerName) with hard memory
-// and CPU limits and a low CPU weight, so a build can never starve the apps on
-// the same server. A build that needs more memory than the cap fails; apps are
-// unaffected. The container is created on demand before the first build.
+// BuildKit runs as one container (ContainerName) with hard memory and CPU
+// limits and a low CPU weight, so a build can never starve the apps on the
+// same server. A build that needs more memory than the cap fails; apps are
+// unaffected. The container is created on demand before the first build,
+// and stopped once nothing has used it for idleStop (idle.go): buildkitd
+// keeps the memory builds grew it to, and starts again in a quarter second.
 // Its name is fixed, so there is one dock runtime per Docker host: a
 // BuildKit container another runtime created (Builder.Owner) is refused,
 // never recreated.
@@ -139,6 +141,7 @@ type Builder struct {
 	workDir string
 	sem     chan struct{}
 	warmMu  sync.Mutex // one WarmBuilder at a time
+	idle    idler      // stops the container once nothing uses it
 	// name and cacheVolume are the BuildKit container and its cache volume:
 	// ContainerName and CacheVolume, except in tests.
 	name, cacheVolume string
@@ -150,10 +153,12 @@ var _ node.Builder = (*Builder)(nil)
 // loading. Build contexts are unpacked under workDir, which should be on
 // disk (not a tmpfs /tmp) since contexts can be large.
 func New(docker *client.Client, cfg config.BuildKit, workDir string) *Builder {
-	return &Builder{
+	b := &Builder{
 		docker: docker, cfg: cfg, workDir: workDir, sem: make(chan struct{}, 1),
 		name: ContainerName, cacheVolume: CacheVolume,
 	}
+	b.idle = idler{after: idleStop, stop: b.stopIdle}
+	return b
 }
 
 // Build implements node.Builder.
@@ -203,6 +208,7 @@ func (b *Builder) Build(ctx context.Context, req node.BuildRequest) (node.Built,
 			releaseMemory()
 		}
 	}()
+	defer b.idle.hold(false)()
 
 	opt, base, err := solveOpt(ctx, dir, src, req, logs)
 	if err != nil {

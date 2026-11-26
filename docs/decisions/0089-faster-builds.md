@@ -211,6 +211,9 @@ through BuildKit, which pulls and unpacks it as a build step would.
   on servers that never build. Core knows which servers build.
 - **The BuildKit container starts for the fetch** and keeps running,
   as after a first build: about 15 MB and no CPU while idle.
+  (Amended 2026-11-26: it stops 5 minutes after its last use, a build,
+  the fetch or a prune. After builds buildkitd held 314 MB on prod, and it
+  answers again about 0.25 s after a start.)
 - **Builds don't wait for it.** A build that starts meanwhile shares
   BuildKit's fetches.
 - The images count toward the build cache. Pruning

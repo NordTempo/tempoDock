@@ -611,6 +611,7 @@ func TestMemoryOwner(t *testing.T) {
 		"app":      {app, node.MemoryPart{Group: node.MemoryApps, Name: e.name("app"), Service: "3"}},
 		"buildkit": {map[string]string{node.LabelManaged: "true", node.LabelRole: node.RoleBuildKit}, node.MemoryPart{Group: node.MemoryPlatform, Name: "BuildKit"}},
 		"job":      {map[string]string{node.LabelManaged: "true", node.LabelRole: node.RoleJob}, node.MemoryPart{Group: node.MemoryPlatform, Name: "jobs"}},
+		"traces":   {map[string]string{node.LabelManaged: "true", node.LabelRole: node.RoleTraces}, node.MemoryPart{Group: node.MemoryPlatform, Name: "trace store"}},
 		"foreign":  {nil, node.MemoryPart{Group: node.MemorySystem, Name: "other containers"}},
 	} {
 		if got, err := e.MemoryOwner(ctx, create(name, tc.labels)); err != nil || got != tc.want {

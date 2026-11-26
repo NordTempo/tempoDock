@@ -25,9 +25,11 @@ table whose groups open to list their parts.
 - **Where parts come from.** The node walks the cgroup v2 tree one level
   below the root and `system.slice`. Known units are Dock's platform (dock,
   Caddy, cloudflared, Docker and containerd); containers are described once
-  through Docker (an app by its service label, BuildKit and the registry by
-  role or name, anything Dock didn't create as "other containers", without
-  its name) and remembered while they exist. Everything else is other
+  through Docker (an app by its service label; BuildKit, the registry,
+  the analytics and trace stores and cloudflared by role or name, other
+  containers Dock runs for a piece of work as "jobs"; anything Dock
+  didn't create as "other containers", without its name) and remembered
+  while they exist. Everything else is other
   system, its ten biggest units by name.
 - **Kernel.** Slab, page tables, kernel stacks and per-CPU memory from
   `/proc/meminfo`. What nothing explains is "reserves and other": mostly
