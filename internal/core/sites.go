@@ -2,8 +2,8 @@ package core
 
 import (
 	"context"
-	"errors"
 	"encoding/json/v2"
+	"errors"
 	"net/netip"
 	"slices"
 	"strconv"
