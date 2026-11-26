@@ -380,7 +380,11 @@ func newServerShowCmd(g *globals) *cobra.Command {
 			return g.io.Print(d, func() error {
 				sv := d.Server
 				_, _ = fmt.Fprintf(g.io.Out, "%s  %s  %s\naccepts %s\nmemory reserved %s\n", sv.Name, serverStatus(sv), dash(sv.Version), accepts(sv), reserved(sv))
-				_, _ = fmt.Fprintf(g.io.Out, "ingress %s%s\nbase domain %s\n", dash(ingressWords(sv.Ingress)), ingressTarget(sv), dash(sv.BaseDomain))
+				switched := ""
+				if sv.ThroughTunnel {
+					switched = ", installed direct (dock server update --no-tunnel goes back)"
+				}
+				_, _ = fmt.Fprintf(g.io.Out, "ingress %s%s%s\nbase domain %s\n", dash(ingressWords(sv.Ingress)), ingressTarget(sv), switched, dash(sv.BaseDomain))
 				if sv.Tunnel != nil {
 					_, _ = fmt.Fprintf(g.io.Out, "tunnel managed by Dock: %s\n", tunnelWords(sv.Tunnel))
 				}
@@ -414,17 +418,25 @@ func newServerShowCmd(g *globals) *cobra.Command {
 }
 
 func newServerUpdateCmd(g *globals) *cobra.Command {
-	var prod, noProd, nonProd, noNonProd, disable, enable, builder, noBuilder bool
+	var prod, noProd, nonProd, noNonProd, disable, enable, builder, noBuilder, tunnel, noTunnel bool
 	var baseDomain string
 	cmd := &cobra.Command{
 		Use:   "update <name>",
-		Short: "Change what a server accepts, whether it builds, and its base domain (admin)",
+		Short: "Change what a server accepts, whether it builds, its base domain and ingress (admin)",
 		Long: `Change which environment kinds a server accepts, whether it takes new
 placements, whether it builds images, and the base domain of the hostnames
 generated for services on it (` + "`--base-domain \"\"`" + ` turns them off). Environments
-already on the server stay where they are.`,
+already on the server stay where they are.
+
+--tunnel sends a server installed direct through the Cloudflare tunnel Dock
+runs for it (` + "`dock server tunnel create`" + `), with no new install: its generated
+hostnames get their own records to the tunnel, so servers can share one base
+domain and need no wildcard DNS, and new domains are told to point at the
+tunnel. Domains whose DNS Dock doesn't manage keep working on its public IP
+until they point there too. --no-tunnel goes back.`,
 		Example: `  dock server update homelab --non-production --no-production
   dock server update homelab --builder --base-domain example-apps.dev
+  dock server update homelab --tunnel
   dock server update vps-2 --disable-placement`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -442,11 +454,14 @@ already on the server stay where they are.`,
 			if req.Builder, err = switchFlag(builder, noBuilder, "builder"); err != nil {
 				return err
 			}
+			if req.Tunnel, err = switchFlag(tunnel, noTunnel, "tunnel"); err != nil {
+				return err
+			}
 			if cmd.Flags().Changed("base-domain") {
 				req.BaseDomain = &baseDomain
 			}
 			if req == (apitypes.UpdateServerRequest{}) {
-				return usageError("nothing to change", "Pass --production, --no-production, --non-production, --no-non-production, --disable-placement, --enable-placement, --builder, --no-builder or --base-domain.")
+				return usageError("nothing to change", "Pass --production, --no-production, --non-production, --no-non-production, --disable-placement, --enable-placement, --builder, --no-builder, --base-domain, --tunnel or --no-tunnel.")
 			}
 			s, err := g.connect()
 			if err != nil {
@@ -464,7 +479,7 @@ already on the server stay where they are.`,
 				if sv.BaseDomain != "" {
 					base = "base domain " + sv.BaseDomain
 				}
-				g.io.Successf("Server %s accepts %s; %s; %s", sv.Name, accepts(sv), builds, base)
+				g.io.Successf("Server %s accepts %s; %s; %s; %s ingress", sv.Name, accepts(sv), builds, base, ingressWords(sv.Ingress))
 				return nil
 			})
 		},
@@ -478,7 +493,9 @@ already on the server stay where they are.`,
 	f.BoolVar(&enable, "enable-placement", false, "take new placements again")
 	f.BoolVar(&builder, "builder", false, "build images here")
 	f.BoolVar(&noBuilder, "no-builder", false, "stop building images here")
-	f.StringVar(&baseDomain, "base-domain", "", "base of generated hostnames, <service>-<project>[-<env>]-<random>.<base>; needs wildcard DNS to this server")
+	f.StringVar(&baseDomain, "base-domain", "", "base of generated hostnames, <service>-<project>[-<env>]-<random>.<base>; needs wildcard DNS to this server, or a tunnel")
+	f.BoolVar(&tunnel, "tunnel", false, "send everything through the Cloudflare tunnel Dock runs for it")
+	f.BoolVar(&noTunnel, "no-tunnel", false, "serve on its public IP again (domains added from Cloudflare stay on the tunnel)")
 	return cmd
 }
 

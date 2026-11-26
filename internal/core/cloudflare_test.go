@@ -476,3 +476,76 @@ func TestCloudflareDirectServerTunnel(t *testing.T) {
 		t.Fatalf("tunnel-only routes = %v", tunnelOnly)
 	}
 }
+
+// TestServerThroughTunnel sends a direct server through the tunnel Dock
+// runs for it, with no new install: it then counts as a tunnel server, a
+// generated hostname it had and a new one get records to the tunnel and
+// are served to it only, and a domain whose DNS Dock doesn't manage stays
+// on its public IP too. It needs the tunnel first, and goes back.
+func TestServerThroughTunnel(t *testing.T) {
+	p, _ := cfPool(t, "tempo.run")
+	local, err := p.store.GetLocalServer(p.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp := local.Name
+	tunnel := true
+	if _, err := p.c.UpdateServer(p.ctx, testSystem, cp, apitypes.UpdateServerRequest{Tunnel: &tunnel}); CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), "dock server tunnel create "+cp) {
+		t.Fatalf("without a tunnel: %v", err)
+	}
+	base := "apps.tempo.run"
+	if _, err := p.c.UpdateServer(p.ctx, testSystem, cp, apitypes.UpdateServerRequest{BaseDomain: &base}); err != nil {
+		t.Fatal(err)
+	}
+	api := p.createService("production", "api", apitypes.CreateServiceRequest{})
+	p.deploy(api, "api:1")
+	before, err := p.c.GenerateDomain(p.ctx, testSystem, api)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.c.AddDomain(p.ctx, testSystem, api, apitypes.AddDomainRequest{Hostname: "api.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.c.SetServerTunnel(p.ctx, testSystem, cp, apitypes.ServerTunnelRequest{Action: "create"}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return p.c.managedTunnel(local.ID) != "" })
+
+	sv, err := p.c.UpdateServer(p.ctx, testSystem, cp, apitypes.UpdateServerRequest{Tunnel: &tunnel})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sv.Ingress != apitypes.IngressCloudflareTunnel || !sv.ThroughTunnel || len(sv.PublicIPs) > 0 {
+		t.Fatalf("server = %+v; want a tunnel server without public IPs", sv)
+	}
+	after, err := p.c.GenerateDomain(p.ctx, testSystem, api)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, host := range []string{before.Domain.Hostname, after.Domain.Hostname} {
+		if r := p.record(host); r.Status != apitypes.DNSReady || r.Server != cp {
+			t.Fatalf("record of %s = %+v", host, r)
+		}
+	}
+	tunnelOnly := map[string]bool{}
+	waitFor(t, func() bool {
+		clear(tunnelOnly)
+		for _, rt := range p.rt.Routes() {
+			for _, h := range rt.Hostnames {
+				tunnelOnly[h] = rt.TunnelOnly
+			}
+		}
+		return tunnelOnly[before.Domain.Hostname] && tunnelOnly[after.Domain.Hostname]
+	})
+	if tunnelOnly["api.example.com"] {
+		t.Fatal("api.example.com is served to the tunnel only; its DNS isn't Dock's")
+	}
+
+	tunnel = false
+	if sv, err = p.c.UpdateServer(p.ctx, testSystem, cp, apitypes.UpdateServerRequest{Tunnel: &tunnel}); err != nil {
+		t.Fatal(err)
+	}
+	if sv.Ingress != apitypes.IngressDirect || sv.ThroughTunnel {
+		t.Fatalf("back: server = %+v", sv)
+	}
+}

@@ -14719,6 +14719,9 @@
             ],
             "type": "string"
           },
+          "through_tunnel": {
+            "type": "boolean"
+          },
           "tunnel": {
             "$ref": "#/components/schemas/ServerTunnel"
           },
@@ -19978,6 +19981,9 @@
             "maxLength": 32,
             "minLength": 1,
             "type": "string"
+          },
+          "tunnel": {
+            "type": "boolean"
           }
         },
         "type": "object"

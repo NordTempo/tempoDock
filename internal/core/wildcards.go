@@ -85,7 +85,7 @@ func (c *Core) kickWildcards() {
 // domain that has no wildcard yet: a new server, or one whose ingress
 // changed.
 func (c *Core) wantWildcard(srv store.Server) {
-	base, ok := wildcardBase(c.ingressOf(srv))
+	base, ok := wildcardBase(c.installedIngress(srv))
 	if !ok {
 		return
 	}
@@ -149,7 +149,7 @@ func (c *Core) serverCertificates(ctx context.Context, serverID int64) ([]node.C
 	if err != nil {
 		return nil, err
 	}
-	base, ok := wildcardBase(c.ingressOf(srv))
+	base, ok := wildcardBase(c.installedIngress(srv))
 	if !ok {
 		return nil, nil
 	}
@@ -177,7 +177,9 @@ func (c *Core) localWildcardCovers(ctx context.Context, host string) (bool, erro
 
 // wildcardBase is the base domain a server with ing would serve a
 // wildcard for: a direct server's with TLS. A tunnel server's names are
-// served by Cloudflare's edge, with its certificate.
+// served by Cloudflare's edge, with its certificate. Callers pass the
+// installed ingress (installedIngress): a direct server sent through its
+// tunnel keeps its wildcard for the names that still reach its IP.
 func wildcardBase(ing serverIngress) (string, bool) {
 	return ing.baseDomain, ing.baseDomain != "" && ing.mode == apitypes.IngressDirect && !ing.plainHTTP
 }
@@ -191,7 +193,7 @@ func (c *Core) wildcardBases(ctx context.Context) (map[string][]store.Server, er
 	}
 	bases := map[string][]store.Server{}
 	for _, s := range servers {
-		if base, ok := wildcardBase(c.ingressOf(s)); ok {
+		if base, ok := wildcardBase(c.installedIngress(s)); ok {
 			bases[base] = append(bases[base], s)
 		}
 	}

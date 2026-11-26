@@ -405,7 +405,7 @@ func (c *Core) tunnelPort(srv store.Server) int {
 	if srv.Local {
 		return c.cfg.CloudflaredPort()
 	}
-	tunnelMode := c.ingressOf(srv).mode == apitypes.IngressCloudflareTunnel
+	tunnelMode := c.installedIngress(srv).mode == apitypes.IngressCloudflareTunnel
 	var facts remote.Facts
 	if c.nodes != nil {
 		facts = c.nodes.State(srv.ID).Hello.Facts

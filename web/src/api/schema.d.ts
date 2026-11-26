@@ -11298,6 +11298,7 @@ export interface components {
             revoked_at?: string;
             /** @enum {string} */
             status: "online" | "offline" | "incompatible" | "joining" | "revoked";
+            through_tunnel?: boolean;
             tunnel?: components["schemas"]["ServerTunnel"];
             /** @description CNAME target of its Cloudflare tunnel */
             tunnel_hostname?: string;
@@ -12875,6 +12876,7 @@ export interface components {
             builder?: boolean;
             disabled_for_placement?: boolean;
             name?: string;
+            tunnel?: boolean;
         };
         UpdateServiceRequest: {
             /** @description Also apply all staged changes in the environment */

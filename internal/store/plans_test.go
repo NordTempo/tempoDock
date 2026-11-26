@@ -21,6 +21,7 @@ func TestQueryPlansUseIndexes(t *testing.T) {
 		{"DeleteRemovedVolume", deleteRemovedVolume, []any{1}},
 		{"GetLatestReadySnapshot", getLatestReadySnapshot, []any{1, 1}},
 		{"ListServerReleaseImages", listServerReleaseImages, []any{1}},
+		{"ListUnroutedGeneratedDomains", listUnroutedGeneratedDomains, []any{1}},
 	})
 }
 

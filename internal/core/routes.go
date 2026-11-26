@@ -163,8 +163,10 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 func routeKey(serviceID int64) string { return "s" + strconv.FormatInt(serviceID, 10) }
 
 // tunnelOnlyHosts are the hostnames a direct server serves to its
-// Cloudflare tunnel only: the domains Dock routes through it (ADR 0036).
-// None on a tunnel server, where everything comes through the tunnel.
+// Cloudflare tunnel only: the domains Dock routes through it (ADR 0036),
+// also when it is sent through its tunnel (ingressOf), where the rest
+// stay on its public IP too. None on a server installed in tunnel mode,
+// where everything comes through the tunnel.
 func (c *Core) tunnelOnlyHosts(ctx context.Context, serverID int64) (map[string]bool, error) {
 	c.cf.mu.Lock()
 	connected := len(c.cf.conns) > 0
@@ -180,7 +182,7 @@ func (c *Core) tunnelOnlyHosts(ctx context.Context, serverID int64) (map[string]
 	if err != nil {
 		return nil, err
 	}
-	if c.ingressOf(srv).mode == apitypes.IngressCloudflareTunnel {
+	if ing := c.ingressOf(srv); ing.mode == apitypes.IngressCloudflareTunnel && !ing.listener {
 		return nil, nil
 	}
 	hosts := make(map[string]bool, len(rows))

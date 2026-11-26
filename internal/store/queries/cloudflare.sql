@@ -370,3 +370,15 @@ RETURNING id;
 UPDATE cloudflare_redirects
 SET want = 'absent', status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?, updated_by = ?
 WHERE connection_id = +? AND want = 'present';
+
+-- name: ListUnroutedGeneratedDomains :many
+-- The generated domains of a server's services that Dock routes through
+-- no Cloudflare record (none, or one being deleted): the ones a server
+-- that turned into a tunnel server gives records to its tunnel.
+SELECT domains.id, domains.hostname
+FROM domains
+JOIN services ON services.id = domains.service_id
+JOIN environments ON environments.id = services.environment_id
+LEFT JOIN cloudflare_records ON cloudflare_records.hostname = domains.hostname AND cloudflare_records.want = 'present'
+WHERE environments.server_id = +? AND domains.generated AND services.archived_at IS NULL
+  AND cloudflare_records.id IS NULL;

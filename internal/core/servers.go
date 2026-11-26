@@ -193,7 +193,7 @@ func (c *Core) UpdateServer(ctx context.Context, a Actor, name string, req apity
 			return apitypes.Server{}, err
 		}
 	}
-	settings := store.UpdateServerSettingsParams{BaseDomain: srv.BaseDomain, Builder: srv.Builder, ID: srv.ID}
+	settings := store.UpdateServerSettingsParams{BaseDomain: srv.BaseDomain, Builder: srv.Builder, ThroughTunnel: srv.ThroughTunnel, ID: srv.ID}
 	if req.BaseDomain != nil {
 		base := strings.TrimPrefix(strings.TrimSpace(*req.BaseDomain), "*.")
 		if base != "" {
@@ -227,6 +227,15 @@ func (c *Core) UpdateServer(ctx context.Context, a Actor, name string, req apity
 	if settings.BaseDomain != srv.BaseDomain {
 		changes = append(changes, fmt.Sprintf("base domain %q", settings.BaseDomain))
 	}
+	if req.Tunnel != nil {
+		if err := c.checkThroughTunnel(ctx, srv, *req.Tunnel, settings.BaseDomain); err != nil {
+			return apitypes.Server{}, err
+		}
+		if c.installedIngress(srv).mode == apitypes.IngressDirect { // else a tunnel server already
+			set(&settings.ThroughTunnel, req.Tunnel, "goes through its Cloudflare tunnel", "serves on its public IP again")
+		}
+	}
+	tunnelChanged := settings.ThroughTunnel != srv.ThroughTunnel
 	if len(changes) > 0 || rename {
 		err := c.store.Tx(ctx, func(q *store.Queries) error {
 			if rename {
@@ -259,9 +268,18 @@ func (c *Core) UpdateServer(ctx context.Context, a Actor, name string, req apity
 			c.audit(ctx, a.platform(), "server.update", nil, nil, "server "+srv.Name, fmt.Sprintf("server %s %s", srv.Name, strings.Join(changes, ", ")))
 		}
 		c.publishServer(ctx, srv.ID)
-		if settings.BaseDomain != srv.BaseDomain && c.online(srv.ID) {
+		if settings.ThroughTunnel && (tunnelChanged || settings.BaseDomain != srv.BaseDomain) {
+			// Its generated hostnames go through the tunnel from now on.
+			now := srv
+			now.ThroughTunnel, now.BaseDomain = true, settings.BaseDomain
+			if _, err := c.routeGeneratedDomains(ctx, now); err != nil {
+				return apitypes.Server{}, err
+			}
+		}
+		if (tunnelChanged || settings.BaseDomain != srv.BaseDomain) && c.online(srv.ID) {
 			// Its routes carry the new base domain's wildcard, if it has
-			// one, and no longer the old one's (ADR 0090).
+			// one, and no longer the old one's (ADR 0090), and serve the
+			// domains Dock routes through its tunnel to the tunnel only.
 			if err := c.applyRoutes(ctx, srv.ID); err != nil {
 				c.log.Warn("apply routes for a new base domain", "server", srv.Name, "err", err)
 			}
@@ -645,7 +663,7 @@ func (c *Core) toServer(r store.ListServerLoadsRow, usage bool, tunnels map[int6
 		DockerVersion: s.DockerVersion, BaseDomain: ing.baseDomain,
 		AcceptsProduction: s.AcceptsProduction, AcceptsNonProduction: s.AcceptsNonProduction,
 		DisabledForPlacement: s.DisabledForPlacement, MemoryBytes: s.MemoryBytes, ReservedMemoryBytes: r.ReservedMb << 20,
-		Projects: int(r.Projects), Environments: int(r.Environments),
+		Projects: int(r.Projects), Environments: int(r.Environments), ThroughTunnel: ing.listener,
 	}
 	if usage {
 		if u, ok := c.stats.serverUsage(s.ID); ok {
@@ -690,14 +708,32 @@ type serverIngress struct {
 	// disable_tls in direct mode): its own config on the local server, a
 	// hello fact on a remote one.
 	plainHTTP bool
+	// listener: a direct server the control plane sends through its
+	// tunnel (servers.through_tunnel). It counts as a tunnel server, but
+	// its Caddy is still the direct one: what comes through the tunnel
+	// arrives on its tunnel listener, and domains whose DNS Dock doesn't
+	// manage are still served on its public IP.
+	listener bool
 }
 
 // ingressOf returns a server's ingress. Remote servers report it in
 // hello. The local server reports nothing, so its facts come from the
 // config; its base domain and public IP are the config's until set on
 // the server (the database wins once set). A tunnel Dock runs for the
-// server is its tunnel, whatever the server reports.
+// server is its tunnel, whatever the server reports, and a direct server
+// sent through it (`dock server update --tunnel`) is a tunnel server
+// while Dock runs it.
 func (c *Core) ingressOf(s store.Server) serverIngress {
+	ing := c.installedIngress(s)
+	if s.ThroughTunnel && ing.mode == apitypes.IngressDirect && c.managedTunnel(s.ID) != "" {
+		ing.mode, ing.listener, ing.publicIPs, ing.plainHTTP = apitypes.IngressCloudflareTunnel, true, []string{}, false
+	}
+	return ing
+}
+
+// installedIngress is a server's ingress as it was installed: what it
+// reports in hello, or the local server's config.
+func (c *Core) installedIngress(s store.Server) serverIngress {
 	ing := serverIngress{mode: apitypes.Ingress(s.Ingress), tunnel: s.TunnelHostname, baseDomain: s.BaseDomain, publicIPs: []string{}}
 	_ = json.Unmarshal([]byte(s.PublicIps), &ing.publicIPs)
 	if t := c.managedTunnel(s.ID); t != "" {
@@ -730,4 +766,90 @@ func deref[T any](p *T) T {
 		return zero
 	}
 	return *p
+}
+
+// checkThroughTunnel refuses sending srv through its tunnel (on) or back
+// to its public IP when it can't be: a server installed in tunnel mode
+// has no public IP to go back to; going through the tunnel needs one
+// Dock runs, ready, and generated hostnames under base (its base domain
+// after the update) need a platform Cloudflare zone in the tunnel's
+// account for their records.
+func (c *Core) checkThroughTunnel(ctx context.Context, srv store.Server, on bool, base string) error {
+	if c.installedIngress(srv).mode == apitypes.IngressCloudflareTunnel {
+		if on {
+			return nil // it is a tunnel server already
+		}
+		return invalid("server %s was installed in tunnel mode and has no public IP to serve on; re-run install.sh on it with INGRESS=direct", srv.Name)
+	}
+	if !on {
+		return nil
+	}
+	t, err := c.store.GetCloudflareTunnelByServer(ctx, &srv.ID)
+	switch {
+	case store.IsNotFound(err) || err == nil && t.Want == cfAbsent:
+		return invalid("Dock runs no Cloudflare tunnel for server %s; create one with `dock server tunnel create %s` and switch once it is ready", srv.Name, srv.Name)
+	case err != nil:
+		return err
+	case c.managedTunnel(srv.ID) == "":
+		return invalid("server %s's tunnel isn't ready yet (%s); switch once it is (`dock server show %s`)", srv.Name, t.Status, srv.Name)
+	}
+	if base == "" {
+		return nil
+	}
+	z, ok := c.zoneFor(0, base)
+	if !ok {
+		return invalid("%s isn't in a Cloudflare zone of a platform connection, so its generated hostnames couldn't get records to the tunnel; add the zone to the connection's token (`dock cloudflare set --platform`), or change the base domain", base)
+	}
+	zconn, err := c.store.GetCloudflareConnectionByID(ctx, z.ConnectionID)
+	if err != nil {
+		return err
+	}
+	tconn, err := c.store.GetCloudflareConnectionByID(ctx, t.ConnectionID)
+	if err != nil {
+		return err
+	}
+	if zconn.AccountID != tconn.AccountID {
+		return invalid("server %s's tunnel is in Cloudflare account %s and %s in %s; a hostname can only go through a tunnel in its zone's account", srv.Name, tconn.AccountName, base, zconn.AccountName)
+	}
+	return nil
+}
+
+// routeGeneratedDomains gives the generated hostnames of a tunnel
+// server's services that have no Cloudflare record one to its tunnel,
+// as GenerateDomain does for new ones: after a direct server is sent
+// through its tunnel, and after an environment moved onto a tunnel
+// server under a base domain it shares. Hostnames outside the platform's
+// zones are left as they are. It reports whether it saved any; the
+// caller applies the server's routes.
+func (c *Core) routeGeneratedDomains(ctx context.Context, srv store.Server) (bool, error) {
+	ing := c.ingressOf(srv)
+	if ing.mode != apitypes.IngressCloudflareTunnel || ing.baseDomain == "" {
+		return false, nil
+	}
+	doms, err := c.store.ListUnroutedGeneratedDomains(ctx, srv.ID)
+	if err != nil {
+		return false, err
+	}
+	saved := false
+	for _, d := range doms {
+		if !underBase(d.Hostname, ing.baseDomain) {
+			continue // another server's base: that one forwards it
+		}
+		z, ok := c.zoneFor(0, d.Hostname)
+		if !ok {
+			continue
+		}
+		n, err := c.store.SaveCloudflareRecord(ctx, store.SaveCloudflareRecordParams{
+			Hostname: d.Hostname, DomainID: &d.ID, ServerID: &srv.ID,
+			ConnectionID: z.ConnectionID, ZoneID: z.ZoneID, UpdatedAt: now(),
+		})
+		if err != nil {
+			return saved, err
+		}
+		saved = saved || n > 0
+	}
+	if saved {
+		c.kickCloudflare()
+	}
+	return saved, nil
 }

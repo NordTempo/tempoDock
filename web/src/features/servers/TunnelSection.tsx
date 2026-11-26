@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
+import { useUpdateServer } from "../../data/mutations";
 import type { Server } from "../../data/types";
 import { ago } from "../../ui/format";
 import { Act, ErrorText, Panel, StateText } from "../../ui/kit";
@@ -74,8 +75,15 @@ function Managed({ server: s, tunnel: t }: { server: Server; tunnel: Tunnel }) {
             on {s.name}, then Caddy
             {s.ingress === "direct" &&
               "; only domains added from Cloudflare, the rest stay on the public IP"}
+            {s.through_tunnel &&
+              "; everything, though it was installed direct. Domains whose DNS Dock doesn't manage work on its public IP until they point here"}
           </span>
         </Fact>
+        {(s.ingress === "direct" || s.through_tunnel) && (
+          <Fact label="Ingress">
+            <ThroughTunnel server={s} ready={t.status === "ready"} />
+          </Fact>
+        )}
       </dl>
       {connectors.length > 0 && (
         <Panel>
@@ -111,6 +119,40 @@ function Managed({ server: s, tunnel: t }: { server: Server; tunnel: Tunnel }) {
         </p>
       )}
     </>
+  );
+}
+
+/**
+ * Sends a direct server through its tunnel, or back to its public IP
+ * (`dock server update --tunnel`): no new install either way.
+ */
+function ThroughTunnel({
+  server: s,
+  ready,
+}: {
+  server: Server;
+  ready: boolean;
+}) {
+  const update = useUpdateServer();
+  const on = !s.through_tunnel;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-x-3">
+      <Act
+        small
+        cli={`dock server update ${s.name} ${on ? "--tunnel" : "--no-tunnel"}`}
+        disabled={update.isPending || (on && !ready)}
+        reason={on && !ready ? "the tunnel isn't ready yet" : undefined}
+        onClick={() => update.mutate({ name: s.name, patch: { tunnel: on } })}
+      >
+        {on ? "Send everything through the tunnel" : "Back to the public IP"}
+      </Act>
+      {on && (
+        <span className="text-mut">
+          generated hostnames get their own records, no wildcard DNS
+        </span>
+      )}
+      <ErrorText error={update.error} />
+    </span>
   );
 }
 
