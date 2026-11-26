@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { currentOrg, setOrg } from "../../api/client";
@@ -13,6 +14,7 @@ import {
   PageBar,
   StateText,
 } from "../../ui/kit";
+import { accountsQuery } from "../console/accounts";
 import {
   autofocus,
   Field,
@@ -517,8 +519,9 @@ const roles: Role[] = ["read", "deploy", "admin"];
 
 /**
  * An org's people: members with their roles, open invites, and a row to
- * invite someone by email or add an existing account. The first invite
- * of an org without an admin is for an admin.
+ * add someone by email: an address with an account is added at once, any
+ * other gets an invite link. The first invite of an org without an admin
+ * is for an admin.
  */
 function Members({ org, onClose }: DialogProps) {
   const members = useConsoleMembers(org.slug);
@@ -529,6 +532,7 @@ function Members({ org, onClose }: DialogProps) {
   const add = useAddConsoleMember();
   const invite = useCreateConsoleInvite();
   const base = useInviteBase(true);
+  const accounts = useQuery(accountsQuery());
   const [email, setEmail] = useState("");
   const [role, setNewRole] = useState<Role>(
     org.admins?.length ? "read" : "admin",
@@ -536,6 +540,11 @@ function Members({ org, onClose }: DialogProps) {
   const [link, setLink] = useState<InviteLinkInfo>();
   const typed = email.trim();
   const valid = /^[^\s@]+@[^\s@]+$/.test(typed);
+  // Emails match without case, as the users table does.
+  const existing = accounts.data?.some(
+    (a) => a.email.toLowerCase() === typed.toLowerCase(),
+  );
+  const pending = invite.isPending || add.isPending;
   const empty = members.data?.length === 0 && invites.data?.length === 0;
   return (
     <Dialog title={`People of ${org.slug}`} onClose={onClose} wide>
@@ -648,7 +657,14 @@ function Members({ org, onClose }: DialogProps) {
           className="flex flex-wrap items-end gap-2 border-t border-line pt-3"
           onSubmit={(e) => {
             e.preventDefault();
-            if (!valid) return;
+            if (!valid || existing === undefined) return;
+            if (existing) {
+              add.mutate(
+                { org: org.slug, email: typed, role },
+                { onSuccess: () => setEmail("") },
+              );
+              return;
+            }
             invite.mutate(
               { org: org.slug, email: typed, role },
               {
@@ -682,29 +698,26 @@ function Members({ org, onClose }: DialogProps) {
               </option>
             ))}
           </select>
-          <Button type="submit" primary disabled={!valid || invite.isPending}>
-            Create invite link
-          </Button>
           <Button
-            disabled={!valid || add.isPending}
-            onClick={() =>
-              add.mutate(
-                { org: org.slug, email: typed, role },
-                { onSuccess: () => setEmail("") },
-              )
-            }
+            type="submit"
+            primary
+            disabled={!valid || existing === undefined || pending}
           >
-            Add existing user
+            {existing ? "Add" : "Create invite link"}
           </Button>
           {!link && (
             <p className="basis-full text-xs text-faint">
-              An invite gives you a link to send them, also emailed when this
-              Dock sends email. It works once, for 7 days, for that address. An
-              existing user is added at once.
+              {existing
+                ? "They have an account here, so they are added at once."
+                : "An invite gives you a link to send them, also emailed when this Dock sends email. It works once, for 7 days, for that address."}
             </p>
           )}
         </form>
-        <DialogFoot note={<ErrorText error={invite.error ?? add.error} />}>
+        <DialogFoot
+          note={
+            <ErrorText error={invite.error ?? add.error ?? accounts.error} />
+          }
+        >
           <Button onClick={onClose}>Done</Button>
         </DialogFoot>
       </div>
