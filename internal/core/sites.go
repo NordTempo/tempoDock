@@ -36,7 +36,7 @@ func defaultSiteSettings() apitypes.SiteSettings {
 	sample, events, replays, errs := 20, 396, 30, 90
 	paths, ips, domain, consent := []string{}, []string{}, "", apitypes.ConsentReplay
 	return apitypes.SiteSettings{
-		Consent: &consent, Replay: &f, ReplaySampleRate: &sample, MaskAllText: &f, ErrorsAndVitals: &t,
+		Consent: &consent, Replay: &f, ReplaySampleRate: &sample, MaskAllText: &f, ErrorsAndVitals: &t, AutoScript: &t,
 		EventRetentionDays: &events, ReplayRetentionDays: &replays, ErrorRetentionDays: &errs,
 		ExcludedPaths: &paths, IgnoredIPs: &ips, Public: &f, PublicDomain: &domain, PublicErrors: &f,
 	}
@@ -56,6 +56,7 @@ func mergeSettings(base, o apitypes.SiteSettings) apitypes.SiteSettings {
 		Consent: over(base.Consent, o.Consent),
 		Replay:  over(base.Replay, o.Replay), ReplaySampleRate: over(base.ReplaySampleRate, o.ReplaySampleRate),
 		MaskAllText: over(base.MaskAllText, o.MaskAllText), ErrorsAndVitals: over(base.ErrorsAndVitals, o.ErrorsAndVitals),
+		AutoScript:          over(base.AutoScript, o.AutoScript),
 		EventRetentionDays:  over(base.EventRetentionDays, o.EventRetentionDays),
 		ReplayRetentionDays: over(base.ReplayRetentionDays, o.ReplayRetentionDays),
 		ErrorRetentionDays:  over(base.ErrorRetentionDays, o.ErrorRetentionDays),
@@ -79,6 +80,8 @@ func resetSettings(s *apitypes.SiteSettings, names []string) error {
 			s.MaskAllText = nil
 		case "errors_and_vitals":
 			s.ErrorsAndVitals = nil
+		case "auto_script":
+			s.AutoScript = nil
 		case "event_retention_days":
 			s.EventRetentionDays = nil
 		case "replay_retention_days":
@@ -100,6 +103,12 @@ func resetSettings(s *apitypes.SiteSettings, names []string) error {
 		}
 	}
 	return nil
+}
+
+// touchesAutoScript reports whether a change sets or resets auto_script,
+// which the routes carry (ADR 0105): they are applied again after it.
+func touchesAutoScript(set apitypes.SiteSettings, reset []string) bool {
+	return set.AutoScript != nil || slices.Contains(reset, "auto_script")
 }
 
 // checkSettings refuses settings the ingest can't apply.
@@ -763,6 +772,11 @@ func (c *Core) UpdateSite(ctx context.Context, a Actor, project, name string, re
 		return apitypes.Site{}, err
 	}
 	c.analyticsSitesChanged(ctx)
+	if touchesAutoScript(req.Settings, req.Reset) {
+		if err := c.applyRoutes(ctx, s.env.ServerID); err != nil {
+			c.log.Error("apply routes after changing a site's auto_script", "site", newName, "err", err)
+		}
+	}
 	c.audit(ctx, a, "analytics.site", &s.project, &s.env, "site "+newName, "changed site "+newName)
 	return c.GetSite(ctx, a, project, newName)
 }
@@ -816,6 +830,9 @@ func (c *Core) SetSiteDefaults(ctx context.Context, a Actor, set apitypes.SiteSe
 		return apitypes.SiteSettings{}, err
 	}
 	c.analyticsSitesChanged(ctx)
+	if touchesAutoScript(set, reset) {
+		c.applyAllRoutes(ctx)
+	}
 	c.audit(ctx, a.platform(), "analytics.defaults", nil, nil, "analytics defaults", "changed the analytics defaults for sites")
 	return c.siteDefaults(ctx)
 }

@@ -152,7 +152,6 @@ site's settings page shows what each setting means under Privacy, with
 privacy-policy text to copy. This is not legal advice.
 
 ```html
-<script src="/_dock/a/s.js" defer></script>
 <script>
   // in your consent banner's callbacks
   dock.consent(true);  // accepted
@@ -164,7 +163,10 @@ An operator picks the server the analytics store runs on first
 (`dock analytics server`). Then a service counts its visits: every
 verified domain of it that doesn't redirect, including ones added later,
 counts for its site, named after its custom domain (or the service, with
-none; `dock analytics sites` lists them). One service's domains are told
+none; `dock analytics sites` lists them). Dock adds the script tag to the
+site's pages itself, so the app needs no change; a page that should load
+it itself (or not at all) can, with `dock analytics site set shop
+--auto-script off`. One service's domains are told
 apart inside the site with the Domains breakdown or a `hostname` filter.
 Below, web's site is `shop`.
 

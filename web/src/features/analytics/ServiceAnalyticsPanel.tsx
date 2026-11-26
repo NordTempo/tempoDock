@@ -89,9 +89,15 @@ export function ServiceAnalyticsPanel({
           </dd>
           <dt>Script</dt>
           <dd className="flex flex-wrap items-center gap-2">
-            <code className="font-mono text-fg">{scriptTag}</code>
-            <CopyButton text={scriptTag} />
-            <span className="text-mut">in each page's {"<head>"}</span>
+            {site.settings.auto_script ? (
+              <span className="text-mut">added to each page by Dock</span>
+            ) : (
+              <>
+                <code className="font-mono text-fg">{scriptTag}</code>
+                <CopyButton text={scriptTag} />
+                <span className="text-mut">in each page's {"<head>"}</span>
+              </>
+            )}
           </dd>
           <dt>Move history</dt>
           <dd>

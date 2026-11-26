@@ -943,6 +943,7 @@ then its certificate. Turn the dashboard on with
 // siteSettingFlags set a site's (or the defaults') settings from flags.
 type siteSettingFlags struct {
 	replay, maskText, errors, public    string
+	autoScript                          string
 	publicDomain, publicErrors, consent string
 	sample, events, replays, errorsDays int
 	paths, ips, reset                   []string
@@ -956,6 +957,7 @@ func (sf *siteSettingFlags) add(cmd *cobra.Command) {
 	fl.IntVar(&sf.sample, "replay-sample", 0, "percent of page loads recorded, 1 to 100")
 	fl.StringVar(&sf.maskText, "mask-text", "", "mask all text in replays: on or off (field values are always masked)")
 	fl.StringVar(&sf.errors, "errors", "", "collect errors and Web Vitals: on or off (phase A2)")
+	fl.StringVar(&sf.autoScript, "auto-script", "", "Dock adds the analytics script to the site's pages: on (the default) or off, when the pages load /_dock/a/s.js themselves")
 	fl.IntVar(&sf.events, "event-retention-days", 0, "days raw events are kept (daily totals stay)")
 	fl.IntVar(&sf.replays, "replay-retention-days", 0, "days replays are kept")
 	fl.IntVar(&sf.errorsDays, "error-retention-days", 0, "days errors are kept")
@@ -995,7 +997,7 @@ func (sf *siteSettingFlags) request(cmd *cobra.Command) (apitypes.UpdateSiteRequ
 	for flag, p := range map[string]struct {
 		v   string
 		dst **bool
-	}{"replay": {sf.replay, &set.Replay}, "mask-text": {sf.maskText, &set.MaskAllText}, "errors": {sf.errors, &set.ErrorsAndVitals}, "public": {sf.public, &set.Public}, "public-errors": {sf.publicErrors, &set.PublicErrors}} {
+	}{"replay": {sf.replay, &set.Replay}, "mask-text": {sf.maskText, &set.MaskAllText}, "errors": {sf.errors, &set.ErrorsAndVitals}, "auto-script": {sf.autoScript, &set.AutoScript}, "public": {sf.public, &set.Public}, "public-errors": {sf.publicErrors, &set.PublicErrors}} {
 		if err := onOff(flag, p.v, p.dst); err != nil {
 			return req, err
 		}
@@ -1176,6 +1178,7 @@ func printSettings(g *globals, s, overrides apitypes.SiteSettings) error {
 		"replay sample", mark(o.ReplaySampleRate != nil, n(s.ReplaySampleRate)+"%"),
 		"mask all text", mark(o.MaskAllText != nil, b(s.MaskAllText)),
 		"errors and vitals", mark(o.ErrorsAndVitals != nil, b(s.ErrorsAndVitals)),
+		"script added by Dock", mark(o.AutoScript != nil, b(s.AutoScript)),
 		"events kept", mark(o.EventRetentionDays != nil, n(s.EventRetentionDays)+" days"),
 		"replays kept", mark(o.ReplayRetentionDays != nil, n(s.ReplayRetentionDays)+" days"),
 		"errors kept", mark(o.ErrorRetentionDays != nil, n(s.ErrorRetentionDays)+" days"),

@@ -92,10 +92,28 @@ export function SettingsPage() {
             {project} / {site.environment}
           </span>
         </Row>
-        <Row label="Script" hint="On every page of the site.">
+        <SettingRow
+          project={project}
+          site={site}
+          field={fieldOf.auto_script}
+          cmd={cmd}
+          canEdit={canEdit}
+        />
+        <Row
+          label="Script"
+          hint={
+            site.settings.auto_script
+              ? "Dock adds it to every page."
+              : "On every page of the site."
+          }
+        >
           <span className="flex flex-wrap items-center gap-3">
-            <code className="text-xs break-all">{scriptTag}</code>
-            <CopyButton text={scriptTag} />
+            {!site.settings.auto_script && (
+              <>
+                <code className="text-xs break-all">{scriptTag}</code>
+                <CopyButton text={scriptTag} />
+              </>
+            )}
             <TrackingStatus project={project} site={site.name} />
           </span>
         </Row>

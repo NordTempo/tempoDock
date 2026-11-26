@@ -248,8 +248,9 @@ func (c *Core) checkSite(ctx context.Context, hosts []string) apitypes.SiteCheck
 	return out
 }
 
-// scriptTagRe finds script tags' src attributes in a page.
-var scriptTagRe = regexp.MustCompile(`(?is)<script\b[^>]*?\bsrc\s*=\s*["']?([^"'\s>]+)`)
+// scriptTagRe finds script tags' src attributes in a page, and the
+// attributes after (the one Dock's Caddy adds is marked data-dock-auto).
+var scriptTagRe = regexp.MustCompile(`(?is)<script\b[^>]*?\bsrc\s*=\s*["']?([^"'\s>]+)([^>]*)`)
 
 // checkSiteHost checks one hostname of a site: its page (a redirect to
 // another of the site's hostnames is followed once), the script tag, the
@@ -305,6 +306,8 @@ func (c *Core) checkSiteHost(ctx context.Context, host string, siteHosts []strin
 		if u, err := url.Parse(src); err == nil && u.Host != "" && !strings.EqualFold(u.Hostname(), host) {
 			step(apitypes.CheckFail, apitypes.TrackingWrongHost, `<script src="`+ingest.ScriptPath+`" defer></script>`,
 				"the script tag loads it from %s; use the relative address so each hostname serves its own", u.Hostname())
+		} else if strings.Contains(string(m[2]), "data-dock-auto") {
+			step(apitypes.CheckOK, "", "", "Dock adds the script tag to the page")
 		} else {
 			step(apitypes.CheckOK, "", "", "the page has the script tag")
 		}
@@ -312,7 +315,7 @@ func (c *Core) checkSiteHost(ctx context.Context, host string, siteHosts []strin
 	}
 	if !found {
 		step(apitypes.CheckFail, apitypes.TrackingNoScript, `<script src="`+ingest.ScriptPath+`" defer></script>`,
-			"no Dock script tag in the page's HTML; add it to its <head> (an app that adds it from JavaScript shows active once events arrive)")
+			"no Dock script tag in the page's HTML. Dock adds it to a page with a <head> unless the site's auto_script is off, the page is marked no-transform or its Content-Security-Policy blocks the script, or the server's Caddy isn't Dock's (an update installs it); otherwise add it to the page's <head> (an app that adds it from JavaScript shows active once events arrive)")
 	}
 	if csp := resp.header.Get("Content-Security-Policy"); csp != "" {
 		if d := cspBlocks(csp); d != "" {

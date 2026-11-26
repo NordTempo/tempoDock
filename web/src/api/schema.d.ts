@@ -12231,6 +12231,8 @@ export interface components {
             waits_for_consent: boolean;
         };
         SiteSettings: {
+            /** @description Dock adds the analytics script to the site's pages (ADR 0105); off, the pages load /_dock/a/s.js themselves */
+            auto_script?: boolean;
             /**
              * @description What waits for the visitor's consent (dock.consent(true) in the page): replay (the default), all, or none for sites that load the script only after consent
              * @enum {string}

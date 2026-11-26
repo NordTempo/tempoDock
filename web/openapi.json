@@ -17716,6 +17716,10 @@
       "SiteSettings": {
         "additionalProperties": false,
         "properties": {
+          "auto_script": {
+            "description": "Dock adds the analytics script to the site's pages (ADR 0105); off, the pages load /_dock/a/s.js themselves",
+            "type": "boolean"
+          },
           "consent": {
             "description": "What waits for the visitor's consent (dock.consent(true) in the page): replay (the default), all, or none for sites that load the script only after consent",
             "enum": [
