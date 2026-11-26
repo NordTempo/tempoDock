@@ -125,14 +125,32 @@ func TestHeldSourceEnded(t *testing.T) {
 	}
 }
 
-// TestHeldPush: a GitHub push into a locked environment waits as an
-// access request (the newest push replacing an older one) and deploys
-// once approved; a person's Deploy isn't held.
-func TestHeldPush(t *testing.T) {
+// TestPushThroughAgentLock: a plain lock is for agents, so a GitHub push
+// into it deploys as usual and files no request.
+func TestPushThroughAgentLock(t *testing.T) {
 	h, _ := gitHarness(t)
 	web := h.service("web", apitypes.CreateServiceRequest{})
 	k := h.connect(web, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main"})
 	h.lock("production")
+	if _, err := h.push(k, pushBody("refs/heads/main", shaA, "server.js")); err != nil {
+		t.Fatal(err)
+	}
+	if r := h.wait(web, h.waitReleases(web, 1)[0].Number); r.Status != apitypes.ReleaseActive || r.Commit == nil || r.Commit.SHA != shaA {
+		t.Fatalf("release: %+v", r)
+	}
+	if rs, err := h.c.ListRequests(h.ctx, testSystem, RequestFilter{Status: apitypes.RequestPending}); err != nil || len(rs) != 0 {
+		t.Fatalf("requests %+v, %v", rs, err)
+	}
+}
+
+// TestHeldPush: a GitHub push into an environment locked for people too
+// waits as an access request (the newest push replacing an older one)
+// and deploys once approved; a person's Deploy isn't held.
+func TestHeldPush(t *testing.T) {
+	h, _ := gitHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	k := h.connect(web, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main"})
+	h.freeze("production")
 	admin := Actor{Kind: "user", OrgID: 1, Name: "saile@example.com", UserID: 1, Scope: apitypes.ScopeAdmin}
 
 	pending := func() []apitypes.AccessRequest {
@@ -207,7 +225,7 @@ func TestHeldPushRejectedStatus(t *testing.T) {
 	web := h.service("web", apitypes.CreateServiceRequest{})
 	token, on := "github_pat_secret", true
 	k := h.connect(web, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main", Token: &token, Status: &on})
-	h.lock("production")
+	h.freeze("production")
 	admin := Actor{Kind: "user", OrgID: 1, Name: "saile@example.com", UserID: 1, Scope: apitypes.ScopeAdmin}
 
 	if _, err := h.push(k, pushBody("refs/heads/main", shaA, "server.js")); err != nil {

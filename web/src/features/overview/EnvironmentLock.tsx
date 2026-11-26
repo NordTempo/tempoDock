@@ -27,15 +27,17 @@ import { isPending, useRequestsIfAdmin } from "../requests/data";
 // An environment's lock on the project overview (ADR 0044, mock "Header
 // B"): a strip under its header while locked, with who and why, the
 // requests waiting there, Pause lock for… and Unlock; a one-line form
-// while unlocked. One description of what a lock does everywhere:
-// changes by tokens wait for an admin's approval (`lockEffect`).
+// while unlocked. One description of what a lock does everywhere: a lock
+// is for agents, whose changes wait for an approval (`lockEffect`); a
+// lock for people too is a full freeze (`lockPeopleEffect`).
 
 /** What a lock does, in the words every lock control uses. */
-export const lockEffect = "changes by tokens wait for an admin's approval";
+export const lockEffect =
+  "agents' changes (any token: MCP, the CLI) wait for an admin's approval";
 
 /** What a lock for people too does (ADR 0080, protected environments). */
 export const lockPeopleEffect =
-  "only its approvers change it; everyone else's changes wait for them";
+  "only its approvers change it; everyone else's changes and GitHub pushes wait for them";
 
 const touches = ({ ref }: { ref: EnvRef }) => [
   keys.overview(ref.project),
@@ -140,7 +142,7 @@ export function LockStrip({
         <>
           <span className="inline-flex items-center gap-1.5">
             <Icon name="lock" size={12} />{" "}
-            {lock.people ? "Locked for people too" : "Locked"}
+            {lock.people ? "Locked for people too" : "Locked for agents"}
           </span>
           <span className="min-w-0 text-mut">
             by {lock.locked_by}, {ago(lock.locked_at)}
@@ -292,9 +294,9 @@ export function LockForm({
 }) {
   const lock = useLock();
   const [reason, setReason] = useState("");
-  // A full freeze by default: people read "lock" as a code freeze (ADR
-  // 0044, amended 2026-11-17). The CLI keeps tokens-only as its default.
-  const [people, setPeople] = useState(true);
+  // For agents by default, as the CLI: the full freeze is a choice (ADR
+  // 0044, amended 2026-11-26).
+  const [people, setPeople] = useState(false);
   // Opened by clicking Lock: the reason is the first thing to type, and the
   // whole form (with what locking does) is on screen.
   const form = useRef<HTMLFormElement>(null);
@@ -334,7 +336,7 @@ export function LockForm({
           checked={people}
           onChange={(e) => setPeople(e.target.checked)}
         />
-        Hold people's changes too (full code freeze)
+        Hold people's changes and GitHub pushes too (full code freeze)
       </label>
       <Act small primary type="submit" cli={cli} disabled={lock.isPending}>
         Lock
@@ -345,8 +347,8 @@ export function LockForm({
       <span className="basis-full text-mut">
         Then{" "}
         {people
-          ? `${lockPeopleEffect}, people's and tokens' alike`
-          : `${lockEffect}; people still change it directly unless you hold their changes too`}
+          ? `${lockPeopleEffect}, people's and agents' alike`
+          : `${lockEffect}; people and GitHub pushes still change it directly`}
         .
       </span>
       <ErrorText error={lock.error} />

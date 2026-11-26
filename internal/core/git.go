@@ -697,8 +697,10 @@ func (c *Core) gitStep(serviceID int64, w *gitWorker) gitStep {
 			return finish(fmt.Sprintf("push %s: already live in release %d", shortSHA(sha), active.Number))
 		}
 	}
-	// A push into a locked environment waits for an admin (ADR 0044).
-	if lockHolds(ss.env, now()) && conn.PendingApproved == 0 {
+	// A push waits for an approver only in an environment locked for
+	// people too (a full freeze): a plain lock is for agents, and a push
+	// is a person's merge (ADR 0044, amended 2026-11-26).
+	if lockHolds(ss.env, now()) && ss.env.LockPeople && conn.PendingApproved == 0 {
 		id, err := c.holdPush(ctx, ss, conn)
 		if err != nil {
 			c.log.Error("hold push", "service", serviceID, "err", err)

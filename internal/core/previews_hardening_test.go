@@ -159,8 +159,8 @@ func TestPreviewLockedBase(t *testing.T) {
 	}
 }
 
-// A locked preview's next commit waits for approval as an access
-// request, like a push into a locked environment, instead of deploying.
+// A preview locked for people too holds its next commit for approval as
+// an access request, like any push into a frozen environment.
 func TestPreviewLockedHoldsCommits(t *testing.T) {
 	h, _, _, appHook := previewHarness(t)
 	h.openPreview(appHook, 7)
@@ -171,7 +171,7 @@ func TestPreviewLockedHoldsCommits(t *testing.T) {
 		rels, err := h.c.ListReleases(h.ctx, testSystem, ServiceRef{"shop", "pr-7", "web"}, 10)
 		return err == nil && len(rels) == 1 && rels[0].Status == apitypes.ReleaseActive
 	})
-	h.lock("pr-7")
+	h.freeze("pr-7")
 	if msg, err := h.deliver(appHook, "s1", prEvent{action: "synchronize", number: 7, sha: shaB, updated: prT0.Add(time.Minute)}); err != nil || !strings.Contains(msg, "updated to bbbbbbb") {
 		t.Fatalf("synchronize: %q, %v", msg, err)
 	}

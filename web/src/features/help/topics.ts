@@ -690,13 +690,13 @@ export const topics: Record<TopicId, Topic> = {
         at: { o: "inbox" },
       },
       {
-        what: "Make token changes wait for an admin",
+        what: "Make agents' changes wait for an admin",
         cli: "dock env lock production",
       },
     ],
     watch: [
       "Most alerts resolve themselves once the cause goes away.",
-      "A lock stops tokens (CI, agents), not people signed in.",
+      "A lock stops agents (any token, CI too), not people or GitHub pushes.",
     ],
     related: ["errors", "access", "agents"],
     guide: "watching#alerts",
@@ -779,7 +779,7 @@ export const topics: Record<TopicId, Topic> = {
     ],
     watch: [
       "Reading production data is set apart from the role: --data-production.",
-      "A locked environment turns token changes into access requests.",
+      "A locked environment turns agents' changes (any token) into access requests.",
     ],
     related: ["organizations", "agents", "alerts"],
     guide: "organizations#members-and-roles",
@@ -894,7 +894,7 @@ export const topics: Record<TopicId, Topic> = {
         at: { o: "tokens" },
       },
       {
-        what: "Make production wait for you",
+        what: "Lock production for agents",
         cli: "dock env lock production",
       },
       {

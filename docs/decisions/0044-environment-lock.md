@@ -5,6 +5,10 @@ in part by [0080](0080-permissions-roles-groups-and-agents.md) (approvers, not o
 lock; `--people` holds people's changes too). Amended 2026-11-17: the web
 UI's lock bar defaults to a full freeze, people's changes held too (blind
 reviewers read "lock" as a code freeze); `dock environment lock` keeps its default.
+Amended 2026-11-26 (Saile: "I was thinking locking it for AI agents"): a lock
+is for agents again, in the UI too, and GitHub pushes deploy through it; only
+a lock for people too (the full freeze) holds pushes. A push is a person's
+merge, and keeping agents from merging is the repository's branch protection.
 
 ## Context
 
@@ -46,7 +50,7 @@ can do whatever." The roadmap's "human approval for selected actions" and
 | When | A token's action is blocked by a lock: core records a pending request in the same call and the error names it. Identical pending requests (same token, same call, same arguments) are one request |
 | What it holds | The exact call, replayable: for the API the operation ID and its decoded input, for MCP the tool name and its arguments, sealed with the secrets box (they can hold variable values). Plus a one-line summary ("token claude wants to set variables in shop/production"), the requester, an optional reason, the environment's audit position at that moment, and when it expires |
 | Source deploys | `dock deploy` into a locked environment uploads anyway: the archive is checked and kept (`<data>/requests/<id>.tar`, one pending source deploy per service, a newer one replaces it) and approval deploys it. Nothing is built before approval |
-| Push deploys | A GitHub push into a locked environment waits for approval: the push becomes a request naming the commit (a newer push replaces it). This is the production deploy approval. A human's Deploy in the UI is not held |
+| Push deploys | A GitHub push into an environment locked for people too waits for approval: the push becomes a request naming the commit (a newer push replaces it). This is the production deploy approval. A plain lock lets pushes through (amended 2026-11-26). A human's Deploy in the UI is not held |
 | Reason | `--reason "..."` on any CLI command (the `Dock-Reason` header), `reason` on MCP's `request_access` |
 | Error | Code `environment_locked`, HTTP 423 Locked, `request` with the request ID; the message says it waits for approval and how to follow it. MCP's tool error carries the same code and `request` |
 | Asking first | MCP `request_access {tool, arguments, reason}` files a request for a mutating tool call without running it, locked or not; the tool's checks still run up to the point where it would change something |

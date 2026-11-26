@@ -169,7 +169,11 @@ export function ProjectHeader({
                 (e.lock ? (
                   <span className="inline-flex items-center gap-1.5 rounded-tag border border-warn-edge bg-stage-bg px-2 py-0.5 text-xs text-warn-text">
                     <Icon name="lock" size={12} />
-                    {locked ? "Locked" : "Lock paused"}
+                    {locked
+                      ? e.lock.people
+                        ? "Locked for people too"
+                        : "Locked for agents"
+                      : "Lock paused"}
                   </span>
                 ) : (
                   admin && (

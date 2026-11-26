@@ -265,14 +265,15 @@ $ dock request wait 12
 - `dock deploy` into a locked environment uploads anyway: the archive is
   checked and kept, and deployed once approved. A newer upload of the
   service replaces the one waiting. Pushes to a connected GitHub branch
-  wait the same way.
+  deploy as usual: they are people's merges.
 - Tokens never approve, not even admin tokens and not their own requests.
   An admin can also open the environment for a while instead.
 - Data panel changes in a locked environment are changesets for an admin
   to approve, as on production.
 - `dock environment lock production --people` holds people's changes too:
   only its approvers (Approvers, Full access) change it directly, and
-  everyone else's change waits for them as an access request.
+  everyone else's change, and every GitHub push, waits for them as an
+  access request.
 
 ## Your agents
 

@@ -17,8 +17,9 @@ import (
 // Deploys into a locked environment wait for approval (ADR 0044). They
 // can't be stored as calls: a source upload streams, and a GitHub push
 // isn't a token's call at all. A token's `dock deploy` keeps its checked
-// archive in the requests directory; a push becomes a request naming its
-// commit. A newer upload or push of the service replaces the one
+// archive in the requests directory; a push into an environment locked
+// for people too becomes a request naming its commit (a plain lock lets
+// pushes through: it is for agents). A newer upload or push of the service replaces the one
 // waiting. Approving deploys it like any other.
 
 // heldDeploy is a held deploy's request arguments: where, and what.
@@ -154,9 +155,9 @@ func (c *Core) replaySource(ctx context.Context, a Actor, _ string, raw json.Raw
 	return json.Marshal(out)
 }
 
-// holdPush keeps a GitHub push into a locked environment as an access
-// request instead of deploying it, and clears it from the queue; the
-// worker calls it. It returns the request's number.
+// holdPush keeps a GitHub push into an environment locked for people too
+// as an access request instead of deploying it, and clears it from the
+// queue; the worker calls it. It returns the request's number.
 func (c *Core) holdPush(ctx context.Context, ss svcScope, conn store.GitConnection) (int64, error) {
 	pusher := Actor{Kind: "system", Name: conn.PendingBy, OrgID: ss.project.OrgID}
 	if pusher.Name == "" {

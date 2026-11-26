@@ -27,9 +27,10 @@ agents and this CLI) can still read everything, but every change they try
 in it (deploys, rollbacks, restarts, variables, settings, domains,
 volumes, archive) is refused with exit code 5 and becomes an access
 request that an admin approves or rejects in the UI. Approved, it runs as
-the token that asked. People in the web UI are not affected, unless
---people: then only those who may approve there (Approvers, Full access)
-change it, and everyone else's change waits for them too.
+the token that asked. People in the web UI and GitHub pushes are not
+affected, unless --people: then only those who may approve there
+(Approvers, Full access) change it, and everyone else's change and every
+push waits for them too.
 
 Locking an environment that is open for a while closes it again. Needs
 admin; letting people change it again, like unlocking or opening it,
