@@ -139,21 +139,21 @@ func TestHooksHandler(t *testing.T) {
 	}
 }
 
-// Creating the GitHub App is for operators; its link opens a page, with
+// Creating a platform GitHub App is for operators; its link opens a page, with
 // no session, that posts the manifest to GitHub and nothing else. GitHub's
 // redirect back needs a state Dock issued.
 func TestGitHubAppPages(t *testing.T) {
 	f := newFixture(t)
-	if res, body := f.do("operator", http.MethodPost, "/api/v1/github/app", apitypes.GitHubAppRequest{}); res.StatusCode != http.StatusBadRequest || !bytes.Contains(body, []byte("dock address set")) {
+	if res, body := f.do("operator", http.MethodPost, "/api/v1/github/apps?platform=true", apitypes.GitHubAppRequest{}); res.StatusCode != http.StatusBadRequest || !bytes.Contains(body, []byte("dock address set")) {
 		t.Fatalf("without a public address: %d %s", res.StatusCode, body)
 	}
 	if _, err := f.core.SetAddress(context.Background(), sys, apitypes.SetAddressRequest{Hostname: "dock.example.com"}); err != nil {
 		t.Fatal(err)
 	}
-	if res, _ := f.do("admin", http.MethodPost, "/api/v1/github/app", apitypes.GitHubAppRequest{}); res.StatusCode != http.StatusForbidden {
+	if res, _ := f.do("admin", http.MethodPost, "/api/v1/github/apps?platform=true", apitypes.GitHubAppRequest{}); res.StatusCode != http.StatusForbidden {
 		t.Fatalf("org admin: %d", res.StatusCode)
 	}
-	res, body := f.do("operator", http.MethodPost, "/api/v1/github/app", apitypes.GitHubAppRequest{})
+	res, body := f.do("operator", http.MethodPost, "/api/v1/github/apps?platform=true", apitypes.GitHubAppRequest{})
 	var link apitypes.GitHubLink
 	_ = json.Unmarshal(body, &link)
 	if res.StatusCode != http.StatusOK || !strings.HasPrefix(link.URL, "/api/v1/github/app/new?state=") {

@@ -90,15 +90,13 @@ func (g githubClient) call(ctx context.Context, method, path string, cred github
 // githubAppCreated is what GitHub returns for a manifest's code: the new
 // App with its credentials, shown this once.
 type githubAppCreated struct {
-	ID      int64  `json:"id"`
-	Slug    string `json:"slug"`
-	Name    string `json:"name"`
-	HTMLURL string `json:"html_url"`
-	Owner   struct {
-		Login string `json:"login"`
-	} `json:"owner"`
-	WebhookSecret string `json:"webhook_secret"`
-	PEM           string `json:"pem"`
+	ID            int64         `json:"id"`
+	Slug          string        `json:"slug"`
+	Name          string        `json:"name"`
+	HTMLURL       string        `json:"html_url"`
+	Owner         githubAccount `json:"owner"`
+	WebhookSecret string        `json:"webhook_secret"`
+	PEM           string        `json:"pem"`
 	// The App's OAuth client, which checks who installs it (ADR 0066).
 	ClientID     string `json:"client_id"`
 	ClientSecret string `json:"client_secret"`
@@ -113,17 +111,22 @@ func (g githubClient) convertManifest(ctx context.Context, code string) (githubA
 	return out, err
 }
 
+// githubAccount is a GitHub user or organization: an installation's,
+// or an App's owner. The ID survives renames.
+type githubAccount struct {
+	ID    int64  `json:"id"`
+	Login string `json:"login"`
+	Type  string `json:"type"`
+}
+
 // githubInstallation is one of the App's installations, as GitHub lists
 // it.
 type githubInstallation struct {
-	ID      int64 `json:"id"`
-	Account struct {
-		Login string `json:"login"`
-		Type  string `json:"type"`
-	} `json:"account"`
-	RepositorySelection string     `json:"repository_selection"`
-	HTMLURL             string     `json:"html_url"`
-	SuspendedAt         *time.Time `json:"suspended_at"`
+	ID                  int64         `json:"id"`
+	Account             githubAccount `json:"account"`
+	RepositorySelection string        `json:"repository_selection"`
+	HTMLURL             string        `json:"html_url"`
+	SuspendedAt         *time.Time    `json:"suspended_at"`
 }
 
 // installations lists the App's installations (the first 100: more is far

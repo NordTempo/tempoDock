@@ -102,7 +102,7 @@ func (c *Core) GitHookExists(ctx context.Context, hookID string) error {
 }
 
 // hookTarget is what a webhook URL delivers to: a webhook connection, or
-// the GitHub App (app is set). Errors: not_found.
+// a GitHub App (app is set). Errors: not_found.
 func (c *Core) hookTarget(ctx context.Context, hookID string) (store.GitConnection, *store.GithubApp, error) {
 	if !hookIDRe.MatchString(hookID) {
 		return store.GitConnection{}, nil, notFound("no such webhook")
@@ -111,11 +111,11 @@ func (c *Core) hookTarget(ctx context.Context, hookID string) (store.GitConnecti
 	if err == nil || !store.IsNotFound(err) && CodeOf(err) != apitypes.CodeNotFound {
 		return conn, nil, err
 	}
-	app, err := c.store.GetGitHubApp(ctx)
+	app, err := c.store.GetGitHubAppByHook(ctx, hookID)
 	switch {
-	case err == nil && app.HookID == hookID:
+	case err == nil:
 		return conn, &app, nil
-	case err == nil || store.IsNotFound(err):
+	case store.IsNotFound(err):
 		return conn, nil, notFound("no such webhook")
 	}
 	return conn, nil, err
@@ -223,15 +223,15 @@ func (c *Core) gitDelivery(ctx context.Context, d GitDelivery) (string, error) {
 	return "", nil
 }
 
-// gitAppWebhook handles a delivery to the GitHub App's webhook (ADR
-// 0031); pull requests go to previews (ADR 0056). Pushes go to every App connection of the repository (by its
+// gitAppWebhook handles a delivery to a GitHub App's webhook (ADR 0031,
+// 0105); pull requests go to previews (ADR 0056). Pushes go to every App connection of the repository (by its
 // GitHub ID, so renames don't matter), each deciding by its branch and
 // directory; an uninstalled App's installation is unassigned. The App's
 // webhook secret is the authority, as a connection's is for its own hook.
 func (c *Core) gitAppWebhook(ctx context.Context, app store.GithubApp, d GitDelivery) (string, error) {
-	secret, err := c.box.Open(app.WebhookSecret, appWebhookSecretAAD)
+	secret, err := c.box.Open(app.WebhookSecret, appWebhookSecretAAD(app.HookID))
 	if err != nil {
-		return "", fmt.Errorf("open the GitHub App's webhook secret: %w", err)
+		return "", fmt.Errorf("open the webhook secret of the GitHub App %s: %w", app.Slug, err)
 	}
 	if !validSignature(secret, d.Body, d.Signature) {
 		return "", c.badSignature(d, "signature missing or wrong; the GitHub App's webhook secret must be the one Dock registered it with")
@@ -251,7 +251,7 @@ func (c *Core) gitAppWebhook(ctx context.Context, app store.GithubApp, d GitDeli
 	}
 	switch d.Event {
 	case "installation":
-		return c.gitAppInstallation(ctx, d.Body)
+		return c.gitAppInstallation(ctx, app, d.Body)
 	case "pull_request":
 		return c.gitAppPullRequest(ctx, d.Body)
 	}
@@ -306,28 +306,40 @@ func (c *Core) adoptAppConnections(ctx context.Context, repoID, installationID i
 	return err
 }
 
-// gitAppInstallation handles the App's installation events: an
-// uninstalled App's installation is unassigned, so the console doesn't
-// list it as assigned. Its connections then fail to fetch with a reason.
-func (c *Core) gitAppInstallation(ctx context.Context, body []byte) (string, error) {
+// gitAppInstallation handles an App's installation events: an org's own
+// App's new installation becomes the org's (recordOrgInstallation), and
+// an uninstalled one is unassigned, so the console doesn't list it as
+// assigned; its connections then fail to fetch with a reason. The App's
+// signed delivery is GitHub's word for the installation's account.
+func (c *Core) gitAppInstallation(ctx context.Context, app store.GithubApp, body []byte) (string, error) {
 	var e struct {
-		Action       string `json:"action"`
-		Installation struct {
-			ID int64 `json:"id"`
-		} `json:"installation"`
+		Action       string             `json:"action"`
+		Installation githubInstallation `json:"installation"`
+		Sender       struct {
+			Login string `json:"login"`
+		} `json:"sender"`
 	}
 	if err := json.Unmarshal(body, &e); err != nil {
 		return "", invalid("installation payload is not JSON: %v", err)
 	}
 	id := e.Installation.ID
-	if e.Action != "deleted" {
+	switch {
+	case e.Action == "created" && app.OrgID != nil:
+		by := Actor{Kind: "system", Name: "github:" + loginOf(e.Sender.Login)}
+		if err := c.recordOrgInstallation(ctx, by, app, e.Installation); CodeOf(err) == apitypes.CodeForbidden {
+			return "ignored: " + err.Error(), nil
+		} else if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("installation %d: recorded for the App's organization", id), nil
+	case e.Action != "deleted":
 		return fmt.Sprintf("installation %d: %s", id, cleanLine(e.Action, 40)), nil
 	}
-	if err := c.store.DeleteGitHubInstallation(ctx, id); err != nil {
+	if _, err := c.store.DeleteAppGitHubInstallation(ctx, store.DeleteAppGitHubInstallationParams{InstallationID: id, AppID: app.ID}); err != nil {
 		return "", err
 	}
 	c.git.app.forgetTokens(id)
-	c.log.Info("GitHub App uninstalled", "installation", id)
+	c.log.Info("GitHub App uninstalled", "app", app.Slug, "installation", id)
 	return fmt.Sprintf("installation %d removed", id), nil
 }
 

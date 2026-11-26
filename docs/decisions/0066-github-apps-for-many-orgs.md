@@ -1,6 +1,8 @@
 # 0066: GitHub Apps for many orgs
 
-Status: accepted (asked by Saile, 2026-11-08; decided by the agent)
+Status: accepted (asked by Saile, 2026-11-08; decided by the agent);
+amended by [0105](0105-github-apps-per-org.md), which builds "an org's
+own App"
 
 ## Context
 

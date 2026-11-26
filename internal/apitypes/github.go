@@ -2,42 +2,62 @@ package apitypes
 
 import "time"
 
-// GitHubStatus is the install's GitHub App and its installations (ADR
-// 0031), for operators.
+// GitHubStatus is every GitHub App (ADR 0031, 0105) with its
+// installations, for operators.
 type GitHubStatus struct {
-	// App is nil until an operator creates one (`dock github app create`).
-	App *GitHubApp `json:"app,omitempty"`
-	// WebhookURL is where the App's deliveries go: [hooks] public_host or
-	// Dock's public address. Empty while there is neither; HooksHint says
-	// how to fix it.
-	WebhookURL string `json:"webhook_url"`
-	HooksHint  string `json:"hooks_hint,omitempty"`
-	// CallbackURL is the App's OAuth callback, where installers come back
-	// from GitHub's authorize page (ADR 0066). An App made before Dock
+	// Apps are the platform's first, then each org's own.
+	Apps []GitHubAppStatus `json:"apps"`
+	// HooksHint says how to give Dock the public address GitHub delivers
+	// pushes to, while it has none.
+	HooksHint string `json:"hooks_hint,omitempty"`
+	// CallbackURL is a platform App's OAuth callback, where installers come
+	// back from GitHub's authorize page (ADR 0066). An App made before Dock
 	// kept its client needs it added in its settings on GitHub.
 	CallbackURL string `json:"callback_url,omitempty"`
-	// Installations are the App's installations on GitHub, with the org
-	// each is assigned to. Assigned ones GitHub no longer lists are
-	// included with Missing set.
+	// Orgs are every org's slug, to assign installations to.
+	Orgs []string `json:"orgs"`
+
+	// App, WebhookURL, Installations and InstallationsError are the first
+	// platform App's, as they were while Dock had one App; read Apps.
+	App                *GitHubApp           `json:"app,omitempty"`
+	WebhookURL         string               `json:"webhook_url"`
+	Installations      []GitHubInstallation `json:"installations"`
+	InstallationsError string               `json:"installations_error,omitempty"`
+}
+
+// GitHubAppStatus is an App with where it receives pushes and its
+// installations.
+type GitHubAppStatus struct {
+	App GitHubApp `json:"app"`
+	// WebhookURL is where the App's deliveries go: [hooks] public_host or
+	// Dock's public address. Empty while there is neither.
+	WebhookURL string `json:"webhook_url"`
+	// Installations are the App's installations on GitHub with the org
+	// each is assigned to (none: unassigned, or for an org's own App on an
+	// account that doesn't own it). Assigned ones GitHub no longer lists
+	// are included with Missing set. In an org's view, a platform App's
+	// are the org's only.
 	Installations []GitHubInstallation `json:"installations"`
 	// InstallationsError says why GitHub couldn't be asked; Installations
 	// then holds only what Dock has assigned.
 	InstallationsError string `json:"installations_error,omitempty"`
-	// Orgs are every org's slug, to assign installations to.
-	Orgs []string `json:"orgs"`
 }
 
-// GitHubApp is the install's GitHub App. Its private key and webhook
-// secret never leave the server.
+// GitHubApp is a GitHub App: the platform's, or an org's own. Its private
+// key and webhook secret never leave the server.
 type GitHubApp struct {
 	ID    int64  `json:"id" doc:"GitHub's App ID"`
 	Slug  string `json:"slug"`
 	Name  string `json:"name"`
 	Owner string `json:"owner" doc:"The GitHub account that owns the App"`
 	URL   string `json:"url" doc:"The App's page on GitHub"`
-	// VerifiesInstalls is set once Dock has the App's client secret and
-	// checks who installs it (ADR 0066). Until then only operators'
-	// install links work.
+	// Org is the slug of the org whose own App it is: its installations
+	// are that org's. Empty for a platform App, whose installations
+	// operators assign to orgs.
+	Org string `json:"org,omitempty"`
+	// VerifiesInstalls is set once Dock has a platform App's client secret
+	// and checks who installs it (ADR 0066). Until then only operators'
+	// install links work. An org's own App needs no check.
 	VerifiesInstalls bool      `json:"verifies_installs"`
 	CreatedBy        string    `json:"created_by"`
 	CreatedAt        time.Time `json:"created_at"`
@@ -64,19 +84,20 @@ type GitHubInstallation struct {
 	URL string `json:"url,omitempty"`
 }
 
-// GitHubAppRequest starts registering the App.
+// GitHubAppRequest starts registering an App.
 type GitHubAppRequest struct {
 	// Owner is the GitHub organization to register the App under; empty
 	// registers it on the account of whoever opens the link.
 	Owner string `json:"owner,omitempty" maxLength:"39"`
-	// Public lets any GitHub account install the App, so orgs can deploy
-	// from their own accounts (ADR 0066). GitHub can make a private App
-	// public later, but not back once others have installed it.
+	// Public lets any GitHub account install a platform App, so orgs can
+	// deploy from their own accounts (ADR 0066). GitHub can make a private
+	// App public later, but not back once others have installed it. An
+	// org's own App is always private.
 	Public bool `json:"public,omitempty"`
 }
 
-// GitHubClientSecretRequest gives an App made before ADR 0066 its OAuth
-// client secret, generated in its settings on GitHub.
+// GitHubClientSecretRequest gives a platform App made before ADR 0066 its
+// OAuth client secret, generated in its settings on GitHub.
 type GitHubClientSecretRequest struct {
 	ClientSecret string `json:"client_secret" maxLength:"200"`
 }
@@ -87,27 +108,28 @@ type GitHubLink struct {
 	URL string `json:"url"`
 }
 
-// GitHubOrgRequest names the org an installation is for.
-type GitHubOrgRequest struct {
+// GitHubInstallRequest names the org an installation is for, and the App
+// it is of.
+type GitHubInstallRequest struct {
 	Org string `json:"org,omitempty" maxLength:"32" doc:"The org's slug; empty for the caller's own. Only operators name another org."`
+	App string `json:"app,omitempty" maxLength:"100" doc:"The App's slug; may be left out while there is one it can be"`
 }
 
-// GitHubOrg is the GitHub App as an org's admins see it (ADR 0062): the
-// platform's App and the org's own installations.
+// GitHubOrg is the GitHub Apps an org's admins see (ADR 0062, 0105):
+// the org's own, with every installation, and the platform's, with the
+// org's installations of them.
 type GitHubOrg struct {
-	// App is nil while the platform has no App (an operator creates it).
-	App *GitHubOrgApp `json:"app,omitempty"`
-	// Installations are those assigned to the org, as GitHub lists them;
-	// one GitHub no longer lists has Missing set.
-	Installations []GitHubInstallation `json:"installations"`
-	// InstallationsError says why GitHub couldn't be asked; Installations
-	// then holds only what Dock has assigned.
-	InstallationsError string `json:"installations_error,omitempty"`
+	// Apps are the org's own first, then the platform's.
+	Apps []GitHubAppStatus `json:"apps"`
+
+	// App, Installations and InstallationsError are the first platform
+	// App's, as they were while Dock had one App; read Apps.
+	App                *GitHubOrgApp        `json:"app,omitempty"`
+	Installations      []GitHubInstallation `json:"installations"`
+	InstallationsError string               `json:"installations_error,omitempty"`
 }
 
-// GitHubOrgApp is the platform's GitHub App, for orgs. The install link
-// comes from POST /github/installations, since it carries a single-use
-// state.
+// GitHubOrgApp is a platform App as GitHubOrg.App describes it.
 type GitHubOrgApp struct {
 	Slug  string `json:"slug"`
 	Name  string `json:"name"`
@@ -116,7 +138,7 @@ type GitHubOrgApp struct {
 }
 
 // GitHubRepos are the repositories the caller's org can connect through
-// the App.
+// its GitHub Apps.
 type GitHubRepos struct {
 	Repos []GitHubRepo `json:"repos"`
 	// Truncated is set when there were more than Dock lists.

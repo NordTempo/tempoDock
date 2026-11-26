@@ -421,10 +421,10 @@ func TestGitHubInstallByOrgAdmin(t *testing.T) {
 	if _, err := h.c.GitHubOrgStatus(h.ctx, deployer); CodeOf(err) != apitypes.CodeForbidden {
 		t.Fatalf("a deployer read the org's installations: %v", err)
 	}
-	if _, err := h.c.StartGitHubInstall(h.ctx, deployer, apitypes.GitHubOrgRequest{}, ""); CodeOf(err) != apitypes.CodeForbidden {
+	if _, err := h.c.StartGitHubInstall(h.ctx, deployer, apitypes.GitHubInstallRequest{}, ""); CodeOf(err) != apitypes.CodeForbidden {
 		t.Fatalf("a deployer started an install: %v", err)
 	}
-	if _, err := h.c.StartGitHubInstall(h.ctx, other, apitypes.GitHubOrgRequest{Org: "test"}, ""); CodeOf(err) != apitypes.CodeForbidden {
+	if _, err := h.c.StartGitHubInstall(h.ctx, other, apitypes.GitHubInstallRequest{Org: "test"}, ""); CodeOf(err) != apitypes.CodeForbidden {
 		t.Fatalf("an org admin started an install for another org: %v", err)
 	}
 	if err := h.c.UnassignGitHubInstallation(h.ctx, other, fakeInstall); CodeOf(err) != apitypes.CodeNotFound || assignedTo() != 1 {
@@ -440,7 +440,7 @@ func TestGitHubInstallByOrgAdmin(t *testing.T) {
 	if err := install(admin, ""); err != nil || assignedTo() != 1 {
 		t.Fatalf("install for own org: %v", err)
 	}
-	if err := h.c.AssignGitHubInstallation(h.ctx, testSystem, fakeInstall, apitypes.GitHubOrgRequest{Org: "acme"}); err != nil || assignedTo() != other.OrgID {
+	if err := h.c.AssignGitHubInstallation(h.ctx, testSystem, fakeInstall, apitypes.GitHubInstallRequest{Org: "acme"}); err != nil || assignedTo() != other.OrgID {
 		t.Fatalf("operator moves the installation: %v", err)
 	}
 }

@@ -90,7 +90,7 @@ stopped. See [Agents](agents.md).
 |---|---|
 | Variables | Values every project's services can reference as `${{org.KEY}}` (`dock org env set`) |
 | Alerts | Where the organization's alerts go (`dock alerts channel`) |
-| GitHub | Dock's GitHub App installations, for deploys on push and previews (`dock github install`) |
+| GitHub | The organization's own GitHub Apps and its installations of the platform's, for deploys on push and previews (`dock github app create`, `dock github install`) |
 | Cloudflare | Connections that create DNS records and redirects (`dock cloudflare add`) |
 | Registries | Credentials for private images (`dock registry login`) |
 | Data access | The data access policy |

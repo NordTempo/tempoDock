@@ -144,7 +144,7 @@ type AlertTarget struct {
 	// error_regressed alert is about (GET /errors/{id}).
 	ErrorIssue int64 `json:"error_issue,omitempty"`
 	// Connection names the connection of connection_failed:
-	// cloudflare:<name>, github:app, storage:<repository>,
+	// cloudflare:<name>, github:<App slug>, storage:<repository>,
 	// registry:prune, registry:push and registry:bucket, or
 	// alert_channel:<name>.
 	Connection string `json:"connection,omitempty"`
