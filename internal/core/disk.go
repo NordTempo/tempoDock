@@ -242,14 +242,21 @@ func (c *Core) diskParts(srv store.Server, du node.DiskUsage, host node.HostStat
 	add(apitypes.DiskImages, "shared layers", "layers several images use, counted once", du.ImagesShared, 0)
 	add(apitypes.DiskImages, "not Dock's", "images other work on the server pulled", du.ImagesOther, 0)
 	add(apitypes.DiskReclaimable, "unused images", "of archived services, out of rollback windows, and Dock's replaced images", du.ImagesReclaimable, du.ImagesReclaimable)
-	leftovers := min(du.ScanLeftovers, scanDB)
-	add(apitypes.DiskReclaimable, diskPartScanLeftovers, "cut-off downloads of the vulnerability database", leftovers, leftovers)
+	// A server that no longer builds needs none of its build cache and
+	// scanner database: a prune frees all of both (pruneServer).
+	leftovers, leftDetail := min(du.ScanLeftovers, scanDB), "cut-off downloads of the vulnerability database"
+	if !srv.Builder {
+		leftovers, leftDetail = scanDB, "the vulnerability database, from when it built images"
+	}
+	add(apitypes.DiskReclaimable, diskPartScanLeftovers, leftDetail, leftovers, leftovers)
 	var cacheFree int64
 	if cacheBytes > 0 {
-		if srv.Builder {
-			cacheFree = max(cacheBytes-c.buildCacheKeep(), 0)
+		detail := fmt.Sprintf("a prune keeps %d MB", c.cfg.Retention.BuildCacheKeepMB)
+		cacheFree = max(cacheBytes-c.buildCacheKeep(), 0)
+		if !srv.Builder {
+			cacheFree, detail = cacheBytes, "from when it built images; a prune removes it all"
 		}
-		add(apitypes.DiskBuild, "BuildKit cache", fmt.Sprintf("a prune keeps %d MB", c.cfg.Retention.BuildCacheKeepMB), cacheBytes, cacheFree)
+		add(apitypes.DiskBuild, "BuildKit cache", detail, cacheBytes, cacheFree)
 	}
 	// With dock's data dir on the root filesystem, the registry's dir
 	// (under /var/lib too) most likely is; on a split layout neither is
@@ -269,9 +276,9 @@ func (c *Core) diskParts(srv store.Server, du node.DiskUsage, host node.HostStat
 	frees := map[apitypes.PruneTarget]int64{
 		apitypes.PruneImages: du.ImagesReclaimable, apitypes.PruneRollbacks: du.ImagesRollbacks,
 	}
-	if srv.Builder {
-		frees[apitypes.PruneScanner], frees[apitypes.PruneScanDB] = leftovers, scanDB
-		frees[apitypes.PruneCache], frees[apitypes.PruneAllCache] = cacheFree, cacheBytes
+	frees[apitypes.PruneScanner], frees[apitypes.PruneCache] = leftovers, cacheFree
+	if srv.Builder { // elsewhere the safe ones take all of it
+		frees[apitypes.PruneScanDB], frees[apitypes.PruneAllCache] = scanDB, cacheBytes
 	}
 	out.Prunes = []apitypes.DiskPrune{}
 	for _, t := range apitypes.PruneTargets {
