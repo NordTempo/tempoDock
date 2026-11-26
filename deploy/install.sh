@@ -988,7 +988,6 @@ main() {
   # says so.
   prefetched="$(mktemp -d)"
   caddy_new=""
-  caddy_forget=false
   caddy_name="caddy $CADDY_VERSION"
   if [[ -n "${DOCK_CADDY:-}" ]]; then
     # Dock's Caddy (ADR 0105), checked with its release or by the updater.
@@ -1016,12 +1015,6 @@ main() {
       || die "$tarball does not match its checksum"
     tar -xzf "$prefetched/$tarball" -C "$prefetched" caddy
     caddy_new="$prefetched/caddy"
-    # Replacing Dock's Caddy (ADR 0105): Caddy's own can't resume a config
-    # with Dock's handlers, and wouldn't start. It starts from caddy.json
-    # instead, and the daemon loads the routes again.
-    if /usr/local/bin/caddy list-modules 2>/dev/null | grep -q '^http\.handlers\.dock_inject$'; then
-      caddy_forget=true
-    fi
   fi
   cloudflared_new=""
   if [[ "$tunnel_unit" == true ]] \
@@ -1364,12 +1357,17 @@ CONF
     || die "the app firewall failed to apply; see: journalctl -u dock-firewall"
 
   systemctl enable dock-caddy.service
-  if [[ "$caddy_forget" == true ]]; then
-    # Caddy's own build replaced Dock's: it starts on caddy.json. Stopped
-    # before its saved config goes, so the old one can't save a route load
-    # in between; started just below.
+  # Caddy's own build can't resume a saved config with Dock's handlers
+  # (ADR 0105) and wouldn't start: it starts on caddy.json instead, and the
+  # daemon loads the routes again. Judged from what is on disk, so a run
+  # that failed after putting Caddy's own build in place is caught by the
+  # next. Stopped before the file goes, so the running Caddy can't save a
+  # route load in between; started just below.
+  autosave=/var/lib/dock-caddy/caddy/autosave.json
+  if grep -q '"dock_inject"' "$autosave" 2>/dev/null \
+    && ! /usr/local/bin/caddy list-modules 2>/dev/null | grep -q '^http\.handlers\.dock_inject$'; then
     systemctl stop dock-caddy.service 2>/dev/null || true
-    rm -f /var/lib/dock-caddy/caddy/autosave.json
+    rm -f "$autosave"
   fi
   if [[ "$caddy_unit_changed" == true || "$caddy_changed" == true ]] && systemctl is-active -q dock-caddy.service; then
     # Picks up a new binary, and unit changes such as the dock-caddy

@@ -399,27 +399,36 @@ func cspBlocks(csp, nonce string) string {
 			dirs[strings.ToLower(f[0])] = f[1:]
 		}
 	}
-	allows := func(vals []string, nonce string) bool {
+	// allows: the tag's nonce first; then 'self', * or https:, which
+	// 'strict-dynamic' turns off for a script tag in the page's HTML.
+	allows := func(vals []string, nonce string, script bool) bool {
+		host, strict := false, false
 		for _, v := range vals {
 			switch strings.ToLower(v) {
 			case "'self'", "*", "https:":
-				return true
+				host = true
+			case "'strict-dynamic'":
+				strict = script
 			}
 			if nonce != "" && v == "'nonce-"+nonce+"'" {
 				return true
 			}
 		}
-		return false
+		return host && !strict
 	}
 	// Each governs with the first of its directives the policy has:
 	// script-src-elem goes before script-src for a script tag.
 	for _, c := range []struct {
-		dirs  []string
-		nonce string // a nonce covers the script, never its events
-	}{{[]string{"script-src-elem", "script-src", "default-src"}, nonce}, {[]string{"connect-src", "default-src"}, ""}} {
+		dirs   []string
+		script bool // a nonce covers the script, never its events
+	}{{[]string{"script-src-elem", "script-src", "default-src"}, true}, {[]string{"connect-src", "default-src"}, false}} {
 		for _, name := range c.dirs {
 			if vals, ok := dirs[name]; ok {
-				if !allows(vals, c.nonce) {
+				n := ""
+				if c.script {
+					n = nonce
+				}
+				if !allows(vals, n, c.script) {
 					return name
 				}
 				break
