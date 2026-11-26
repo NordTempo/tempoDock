@@ -1,6 +1,7 @@
 package build
 
 import (
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -10,12 +11,12 @@ import (
 // holds it, and a use in between starts the wait over.
 func TestIdleStop(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		stops := 0
-		i := &idler{after: idleStop, stop: func() { stops++ }}
+		var stops atomic.Int32 // written by the timer's goroutine
+		i := &idler{after: idleStop, stop: func() { stops.Add(1) }}
 
 		release := i.hold(false)
 		time.Sleep(2 * idleStop)
-		if stops != 0 {
+		if stops.Load() != 0 {
 			t.Fatalf("stopped while held")
 		}
 		release()
@@ -23,16 +24,16 @@ func TestIdleStop(t *testing.T) {
 		time.Sleep(idleStop - time.Second)
 		i.hold(false)() // a quick use just before the stop
 		time.Sleep(idleStop - time.Second)
-		if stops != 0 {
+		if stops.Load() != 0 {
 			t.Fatalf("stopped %s after a use, want %s", idleStop-time.Second, idleStop)
 		}
 		time.Sleep(2 * time.Second)
-		if stops != 1 {
-			t.Fatalf("stops = %d after idleStop, want 1", stops)
+		if stops.Load() != 1 {
+			t.Fatalf("stops = %d after idleStop, want 1", stops.Load())
 		}
 		time.Sleep(10 * idleStop)
-		if stops != 1 {
-			t.Fatalf("stops = %d, want 1: an idle BuildKit is stopped once", stops)
+		if stops.Load() != 1 {
+			t.Fatalf("stops = %d, want 1: an idle BuildKit is stopped once", stops.Load())
 		}
 	})
 }
@@ -61,5 +62,13 @@ func TestPruneCoverage(t *testing.T) {
 	i.prunedAt(mark)
 	if _, covered := i.pruneStart(); covered {
 		t.Fatal("covered after a build that ran during the prune")
+	}
+
+	release := i.hold(false) // a build that started before the prune
+	mark, _ = i.pruneStart()
+	i.prunedAt(mark)
+	release()
+	if _, covered := i.pruneStart(); covered {
+		t.Fatal("covered after a build that ran on past the prune")
 	}
 }

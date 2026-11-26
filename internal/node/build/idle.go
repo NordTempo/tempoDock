@@ -27,10 +27,14 @@ type idler struct {
 	mu    sync.Mutex
 	users int
 	t     *time.Timer
-	// uses counts holds other than prunes. pruned is uses as a finished
-	// prune saw it when it began, plus one (0: no prune yet): while it
-	// matches, nothing can have added cache since, so a prune finds
-	// nothing to do and needn't start a stopped BuildKit.
+	// due is when the armed timer is meant to stop BuildKit: a timer that
+	// fired while a quick use re-armed it finds due later and does nothing.
+	due time.Time
+	// uses counts the starts and ends of holds other than prunes. pruned
+	// is uses as a finished prune saw it when it began, plus one (0: no
+	// prune yet): while it matches, no use ran during or after that prune,
+	// so nothing can have added cache since, a prune finds nothing to do
+	// and needn't start a stopped BuildKit.
 	uses, pruned uint64
 }
 
@@ -44,20 +48,25 @@ func (i *idler) hold(pruning bool) (release func()) {
 	if i.t != nil {
 		i.t.Stop()
 	}
-	if !pruning {
-		i.uses++
+	if pruning {
+		return func() { i.release(false) }
 	}
-	return i.release
+	i.uses++
+	return func() { i.release(true) }
 }
 
 // release ends a hold; the last one arms the stop timer.
-func (i *idler) release() {
+func (i *idler) release(use bool) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	if use {
+		i.uses++
+	}
 	i.users--
 	if i.users > 0 {
 		return
 	}
+	i.due = time.Now().Add(i.after)
 	if i.t == nil {
 		i.t = time.AfterFunc(i.after, i.fire)
 	} else {
@@ -65,11 +74,12 @@ func (i *idler) release() {
 	}
 }
 
-// fire stops BuildKit unless a hold came in after the timer fired.
+// fire stops BuildKit unless a hold came in after the timer fired, or
+// came and went and armed it again.
 func (i *idler) fire() {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	if i.users == 0 {
+	if i.users == 0 && !time.Now().Before(i.due) {
 		i.stop()
 	}
 }
