@@ -10,7 +10,8 @@ import (
 
 // Using a template creates its services live and deploys them, with the
 // domain in the first release, without applying other staged changes in
-// the environment; planning creates nothing.
+// the environment; planning creates nothing, and a detached use doesn't
+// wait for the deploys.
 func TestUseAppTemplate(t *testing.T) {
 	h := newHarness(t)
 	web := h.service("web", apitypes.CreateServiceRequest{Image: "web:1", Port: 3000})
@@ -72,6 +73,22 @@ func TestUseAppTemplate(t *testing.T) {
 	}
 	if svcs, _ := h.c.ListServices(h.ctx, testSystem, env); len(svcs) != 3 {
 		t.Fatalf("a refused use created services: %d", len(svcs))
+	}
+
+	// Detached, it returns once the services exist and they deploy on.
+	res, err = h.c.UseAppTemplate(h.ctx, testSystem, env, "umami", apitypes.UseTemplateRequest{Name: "stats", Detach: true})
+	if err != nil || len(res.Failed) != 0 || len(res.Releases) != 0 || len(res.Services) != 2 {
+		t.Fatalf("detached use: %v %+v", err, res)
+	}
+	for _, name := range res.Services {
+		ref := ServiceRef{"shop", "production", name}
+		eventually(t, name+"'s first release", func() bool {
+			_, err := h.c.GetRelease(h.ctx, testSystem, ref, 1)
+			return err == nil
+		})
+		if rel := h.wait(ref, 1); rel.Status != apitypes.ReleaseActive {
+			t.Fatalf("detached %s: %s (%s)", name, rel.Status, rel.Error)
+		}
 	}
 }
 

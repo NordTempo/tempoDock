@@ -97,6 +97,10 @@ type UseTemplateRequest struct {
 	// never shown back.
 	Inputs map[string]string `json:"inputs,omitempty" doc:"Values for the template's inputs, by key"`
 	Plan   bool              `json:"plan,omitempty" doc:"Only plan: say what it would create, change nothing"`
+	// Detach returns once the services exist: their first deploys run in
+	// order in the background, and the result lists no releases. The
+	// console's dialog and `dock template use --detach` send it.
+	Detach bool `json:"detach,omitempty" doc:"Return once the services exist; their first deploys run in the background and releases is empty"`
 }
 
 // UseTemplateResult is what using a template created, or would create.

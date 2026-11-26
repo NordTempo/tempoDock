@@ -296,6 +296,7 @@ edit and apply with ` + "`dock apply`" + `.`,
 					return nil
 				})
 			}
+			req.Detach = detach
 			var w *watcher
 			if !detach {
 				if w, err = g.watch(cmd.Context(), s, t); err != nil {

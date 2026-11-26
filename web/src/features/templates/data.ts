@@ -29,8 +29,8 @@ export const appTemplates = () =>
 
 /**
  * Uses a template in an environment: creates its services and starts
- * their first deploys. The environment's pages pick them up when the
- * mutation settles.
+ * their first deploys (with `detach`, settling once the services exist).
+ * The environment's pages pick them up when the mutation settles.
  */
 export const useUseTemplate = () =>
   useAction(

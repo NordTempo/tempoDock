@@ -13053,6 +13053,8 @@ export interface components {
             services?: components["schemas"]["ServiceUsageSample"][] | null;
         };
         UseTemplateRequest: {
+            /** @description Return once the services exist; their first deploys run in the background and releases is empty */
+            detach?: boolean;
             /** @description Hostname for the main service; empty for a generated one */
             domain?: string;
             /** @description Values for the template's inputs, by key */
