@@ -200,12 +200,12 @@ func (c *Core) archiveForDelete(ctx context.Context, d deletion) ([]string, erro
 }
 
 // deleteEnvironmentRows deletes the deletion's rows, after checking in
-// the same transaction that the environment is still the one named, the
-// project keeps another environment, and nothing was added meanwhile:
-// no preview opened from it, and no service or volume that wasn't in d
-// (one made while the resources were removed would lose its rows but
-// keep its container or volume). A refusal keeps every row, so deleting
-// again picks it up.
+// the same transaction that the environment is still the one named, on
+// the server it was cleaned on and not moving, that the project keeps
+// another environment, and that nothing was added meanwhile: no preview
+// cloned from it, service or volume that isn't in d (one made while the
+// resources were removed would lose its rows but keep its container or
+// volume). A refusal keeps every row, so deleting again picks it up.
 // Then it forgets what memory holds of them. Alert writes wait meanwhile
 // (alertEngine.writes).
 func (c *Core) deleteEnvironmentRows(ctx context.Context, es envScope, d deletion) error {
@@ -235,13 +235,6 @@ func (c *Core) deleteEnvironmentRows(ctx context.Context, es envScope, d deletio
 			return conflict("environment %s started moving meanwhile; delete it once the move ends", es)
 		} else if !store.IsNotFound(err) {
 			return err
-		}
-		n, err := q.CountOpenBasePreviews(ctx, es.env.ID)
-		if err != nil {
-			return err
-		}
-		if n > 0 {
-			return conflict("a preview of %s opened meanwhile; close it, then delete again", es)
 		}
 		// Only what was removed from the server may lose its rows: a
 		// service or volume made since (deployed, maybe archived again)
@@ -283,6 +276,17 @@ func (c *Core) deleteEnvironmentRows(ctx context.Context, es envScope, d deletio
 		pvs, err := q.ListProjectPreviewEnvironments(ctx, es.project.ID)
 		if err != nil {
 			return err
+		}
+		// Every preview cloned from it must be one of what goes: an open
+		// one is closed first, one opened and closed since is read again.
+		for _, pv := range pvs {
+			switch {
+			case pv.BaseEnvironmentID != es.env.ID || slices.Contains(ids, pv.EnvironmentID):
+			case pv.ClosedAt == nil:
+				return conflict("a preview of %s opened meanwhile; close it, then delete again", es)
+			default:
+				return conflict("a preview of %s was made meanwhile; delete the environment again", es)
+			}
 		}
 		if remainingEnvs(envs, pvs, es.env.ID) == 0 {
 			return onlyEnvironment(es)
