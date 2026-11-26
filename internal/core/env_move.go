@@ -1536,14 +1536,8 @@ func (c *Core) moveDomains(ctx context.Context, es envScope, from, to store.Serv
 	if toIng.mode == apitypes.IngressCloudflareTunnel {
 		// A generated hostname under a base domain the target shares
 		// with the source gets its own record to the target's tunnel.
-		// On a direct server sent through its tunnel, the new records'
-		// hostnames are served to the tunnel only from now on.
-		if saved, err := c.routeGeneratedDomains(ctx, to); err != nil {
+		if _, err := c.routeGeneratedDomains(ctx, to); err != nil {
 			return nil, err
-		} else if saved && toIng.listener {
-			if err := c.applyRoutes(ctx, to.ID); err != nil {
-				c.log.Warn("apply routes for generated domains through the tunnel", "server", to.Name, "err", err)
-			}
 		}
 	}
 	for _, svc := range svcs {

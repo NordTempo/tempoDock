@@ -151,6 +151,8 @@ func describeRecords(rs []cloudflare.Record) string {
 
 // cloudflareRecords works through the due records, in batches.
 func (c *Core) cloudflareRecords(ctx context.Context, conns map[int64]*cfConn) error {
+	ready := map[int64][]string{} // server: hostnames whose record became ready
+	defer c.routeReadyRecords(ctx, ready)
 	for range cfMaxBatches {
 		due, err := c.store.ListDueCloudflareRecords(ctx, store.ListDueCloudflareRecordsParams{Now: ptr(now()), Max: cfBatch})
 		if err != nil {
@@ -175,8 +177,12 @@ func (c *Core) cloudflareRecords(ctx context.Context, conns map[int64]*cfConn) e
 				c.publishRecord(ctx, r.Hostname)
 				continue
 			}
-			if err := c.recordStep(ctx, cc, r); err != nil {
+			became, err := c.recordStep(ctx, cc, r)
+			if err != nil {
 				return err
+			}
+			if became && r.ServerID != nil {
+				ready[*r.ServerID] = append(ready[*r.ServerID], r.Hostname)
 			}
 		}
 		if len(due) < cfBatch {
@@ -188,35 +194,60 @@ func (c *Core) cloudflareRecords(ctx context.Context, conns map[int64]*cfConn) e
 
 // recordStep makes Cloudflare match one row and saves the result. Only a
 // failure to save (or a rate limit) is returned.
-func (c *Core) recordStep(ctx context.Context, cc *cfConn, r store.CloudflareRecord) error {
+func (c *Core) recordStep(ctx context.Context, cc *cfConn, r store.CloudflareRecord) (became bool, err error) {
 	cctx, cancel := context.WithTimeout(ctx, cfCallTimeout)
 	defer cancel()
 	if r.Want == cfAbsent {
 		if err := c.unrouteDomain(cctx, cc, r); err != nil {
-			return c.recordFailed(ctx, cc, r, err)
+			return false, c.recordFailed(ctx, cc, r, err)
 		}
 		if err := c.store.DeleteCloudflareRecord(ctx, store.DeleteCloudflareRecordParams{ID: r.ID, Gen: r.Gen}); err != nil {
-			return err
+			return false, err
 		}
 		c.publishRecord(ctx, r.Hostname)
-		return nil
+		return false, nil
 	}
 	res, err := c.routeDomain(cctx, cc, r)
 	if err != nil {
-		return c.recordFailed(ctx, cc, r, err)
+		return false, c.recordFailed(ctx, cc, r, err)
 	}
 	saved, err := c.store.UpdateCloudflareRecord(ctx, store.UpdateCloudflareRecordParams{
 		RecordID: res.RecordID, Content: res.Content, RouteTunnel: res.RouteTunnel, Status: res.Status,
 		Reason: res.Reason, Attempts: 0, UpdatedAt: now(), ID: r.ID, Gen: r.Gen,
 	})
 	if err != nil || saved == 0 {
-		return err // saved == 0: asked for again meanwhile; the next step redoes it
+		return false, err // saved == 0: asked for again meanwhile; the next step redoes it
 	}
-	if res.Status == "ok" || res.Status == "external" {
+	if recordReady(res.Status) {
 		c.kickDomains() // its DNS check can pass now
 	}
 	c.publishRecord(ctx, r.Hostname)
-	return nil
+	return recordReady(res.Status) && !recordReady(r.Status), nil
+}
+
+// recordReady reports whether a record with status sends its hostname
+// to the tunnel: Dock's CNAME is in place, or someone else's points there.
+func recordReady(status string) bool { return status == "ok" || status == "external" }
+
+// routeReadyRecords applies the routes of the direct servers that have a
+// hostname under their base domain among ready (by server ID), whose
+// record became ready: tunnelOnlyHosts serves it to the tunnel only now.
+// Once per server and worker pass, so switching a server with many
+// generated hostnames reloads its Caddy once per pass, not per record.
+func (c *Core) routeReadyRecords(ctx context.Context, ready map[int64][]string) {
+	for id, hosts := range ready {
+		srv, err := c.store.GetServer(ctx, id)
+		if err != nil || !c.online(id) || c.installedIngress(srv).mode != apitypes.IngressDirect {
+			continue
+		}
+		base := c.ingressOf(srv).baseDomain
+		if !slices.ContainsFunc(hosts, func(h string) bool { return atOrUnderBase(h, base) }) {
+			continue
+		}
+		if err := c.applyRoutes(ctx, id); err != nil {
+			c.log.Warn("apply routes for records that became ready", "server", srv.Name, "err", err)
+		}
+	}
 }
 
 // recordFailed saves what a failed record step means.

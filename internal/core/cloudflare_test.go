@@ -481,7 +481,8 @@ func TestCloudflareDirectServerTunnel(t *testing.T) {
 // runs for it, with no new install: it then counts as a tunnel server, a
 // generated hostname it had and a new one get records to the tunnel and
 // are served to it only, and a domain whose DNS Dock doesn't manage stays
-// on its public IP too. It needs the tunnel first, and goes back.
+// on its public IP too. It needs the tunnel first, a base domain its
+// records can be in, and goes back.
 func TestServerThroughTunnel(t *testing.T) {
 	p, _ := cfPool(t, "tempo.run")
 	local, err := p.store.GetLocalServer(p.ctx)
@@ -539,6 +540,10 @@ func TestServerThroughTunnel(t *testing.T) {
 	})
 	if tunnelOnly["api.example.com"] {
 		t.Fatal("api.example.com is served to the tunnel only; its DNS isn't Dock's")
+	}
+	elsewhere := "apps.elsewhere.dev"
+	if _, err := p.c.UpdateServer(p.ctx, testSystem, cp, apitypes.UpdateServerRequest{BaseDomain: &elsewhere}); CodeOf(err) != apitypes.CodeValidation {
+		t.Fatalf("a base domain outside the zones while through the tunnel: %v", err)
 	}
 
 	tunnel = false

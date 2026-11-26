@@ -161,11 +161,22 @@ one base domain, without reinstalling.
 - **Its Caddy is still the direct one.** Hostnames with records are served
   on its tunnel listener only, as for domains from Cloudflare; others
   (typed domains whose DNS Dock doesn't manage, Dock's own address) stay
-  on its public IP too, so switching breaks nothing that worked. Its base
-  domain's wildcard certificate is kept for them (`installedIngress`).
+  on its public IP too, so switching breaks nothing that worked. A
+  hostname under its base domain can reach the IP through the base's
+  wildcard record, so it stays there too until its own record is ready
+  (or for as long as that record fails); the worker applies the server's
+  routes once per pass when one becomes ready (`routeReadyRecords`). This
+  holds for any direct server's names under its base. Its base domain's
+  wildcard certificate is kept for them (`installedIngress`).
 - **Refused** without a tunnel Dock runs and has ready, or with a base
   domain outside the platform's zones or in another Cloudflare account
   than the tunnel: its generated hostnames could get no records. Going
   back is refused on a server installed in tunnel mode, which has no IP.
-- **Back** (`--no-tunnel`): records stay, their hostnames on the tunnel;
-  new generated ones rely on the wildcard again.
+- **Back** (`--no-tunnel`): records stay, their hostnames on the tunnel,
+  which still serves them; new generated ones rely on the wildcard again.
+  Removing the records instead would break those names once the wildcard
+  record is gone.
+- **Retried by asking again.** `--tunnel` (or a base domain change while
+  it is on) gives records to whatever generated hostnames still lack one,
+  changed or not, so a request that failed halfway is finished by its
+  retry.
