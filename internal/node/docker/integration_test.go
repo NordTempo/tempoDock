@@ -878,7 +878,8 @@ func TestRemoveImageAfterTheListing(t *testing.T) {
 	// The platform's image that other work named too loses only its
 	// build tag, and stays.
 	built := e.importDangling(e.prefix+"-built", true)
-	tag, theirs := node.BuildTagPrefix+"3_e3_s3:"+e.prefix, e.prefix+"-theirs:1"
+	// "dock/postgres" starts like a build tag but is another repository.
+	tag, theirs := node.BuildTagPrefix+"3_e3_s3:"+e.prefix, "dock/postgres:"+e.prefix
 	for _, n := range []string{tag, theirs} {
 		if _, err := e.cli.ImageTag(ctx, client.ImageTagOptions{Source: built, Target: n}); err != nil {
 			t.Fatal(err)

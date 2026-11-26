@@ -83,3 +83,22 @@ func TestImageRulesRollbacksOnly(t *testing.T) {
 		}
 	}
 }
+
+// Only the names the platform gives are its own: a build tag and that
+// repository under its registry, not another repository that only
+// starts the same.
+func TestPlatformName(t *testing.T) {
+	repos := []string{"127.0.0.1:5000/dock/p"}
+	for name, want := range map[string]bool{
+		"dock/p1_e2_s3:12":                      true,
+		"127.0.0.1:5000/dock/p1_e2_s3@sha256:a": true,
+		"dock/postgres:keep":                    false,
+		"127.0.0.1:5000/dock/postgres:1":        false,
+		"example.com/dock/p1_e2_s3:12":          false,
+		"theirs/dock/p1_e2_s3:12":               false,
+	} {
+		if got := platformName(name, repos); got != want {
+			t.Errorf("platformName(%q) = %v, want %v", name, got, want)
+		}
+	}
+}

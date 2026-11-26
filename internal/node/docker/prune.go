@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -259,8 +260,19 @@ func (r *Runtime) removeImage(ctx context.Context, img image.Summary, owned bool
 }
 
 // platformName reports whether name is one the platform gives images: a
-// build tag (node.BuildTagPrefix) or a name under its registry (repos).
+// build tag ("dock/p3_e4_s5:12", node.BuildTagPrefix and the IDs) or the
+// same repository under its registry ("127.0.0.1:5000/dock/p3_e4_s5@..."
+// for repos "127.0.0.1:5000/dock/p"). Another repository that only
+// starts the same ("dock/postgres") is not.
 func platformName(name string, repos []string) bool {
-	return strings.HasPrefix(name, node.BuildTagPrefix) ||
-		slices.ContainsFunc(repos, func(p string) bool { return p != "" && strings.HasPrefix(name, p) })
+	if platformRepo.MatchString(name) {
+		return true
+	}
+	return slices.ContainsFunc(repos, func(p string) bool {
+		host, ok := strings.CutSuffix(p, node.BuildTagPrefix)
+		return ok && host != "" && strings.HasPrefix(name, host) && platformRepo.MatchString(name[len(host):])
+	})
 }
+
+// platformRepo matches a build repository's name with its tag or digest.
+var platformRepo = regexp.MustCompile(`^` + regexp.QuoteMeta(node.BuildTagPrefix) + `\d+_e\d+_s\d+[:@]`)
