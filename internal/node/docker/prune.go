@@ -26,7 +26,9 @@ type imageRules struct {
 	// pinned are the digests of the platform's own images, by familiar
 	// repository name ("moby/buildkit").
 	pinned map[string][]string
-	only   bool
+	// protect are references whose images stay, normalized.
+	protect map[string]bool
+	only    bool
 	// before: an image made after it is too new to remove unasked.
 	before int64
 }
@@ -45,8 +47,13 @@ func (r *Runtime) imageRules(req node.PruneImagesRequest) imageRules {
 	}
 	ru := imageRules{
 		keep: set(req.Keep), unneeded: set(req.Unneeded), rollbacks: set(req.Rollbacks),
-		repos: req.Repos, pinned: map[string][]string{}, only: req.OnlyRollbacks,
+		repos: req.Repos, pinned: map[string][]string{}, protect: map[string]bool{}, only: req.OnlyRollbacks,
 		before: time.Now().Add(-grace).Unix(),
+	}
+	for _, ref := range req.Protect {
+		if named, err := reference.ParseNormalizedNamed(ref); err == nil {
+			ru.protect[reference.TagNameOnly(named).String()] = true
+		}
 	}
 	for _, ref := range req.Pinned {
 		named, err := reference.ParseNormalizedNamed(ref)
@@ -66,7 +73,7 @@ func (r *Runtime) imageRules(req node.PruneImagesRequest) imageRules {
 // img, leaving aside whether a container uses it.
 func (ru imageRules) removable(img image.Summary) bool {
 	pinned, current := ru.pinnedVersion(img)
-	if ru.keep[img.ID] || img.Created > ru.before || current {
+	if ru.keep[img.ID] || img.Created > ru.before || current || ru.protected(img) {
 		return false
 	}
 	return pinned || ru.unneeded[img.ID] || ownedImage(img.Labels, img.RepoDigests, ru.repos)
@@ -94,6 +101,19 @@ func (ru imageRules) pinnedVersion(img image.Summary) (pinned, current bool) {
 		}
 	}
 	return pinned, false
+}
+
+// protected reports whether one of img's names is a protected reference.
+func (ru imageRules) protected(img image.Summary) bool {
+	if len(ru.protect) == 0 {
+		return false
+	}
+	for _, name := range imageNames(img) {
+		if named, err := reference.ParseNormalizedNamed(name); err == nil && ru.protect[reference.TagNameOnly(named).String()] {
+			return true
+		}
+	}
+	return false
 }
 
 // imageNames are an image's tags and digest references, "<none>" left out.
@@ -143,7 +163,7 @@ func (r *Runtime) PruneImages(ctx context.Context, req node.PruneImagesRequest) 
 		if used[img.ID] || (ru.only && !ru.rollbacks[img.ID]) || (!ru.only && !ru.removable(img)) {
 			continue
 		}
-		gone, err := r.removeImage(ctx, img)
+		gone, err := r.removeImage(ctx, img, ownedImage(img.Labels, img.RepoDigests, ru.repos))
 		switch {
 		case gone:
 			out.Removed++
@@ -170,15 +190,17 @@ func (r *Runtime) usedImages(ctx context.Context) (map[string]bool, error) {
 	return used, nil
 }
 
-// removeImage removes an image by its ID, with every name it has, and
-// reports whether it is gone. By ID, not by name: a pull or tag since the
-// listing may have moved a name to a newer image, which nothing checked.
-// Several names take force, which Docker still refuses while a running
-// container uses the image; stopped ones were skipped (usedImages). An
-// image a container came to use meanwhile, or that went already, is no
-// error.
-func (r *Runtime) removeImage(ctx context.Context, img image.Summary) (bool, error) {
-	_, err := r.cli.ImageRemove(ctx, img.ID, client.ImageRemoveOptions{Force: true, PruneChildren: true})
+// removeImage removes an image by its ID and reports whether it is gone.
+// By ID, not by name: a pull or tag since the listing may have moved a
+// name to a newer image, which nothing checked. Docker refuses an image
+// other repositories name too unless forced; force, for the platform's
+// own images (build tag and registry name), still refuses while a running
+// container uses the image, and stopped ones were skipped (usedImages).
+// Any other image is never forced: a name other work gave it keeps it. An
+// image a container came to use meanwhile, one refused, or one that went
+// already, is no error.
+func (r *Runtime) removeImage(ctx context.Context, img image.Summary, force bool) (bool, error) {
+	_, err := r.cli.ImageRemove(ctx, img.ID, client.ImageRemoveOptions{Force: force, PruneChildren: true})
 	switch {
 	case err == nil:
 		return true, nil

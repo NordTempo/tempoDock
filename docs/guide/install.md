@@ -340,6 +340,7 @@ running).
 | `[retention] audit_max_events` | `0` | Also cap the audit log at this many events; `0` no cap |
 | `[retention] alert_days` | `90` | Resolved alerts older than this are deleted |
 | `[retention] prune_disk_percent` | `80` | When Docker's disk on a server is this full, what nothing needs is pruned, at most hourly: images no release keeps (archived services', out of rollback windows, older versions of Dock's own), what cut-off downloads left beside the vulnerability database, and dock's own BuildKit cache above `build_cache_keep_mb`. Images other work pulled and other build caches are never touched. `0` never |
+| `[retention] keep_images` | `[]` | Images no prune removes, by reference (`"alpine:latest"`): on a server shared with other work, the images it uses without always running them, when a Dock release used them too. Images other work named under another repository are never removed anyway |
 | `[retention] build_cache_keep_mb` | `2048` | BuildKit cache left after such a prune |
 | `[logs] keep_mb_per_service` | `64` | When dock removes a container, its output is kept on its server (`<data dir>/logs/`) so `dock logs --release N` can read it. Each service keeps at most this much, compressed; the oldest releases' logs go first. Applies to every server. At least `1` |
 | `[logs] keep_mb_per_server` | `2048` | All services' kept output on one server together, compressed; the oldest go first, whatever their service. Nothing is kept while the disk has less than 1 GB or 5% free. At least `1` |

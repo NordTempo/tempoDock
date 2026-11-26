@@ -756,7 +756,8 @@ func TestDiskUsage(t *testing.T) {
 
 // PruneImages removes the platform's images nothing keeps, tagged or not,
 // and those the request names as unneeded, but never an image a
-// container uses nor one it didn't make and wasn't told about: a shared
+// container uses, one it didn't make that other repositories name too,
+// nor one it didn't make and wasn't told about: a shared
 // host's other work keeps its images. Asked for rollbacks only, it
 // removes those and nothing else. Every other image on the host is kept,
 // so the test only touches its own.
@@ -778,6 +779,14 @@ func TestPruneImages(t *testing.T) {
 	})
 	theirs := e.importDangling(e.prefix+"-theirs", false)
 	released := e.importDangling(e.prefix+"-released", false)
+	// An unneeded image other work named too keeps its names and stays.
+	shared := e.importDangling(e.prefix+"-shared", false)
+	for _, name := range []string{e.prefix + "-release:1", e.prefix + "-other-work:1"} {
+		if _, err := e.cli.ImageTag(ctx, client.ImageTagOptions{Source: shared, Target: name}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() { _, _ = e.cli.ImageRemove(context.Background(), shared, client.ImageRemoveOptions{Force: true}) })
 	rollback := e.importDangling(e.prefix+"-rollback", true)
 	list, err := e.cli.ImageList(ctx, client.ImageListOptions{All: true})
 	if err != nil {
@@ -785,11 +794,11 @@ func TestPruneImages(t *testing.T) {
 	}
 	var keep []string
 	for _, img := range list.Items {
-		if !slices.Contains([]string{gone, tagged, used, theirs, released}, img.ID) {
+		if !slices.Contains([]string{gone, tagged, used, theirs, released, shared}, img.ID) {
 			keep = append(keep, img.ID)
 		}
 	}
-	req := node.PruneImagesRequest{Keep: keep, Repos: []string{"127.0.0.1:5000/dock/p"}, Unneeded: []string{released}, Rollbacks: []string{rollback}}
+	req := node.PruneImagesRequest{Keep: keep, Repos: []string{"127.0.0.1:5000/dock/p"}, Unneeded: []string{released, shared}, Rollbacks: []string{rollback}}
 
 	only := req
 	only.OnlyRollbacks = true
@@ -812,7 +821,7 @@ func TestPruneImages(t *testing.T) {
 			t.Errorf("the %s image is still there: %v", name, err)
 		}
 	}
-	for name, id := range map[string]string{"a container's": used, "an unlabelled": theirs} {
+	for name, id := range map[string]string{"a container's": used, "an unlabelled": theirs, "another repository's": shared} {
 		if _, err := e.cli.ImageInspect(ctx, id); err != nil {
 			t.Errorf("%s image was removed: %v", name, err)
 		}

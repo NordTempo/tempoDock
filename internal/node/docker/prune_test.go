@@ -43,6 +43,11 @@ func TestImageRulesReplaced(t *testing.T) {
 	if ru := r.imageRules(node.PruneImagesRequest{Pinned: []string{"moby/buildkit@" + pin}, Unneeded: []string{shared.ID}}); ru.removable(shared) {
 		t.Error("the pinned version a release also used is removable")
 	}
+	// A protected name keeps its image, whatever says it may go.
+	kept := image.Summary{ID: "sha256:k", Created: old, RepoTags: []string{"alpine:latest"}}
+	if ru := r.imageRules(node.PruneImagesRequest{Protect: []string{"docker.io/library/alpine:latest"}, Unneeded: []string{kept.ID}}); ru.removable(kept) {
+		t.Error("a protected image is removable")
+	}
 	young := image.Summary{ID: "sha256:y", Created: time.Now().Unix(), RepoDigests: []string{"moby/buildkit@" + other}}
 	if ru.removable(young) {
 		t.Error("an image made just now is removable")

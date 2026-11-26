@@ -228,6 +228,7 @@ type (
 		// images of the platform's.
 		Unneeded      []string `json:"unneeded,omitempty"`
 		Pinned        []string `json:"pinned,omitempty"`
+		Protect       []string `json:"protect,omitempty"`
 		Rollbacks     []string `json:"rollbacks,omitempty"`
 		OnlyRollbacks bool     `json:"only_rollbacks,omitempty"`
 		Tool          string   `json:"tool,omitempty"`
@@ -1022,7 +1023,7 @@ type putAnalyticsBinaryRequest struct {
 // toWirePrune is a prune request on the wire.
 func toWirePrune(req node.PruneImagesRequest) pruneImagesRequest {
 	return pruneImagesRequest{
-		Keep: req.Keep, Repos: req.Repos, Unneeded: req.Unneeded, Pinned: req.Pinned,
+		Keep: req.Keep, Repos: req.Repos, Unneeded: req.Unneeded, Pinned: req.Pinned, Protect: req.Protect,
 		Rollbacks: req.Rollbacks, OnlyRollbacks: req.OnlyRollbacks, Tool: req.Tool,
 	}
 }
@@ -1030,7 +1031,7 @@ func toWirePrune(req node.PruneImagesRequest) pruneImagesRequest {
 // node is the request a node's runtime gets.
 func (a pruneImagesRequest) node() node.PruneImagesRequest {
 	return node.PruneImagesRequest{
-		Keep: a.Keep, Repos: a.Repos, Unneeded: a.Unneeded, Pinned: a.Pinned,
+		Keep: a.Keep, Repos: a.Repos, Unneeded: a.Unneeded, Pinned: a.Pinned, Protect: a.Protect,
 		Rollbacks: a.Rollbacks, OnlyRollbacks: a.OnlyRollbacks, Tool: a.Tool,
 	}
 }

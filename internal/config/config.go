@@ -287,6 +287,10 @@ type Retention struct {
 	// cache above BuildCacheKeepMB. 0 turns pruning off.
 	PruneDiskPercent int `toml:"prune_disk_percent"`
 	BuildCacheKeepMB int `toml:"build_cache_keep_mb"`
+	// KeepImages are images no prune removes, by reference ("alpine:latest",
+	// "repo@sha256:..."): what other work on a shared server uses but
+	// may not be running, when a release of Dock's used them too.
+	KeepImages []string `toml:"keep_images"`
 }
 
 // Alerts sets when the control plane raises alerts (ADR 0020). Where

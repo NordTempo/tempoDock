@@ -223,13 +223,14 @@ func (c *Core) pruneScanDatabase(ctx context.Context, srv store.Server, rt node.
 //     each service's active release and the one before it (where a plain
 //     rollback goes), which a rollback pulls again;
 //   - pinned: the images Dock runs its own work in, whose other versions
-//     go.
+//     go;
+//   - protected: [retention] keep_images, which never go.
 func (c *Core) imagePrune(ctx context.Context, srv store.Server) (node.PruneImagesRequest, error) {
 	rows, err := c.store.ListServerReleaseImages(ctx, srv.ID)
 	if err != nil {
 		return node.PruneImagesRequest{}, fmt.Errorf("list release images: %w", err)
 	}
-	req := node.PruneImagesRequest{Pinned: c.pinnedImages(srv), Tool: c.cfg.Backup.ResticImage}
+	req := node.PruneImagesRequest{Pinned: c.pinnedImages(srv), Protect: c.cfg.Retention.KeepImages, Tool: c.cfg.Backup.ResticImage}
 	if c.reg != nil {
 		req.Repos = []string{c.reg.Host() + "/" + buildTagPrefix}
 	}

@@ -573,7 +573,7 @@ func pruneOp(req node.PruneImagesRequest) string {
 	for _, l := range []struct {
 		name string
 		ids  []string
-	}{{"unneeded", req.Unneeded}, {"rollbacks", req.Rollbacks}, {"pinned", req.Pinned}} {
+	}{{"unneeded", req.Unneeded}, {"rollbacks", req.Rollbacks}, {"pinned", req.Pinned}, {"protect", req.Protect}} {
 		if len(l.ids) > 0 {
 			s += " " + l.name + "=" + strings.Join(l.ids, ",")
 		}

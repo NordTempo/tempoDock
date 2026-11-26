@@ -495,6 +495,9 @@ type PruneImagesRequest struct {
 	// of an archived service. Images from other registries are only
 	// known this way.
 	Unneeded []string
+	// Protect are references ("alpine:latest") whose images are never
+	// removed, whatever else says they may go ([retention] keep_images).
+	Protect []string
 	// Pinned are the images the platform runs its own work in, by
 	// reference with a digest (BuildKit, the scanners, restic, ...):
 	// other versions of their repositories, left by updates, go.
