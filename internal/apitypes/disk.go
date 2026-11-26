@@ -79,7 +79,8 @@ const (
 	// PruneAllCache is all of BuildKit's cache: the next builds start cold.
 	PruneAllCache PruneTarget = "all-cache"
 	// PruneScanDB is the whole vulnerability database: the next scan
-	// downloads it again (about 200 MB, 3.4 GB on disk).
+	// downloads it again (about 200 MB, 3.4 GB on disk), or with [scan]
+	// offline an operator imports one (`dock scanning import`).
 	PruneScanDB PruneTarget = "scan-db"
 )
 

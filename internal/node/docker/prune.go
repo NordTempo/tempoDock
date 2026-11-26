@@ -65,19 +65,20 @@ func (r *Runtime) imageRules(req node.PruneImagesRequest) imageRules {
 // removable reports whether a prune of images (not of rollbacks) removes
 // img, leaving aside whether a container uses it.
 func (ru imageRules) removable(img image.Summary) bool {
-	if ru.keep[img.ID] || img.Created > ru.before {
+	pinned, current := ru.pinnedVersion(img)
+	if ru.keep[img.ID] || img.Created > ru.before || current {
 		return false
 	}
-	return ru.unneeded[img.ID] || ownedImage(img.Labels, img.RepoDigests, ru.repos) || ru.replaced(img)
+	return pinned || ru.unneeded[img.ID] || ownedImage(img.Labels, img.RepoDigests, ru.repos)
 }
 
-// replaced reports whether img is another version of one of the
-// platform's own images: a repository of one, without its digest.
-func (ru imageRules) replaced(img image.Summary) bool {
+// pinnedVersion reports whether img is of a repository of one of the
+// platform's own images and, if so, whether it is the version pinned
+// now, which is never removed, whatever else used it.
+func (ru imageRules) pinnedVersion(img image.Summary) (pinned, current bool) {
 	if len(ru.pinned) == 0 {
-		return false
+		return false, false
 	}
-	ours := false
 	for _, name := range imageNames(img) {
 		named, err := reference.ParseNormalizedNamed(name)
 		if err != nil {
@@ -87,12 +88,12 @@ func (ru imageRules) replaced(img image.Summary) bool {
 		if !ok {
 			continue
 		}
-		ours = true
+		pinned = true
 		if d, ok := named.(reference.Digested); ok && slices.Contains(digests, d.Digest().String()) {
-			return false // the version in use
+			return true, true
 		}
 	}
-	return ours
+	return pinned, false
 }
 
 // imageNames are an image's tags and digest references, "<none>" left out.
@@ -125,9 +126,8 @@ func ownedImage(labels map[string]string, repoDigests, repos []string) bool {
 
 // PruneImages implements node.Containers. Docker's own `image prune`
 // can't be told what to keep or whose images are whose, so this lists
-// the images and removes those imageRules picks, each by its names one
-// at a time (the last one removes the image; Docker refuses it while a
-// container uses the image, which is never forced).
+// the images and removes those imageRules picks, each by its ID with all
+// its names (removeImage).
 func (r *Runtime) PruneImages(ctx context.Context, req node.PruneImagesRequest) (node.PruneResult, error) {
 	ru := r.imageRules(req)
 	res, err := r.cli.ImageList(ctx, client.ImageListOptions{SharedSize: true})
@@ -170,24 +170,21 @@ func (r *Runtime) usedImages(ctx context.Context) (map[string]bool, error) {
 	return used, nil
 }
 
-// removeImage removes an image by each of its names, or by its ID when
-// it has none, and reports whether it is gone. An image a container came
-// to use meanwhile, or that went already, is no error.
+// removeImage removes an image by its ID, with every name it has, and
+// reports whether it is gone. By ID, not by name: a pull or tag since the
+// listing may have moved a name to a newer image, which nothing checked.
+// Several names take force, which Docker still refuses while a running
+// container uses the image; stopped ones were skipped (usedImages). An
+// image a container came to use meanwhile, or that went already, is no
+// error.
 func (r *Runtime) removeImage(ctx context.Context, img image.Summary) (bool, error) {
-	names := imageNames(img)
-	if len(names) == 0 {
-		names = []string{img.ID}
+	_, err := r.cli.ImageRemove(ctx, img.ID, client.ImageRemoveOptions{Force: true, PruneChildren: true})
+	switch {
+	case err == nil:
+		return true, nil
+	case cerrdefs.IsConflict(err), cerrdefs.IsNotFound(err):
+		return false, nil
+	default:
+		return false, fmt.Errorf("remove image %s: %w", img.ID, err)
 	}
-	for _, name := range names {
-		_, err := r.cli.ImageRemove(ctx, name, client.ImageRemoveOptions{PruneChildren: true})
-		switch {
-		case err == nil:
-		case cerrdefs.IsConflict(err):
-			return false, nil
-		case cerrdefs.IsNotFound(err):
-		default:
-			return false, fmt.Errorf("remove image %s: %w", name, err)
-		}
-	}
-	return true, nil
 }

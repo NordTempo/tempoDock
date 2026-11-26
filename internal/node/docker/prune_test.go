@@ -9,7 +9,8 @@ import (
 	"github.com/NordTempo/tempoDock/internal/node"
 )
 
-// Other versions of the platform's own images go; the pinned version, an
+// Other versions of the platform's own images go; the pinned version (even
+// one a release also used and none keeps), an
 // image of another repository and a pin without a digest (which can't
 // tell versions apart) stay. Names compare as Docker writes them, with or
 // without docker.io/library.
@@ -36,6 +37,11 @@ func TestImageRulesReplaced(t *testing.T) {
 		if got := ru.removable(tc.img); got != tc.want {
 			t.Errorf("%s: removable = %v, want %v", tc.name, got, tc.want)
 		}
+	}
+	// The version in use stays even when a release used it and none keeps it.
+	shared := image.Summary{ID: "sha256:z", Created: old, RepoDigests: []string{"moby/buildkit@" + pin}}
+	if ru := r.imageRules(node.PruneImagesRequest{Pinned: []string{"moby/buildkit@" + pin}, Unneeded: []string{shared.ID}}); ru.removable(shared) {
+		t.Error("the pinned version a release also used is removable")
 	}
 	young := image.Summary{ID: "sha256:y", Created: time.Now().Unix(), RepoDigests: []string{"moby/buildkit@" + other}}
 	if ru.removable(young) {

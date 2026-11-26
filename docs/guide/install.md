@@ -918,8 +918,9 @@ cache above `build_cache_keep_mb`. Each row prunes on its own, and the
 rows below them each cost something later: older rollbacks (with the
 registry, rolling back past the release before pulls them again), all of
 the build cache (the next builds start cold) and the whole vulnerability
-database (downloaded again before the next scan). Running apps and
-volumes are never touched.
+database (downloaded again before the next scan; with `[scan] offline`,
+import one again with `dock scanning import`). Running apps and volumes
+are never touched.
 
 ```sh
 dock server disk ubuntu-4gb-nbg1-1                     # the same breakdown, and what each prune frees

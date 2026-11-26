@@ -28,7 +28,10 @@ daemon's dependencies (Docker, BuildKit, Caddy, SQLite, Huma).
   `human` the table or text. Progress goes to stderr and is silent with
   `--json`.
 - Errors are `*output.Error` with an exit code from `output/errors.go`,
-  a message and a `Hint` naming the command that fixes it.
+  a message and a `Hint` naming the command that fixes it. A bad flag
+  value found in `RunE` is `output.ExitUsage` too: Cobra's own flag
+  errors are mapped to it, but by `RunE` the root has started and a
+  plain `fmt.Errorf` exits 1 without a hint.
 - `--json` shapes only ever gain fields. Same words as the API and UI.
 - A new server action ships with its UI (ADR 0026), or the commit says
   which follow-up adds it.

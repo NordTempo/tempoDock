@@ -40,26 +40,21 @@ func (c *Core) PruneServer(ctx context.Context, a Actor, name string, targets []
 	if err != nil {
 		return apitypes.ServerPruneResult{}, err
 	}
-	r := c.retention
-	r.mu.Lock()
-	busy := r.pruning[srv.ID]
-	r.pruning[srv.ID] = true
-	r.mu.Unlock()
-	if busy {
+	if !c.claimPrune(srv.ID) {
 		return apitypes.ServerPruneResult{}, conflict("server %s is being pruned already; wait for it to finish", srv.Name)
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), pruneTimeout)
 	defer cancel()
-	out, err := c.pruneServer(ctx, srv, targets)
+	var out apitypes.ServerPruneResult
+	func() {
+		done := false
+		defer func() { c.releasePrune(srv.ID, done) }()
+		out, err = c.pruneServer(ctx, srv, targets)
+		// A failed prune doesn't hold back the automatic one.
+		done = err == nil
+	}()
 	// What the prune freed shows on the server page once read again.
 	c.refreshDisk(srv)
-	r.mu.Lock()
-	r.pruning[srv.ID] = false
-	if err == nil {
-		// A failed prune doesn't hold back the automatic one.
-		r.pruned[srv.ID] = time.Now()
-	}
-	r.mu.Unlock()
 	if err != nil && freedBytes(out) == 0 && out.ImagesRemoved == 0 {
 		return apitypes.ServerPruneResult{}, err
 	}
@@ -74,6 +69,32 @@ func (c *Core) PruneServer(ctx context.Context, a Actor, name string, targets []
 	}
 	c.audit(ctx, a.platform(), "server.prune", nil, nil, "server "+srv.Name, summary)
 	return out, nil
+}
+
+// claimPrune marks a server as being pruned, unless it is already: one
+// prune per server at a time. Release it with releasePrune in a defer,
+// so a panic midway doesn't leave the server unprunable until a restart.
+func (c *Core) claimPrune(serverID int64) bool {
+	r := c.retention
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.pruning[serverID] {
+		return false
+	}
+	r.pruning[serverID] = true
+	return true
+}
+
+// releasePrune ends claimPrune's claim; done records the prune as run,
+// which holds back the automatic one for pruneEvery.
+func (c *Core) releasePrune(serverID int64, done bool) {
+	r := c.retention
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.pruning[serverID] = false
+	if done {
+		r.pruned[serverID] = time.Now()
+	}
 }
 
 // joinTargets lists targets for a message: "images, scanner, cache".
@@ -301,27 +322,24 @@ func (c *Core) pruneArchived(servers []int64, stopped *sync.WaitGroup) {
 			stopped.Wait()
 		}
 		for _, id := range slices.Compact(slices.Sorted(slices.Values(servers))) {
-			srv, err := c.store.GetServer(c.ctx, id)
-			if err != nil {
-				continue
-			}
-			r := c.retention
-			r.mu.Lock()
-			busy := r.pruning[id]
-			r.pruning[id] = true
-			r.mu.Unlock()
-			if busy {
-				continue
-			}
-			res, err := c.pruneServer(c.ctx, srv, []apitypes.PruneTarget{apitypes.PruneImages})
-			r.mu.Lock()
-			r.pruning[id] = false
-			r.mu.Unlock()
-			if err != nil {
-				c.log.Warn("prune archived services' images", "server", srv.Name, "err", err)
-			} else if res.ImagesRemoved > 0 {
-				c.log.Info("pruned archived services' images", "server", srv.Name, "images", res.ImagesRemoved, "bytes", res.ImageBytes)
-			}
+			// One server's panic doesn't keep the others from theirs.
+			c.safely("pruning an archived service's server", func() { c.pruneArchivedOn(id) })
 		}
 	})
+}
+
+// pruneArchivedOn runs the images target on one server for pruneArchived,
+// unless it is being pruned already.
+func (c *Core) pruneArchivedOn(id int64) {
+	srv, err := c.store.GetServer(c.ctx, id)
+	if err != nil || !c.claimPrune(id) {
+		return
+	}
+	defer c.releasePrune(id, false)
+	res, err := c.pruneServer(c.ctx, srv, []apitypes.PruneTarget{apitypes.PruneImages})
+	if err != nil {
+		c.log.Warn("prune archived services' images", "server", srv.Name, "err", err)
+	} else if res.ImagesRemoved > 0 {
+		c.log.Info("pruned archived services' images", "server", srv.Name, "images", res.ImagesRemoved, "bytes", res.ImageBytes)
+	}
 }

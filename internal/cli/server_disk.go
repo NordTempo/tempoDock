@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/cli/output"
 )
 
 // Where a server's disk goes, and pruning it on demand (ADR 0035).
@@ -111,7 +112,8 @@ safe prunes, which Dock also runs by itself once the disk passes
              release's and the one before: rolling back further pulls them
   all-cache  all of BuildKit's cache: the next builds start cold
   scan-db    the whole vulnerability database: downloaded again before
-             the next scan
+             the next scan (with [scan] offline, import one again with
+             ` + "`dock scanning import`" + `)
 
 Running apps and volumes are never touched. ` + "`dock server disk`" + ` shows what each frees.`,
 		Example: `  dock server prune prod-1
@@ -123,7 +125,10 @@ Running apps and volumes are never touched. ` + "`dock server disk`" + ` shows w
 			for _, o := range only {
 				t := apitypes.PruneTarget(o)
 				if _, ok := pruneTargetNames[t]; !ok {
-					return fmt.Errorf("--only %q: pick from images, scanner, cache, rollbacks, all-cache, scan-db", o)
+					return &output.Error{
+						Exit: output.ExitUsage, Message: fmt.Sprintf("there is no prune target %q", o),
+						Hint: "Pick from images, scanner, cache, rollbacks, all-cache and scan-db; `dock server prune --help` says what each frees.",
+					}
 				}
 				targets = append(targets, t)
 			}

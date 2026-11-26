@@ -136,6 +136,12 @@ func (c *Client) PruneImages(ctx context.Context, req node.PruneImagesRequest) (
 	if err := c.needProtocol(ctx, ownImagesProtocol, "prune only its own images"); err != nil {
 		return node.PruneResult{}, err
 	}
+	// An older node would take a rollbacks-only prune for an ordinary one.
+	if req.OnlyRollbacks {
+		if err := c.needProtocol(ctx, PruneProtocol, "prune older rollbacks"); err != nil {
+			return node.PruneResult{}, err
+		}
+	}
 	r, err := callWithLogs[pruneResult](ctx, c, opPruneImages, pruneTimeout, toWirePrune(req), nil, nil)
 	return node.PruneResult(r), err
 }

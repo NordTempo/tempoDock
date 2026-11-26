@@ -133,6 +133,9 @@ func (c *Core) maybePrune(srv store.Server, now time.Time) {
 	c.wg.Add(1)
 	c.goCaught("pruning a full disk", func() {
 		defer c.wg.Done()
+		// Recorded as run even if it failed or panicked: the next try
+		// waits pruneEvery either way.
+		defer c.releasePrune(srv.ID, true)
 		started := time.Now()
 		res, err := c.pruneServer(c.ctx, srv, nil)
 		if err != nil {
@@ -140,10 +143,6 @@ func (c *Core) maybePrune(srv store.Server, now time.Time) {
 		}
 		c.log.Info("pruned a full disk", "server", srv.Name, "images", res.ImagesRemoved, "image_bytes", res.ImageBytes,
 			"cache_bytes", res.CacheBytes, "freed", freedBytes(res), "took", time.Since(started).Round(time.Millisecond))
-		r.mu.Lock()
-		r.pruning[srv.ID] = false
-		r.pruned[srv.ID] = time.Now()
-		r.mu.Unlock()
 	})
 }
 
