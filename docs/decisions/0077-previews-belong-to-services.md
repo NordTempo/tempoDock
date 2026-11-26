@@ -50,7 +50,9 @@ minutes, api says 2 hours), and Dock would need a rule for which wins.
 - A monorepo reads as one thing: each service says whether pull requests
   build it, and a pull request touching only the docs gets no preview.
 - The project's Previews page becomes a summary: who builds pull
-  requests, each base's numbers, the open previews.
+  requests, each base's numbers, the open previews. (2026-11-26: the
+  summary is gone; a service that builds pull requests shows its
+  environment's numbers and open previews under its own Previews.)
 - Two environments of a project can preview different branches of the
   same repository (staging for `dev`, production for `main`).
 - Idle cost is unchanged: nothing runs until a pull request event arrives.

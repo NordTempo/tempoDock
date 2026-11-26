@@ -9,8 +9,6 @@ import {
   Export,
   ProjectName,
 } from "../features/overview/ProjectSettings";
-import { previewQueries } from "../features/previews/data";
-import { PreviewsSection } from "../features/previews/PreviewsSection";
 import { rememberProject } from "../shell/location";
 import { Page } from "../ui/kit";
 import { SettingRow } from "../ui/sections";
@@ -19,7 +17,7 @@ const ApplyFile = lazy(() => import("../features/apply/ApplyFile"));
 const SaveTemplate = lazy(() => import("../features/templates/SaveTemplate"));
 
 // A project's own settings, for every environment (ADR 0099): its name,
-// previews, where new environments go, its config file and archiving
+// where new environments go, its config file and archiving
 // it. The header's environment switch doesn't scope them, so it's
 // greyed out here; ?env= only keeps the pick for the other tabs.
 export const Route = createFileRoute("/_app/$org/$project/project-settings")({
@@ -31,7 +29,6 @@ export const Route = createFileRoute("/_app/$org/$project/project-settings")({
       queryClient.ensureQueryData(queries.overview(params.project)),
       queryClient.ensureQueryData(queries.session()),
     ]);
-    queryClient.prefetchQuery(previewQueries.settings(params.project));
     if (session?.platform) {
       queryClient.prefetchQuery(queries.placements(params.project));
     }
@@ -69,9 +66,6 @@ function ProjectSettings() {
         <div>
           <SettingRow id="general" label="Name">
             <ProjectName project={overview.project} />
-          </SettingRow>
-          <SettingRow id="previews" label="Previews">
-            <PreviewsSection project={project} />
           </SettingRow>
           {session?.platform && (
             <SettingRow id="placement" label="New environments">

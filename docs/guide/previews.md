@@ -23,10 +23,11 @@ dock env previews                                          # who builds pull req
 dock service previews off -s web -e staging                # no new previews; open ones stay until they close
 ```
 
-Or in the UI: the service's Settings › Source, Previews; the base's
-numbers, and the shared variables previews copy, on the project's
-Project settings › Previews. Changing them needs admin on
-the environment: a preview runs a pull request's code.
+Or in the UI: the service's Settings › Source, Previews. Under it, a
+service that builds pull requests shows its environment's Preview limits
+(the numbers and the shared variables previews copy, which every service
+of that environment shares) and its open previews. Changing them needs
+admin on the environment: a preview runs a pull request's code.
 
 A pull request gets a preview when it goes into the branch a service with
 previews on deploys, and changes something in that service's directory

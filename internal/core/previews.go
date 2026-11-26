@@ -158,6 +158,9 @@ func (c *Core) previewsOf(ctx context.Context, p store.Project, envID int64) ([]
 			continue
 		}
 		pv := basePreview(envs[i].Name, r)
+		if b := slices.IndexFunc(envs, func(e store.Environment) bool { return e.ID == r.BaseEnvironmentID }); b >= 0 {
+			pv.Base = envs[b].Name
+		}
 		var st []string
 		for _, s := range states {
 			if s.EnvironmentID == r.EnvironmentID {
@@ -203,10 +206,16 @@ func (c *Core) toPreview(ctx context.Context, es envScope, r store.Preview) (api
 	}
 	pv := basePreview(es.env.Name, r)
 	pv.Status = apitypes.PreviewClosed
+	base, err := c.store.GetEnvironment(ctx, r.BaseEnvironmentID)
+	if err != nil {
+		return apitypes.Preview{}, err
+	}
+	pv.Base = base.Name
 	return pv, nil
 }
 
-// basePreview is a preview row's pull request, without status or URLs.
+// basePreview is a preview row's pull request, without its base, status
+// or URLs.
 func basePreview(env string, r store.Preview) apitypes.Preview {
 	return apitypes.Preview{
 		Environment: env, Repo: r.Repo, Number: r.Number, Title: r.Title, Author: r.Author, PullURL: pullURL(r.Repo, r.Number),

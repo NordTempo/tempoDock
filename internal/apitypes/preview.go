@@ -186,14 +186,16 @@ const (
 // Preview is one pull request's preview environment.
 type Preview struct {
 	Environment string `json:"environment"`
-	Repo        string `json:"repo" doc:"owner/name"`
-	Number      int64  `json:"number" doc:"Pull request number"`
-	Title       string `json:"title"`
-	Author      string `json:"author"`
-	PullURL     string `json:"pull_url" doc:"The pull request on GitHub: https://github.com/<repo>/pull/<number>"`
-	Branch      string `json:"branch" doc:"The pull request's head branch"`
-	Commit      string `json:"commit" doc:"The head commit previewed"`
-	Fork        bool   `json:"fork"`
+	// Base is the environment it was cloned from.
+	Base    string `json:"base" doc:"The environment the preview was cloned from"`
+	Repo    string `json:"repo" doc:"owner/name"`
+	Number  int64  `json:"number" doc:"Pull request number"`
+	Title   string `json:"title"`
+	Author  string `json:"author"`
+	PullURL string `json:"pull_url" doc:"The pull request on GitHub: https://github.com/<repo>/pull/<number>"`
+	Branch  string `json:"branch" doc:"The pull request's head branch"`
+	Commit  string `json:"commit" doc:"The head commit previewed"`
+	Fork    bool   `json:"fork"`
 	// Status is closed once the pull request closed; otherwise it sums up
 	// its services' newest releases: failed if any failed, deploying if
 	// any is, live once all are, waiting before any deployed.

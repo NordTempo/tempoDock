@@ -133,7 +133,7 @@ const choices = [0, 15, 30, 60, 120, 360, 1440];
  * sleeps (mock A): Never, a few common times, or a custom number of
  * minutes (5 to 1440). Admins of non-preview, non-production
  * environments open it from the heading's menu; previews take their
- * project's Previews setting.
+ * base's preview limits.
  */
 export function SleepForm({
   environment,

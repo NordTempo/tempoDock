@@ -18,7 +18,12 @@ import {
 } from "../../ui/kit";
 import { autofocus, Choice, input } from "../create/form";
 import {
-  minutes,
+  canAdmin,
+  EnvironmentPreviewsForm,
+  OpenPreviews,
+  PreviewLimits,
+} from "../previews/BasePreviews";
+import {
   type PreviewData,
   previewDataText,
   previewQueries,
@@ -26,7 +31,6 @@ import {
   servicePreviewsCli,
   useSetServicePreviews,
 } from "../previews/data";
-import { canAdmin } from "../previews/PreviewsSection";
 import { OpenValue } from "../settings/OpenValue";
 import {
   commitText,
@@ -974,8 +978,9 @@ export function LastPush({ serviceRef: ref }: { serviceRef: ServiceRef }) {
 /**
  * What the service does in previews (ADR 0077): whether pull requests
  * into its branch build it, forks too, the literal values copied, and
- * whether its volumes start from its newest snapshot. Its environment's
- * numbers are on the project's Previews page.
+ * what its volumes start with. A service that builds them also shows
+ * its environment's numbers, shared by every preview of it, and the open
+ * previews.
  */
 function PreviewsRow({
   serviceRef: ref,
@@ -1038,33 +1043,95 @@ function PreviewsRow({
       </span>,
     );
   return (
-    <Row
-      label="Previews"
-      hint={
-        branch
-          ? `Pull requests into ${branch}.`
-          : "In other services' previews."
-      }
-      canEdit={canEdit}
-      value={
-        <span className="flex flex-wrap gap-x-1.5">
-          {parts.map((p, i) => (
-            <span key={(p as { key?: string }).key ?? i}>
-              {i > 0 && <span className="text-faint">· </span>}
-              {p}
-            </span>
-          ))}
-        </span>
-      }
-      edit={(close) => (
-        <PreviewsEdit
-          serviceRef={ref}
-          branch={branch}
-          current={d}
-          onDone={close}
-        />
-      )}
-    />
+    <>
+      <Row
+        label="Previews"
+        hint={
+          branch
+            ? `Pull requests into ${branch}.`
+            : "In other services' previews."
+        }
+        canEdit={canEdit}
+        value={
+          <span className="flex flex-wrap gap-x-1.5">
+            {parts.map((p, i) => (
+              <span key={(p as { key?: string }).key ?? i}>
+                {i > 0 && <span className="text-faint">· </span>}
+                {p}
+              </span>
+            ))}
+          </span>
+        }
+        edit={(close) => (
+          <PreviewsEdit
+            serviceRef={ref}
+            branch={branch}
+            current={d}
+            onDone={close}
+          />
+        )}
+      />
+      {d.build && <BaseRows serviceRef={ref} canEdit={canEdit} />}
+    </>
+  );
+}
+
+/**
+ * The rows under Previews of a service that builds pull requests: its
+ * environment's numbers (`dock env previews set`), which every preview
+ * of it shares, and the open previews cloned from it.
+ */
+function BaseRows({
+  serviceRef: ref,
+  canEdit,
+}: {
+  serviceRef: ServiceRef;
+  canEdit: boolean;
+}) {
+  const env = useQuery(previewQueries.environment(ref));
+  const numbers = env.data;
+  const settings = useQuery(previewQueries.settings(ref.project));
+  const others = (settings.data?.services ?? [])
+    .filter(
+      (s) =>
+        s.build &&
+        s.environment === ref.environment &&
+        s.service !== ref.service,
+    )
+    .map((s) => s.service);
+  return (
+    <>
+      <Row
+        label="Preview limits"
+        hint={`Every preview of ${ref.environment}.`}
+        canEdit={canEdit}
+        value={
+          env.error ? (
+            <ErrorText error={env.error} />
+          ) : (
+            numbers && (
+              <>
+                <span className="font-mono">{ref.environment}</span>
+                <span className="text-mut">'s previews: </span>
+                <PreviewLimits numbers={numbers} />
+              </>
+            )
+          )
+        }
+        edit={
+          numbers &&
+          ((close) => (
+            <EnvironmentPreviewsForm
+              env={ref}
+              numbers={numbers}
+              others={others}
+              onDone={close}
+            />
+          ))
+        }
+      />
+      <Row label="Open previews" value={<OpenPreviews env={ref} />} />
+    </>
   );
 }
 
@@ -1080,9 +1147,7 @@ function PreviewsEdit({
   current: ServicePreviews;
   onDone: () => void;
 }) {
-  const org = useOrg();
   const set = useSetServicePreviews();
-  const env = useQuery(previewQueries.environment(ref));
   const [build, setBuild] = useState(current.build);
   const [forks, setForks] = useState(current.allow_forks);
   const [data, setData] = useState<PreviewData>(current.data);
@@ -1161,22 +1226,6 @@ function PreviewsEdit({
           className={`${input} w-full`}
         />
       </label>
-      {env.data && (
-        <span className="text-mut text-xs">
-          {ref.environment}'s previews: at most {env.data.max_previews} open,{" "}
-          {env.data.sleep_after_minutes > 0
-            ? `sleep after ${minutes(env.data.sleep_after_minutes)}`
-            : "never sleep"}{" "}
-          ·{" "}
-          <Link
-            to="/$org/$project/project-settings"
-            params={{ org, project: ref.project }}
-            hash="previews"
-          >
-            change
-          </Link>
-        </span>
-      )}
       <EditFoot
         error={set.error}
         pending={set.isPending}
