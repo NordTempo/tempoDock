@@ -141,6 +141,25 @@ ON CONFLICT (hostname) DO UPDATE SET
 WHERE cloudflare_records.want = 'absent' OR cloudflare_records.status_page_id = excluded.status_page_id
    OR (cloudflare_records.domain_id IS NULL AND cloudflare_records.status_page_id IS NULL);
 
+-- name: SyncStatusPageRecord :execrows
+-- SaveStatusPageRecord for syncStatusRecords, which works from a hosts
+-- map that may be older than the database: only while the page exists
+-- and, for a custom hostname (custom), still holds it verified, so a
+-- pass never restores a record its page has let go.
+INSERT INTO cloudflare_records (hostname, status_page_id, server_id, connection_id, zone_id, updated_at)
+SELECT sqlc.arg(hostname), status_pages.id, sqlc.arg(server_id), sqlc.arg(connection_id), sqlc.arg(zone_id), sqlc.arg(updated_at)
+FROM status_pages
+WHERE status_pages.id = +sqlc.arg(page_id)
+  AND (NOT CAST(sqlc.arg(custom) AS BOOLEAN) OR (status_pages.hostname = +sqlc.arg(hostname) AND status_pages.verified_at IS NOT NULL))
+ON CONFLICT (hostname) DO UPDATE SET
+    status_page_id = excluded.status_page_id, domain_id = NULL, server_id = excluded.server_id,
+    record_id = CASE WHEN cloudflare_records.zone_id = excluded.zone_id THEN cloudflare_records.record_id ELSE '' END,
+    connection_id = excluded.connection_id, zone_id = excluded.zone_id,
+    want = 'present', status = 'pending', reason = '',
+    attempts = 0, retry_at = NULL, gen = cloudflare_records.gen + 1, updated_at = excluded.updated_at
+WHERE cloudflare_records.want = 'absent' OR cloudflare_records.status_page_id = excluded.status_page_id
+   OR (cloudflare_records.domain_id IS NULL AND cloudflare_records.status_page_id IS NULL);
+
 -- name: SetStatusPageRecordAbsent :exec
 -- The page goes: delete the records Dock made for its addresses.
 UPDATE cloudflare_records SET want = 'absent', status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?

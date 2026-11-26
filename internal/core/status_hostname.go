@@ -295,9 +295,11 @@ func (c *Core) syncStatusRecords(ctx context.Context) {
 		if !ok {
 			continue // the base isn't in a platform zone: a wildcard record's job
 		}
-		// A live record of a service's domain is never taken (0 rows).
-		n, err := c.store.SaveStatusPageRecord(ctx, store.SaveStatusPageRecordParams{Hostname: host, StatusPageID: &page.id, ServerID: &srv.ID,
-			ConnectionID: z.ConnectionID, ZoneID: z.ZoneID, UpdatedAt: t})
+		// Saved only while the page still holds host (the map may be
+		// older than a hostname's removal), and never over a live record
+		// of a service's domain: 0 rows then.
+		n, err := c.store.SyncStatusPageRecord(ctx, store.SyncStatusPageRecordParams{Hostname: host, PageID: page.id, ServerID: &srv.ID,
+			ConnectionID: z.ConnectionID, ZoneID: z.ZoneID, UpdatedAt: t, Custom: !strings.HasPrefix(host, "status-")})
 		if err != nil {
 			c.log.Error("status pages: add a record in Cloudflare", "hostname", host, "err", err)
 			return

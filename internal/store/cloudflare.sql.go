@@ -1843,6 +1843,52 @@ func (q *Queries) SetStatusPageRecordAbsent(ctx context.Context, arg SetStatusPa
 	return err
 }
 
+const syncStatusPageRecord = `-- name: SyncStatusPageRecord :execrows
+INSERT INTO cloudflare_records (hostname, status_page_id, server_id, connection_id, zone_id, updated_at)
+SELECT ?1, status_pages.id, ?2, ?3, ?4, ?5
+FROM status_pages
+WHERE status_pages.id = +?6
+  AND (NOT CAST(?7 AS BOOLEAN) OR (status_pages.hostname = +?1 AND status_pages.verified_at IS NOT NULL))
+ON CONFLICT (hostname) DO UPDATE SET
+    status_page_id = excluded.status_page_id, domain_id = NULL, server_id = excluded.server_id,
+    record_id = CASE WHEN cloudflare_records.zone_id = excluded.zone_id THEN cloudflare_records.record_id ELSE '' END,
+    connection_id = excluded.connection_id, zone_id = excluded.zone_id,
+    want = 'present', status = 'pending', reason = '',
+    attempts = 0, retry_at = NULL, gen = cloudflare_records.gen + 1, updated_at = excluded.updated_at
+WHERE cloudflare_records.want = 'absent' OR cloudflare_records.status_page_id = excluded.status_page_id
+   OR (cloudflare_records.domain_id IS NULL AND cloudflare_records.status_page_id IS NULL)
+`
+
+type SyncStatusPageRecordParams struct {
+	Hostname     string
+	ServerID     *int64
+	ConnectionID int64
+	ZoneID       string
+	UpdatedAt    time.Time
+	PageID       int64
+	Custom       bool
+}
+
+// SaveStatusPageRecord for syncStatusRecords, which works from a hosts
+// map that may be older than the database: only while the page exists
+// and, for a custom hostname (custom), still holds it verified, so a
+// pass never restores a record its page has let go.
+func (q *Queries) SyncStatusPageRecord(ctx context.Context, arg SyncStatusPageRecordParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, syncStatusPageRecord,
+		arg.Hostname,
+		arg.ServerID,
+		arg.ConnectionID,
+		arg.ZoneID,
+		arg.UpdatedAt,
+		arg.PageID,
+		arg.Custom,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const updateCloudflareConnection = `-- name: UpdateCloudflareConnection :one
 UPDATE cloudflare_connections
 SET account_id = ?, account_name = ?, token = ?, status = 'ok', status_reason = '', updated_at = ?, updated_by = ?
