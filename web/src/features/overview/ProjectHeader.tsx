@@ -55,12 +55,14 @@ export type ProjectTab = "services" | "activity" | "settings" | "project";
 
 /**
  * The header every project page shares (Services, Activity, Settings,
- * Project settings): the name, the environment switch, the lock, New
- * service and a "···" menu with everything else, then the tabs. Under
- * it, whatever the picked environment needs said or asked: its lock, a
+ * Project settings), one row per scope. The project's row: its name,
+ * servers, Project settings and a "···" with what changes the whole
+ * project. The environment's row: the switch, its tabs, then its lock,
+ * New service and a "···" with what changes that environment. Under it,
+ * whatever the picked environment needs said or asked: its lock, a
  * running move, and the forms its menu opens. On Project settings, which
- * no environment scopes, the switch is greyed out and the environment's
- * lock and strips stay away.
+ * no environment scopes, no environment is marked and its actions, lock
+ * and strips stay away.
  */
 export function ProjectHeader({
   project,
@@ -156,16 +158,74 @@ export function ProjectHeader({
       <div className="sticky top-(--shell-top) z-10 bg-page">
         <PageBar
           title={project}
-          after={
+          after={<ServerDots project={project} />}
+          actions={
             <>
-              <EnvironmentSwitch
-                project={project}
-                environment={environment}
-                tab={tab}
-                canNew={canNewEnv}
-              />
+              <Link
+                to="/$org/$project/project-settings"
+                params={{ org, project }}
+                search={environment ? { env: environment } : {}}
+                className="btn no-underline aria-[current=page]:bg-sel"
+                {...(projectWide && { "aria-current": "page" as const })}
+              >
+                Project settings
+              </Link>
+              {(overview.environments.length > 1 || site || admin) && (
+                <MoreMenu label={`${project}: more actions`}>
+                  {(close) => (
+                    <>
+                      {overview.environments.length > 1 && (
+                        <MoreItem close={close} keyHint="C" onClick={compare}>
+                          Compare environments
+                        </MoreItem>
+                      )}
+                      {site && (
+                        <MoreItem
+                          close={close}
+                          onClick={() =>
+                            navigate({
+                              to: "/$org/analytics/$project/$site",
+                              params: { org, project, site },
+                            })
+                          }
+                        >
+                          Analytics for {project}
+                        </MoreItem>
+                      )}
+                      {admin && (
+                        <>
+                          {(overview.environments.length > 1 || site) && (
+                            <MoreSeparator />
+                          )}
+                          <MoreItem
+                            close={close}
+                            danger
+                            cli={`dock project archive ${project}`}
+                            onClick={() => setOpen("archive")}
+                          >
+                            Archive {project}…
+                          </MoreItem>
+                        </>
+                      )}
+                    </>
+                  )}
+                </MoreMenu>
+              )}
+            </>
+          }
+        />
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-2 border-b border-line px-4 py-2 sm:px-7">
+          <EnvironmentSwitch
+            project={project}
+            environment={environment}
+            tab={tab}
+            canNew={canNewEnv}
+          />
+          <span aria-hidden className="mx-1 hidden h-5 w-px bg-line sm:block" />
+          <ProjectTabs project={project} environment={environment} tab={tab} />
+          {!projectWide && (
+            <div className="ml-auto flex flex-wrap items-center gap-2">
               {e &&
-                !projectWide &&
                 (e.lock ? (
                   <span className="inline-flex items-center gap-1.5 rounded-tag border border-warn-edge bg-stage-bg px-2 py-0.5 text-xs text-warn-text">
                     <Icon name="lock" size={12} />
@@ -187,11 +247,6 @@ export function ProjectHeader({
                     </Act>
                   )
                 ))}
-              <ServerDots project={project} />
-            </>
-          }
-          actions={
-            <>
               {newService && (
                 <Act
                   primary
@@ -201,109 +256,81 @@ export function ProjectHeader({
                   New service <kbd>N</kbd>
                 </Act>
               )}
-              <MoreMenu label={`${project}: more actions`}>
-                {(close) => (
-                  <>
-                    {overview.environments.length > 1 && (
-                      <MoreItem close={close} keyHint="C" onClick={compare}>
-                        Compare environments
-                      </MoreItem>
-                    )}
-                    {e && canClone && (
-                      <MoreItem
-                        close={close}
-                        cli={envCli(`clone ${e.name} <name>`)}
-                        onClick={() =>
-                          openCreate({
-                            kind: "environment",
-                            project,
-                            cloneFrom: e.name,
-                          })
-                        }
-                      >
-                        Clone {e.name} into a new environment
-                      </MoreItem>
-                    )}
-                    {site && (
-                      <MoreItem
-                        close={close}
-                        onClick={() =>
-                          navigate({
-                            to: "/$org/analytics/$project/$site",
-                            params: { org, project, site },
-                          })
-                        }
-                      >
-                        Analytics for {project}
-                      </MoreItem>
-                    )}
-                    {e && (canSetSleep || canSleep || (pr && canClone)) && (
-                      <MoreSeparator />
-                    )}
-                    {e && canSetSleep && (
-                      <MoreItem
-                        close={close}
-                        cli={`dock env sleep-after ${e.name} <duration>|off -p ${project}`}
-                        onClick={() => toggle("sleep")}
-                      >
-                        Sleep after…
-                        {!!e.sleep?.after_minutes && (
-                          <span className="ml-1.5 font-mono text-2xs text-faint">
-                            {duration(e.sleep.after_minutes)}
-                          </span>
-                        )}
-                      </MoreItem>
-                    )}
-                    {e && canSleep && (
-                      <MoreItem
-                        close={close}
-                        cli={sleepCli("sleep", ref)}
-                        onClick={() => sleep.mutate(ref)}
-                      >
-                        Put {e.name} to sleep now
-                      </MoreItem>
-                    )}
-                    {e && pr && canClone && (
-                      <MoreItem
-                        close={close}
-                        cli={previewsCli(`close ${e.name}`, project)}
-                        onClick={() => toggle("close")}
-                      >
-                        Close this preview
-                      </MoreItem>
-                    )}
-                    {e && operator && (
-                      <>
-                        <MoreSeparator />
+              {e && (canClone || canSetSleep || canSleep || operator) && (
+                <MoreMenu label={`${e.name}: more actions`}>
+                  {(close) => (
+                    <>
+                      {canClone && (
                         <MoreItem
                           close={close}
-                          cli={envCli(`move ${e.name} --to <server>`)}
-                          onClick={() => toggle("move")}
+                          cli={envCli(`clone ${e.name} <name>`)}
+                          onClick={() =>
+                            openCreate({
+                              kind: "environment",
+                              project,
+                              cloneFrom: e.name,
+                            })
+                          }
                         >
-                          Move {e.name} to another server
+                          Clone {e.name} into a new environment
                         </MoreItem>
-                      </>
-                    )}
-                    {admin && (
-                      <>
+                      )}
+                      {canClone && (canSetSleep || canSleep || pr) && (
                         <MoreSeparator />
+                      )}
+                      {canSetSleep && (
                         <MoreItem
                           close={close}
-                          danger
-                          cli={`dock project archive ${project}`}
-                          onClick={() => setOpen("archive")}
+                          cli={`dock env sleep-after ${e.name} <duration>|off -p ${project}`}
+                          onClick={() => toggle("sleep")}
                         >
-                          Archive {project}…
+                          Sleep after…
+                          {!!e.sleep?.after_minutes && (
+                            <span className="ml-1.5 font-mono text-2xs text-faint">
+                              {duration(e.sleep.after_minutes)}
+                            </span>
+                          )}
                         </MoreItem>
-                      </>
-                    )}
-                  </>
-                )}
-              </MoreMenu>
-            </>
-          }
-        />
-        <ProjectTabs project={project} environment={environment} tab={tab} />
+                      )}
+                      {canSleep && (
+                        <MoreItem
+                          close={close}
+                          cli={sleepCli("sleep", ref)}
+                          onClick={() => sleep.mutate(ref)}
+                        >
+                          Put {e.name} to sleep now
+                        </MoreItem>
+                      )}
+                      {pr && canClone && (
+                        <MoreItem
+                          close={close}
+                          cli={previewsCli(`close ${e.name}`, project)}
+                          onClick={() => toggle("close")}
+                        >
+                          Close this preview
+                        </MoreItem>
+                      )}
+                      {operator && (
+                        <>
+                          {(canClone || canSetSleep || canSleep) && (
+                            <MoreSeparator />
+                          )}
+                          <MoreItem
+                            close={close}
+                            cli={envCli(`move ${e.name} --to <server>`)}
+                            onClick={() => toggle("move")}
+                          >
+                            Move {e.name} to another server
+                          </MoreItem>
+                        </>
+                      )}
+                    </>
+                  )}
+                </MoreMenu>
+              )}
+            </div>
+          )}
+        </div>
       </div>
       {e && !projectWide && (
         <EnvironmentStrips env={env} open={open} onClose={() => setOpen(null)}>
@@ -390,6 +417,8 @@ function EnvironmentSwitch({
   const navigate = useNavigate();
   const { environments } = useSuspenseQuery(queries.overview(project)).data;
   const tones = useProblemTones(project);
+  // On Project settings no environment is picked; picking one opens its
+  // Services.
   const off = tab === "project";
   const go = (name: string) =>
     tab === "settings"
@@ -405,19 +434,16 @@ function EnvironmentSwitch({
         });
   const regular = environments.filter((e) => !e.environment.preview);
   const previews = environments.filter((e) => e.environment.preview);
-  const current = previews.find((e) => e.environment.name === environment);
+  const current = off
+    ? undefined
+    : previews.find((e) => e.environment.name === environment);
   return (
-    <nav
-      aria-label="Environment"
-      title={off ? "Project settings apply to every environment" : undefined}
-      className={`${envSwitchBox} ${off ? "opacity-40" : ""}`}
-    >
+    <nav aria-label="Environment" className={envSwitchBox}>
       {regular.map((e) => (
         <button
           key={e.environment.id}
           type="button"
-          disabled={off}
-          aria-current={e.environment.name === environment}
+          aria-current={!off && e.environment.name === environment}
           onClick={() => go(e.environment.name)}
           className={`${envSegment} not-first:border-l not-first:border-edge`}
         >
@@ -425,7 +451,7 @@ function EnvironmentSwitch({
           <ToneDot tone={tones.get(e.environment.name)} />
         </button>
       ))}
-      {previews.length > 0 && !off && (
+      {previews.length > 0 && (
         <Menu
           label="Previews"
           className="border-l border-edge"
@@ -456,7 +482,7 @@ function EnvironmentSwitch({
           }
         </Menu>
       )}
-      {canNew && !off && (
+      {canNew && (
         <button
           type="button"
           aria-label="New environment"
@@ -472,8 +498,8 @@ function EnvironmentSwitch({
 }
 
 /**
- * Services, Activity and Settings, for the picked environment; Project
- * settings, for every environment, apart at the end.
+ * Services, Activity and Settings, for the picked environment, in the
+ * environment's row. None is marked on Project settings.
  */
 function ProjectTabs({
   project,
@@ -492,9 +518,11 @@ function ProjectTabs({
   const here = { "aria-current": "page" as const };
   const exact = { exact: true, includeSearch: true };
   return (
+    // py-[5px] gives back the links' -5px target margin (index.css), which
+    // the sideways scroll would otherwise clip, underline and all.
     <nav
       aria-label="Project"
-      className="tabs flex gap-0.5 overflow-x-auto border-b border-line px-4 py-2 whitespace-nowrap"
+      className="tabs flex gap-0.5 overflow-x-auto py-[5px] whitespace-nowrap"
     >
       {environment ? (
         <>
@@ -545,16 +573,6 @@ function ProjectTabs({
             <span className="dot" />
           </span>
         )}
-      </Link>
-      <Link
-        to="/$org/$project/project-settings"
-        params={{ org, project }}
-        search={environment ? { env: environment } : {}}
-        activeOptions={exact}
-        className="ml-auto"
-        {...(tab === "project" && here)}
-      >
-        Project settings
       </Link>
     </nav>
   );
