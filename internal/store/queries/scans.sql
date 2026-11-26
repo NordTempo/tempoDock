@@ -35,10 +35,11 @@ WHERE id = +sqlc.arg(id);
 
 -- name: NextImageScan :one
 -- The next scan to run: queued, due, and one a builder there is may
--- scan (production ones only with a builder that accepts production).
+-- scan (production ones only with a builder that builds production, the
+-- rest with one that builds non-production).
 SELECT * FROM image_scans
 WHERE state = 'queued' AND (next_attempt_at IS NULL OR next_attempt_at <= +sqlc.arg(now))
-  AND (production = 0 OR +sqlc.arg(production_builder) = 1)
+  AND CASE production WHEN 0 THEN +sqlc.arg(non_production_builder) ELSE +sqlc.arg(production_builder) END = 1
 ORDER BY priority, id LIMIT 1;
 
 -- name: NextImageScanRetry :one

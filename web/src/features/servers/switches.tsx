@@ -18,6 +18,31 @@ type Ask = {
   last?: boolean;
 };
 
+/** What a server builds images for: the builder switch and its kinds. */
+type Builds = "off" | "non_production" | "production" | "all";
+
+const buildsOptions = [
+  "off",
+  "non_production",
+  "production",
+  "all",
+] as const satisfies readonly Builds[];
+
+const buildsLabel = {
+  off: "nothing",
+  non_production: "non-production",
+  production: "production",
+  all: "all environments",
+} as const satisfies Record<Builds, string>;
+
+function buildsOf(s: Server): Builds {
+  if (!s.builder) return "off";
+  if (s.builds_production && s.builds_non_production) return "all";
+  return s.builds_production ? "production" : "non_production";
+}
+
+const buildsProduction = (b: Builds) => b === "production" || b === "all";
+
 const acceptsField = {
   production: "accepts_production",
   non_production: "accepts_non_production",
@@ -25,7 +50,8 @@ const acceptsField = {
 
 /**
  * An admin's switches for one server: which kinds it accepts, whether it
- * takes new placements and whether it builds images. Every change asks
+ * takes new placements and which kinds it builds images for (apart from
+ * what it accepts: a staging homelab can build production's images). Every change asks
  * first (the `confirm` node, which the caller places), naming its effect,
  * as a danger when no other server does that work. A switch that would
  * leave production environments nowhere to run is disabled, with why.
@@ -177,48 +203,87 @@ export function useServerSwitches(server: Server) {
     ),
     builder: (
       <span className="inline-flex flex-wrap items-center gap-x-3">
-        <Check
-          label="builds images"
-          checked={server.builder}
-          disabled={update.isPending}
-          onChange={(on) => {
-            if (on)
-              return setAsk({
-                patch: { builder: true },
-                action: "Build images here",
-                cli: `dock server update ${name} --builder`,
+        <span>
+          <span className="text-mut">Builds</span>{" "}
+          <select
+            aria-label={`What ${name} builds`}
+            value={buildsOf(server)}
+            disabled={update.isPending}
+            onChange={(e) => {
+              const to =
+                buildsOptions.find((b) => b === e.target.value) ?? "off";
+              const was = buildsOf(server);
+              // Builders left for production when this one stops.
+              const prodOthers = servers.filter(
+                (s) => s.name !== name && s.builder && s.builds_production,
+              );
+              const losesProduction =
+                buildsProduction(was) && !buildsProduction(to);
+              if (to === "off") {
+                const others = servers.filter(
+                  (s) => s.name !== name && s.builder,
+                );
+                return setAsk({
+                  patch: { builder: false },
+                  action: "Stop building",
+                  cli: `dock server update ${name} --no-builder`,
+                  last: others.length === 0,
+                  text: (
+                    <>
+                      Stop building images on{" "}
+                      <b className="font-mono font-medium">{name}</b>?{" "}
+                      <span className="text-mut">
+                        Builds in progress finish.{" "}
+                        {others.length
+                          ? `New builds go to ${others.map((s) => s.name).join(", ")}.`
+                          : "No other server builds images."}
+                      </span>
+                    </>
+                  ),
+                });
+              }
+              setAsk({
+                patch: {
+                  builder: true,
+                  builds_production: buildsProduction(to),
+                  builds_non_production: to !== "production",
+                },
+                action: `Build ${buildsLabel[to]}`,
+                cli: `dock server update ${name} --builds ${to === "non_production" ? "non-production" : to}`,
+                last: losesProduction && prodOthers.length === 0,
                 text: (
                   <>
-                    Build images on{" "}
+                    Build images for {buildsLabel[to]} on{" "}
                     <b className="font-mono font-medium">{name}</b>?{" "}
                     <span className="text-mut">
-                      New builds may run here and use its CPU and memory.
+                      {was === "off" &&
+                        "New builds may run here and use its CPU and memory. "}
+                      {buildsProduction(to) &&
+                        !buildsProduction(was) &&
+                        "Production builds get production's variables and secrets. "}
+                      {!server.local &&
+                        "The control plane builds only while no other builder is online."}
                     </span>
+                    {losesProduction && prodOthers.length === 0 && (
+                      <span className="mt-2 block text-warn-text">
+                        No other server builds production images: production
+                        deploys from source will fail until one does.
+                      </span>
+                    )}
                   </>
                 ),
               });
-            const others = servers.filter((s) => s.name !== name && s.builder);
-            setAsk({
-              patch: { builder: false },
-              action: "Stop building",
-              cli: `dock server update ${name} --no-builder`,
-              text: (
-                <>
-                  Stop building images on{" "}
-                  <b className="font-mono font-medium">{name}</b>?{" "}
-                  <span className="text-mut">
-                    Builds in progress finish.{" "}
-                    {others.length
-                      ? `New builds go to ${others.map((s) => s.name).join(", ")}.`
-                      : "No other server builds images."}
-                  </span>
-                </>
-              ),
-              last: others.length === 0,
-            });
-          }}
-        />
-        {saved("builder")}
+            }}
+            className="field py-[3px]"
+          >
+            {buildsOptions.map((b) => (
+              <option key={b} value={b}>
+                {buildsLabel[b]}
+              </option>
+            ))}
+          </select>
+        </span>
+        {saved("builder", "builds_production", "builds_non_production")}
       </span>
     ),
     confirm: ask && (

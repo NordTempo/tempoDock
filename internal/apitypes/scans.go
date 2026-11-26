@@ -233,7 +233,7 @@ type ScanningStatus struct {
 // ScanningServer is one builder's part in scanning.
 type ScanningServer struct {
 	Server        string     `json:"server"`
-	Production    bool       `json:"production" doc:"It accepts production, so it may scan production images"`
+	Production    bool       `json:"production" doc:"It builds production, so it may scan production images"`
 	DatabaseBuilt *time.Time `json:"database_built,omitempty"`
 	// Imported: it has imported the archive the status names.
 	Imported bool   `json:"imported,omitempty"`

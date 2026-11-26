@@ -139,7 +139,7 @@ func labPool(t *testing.T) (*pool, *fake.Runtime) {
 func (p *pool) withRegistry(reg Registry) {
 	p.t.Helper()
 	lab := p.ids["homelab"]
-	if _, err := p.store.UpdateServerSettings(p.ctx, store.UpdateServerSettingsParams{Builder: true, ID: lab}); err != nil {
+	if _, err := p.store.UpdateServerSettings(p.ctx, store.UpdateServerSettingsParams{Builder: true, BuildsNonProduction: true, ID: lab}); err != nil {
 		p.t.Fatal(err)
 	}
 	p.nodes.add(lab, p.rts[lab], remote.Hello{Facts: remote.Facts{Ingress: remote.IngressDirect, Builder: true}})
@@ -330,7 +330,7 @@ func TestArchiveReleasesImages(t *testing.T) {
 	p, _ := labPool(t)
 	reg := &fakeRegistry{}
 	p.withRegistry(reg)
-	p.acceptProduction("homelab")
+	p.buildsProduction("homelab")
 	web := p.createService("production", "web", apitypes.CreateServiceRequest{})
 	api := p.createService("production", "api", apitypes.CreateServiceRequest{})
 	webRel, apiRel := p.deploySource(web), p.deploySource(api)
@@ -391,7 +391,7 @@ func TestRegistryInfoAndManualPrune(t *testing.T) {
 	p, _ := labPool(t)
 	reg := &fakeRegistry{pruned: 3}
 	p.withRegistry(reg)
-	p.acceptProduction("homelab")
+	p.buildsProduction("homelab")
 	web := p.createService("production", "web", apitypes.CreateServiceRequest{})
 	api := p.createService("production", "api", apitypes.CreateServiceRequest{})
 	p.deploySource(web)
@@ -520,7 +520,7 @@ func TestBuildOnBuilderPushesAndPulls(t *testing.T) {
 	p, lab := labPool(t)
 	reg := &fakeRegistry{pruned: 1}
 	p.withRegistry(reg)
-	p.acceptProduction("homelab") // it may build production's images
+	p.buildsProduction("homelab")
 	// A rollback window of one: the second deploy removes release 1's
 	// images. Set before deploying, since deploys read it as they finish.
 	p.c.cfg.Defaults.KeepReleases = 1
@@ -567,7 +567,7 @@ func TestBuildOnBuilderPushesAndPulls(t *testing.T) {
 func TestBuildNeedsOnlineBuilder(t *testing.T) {
 	p, _ := labPool(t)
 	p.withRegistry(&fakeRegistry{})
-	p.acceptProduction("homelab")
+	p.buildsProduction("homelab")
 	web := p.createService("production", "web", apitypes.CreateServiceRequest{})
 	p.setOffline("homelab", true)
 	_, err := p.c.DeploySource(p.ctx, testSystem, web, strings.NewReader("x"), 1<<20)
@@ -576,23 +576,25 @@ func TestBuildNeedsOnlineBuilder(t *testing.T) {
 	}
 }
 
-// acceptProduction lets a server take production environments too.
-func (p *pool) acceptProduction(name string) {
+// buildsProduction lets a builder build production's images too, though
+// it hosts no production environments.
+func (p *pool) buildsProduction(name string) {
 	p.t.Helper()
-	if _, err := p.store.UpdateServerPlacement(p.ctx, store.UpdateServerPlacementParams{AcceptsProduction: true, AcceptsNonProduction: true, ID: p.ids[name]}); err != nil {
+	on := true
+	if _, err := p.c.UpdateServer(p.ctx, testSystem, name, apitypes.UpdateServerRequest{BuildsProduction: &on}); err != nil {
 		p.t.Fatal(err)
 	}
 }
 
-// A production build never goes to a builder that doesn't accept
+// A production build never goes to a builder that doesn't build
 // production: the build gets the environment's secrets. Staging still
 // builds there.
-func TestProductionBuildsOnlyOnProductionServers(t *testing.T) {
+func TestProductionBuildsOnlyWhereAllowed(t *testing.T) {
 	p, lab := labPool(t)
 	p.withRegistry(&fakeRegistry{})
 	web := p.createService("production", "web", apitypes.CreateServiceRequest{})
 	_, err := p.c.DeploySource(p.ctx, testSystem, web, strings.NewReader("x"), 1<<20)
-	if CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), "production builds only run on servers that accept production") {
+	if CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), "production builds only run on servers that build production") {
 		t.Fatalf("production build on a non-production builder: %v", err)
 	}
 	if hasOp(lab.Ops(), "build") {
@@ -600,6 +602,31 @@ func TestProductionBuildsOnlyOnProductionServers(t *testing.T) {
 	}
 	if r := p.deploySource(p.createService("staging", "web", apitypes.CreateServiceRequest{})); r.Status != apitypes.ReleaseActive {
 		t.Fatalf("staging build: %s (%s)", r.Status, r.Error)
+	}
+}
+
+// The control plane builds production's images only while no other
+// builder for production is online, even when it hosts them.
+func TestControlPlaneBuildsLast(t *testing.T) {
+	p, lab := labPool(t)
+	p.withRegistry(&fakeRegistry{})
+	p.opts.Config.BuildKit.Enabled = true // cp builds too
+	p.restart()
+	p.buildsProduction("homelab")
+	web := p.createService("production", "web", apitypes.CreateServiceRequest{})
+
+	if r := p.deploySource(web); r.Status != apitypes.ReleaseActive {
+		t.Fatalf("release 1: %s (%s)", r.Status, r.Error)
+	}
+	if !hasOp(lab.Ops(), "build") || hasOp(p.rt.Ops(), "build") {
+		t.Fatalf("homelab ops %v, cp ops %v: want only homelab to build", lab.Ops(), p.rt.Ops())
+	}
+	p.setOffline("homelab", true)
+	if r := p.deploySource(web); r.Status != apitypes.ReleaseActive {
+		t.Fatalf("release 2 with homelab offline: %s (%s)", r.Status, r.Error)
+	}
+	if !hasOp(p.rt.Ops(), "build") {
+		t.Fatalf("cp ops %v: want a build while homelab is offline", p.rt.Ops())
 	}
 }
 
@@ -961,5 +988,35 @@ func TestNodeInstallCommandPinsRelease(t *testing.T) {
 	}
 	if got := nodeInstallCommand("tok", "INGRESS=cloudflare_tunnel ", "dev"); strings.Contains(got, "DOCK_VERSION") || !strings.Contains(got, "NODE_JOIN_TOKEN INGRESS=cloudflare_tunnel bash") {
 		t.Errorf("dev: %s", got)
+	}
+}
+
+// The control plane scans a kind only while no other server builds it,
+// online or not: scans wait for the homelab rather than download a
+// vulnerability database to the control plane.
+func TestControlPlaneScansLast(t *testing.T) {
+	p, _ := labPool(t)
+	p.withRegistry(&fakeRegistry{})
+	p.opts.Config.BuildKit.Enabled = true
+	p.restart()
+	names := func() []string {
+		out, _, _ := p.c.scanBuilders(p.ctx)
+		var names []string
+		for _, s := range out {
+			names = append(names, s.Name)
+		}
+		return names
+	}
+	// homelab builds only non-production: cp still scans production.
+	if got, _, _ := p.c.scanBuilders(p.ctx); len(got) != 2 || !got[0].Local || got[0].BuildsNonProduction || !got[0].BuildsProduction {
+		t.Fatalf("scanners %v: want cp for production only, then homelab", names())
+	}
+	p.buildsProduction("homelab")
+	if got := names(); !slices.Equal(got, []string{"homelab"}) {
+		t.Fatalf("scanners %v, want homelab alone", got)
+	}
+	p.setOffline("homelab", true)
+	if got := names(); len(got) != 0 {
+		t.Fatalf("scanners %v with homelab offline, want none", got)
 	}
 }

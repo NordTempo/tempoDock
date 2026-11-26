@@ -165,7 +165,7 @@ func scanRank(s *apitypes.ImageScan) int64 {
 }
 
 // scanWaitReason returns what queued scans wait for, given whether one
-// needs a builder that accepts production: one server list read once.
+// needs a builder that builds production: one server list read once.
 func (c *Core) scanWaitReason(ctx context.Context) func(production bool) string {
 	c.scans.mu.Lock()
 	enabled := c.scans.enabled
@@ -177,10 +177,10 @@ func (c *Core) scanWaitReason(ctx context.Context) func(production bool) string 
 	if err != nil {
 		return func(bool) string { return "" }
 	}
-	any, prod := false, false
+	any, prod, nonProd := false, false, false
 	for _, s := range servers {
 		if c.canBuild(s) {
-			any, prod = true, prod || s.AcceptsProduction
+			any, prod, nonProd = true, prod || s.BuildsProduction, nonProd || s.BuildsNonProduction
 		}
 	}
 	return func(production bool) string {
@@ -188,7 +188,9 @@ func (c *Core) scanWaitReason(ctx context.Context) func(production bool) string 
 		case !any:
 			return "No server builds images, and only builders scan; make one a builder with `dock server update NAME --builder`"
 		case production && !prod:
-			return "Production images are scanned only on builders that accept production, and none does; make a production server a builder with `dock server update NAME --builder`"
+			return "Production images are scanned only on builders that build production, and none does; let one with `dock server update NAME --builds all`"
+		case !production && !nonProd:
+			return "Non-production images are scanned only on builders that build non-production, and none does; let one with `dock server update NAME --builds all`"
 		}
 		return "Waiting for a quiet minute: builds and deploys come first"
 	}
@@ -482,7 +484,7 @@ func (c *Core) ScanningStatus(ctx context.Context, a Actor) (apitypes.ScanningSt
 		if !c.canBuild(s) {
 			continue
 		}
-		b := apitypes.ScanningServer{Server: s.Name, Production: s.AcceptsProduction, Error: s.ScanError,
+		b := apitypes.ScanningServer{Server: s.Name, Production: s.BuildsProduction, Error: s.ScanError,
 			Imported: out.Imported != "" && s.ScanDbImport == out.Imported}
 		if s.ScanDbBuiltAt != nil {
 			b.DatabaseBuilt = ptr(time.Unix(*s.ScanDbBuiltAt, 0).UTC())

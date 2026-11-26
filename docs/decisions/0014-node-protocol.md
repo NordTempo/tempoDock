@@ -501,3 +501,28 @@ serves for a tag, asked through the node's Docker without pulling) and
 imported by a job without network), and a build's result names the
 image its final stage was built on (`base`, `base_digest`; older nodes
 leave them out).
+
+## Amendment (2026-11-26): what a builder builds, apart from placement
+
+A builder built production's images only when it accepted production
+environments, so one switch meant both "production may run here" and
+"production's secrets may reach this server". With production on a
+small always-on VPS and a bigger homelab hosting staging, the homelab
+could not take production's builds and scans off the VPS: making it
+accept production would also place production projects there, and the
+VPS still built its own deploys first. Decided by the agent.
+
+| Question | Decision |
+|---|---|
+| Trust | Each server says which kinds it builds: `builds_production` and `builds_non_production` (migration 0132), apart from what it accepts. A production build, and a production image's scan, runs only on a builder that builds production. `dock server update homelab --builds all`; in the console, the server's Builds select (nothing, non-production, production, all environments) |
+| Defaults | A new server builds what it accepts (production when it accepts production; non-production always), and the migration sets existing servers the same way, so nothing changes until an operator says so |
+| Order | Target first when it is a builder for the kind and not the control plane, then the oldest other online builder for it, the control plane last. The control plane's server keeps its CPU and memory for the platform; when the homelab is offline, the control plane builds, so deploys keep working |
+| Scans | The control plane scans a kind only while no other server builds it, online or not. A scan can wait for the homelab to come back, and each scanner keeps a 3.4 GB database |
+| A builder for no kind | Refused: turn the builder off instead |
+
+A server that builds production holds production's variables during its
+builds and makes the images production runs, so it is trusted as much as
+a production server. Production builds also share the homelab's BuildKit
+with staging and previews; cache stays per environment and steps that
+mount secrets are keyed by them (ADR 0089).
+

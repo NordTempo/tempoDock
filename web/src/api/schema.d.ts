@@ -11219,7 +11219,7 @@ export interface components {
             database_built?: string;
             error?: string;
             imported?: boolean;
-            /** @description It accepts production, so it may scan production images */
+            /** @description It builds production, so it may scan production images */
             production: boolean;
             server: string;
         };
@@ -11265,6 +11265,8 @@ export interface components {
             base_domain: string;
             /** @description Source builds may run here */
             builder: boolean;
+            builds_non_production: boolean;
+            builds_production: boolean;
             /** Format: date-time */
             connected_at?: string;
             disabled_for_placement: boolean;
@@ -12881,6 +12883,8 @@ export interface components {
             accepts_production?: boolean;
             base_domain?: string;
             builder?: boolean;
+            builds_non_production?: boolean;
+            builds_production?: boolean;
             disabled_for_placement?: boolean;
             name?: string;
             tunnel?: boolean;

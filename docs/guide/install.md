@@ -738,6 +738,14 @@ each node uses ("connected 3h ago via Tailscale").
    dock server add homelab --non-production --builder
    ```
 
+   A builder builds images for the kinds it accepts. To take production's
+   builds and scans off the control plane too, let it build production
+   (`dock server update homelab --builds all`, or Builds on the server's
+   page): production builds get production's variables, so only do that
+   for a server you trust with them. The control plane then builds only
+   while no other builder is online, and scans only when no other server
+   builds.
+
 3. **The new server:** run the printed command. On a bare Debian or
    Ubuntu server it does everything: it checks that the server reaches the
    control plane (and stops there, with nothing installed, if it doesn't),

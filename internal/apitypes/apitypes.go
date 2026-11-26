@@ -1282,6 +1282,11 @@ type Server struct {
 	// DisabledForPlacement stops new automatic placements; what is
 	// already here stays, and admins can still pin projects here.
 	DisabledForPlacement bool `json:"disabled_for_placement"`
+	// BuildsProduction and BuildsNonProduction say which kinds' images a
+	// builder builds (and scans), apart from where they are placed: a
+	// production build gets the environment's variables.
+	BuildsProduction    bool `json:"builds_production"`
+	BuildsNonProduction bool `json:"builds_non_production"`
 	// MemoryBytes is the server's total memory (0 until it reported it).
 	MemoryBytes int64 `json:"memory_bytes"`
 	// ReservedMemoryBytes is the sum of the memory limits of the services
@@ -1318,7 +1323,8 @@ type EffectiveLimits struct {
 }
 
 // UpdateServerRequest changes a server's settings: its name, what may be
-// placed on it, whether it builds, and its base domain. Only fields that
+// placed on it, whether it builds and for which kinds, and its base
+// domain. Only fields that
 // are set change.
 type UpdateServerRequest struct {
 	// Name renames the server. Its environments, link and history stay;
@@ -1328,6 +1334,10 @@ type UpdateServerRequest struct {
 	AcceptsNonProduction *bool   `json:"accepts_non_production,omitempty"`
 	DisabledForPlacement *bool   `json:"disabled_for_placement,omitempty"`
 	Builder              *bool   `json:"builder,omitempty"`
+	// BuildsProduction and BuildsNonProduction choose which kinds' images
+	// a builder builds; a builder builds at least one.
+	BuildsProduction    *bool `json:"builds_production,omitempty"`
+	BuildsNonProduction *bool `json:"builds_non_production,omitempty"`
 	// BaseDomain is a domain like up.example.dev with a wildcard DNS
 	// record pointing at the server (or its tunnel); "" removes it.
 	BaseDomain *string `json:"base_domain,omitempty" maxLength:"253"`
