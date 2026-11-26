@@ -399,6 +399,7 @@ func (o offlineRuntime) EnsureAnalyticsStore(context.Context, node.AnalyticsStor
 	return o.err
 }
 func (o offlineRuntime) RemoveAnalyticsStore(context.Context, node.StoreKind) error { return o.err }
+func (o offlineRuntime) StopAnalyticsStore(context.Context, node.StoreKind) error   { return o.err }
 func (o offlineRuntime) DialAnalyticsStore(context.Context, node.StoreKind) (net.Conn, error) {
 	return nil, o.err
 }

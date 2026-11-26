@@ -137,6 +137,13 @@ func registerScans(s *Server, a huma.API) {
 
 	tags = []string{"console"}
 	authed(s, a, huma.Operation{
+		OperationID: "list-features", Method: http.MethodGet, Path: Prefix + "/features",
+		Summary: "List the optional features and what they take", Tags: tags,
+		Description: "Image scanning, Dock Analytics and tracing: whether each is on, the servers it runs on, its memory now and at most, and its data on disk (ADR 0101). Memory comes from the last statistics sample and disk from each server's last disk reading; a server never read is read in the background and its numbers come with the next request. Operators only.",
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.Features], error) {
+		return reply(s.core.Features(ctx, actor))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "get-scanning", Method: http.MethodGet, Path: Prefix + "/scanning",
 		Summary: "Describe image scanning", Tags: tags,
 		Description: "Whether image scanning is on, scans by state, and each builder's vulnerability database. Operators only.",
@@ -146,11 +153,11 @@ func registerScans(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "set-scanning", Method: http.MethodPut, Path: Prefix + "/scanning",
 		Summary: "Turn image scanning on or off", Tags: tags,
-		Description: "Off stops a running scan at once and starts none; findings already made stay. Operators only.",
+		Description: "Off stops a running scan at once and starts none; findings already made stay. With remove_database, off also removes every builder's vulnerability database (3.4 GB each), which turning it on downloads again (ADR 0101). Operators only.",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		Body apitypes.ScanningSettings
 	}) (*out[apitypes.ScanningStatus], error) {
-		return reply(s.core.SetScanning(ctx, actor, in.Body.Enabled))
+		return reply(s.core.SetScanning(ctx, actor, in.Body))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "import-scan-database", Method: http.MethodPut, Path: Prefix + "/scanning/database",

@@ -500,8 +500,11 @@ func (c *Core) ScanningStatus(ctx context.Context, a Actor) (apitypes.ScanningSt
 }
 
 // SetScanning turns scanning on or off for the platform. Off stops a
-// running scan at once; findings already made stay. Operators only.
-func (c *Core) SetScanning(ctx context.Context, a Actor, on bool) (apitypes.ScanningStatus, error) {
+// running scan at once; findings already made stay, and with
+// RemoveDatabase every builder's vulnerability database goes too (ADR
+// 0101); on downloads it again. Operators only.
+func (c *Core) SetScanning(ctx context.Context, a Actor, req apitypes.ScanningSettings) (apitypes.ScanningStatus, error) {
+	on := req.Enabled
 	if err := a.requirePlatform(PlatformSettings, "turning scanning on or off"); err != nil {
 		return apitypes.ScanningStatus{}, err
 	}
@@ -514,12 +517,23 @@ func (c *Core) SetScanning(ctx context.Context, a Actor, on bool) (apitypes.Scan
 		c.scans.cancel()
 	}
 	c.scans.mu.Unlock()
-	word := "off"
-	if on {
-		word = "on"
+	word, summary := "off", "turned image scanning off"
+	var removeErr error
+	switch {
+	case on:
+		word, summary = "on", "turned image scanning on"
 		c.kickScans()
+	case req.RemoveDatabase:
+		removeErr = c.removeScanDatabases(ctx)
+		summary += " and removed the builders' vulnerability databases"
+		if removeErr != nil {
+			summary += "; some stayed: " + removeErr.Error()
+		}
 	}
-	c.audit(ctx, a.platform(), "scanning."+word, nil, nil, "scanning", "turned image scanning "+word)
+	c.audit(ctx, a.platform(), "scanning."+word, nil, nil, "scanning", summary)
+	if removeErr != nil {
+		return apitypes.ScanningStatus{}, fmt.Errorf("scanning is off, but %w", removeErr)
+	}
 	return c.ScanningStatus(ctx, a)
 }
 

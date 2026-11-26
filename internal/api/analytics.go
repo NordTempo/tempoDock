@@ -25,6 +25,15 @@ func registerAnalytics(s *Server, a huma.API) {
 		return reply(s.core.AnalyticsStatus(ctx, actor))
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "set-analytics", Method: http.MethodPut, Path: Prefix + "/analytics/enabled",
+		Summary: "Turn Dock Analytics on or off", Tags: tags,
+		Description: "On runs the store on the analytics server again, on the data it kept, and the servers' ingests take events again. Off stops the store's container and the ingests keep nothing, and a site's first domain doesn't turn it on again; with remove_data the store's data (every site's events, replays and errors) goes too. 409 while the store starts or moves; the analytics server must be online. ADR 0101. Operators only.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Body apitypes.AnalyticsSwitch
+	}) (*out[apitypes.AnalyticsStatus], error) {
+		return reply(s.core.SetAnalytics(ctx, actor, in.Body))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "set-analytics-server", Method: http.MethodPut, Path: Prefix + "/analytics/server",
 		Summary: "Choose the analytics server", Tags: tags,
 		Description: "Runs the analytics store on the named server (empty: the control plane's own) and turns analytics on. Every server keeps its events in its spool until the store has them. A store on another server stops; its data stays on that server's volume, and the new store starts empty. Operators only.",

@@ -61,6 +61,10 @@ func (n *Node) analyticsStoreRoutes(mux *http.ServeMux) {
 		}
 		return empty{}, os.RemoveAll(n.analyticsBinDir())
 	}))
+	// The binary stays: the store runs on it again when turned on.
+	mux.Handle("POST /v1/"+opStopAnalytics, unary(func(ctx context.Context, a storeKindRequest) (empty, error) {
+		return empty{}, n.Runtime.StopAnalyticsStore(ctx, node.StoreKind(a.Kind))
+	}))
 }
 
 // ensureAnalyticsStore runs the store from the binary with the spec's

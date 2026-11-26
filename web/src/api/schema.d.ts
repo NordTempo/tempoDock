@@ -336,6 +336,26 @@ export interface paths {
         patch: operations["set-analytics-defaults"];
         trace?: never;
     };
+    "/api/v1/analytics/enabled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Turn Dock Analytics on or off
+         * @description On runs the store on the analytics server again, on the data it kept, and the servers' ingests take events again. Off stops the store's container and the ingests keep nothing, and a site's first domain doesn't turn it on again; with remove_data the store's data (every site's events, replays and errors) goes too. 409 while the store starts or moves; the analytics server must be online. ADR 0101. Operators only.
+         */
+        put: operations["set-analytics"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/analytics/hostnames/{hostname}": {
         parameters: {
             query?: never;
@@ -1678,6 +1698,26 @@ export interface paths {
          *     Server-Sent Events. A first `ready` event means the stream is live: anything that happens after it is delivered. A final `end` event marks a clean end of the stream; an `error` event carries a problem document. Comment lines are heartbeats.
          */
         get: operations["events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/features": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the optional features and what they take
+         * @description Image scanning, Dock Analytics and tracing: whether each is on, the servers it runs on, its memory now and at most, and its data on disk (ADR 0101). Memory comes from the last statistics sample and disk from each server's last disk reading; a server never read is read in the background and its numbers come with the next request. Operators only.
+         */
+        get: operations["list-features"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6103,7 +6143,7 @@ export interface paths {
         get: operations["get-scanning"];
         /**
          * Turn image scanning on or off
-         * @description Off stops a running scan at once and starts none; findings already made stay. Operators only.
+         * @description Off stops a running scan at once and starts none; findings already made stay. With remove_database, off also removes every builder's vulnerability database (3.4 GB each), which turning it on downloads again (ADR 0101). Operators only.
          */
         put: operations["set-scanning"];
         post?: never;
@@ -7343,6 +7383,10 @@ export interface components {
             store_bytes: number;
             store_running: boolean;
             store_version?: string;
+        };
+        AnalyticsSwitch: {
+            enabled: boolean;
+            remove_data?: boolean;
         };
         AppMetric: {
             /** Format: int64 */
@@ -9486,6 +9530,21 @@ export interface components {
             factor: components["schemas"]["Factor"];
             recovery_codes?: string[] | null;
         };
+        Feature: {
+            /** Format: int64 */
+            disk_bytes?: number;
+            enabled: boolean;
+            /** @enum {string} */
+            key: "scanning" | "analytics" | "tracing";
+            /** Format: int64 */
+            memory_bytes?: number;
+            /** Format: int64 */
+            memory_limit_bytes: number;
+            servers: string[] | null;
+        };
+        Features: {
+            items: components["schemas"]["Feature"][] | null;
+        };
         Finding: {
             /** Format: double */
             epss?: number;
@@ -11164,6 +11223,7 @@ export interface components {
         };
         ScanningSettings: {
             enabled: boolean;
+            remove_database?: boolean;
         };
         ScanningStatus: {
             builders: components["schemas"]["ScanningServer"][] | null;
@@ -15138,6 +15198,105 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SiteSettings"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "set-analytics": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnalyticsSwitch"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyticsStatus"];
                 };
             };
             /** @description Bad Request */
@@ -22622,6 +22781,83 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "list-features": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Features"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -514,6 +514,19 @@ type PruneImagesRequest struct {
 	Tool string
 }
 
+// The memory breakdown's names of the stores' containers (MemoryPart.Name).
+const (
+	MemoryAnalyticsStore = "analytics store"
+	MemoryTraceStore     = "trace store"
+)
+
+// ScanDatabaseMemory caps the jobs that write a builder's vulnerability
+// database (download, refresh, import): the most scanning takes at once.
+// Unpacking Grype's archive (200 MB packed, 3.4 GB unpacked, 2026-11-11)
+// goes through the page cache the job is charged for: it was killed at
+// 1 GB and passed at 1.25 GB, so 2 GB leaves room for it to grow.
+const ScanDatabaseMemory = 2 << 30
+
 // BuildTagPrefix starts every build tag the platform gives what it builds
 // ("dock/p3_e4_s5:12"): a name prune may remove from its own images.
 const BuildTagPrefix = "dock/p"
@@ -1269,6 +1282,11 @@ type Analytics interface {
 	// shouldn't (a move that stopped), and for the trace store when
 	// tracing is turned off or the analytics server changes.
 	RemoveAnalyticsStore(ctx context.Context, kind StoreKind) error
+	// StopAnalyticsStore stops and removes the container of the store of
+	// kind and keeps its data, for analytics turned off with its data
+	// kept (ADR 0101): EnsureAnalyticsStore runs it again on the same
+	// data. A store that doesn't run is no error.
+	StopAnalyticsStore(ctx context.Context, kind StoreKind) error
 	// DialAnalyticsStore connects to the API of the store of kind on this
 	// server. On a remote server the bytes go over the node link.
 	DialAnalyticsStore(ctx context.Context, kind StoreKind) (net.Conn, error)

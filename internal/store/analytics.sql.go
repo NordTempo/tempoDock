@@ -58,7 +58,7 @@ func (q *Queries) DeleteAnalyticsSaltsBefore(ctx context.Context, day int64) err
 }
 
 const getAnalyticsSettings = `-- name: GetAnalyticsSettings :one
-SELECT id, server_id, token, enabled, updated_by, updated_at, site_defaults, traces_enabled, traces_key_epoch, traces_key_rotated_at FROM analytics_settings WHERE id = 1
+SELECT id, server_id, token, enabled, updated_by, updated_at, site_defaults, traces_enabled, traces_key_epoch, traces_key_rotated_at, turned_off FROM analytics_settings WHERE id = 1
 `
 
 func (q *Queries) GetAnalyticsSettings(ctx context.Context) (AnalyticsSetting, error) {
@@ -75,6 +75,7 @@ func (q *Queries) GetAnalyticsSettings(ctx context.Context) (AnalyticsSetting, e
 		&i.TracesEnabled,
 		&i.TracesKeyEpoch,
 		&i.TracesKeyRotatedAt,
+		&i.TurnedOff,
 	)
 	return i, err
 }
@@ -126,8 +127,24 @@ func (q *Queries) RotateTracesKey(ctx context.Context, arg RotateTracesKeyParams
 	return traces_key_epoch, err
 }
 
+const setAnalyticsDisabled = `-- name: SetAnalyticsDisabled :exec
+UPDATE analytics_settings SET enabled = 0, turned_off = 1, updated_by = ?, updated_at = ? WHERE id = 1
+`
+
+type SetAnalyticsDisabledParams struct {
+	UpdatedBy string
+	UpdatedAt time.Time
+}
+
+// SetAnalyticsDisabled turns analytics off (ADR 0101); the row, its
+// token and server stay for turning it on again.
+func (q *Queries) SetAnalyticsDisabled(ctx context.Context, arg SetAnalyticsDisabledParams) error {
+	_, err := q.db.ExecContext(ctx, setAnalyticsDisabled, arg.UpdatedBy, arg.UpdatedAt)
+	return err
+}
+
 const setAnalyticsEnabled = `-- name: SetAnalyticsEnabled :exec
-UPDATE analytics_settings SET enabled = 1, updated_by = ?, updated_at = ? WHERE id = 1
+UPDATE analytics_settings SET enabled = 1, turned_off = 0, updated_by = ?, updated_at = ? WHERE id = 1
 `
 
 type SetAnalyticsEnabledParams struct {

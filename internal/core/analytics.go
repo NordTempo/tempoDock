@@ -77,6 +77,10 @@ type analyticsState struct {
 	alerts analyticsAlerts
 	// public are the public dashboards' hostnames (analytics_public.go).
 	public publicIndex
+	// off: an operator turned analytics off (ADR 0101). The ingests get no
+	// salts, so they keep nothing, and a site's first domain doesn't turn
+	// it on again.
+	off bool
 	// pushing holds a lock per server, taken by each push of its salts and
 	// rules from reading them to handing them over (pushSalts). Guarded by
 	// mu; one entry per server.
@@ -127,6 +131,9 @@ func (c *Core) startAnalytics(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	c.analytics.mu.Lock()
+	c.analytics.off = st.TurnedOff
+	c.analytics.mu.Unlock()
 	if st.TracesEnabled {
 		if err := c.runTraces(st); err != nil {
 			return err
@@ -136,6 +143,13 @@ func (c *Core) startAnalytics(ctx context.Context) error {
 		return nil
 	}
 	return c.runAnalytics(ctx, st)
+}
+
+// analyticsOff reports whether an operator turned analytics off.
+func (c *Core) analyticsOff() bool {
+	c.analytics.mu.Lock()
+	defer c.analytics.mu.Unlock()
+	return c.analytics.off
 }
 
 // runAnalytics connects to the store, starts it on its server (in the
@@ -426,6 +440,9 @@ func (c *Core) analyticsConfig(ctx context.Context) (node.AnalyticsConfig, error
 	}
 	cfg := node.AnalyticsConfig{Salts: make(map[int64][]byte, len(rows))}
 	cfg.TraceKey = c.traceKey()
+	if c.analyticsOff() {
+		return cfg, nil // no salts: the ingests keep nothing (ADR 0101)
+	}
 	for _, r := range rows {
 		if salt, err := c.box.Open(r.Salt, saltAAD(r.Day)); err == nil {
 			cfg.Salts[r.Day] = salt
@@ -645,11 +662,14 @@ func (c *Core) EnableAnalytics(ctx context.Context, a Actor) error {
 // enableAnalytics is EnableAnalytics without the permission check, for
 // operations that enable it on the way (the first site). A first enable
 // puts the store on serverID (nil: the control plane's server); a later
-// one changes nothing.
+// one changes nothing. Turned on again after it was turned off, the store
+// runs on its server again, on the data it kept, and the ingests get
+// their salts back.
 func (c *Core) enableAnalytics(ctx context.Context, by string, serverID *int64) error {
 	if cl, _ := c.analyticsClient(); cl != nil {
 		return nil
 	}
+	wasOff := c.analyticsOff()
 	sealed, err := c.box.Seal([]byte(newAnalyticsToken()), analyticsTokenAAD)
 	if err != nil {
 		return err
@@ -665,7 +685,16 @@ func (c *Core) enableAnalytics(ctx context.Context, by string, serverID *int64) 
 	if err != nil {
 		return err
 	}
-	return c.runAnalytics(ctx, st)
+	c.analytics.mu.Lock()
+	c.analytics.off = false
+	c.analytics.mu.Unlock()
+	if err := c.runAnalytics(ctx, st); err != nil {
+		return err
+	}
+	if wasOff {
+		c.pushAnalyticsToAll(ctx)
+	}
+	return nil
 }
 
 // overBudget logs the sites a write took past their budget for the day

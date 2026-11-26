@@ -600,6 +600,7 @@ tools that take those. Redirect it to a file:
 // newScanningCmd is `dock scanning [on|off]`: image scanning on the
 // platform (operators).
 func newScanningCmd(g *globals) *cobra.Command {
+	var removeDatabase bool
 	show := func(cmd *cobra.Command, set *bool) error {
 		s, err := g.connect()
 		if err != nil {
@@ -609,7 +610,8 @@ func newScanningCmd(g *globals) *cobra.Command {
 		if set == nil {
 			st, err = get[apitypes.ScanningStatus](cmd.Context(), s, apiPrefix+"/scanning")
 		} else {
-			st, err = send[apitypes.ScanningStatus](cmd.Context(), s, http.MethodPut, apiPrefix+"/scanning", apitypes.ScanningSettings{Enabled: *set})
+			st, err = send[apitypes.ScanningStatus](cmd.Context(), s, http.MethodPut, apiPrefix+"/scanning",
+				apitypes.ScanningSettings{Enabled: *set, RemoveDatabase: removeDatabase})
 		}
 		if err != nil {
 			return err
@@ -630,11 +632,19 @@ moment one starts.`,
 	cmd.AddCommand(newScanningImportCmd(g))
 	for _, on := range []bool{true, false} {
 		word := map[bool]string{true: "on", false: "off"}[on]
-		cmd.AddCommand(&cobra.Command{
+		sub := &cobra.Command{
 			Use: word, Args: cobra.NoArgs,
 			Short: "Turn image scanning " + word,
 			RunE:  func(cmd *cobra.Command, _ []string) error { return show(cmd, &on) },
-		})
+		}
+		if !on {
+			sub.Long = `Stop scanning: a running scan stops at once and none starts; findings
+already made stay. --remove-database also removes every builder's
+vulnerability database (3.4 GB each), which ` + "`dock scanning on`" + ` downloads
+again (ADR 0101).`
+			sub.Flags().BoolVar(&removeDatabase, "remove-database", false, "also remove every builder's vulnerability database (3.4 GB each)")
+		}
+		cmd.AddCommand(sub)
 	}
 	return cmd
 }

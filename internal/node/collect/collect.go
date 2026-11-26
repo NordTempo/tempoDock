@@ -21,6 +21,7 @@ import (
 type Store interface {
 	Ensure(ctx context.Context, spec node.AnalyticsStoreSpec) error
 	Remove(ctx context.Context) error
+	Stop(ctx context.Context) error
 	Dial(ctx context.Context) (net.Conn, error)
 }
 
@@ -186,6 +187,16 @@ func (c *Collector) RemoveAnalyticsStore(ctx context.Context, kind node.StoreKin
 		return nil
 	}
 	return s.Remove(ctx)
+}
+
+// StopAnalyticsStore implements node.Analytics: the container goes, the
+// data stays.
+func (c *Collector) StopAnalyticsStore(ctx context.Context, kind node.StoreKind) error {
+	s := c.store(kind)
+	if s == nil {
+		return nil
+	}
+	return s.Stop(ctx)
 }
 
 // DialAnalyticsStore implements node.Analytics.

@@ -942,6 +942,20 @@ func (c *Client) RemoveAnalyticsStore(ctx context.Context, kind node.StoreKind) 
 	return err
 }
 
+// StopStoreProtocol is the first protocol with stop-analytics-store.
+const StopStoreProtocol = 35
+
+// StopAnalyticsStore implements node.Analytics: the node stops the
+// container of kind and keeps its data. An older node can't, so
+// analytics can only be turned off there with its data removed.
+func (c *Client) StopAnalyticsStore(ctx context.Context, kind node.StoreKind) error {
+	if err := c.needProtocol(ctx, StopStoreProtocol, "stop the analytics store and keep its data"); err != nil {
+		return err
+	}
+	_, err := callWithLogs[empty](ctx, c, opStopAnalytics, analyticsStoreTimeout, storeKindRequest{Kind: string(kind)}, nil, nil)
+	return err
+}
+
 // DialAnalyticsStore implements node.Analytics: a raw connection to the
 // store's port on the node, over the link like Dial.
 func (c *Client) DialAnalyticsStore(ctx context.Context, kind node.StoreKind) (net.Conn, error) {

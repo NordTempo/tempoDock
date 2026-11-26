@@ -226,6 +226,17 @@ func (a *AnalyticsStore) Remove(ctx context.Context) error {
 	return nil
 }
 
+// Stop stops the store and removes its container, keeping its volume
+// (collect.Store): Ensure runs it again on the same data.
+func (a *AnalyticsStore) Stop(ctx context.Context) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if _, exists, err := a.inspect(ctx); err != nil || !exists {
+		return err
+	}
+	return a.remove(ctx)
+}
+
 // inspect looks the container up and checks dock made it.
 func (a *AnalyticsStore) inspect(ctx context.Context) (client.ContainerInspectResult, bool, error) {
 	inspect, err := a.cli.ContainerInspect(ctx, a.name, client.ContainerInspectOptions{})

@@ -416,6 +416,9 @@ func (c *Core) EnableHostnameAnalytics(ctx context.Context, a Actor, hostname st
 	if d.RedirectTo != "" {
 		return apitypes.Site{}, invalid("%s redirects to %s; turn analytics on for that domain instead", d.Hostname, d.RedirectTo)
 	}
+	if c.analyticsOff() {
+		return apitypes.Site{}, conflict("Dock Analytics is turned off on this platform; a platform operator turns it on in Console › Features (`dock analytics on`)")
+	}
 	if sh, err := c.store.GetSiteHostname(ctx, d.Hostname); err == nil {
 		if site, err := c.store.GetSite(ctx, sh.SiteID); err == nil && site.ArchivedAt == nil {
 			if site.EnvironmentID != es.env.ID {

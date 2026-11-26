@@ -105,6 +105,14 @@ func TestAnalyticsOverTheLink(t *testing.T) {
 		t.Fatalf("through the link the store said %q", body)
 	}
 
+	// Stopping it keeps the binary for its next start (ADR 0101).
+	if err := h.client.StopAnalyticsStore(ctx, node.StoreAnalytics); err != nil || fk.AnalyticsStoreSpec() != nil {
+		t.Fatalf("stop: %v, node has %+v", err, fk.AnalyticsStoreSpec())
+	}
+	if _, err := os.Stat(onNode); err != nil {
+		t.Errorf("stopping removed the binary: %v", err)
+	}
+
 	// Removing the store takes its binaries with it.
 	if err := h.client.RemoveAnalyticsStore(ctx, node.StoreAnalytics); err != nil || fk.AnalyticsStoreSpec() != nil {
 		t.Fatalf("remove: %v, node has %+v", err, fk.AnalyticsStoreSpec())

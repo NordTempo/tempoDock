@@ -200,10 +200,10 @@ func TestScanningOffAndPermissions(t *testing.T) {
 	h := scanHarness(t)
 	reader := Actor{Kind: "token", OrgID: 1, Name: "ro", TokenID: 1, Scope: apitypes.ScopeRead}
 	admin := Actor{Kind: "token", OrgID: 1, Name: "admin", TokenID: 2, Scope: apitypes.ScopeAdmin}
-	if _, err := h.c.SetScanning(h.ctx, admin, false); err == nil {
+	if _, err := h.c.SetScanning(h.ctx, admin, apitypes.ScanningSettings{}); err == nil {
 		t.Fatal("an org admin turned scanning off; operators only")
 	}
-	if _, err := h.c.SetScanning(h.ctx, testSystem, false); err != nil {
+	if _, err := h.c.SetScanning(h.ctx, testSystem, apitypes.ScanningSettings{}); err != nil {
 		t.Fatal(err)
 	}
 	ref := h.service("web", apitypes.CreateServiceRequest{})
@@ -222,7 +222,7 @@ func TestScanningOffAndPermissions(t *testing.T) {
 		t.Fatalf("images = %+v, %v", list, err)
 	}
 
-	if _, err := h.c.SetScanning(h.ctx, testSystem, true); err != nil {
+	if _, err := h.c.SetScanning(h.ctx, testSystem, apitypes.ScanningSettings{Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	h.waitScan(ref, apitypes.ScanScanned)

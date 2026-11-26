@@ -317,6 +317,25 @@ func (r *Runtime) RemoveAnalyticsStore(_ context.Context, kind node.StoreKind) e
 	return nil
 }
 
+// StopAnalyticsStore implements node.Analytics, recorded as
+// "stop-analytics-store" or "stop-trace-store". The fake keeps no data
+// apart from the store, so it stops it the same way.
+func (r *Runtime) StopAnalyticsStore(_ context.Context, kind node.StoreKind) error {
+	op := "stop-analytics-store"
+	r.analytics.mu.Lock()
+	if kind == node.StoreTraces {
+		op = "stop-trace-store"
+		r.analytics.stopTraces()
+	} else {
+		r.analytics.stopStore()
+	}
+	r.analytics.mu.Unlock()
+	r.mu.Lock()
+	r.ops = append(r.ops, op)
+	r.mu.Unlock()
+	return nil
+}
+
 // stopStore stops the in-memory store; mu is held.
 func (a *fakeAnalytics) stopStore() {
 	if a.storeLn != nil {

@@ -1,8 +1,8 @@
 import type { IconName } from "../../ui/icons";
 
 /**
- * The platform console's navigation, grouped by job (ADR 0099): nine
- * entries in the sidebar instead of seventeen. An entry with several
+ * The platform console's navigation, grouped by job (ADR 0099): ten
+ * entries in the sidebar instead of eighteen. An entry with several
  * pages opens on the first; the others are a tab row under the page's
  * title (ConsoleTabs), and the sidebar marks the entry on any of them.
  * Every page keeps its own address. The palette reads this too.
@@ -12,6 +12,7 @@ export type ConsolePage = {
     | "/console"
     | "/console/servers"
     | "/console/orgs"
+    | "/console/features"
     | "/console/backups"
     | "/console/storage"
     | "/console/registry"
@@ -52,6 +53,11 @@ export const consoleNav: ConsoleEntry[] = [
     label: "Organizations",
     icon: "users",
     pages: [{ to: "/console/orgs", label: "Organizations" }],
+  },
+  {
+    label: "Features",
+    icon: "sliders",
+    pages: [{ to: "/console/features", label: "Features" }],
   },
   {
     label: "Backups and storage",

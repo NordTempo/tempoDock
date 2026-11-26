@@ -138,7 +138,7 @@ func newRoot(g *globals) *cobra.Command {
 		newEnvCmd(g), newChangesCmd(g), newApplyCmd(g), newTemplateCmd(g), newImportCmd(g), newProjectExportCmd(g), newDiscardCmd(g), newDomainCmd(g), newAccessCmd(g), newVolumeCmd(g),
 		newServiceCmd(g), newEnvironmentCmd(g), newProjectCmd(g))
 	addGroup(root, "admin", "Administer:",
-		newTokenCmd(g), newUserCmd(g), newGroupCmd(g), newGrantCmd(g), newCanCmd(g), newRoleCmd(g), newAgentCmd(g), newPlatformCmd(g), newAuditCmd(g), newServerCmd(g), newRegistryCmd(g), newStorageCmd(g), newAlertsCmd(g), newUpdateCmd(g), newAddressCmd(g), newEmailCmd(g), newSecurityCmd(g), newSSOCmd(g), newGitHubCmd(g), newCloudflareCmd(g), newAnalyticsCmd(g), newScanningCmd(g), newTracingCmd(g))
+		newTokenCmd(g), newUserCmd(g), newGroupCmd(g), newGrantCmd(g), newCanCmd(g), newRoleCmd(g), newAgentCmd(g), newPlatformCmd(g), newAuditCmd(g), newServerCmd(g), newRegistryCmd(g), newStorageCmd(g), newAlertsCmd(g), newUpdateCmd(g), newAddressCmd(g), newEmailCmd(g), newSecurityCmd(g), newSSOCmd(g), newGitHubCmd(g), newCloudflareCmd(g), newAnalyticsCmd(g), newScanningCmd(g), newTracingCmd(g), newFeaturesCmd(g))
 	if cmds := serverCommands(); len(cmds) > 0 {
 		addGroup(root, "server", "Run a server:", cmds...)
 	}
