@@ -619,7 +619,10 @@ export function Fact({
  * between items. It is fixed to the viewport, so a
  * panel's overflow can't clip it; scrolling, Escape or a click outside
  * closes it. `dialog` makes it a small panel of details and buttons
- * instead (role="dialog"), as the environment lock's pill opens.
+ * instead (role="dialog"), as the environment lock's pill opens: it takes
+ * focus when it opens and gives it back to its button when an action in
+ * it closes it. Either is capped at the viewport's height and scrolls
+ * inside.
  */
 export function Menu({
   label,
@@ -655,10 +658,23 @@ export function Menu({
     const room = document.documentElement.clientWidth - edge;
     if (box.left < edge) el.style.translate = `${edge - box.left}px`;
     else if (box.right > room) el.style.translate = `${room - box.right}px`;
-  }, [at]);
+    if (dialog) el.focus({ preventScroll: true });
+  }, [at, dialog]);
+  // An action in a dialog closes it and leaves focus where it was opened;
+  // a Confirm or a page it opens takes focus after this.
+  const close = () => {
+    setAt(null);
+    if (dialog) trigger.current?.focus();
+  };
   useEffect(() => {
     if (!at) return;
     const close = () => setAt(null);
+    // Scrolling inside the popup (a capped one) leaves it open.
+    const onScroll = (event: Event) => {
+      const inside =
+        event.target instanceof Node && popup.current?.contains(event.target);
+      if (!inside) close();
+    };
     const onMouse = (event: MouseEvent) => {
       const inside =
         event.target instanceof Node && root.current?.contains(event.target);
@@ -685,12 +701,12 @@ export function Menu({
     };
     document.addEventListener("mousedown", onMouse);
     document.addEventListener("keydown", onKey);
-    window.addEventListener("scroll", close, true);
+    window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", close);
     return () => {
       document.removeEventListener("mousedown", onMouse);
       document.removeEventListener("keydown", onKey);
-      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", close);
     };
   }, [at]);
@@ -715,15 +731,17 @@ export function Menu({
           // Spread: Biome reads a role it can't know statically as none,
           // and then refuses the label both roles take.
           {...{ role: dialog ? "dialog" : "menu", "aria-label": label }}
+          tabIndex={dialog ? -1 : undefined}
           style={{
             top: at.bottom + 4,
+            maxHeight: `calc(100dvh - ${at.bottom + 12}px)`,
             ...(right
               ? { right: document.documentElement.clientWidth - at.right }
               : { left: at.left }),
           }}
-          className={`fixed z-40 flex flex-col rounded-ctl border border-edge bg-panel shadow-lg shadow-black/40 ${popupClassName}`}
+          className={`fixed z-40 flex flex-col overflow-y-auto rounded-ctl border border-edge bg-panel shadow-lg shadow-black/40 outline-none ${popupClassName}`}
         >
-          {children(() => setAt(null))}
+          {children(close)}
         </div>
       )}
     </span>

@@ -226,7 +226,9 @@ export function ProjectHeader({
             <div className="ml-auto flex flex-wrap items-center gap-2">
               {e &&
                 (e.lock ? (
-                  <LockPill envRef={ref} lock={e.lock} />
+                  // Keyed: an open Unlock question never carries over to
+                  // another environment.
+                  <LockPill key={e.id} envRef={ref} lock={e.lock} />
                 ) : (
                   admin && (
                     <Act

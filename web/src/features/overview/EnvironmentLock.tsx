@@ -25,7 +25,7 @@ import { isPending, useRequestsIfAdmin } from "../requests/data";
 
 /** What a lock does, in the words every lock control uses. */
 export const lockEffect =
-  "agents' changes (any token: MCP, the CLI) go to the Inbox for an admin's approval";
+  "agents' changes (any token: MCP, the CLI) go to the Inbox for an admin's approval, their data changes to the Data panel";
 
 /** What a lock for people too does (ADR 0080, protected environments). */
 export const lockPeopleEffect =
@@ -153,7 +153,7 @@ export function LockPill({
   return (
     <>
       <Menu
-        label={`${env}: ${state.toLowerCase()}`}
+        label={`${env}: ${state.toLowerCase()}${waiting.length > 0 ? `, ${waiting.length} waiting` : ""}`}
         right
         dialog
         popupClassName="w-[22rem] max-w-[calc(100vw-1rem)] p-3"
@@ -201,8 +201,9 @@ export function LockPill({
                 </>
               ) : (
                 <>
-                  Agents' changes go to {inbox} for an admin's approval. People
-                  and GitHub pushes still change it directly.
+                  Agents' changes go to {inbox} for an admin's approval, and
+                  their data changes to the Data panel. People and GitHub pushes
+                  still change it directly.
                 </>
               )}
             </p>

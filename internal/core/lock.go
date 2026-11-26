@@ -196,7 +196,7 @@ func (c *Core) LockEnvironment(ctx context.Context, a Actor, ref EnvRef, req api
 			return apitypes.Environment{}, err
 		}
 	}
-	summary := "locked for agents: their changes go to the Inbox for approval"
+	summary := "locked for agents: their changes go to the Inbox for approval, data changes to the Data panel"
 	if req.People {
 		summary = "locked for people too: only its approvers change it; everyone else's changes go to the Inbox for them"
 	}
