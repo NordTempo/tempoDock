@@ -30,9 +30,16 @@ import {
 // installing continue on github.com, and Dock checks with GitHub who
 // installed a platform App (ADR 0066).
 
+/**
+ * How many Apps the page shows: the platform's (at most ten) come first,
+ * and orgs' own past this are left to `dock github status`.
+ */
+const shownApps = 30;
+
 export function GitHubPage() {
   const { data: gh, refetch, isFetching } = useGitHub();
-  const apps = gh.apps ?? [];
+  const all = gh.apps ?? [];
+  const apps = all.slice(0, shownApps);
   const [creating, setCreating] = useState(false);
   return (
     <>
@@ -89,6 +96,12 @@ export function GitHubPage() {
             )}
           </section>
         ))}
+        {all.length > apps.length && (
+          <p className="text-mut">
+            {all.length - apps.length} more organizations' Apps:{" "}
+            <span className="font-mono">dock github status</span>
+          </p>
+        )}
       </Page>
     </>
   );

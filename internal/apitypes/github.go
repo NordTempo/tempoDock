@@ -36,7 +36,8 @@ type GitHubAppStatus struct {
 	// each is assigned to (none: unassigned, or for an org's own App on an
 	// account that doesn't own it). Assigned ones GitHub no longer lists
 	// are included with Missing set. In an org's view, a platform App's
-	// are the org's only.
+	// are the org's only; in the console, an org's own App's are those
+	// Dock has recorded, without asking GitHub.
 	Installations []GitHubInstallation `json:"installations"`
 	// InstallationsError says why GitHub couldn't be asked; Installations
 	// then holds only what Dock has assigned.

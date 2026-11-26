@@ -1006,3 +1006,35 @@ func TestGitHubAppValuesBoundToTheirRow(t *testing.T) {
 		t.Errorf("secrets format %d, %v", format, err)
 	}
 }
+
+// The App limit holds when an App is stored, not only when its flow
+// starts: a flow started with room left is refused if the owner filled up
+// meanwhile.
+func TestGitHubAppLimitIsCheckedWhenStored(t *testing.T) {
+	h, gh := gitHarness(t)
+	gh.withApp(t)
+	gh.withOrgApp(t)
+	admin := h.in(h.member("ann@x", map[string]apitypes.Scope{"test": apitypes.ScopeAdmin}), "test")
+	state, err := h.c.StartGitHubApp(h.ctx, admin, false, apitypes.GitHubAppRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	org := int64(1)
+	for i := range maxGitHubApps {
+		if _, err := h.store.CreateGitHubApp(h.ctx, store.CreateGitHubAppParams{
+			OrgID: &org, AppID: int64(1000 + i), HookID: fmt.Sprint("hook", i), Slug: fmt.Sprint("app", i),
+			PrivateKey: []byte{1}, WebhookSecret: []byte{1}, CreatedAt: time.Now(),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := h.c.StartGitHubApp(h.ctx, admin, false, apitypes.GitHubAppRequest{}); CodeOf(err) != apitypes.CodeConflict {
+		t.Fatalf("an App past the limit: %v", err)
+	}
+	if _, err := h.c.CompleteGitHubApp(h.ctx, "0rg", state); CodeOf(err) != apitypes.CodeConflict || !strings.Contains(err.Error(), "delete it in its settings on GitHub") {
+		t.Fatalf("a flow started before the limit was reached: %v", err)
+	}
+	if _, err := h.store.GetGitHubAppBySlug(h.ctx, "tempo-dock-test-org"); !store.IsNotFound(err) {
+		t.Fatalf("stored past the limit: %v", err)
+	}
+}

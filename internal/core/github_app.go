@@ -282,16 +282,31 @@ func (c *Core) appJWT(app store.GithubApp) (string, error) {
 // Dock ID appID, from the cache while it has more than tokenRenewal left;
 // the App is only read when the cache misses.
 func (c *Core) installationToken(ctx context.Context, appID, id int64) (string, error) {
-	s := &c.git.app
-	s.mu.Lock()
-	t, ok := s.tokens[id]
-	s.mu.Unlock()
-	if ok && time.Until(t.expires) > tokenRenewal {
-		return t.token, nil
+	if token, ok := c.git.app.cachedToken(id); ok {
+		return token, nil
 	}
 	app, err := c.githubApp(ctx, appID)
 	if err != nil {
 		return "", err
+	}
+	return c.appInstallationToken(ctx, app, id)
+}
+
+// cachedToken is installation id's cached token, while it has more than
+// tokenRenewal left.
+func (s *githubAppState) cachedToken(id int64) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tokens[id]
+	return t.token, ok && time.Until(t.expires) > tokenRenewal
+}
+
+// appInstallationToken is installationToken for a caller that has loaded
+// the App already (GitHubRepos, for every installation it lists).
+func (c *Core) appInstallationToken(ctx context.Context, app store.GithubApp, id int64) (string, error) {
+	s := &c.git.app
+	if token, ok := s.cachedToken(id); ok {
+		return token, nil
 	}
 	jwt, err := c.appJWT(app)
 	if err != nil {
@@ -340,19 +355,20 @@ type assignedInstallation struct {
 // with assigned, the App's installations Dock has given to orgs. With
 // all, every installation GitHub lists is included (an unassigned one has
 // no org); without, only the assigned ones, and GitHub is asked only when
-// there are some.
-func (c *Core) appStatus(ctx context.Context, app store.GithubApp, org string, assigned map[int64]assignedInstallation, conns map[int64]int, all bool) apitypes.GitHubAppStatus {
+// there are some. Without ask, GitHub isn't asked at all: the assigned
+// installations are listed as Dock knows them.
+func (c *Core) appStatus(ctx context.Context, app store.GithubApp, org string, assigned map[int64]assignedInstallation, conns map[int64]int, all, ask bool) apitypes.GitHubAppStatus {
 	out := apitypes.GitHubAppStatus{App: toGitHubApp(app, org), WebhookURL: c.hookURL(app.HookID), Installations: []apitypes.GitHubInstallation{}}
-	if !all && len(assigned) == 0 {
-		return out
-	}
 	var listed []githubInstallation
-	jwt, err := c.appJWT(app)
-	if err == nil {
-		listed, err = c.git.github.installations(ctx, jwt)
-	}
-	if err != nil {
-		out.InstallationsError = c.errorLine(err)
+	var err error
+	if ask && (all || len(assigned) > 0) {
+		var jwt string
+		if jwt, err = c.appJWT(app); err == nil {
+			listed, err = c.git.github.installations(ctx, jwt)
+		}
+		if err != nil {
+			out.InstallationsError = c.errorLine(err)
+		}
 	}
 	seen := map[int64]bool{}
 	for _, i := range listed {
@@ -369,7 +385,7 @@ func (c *Core) appStatus(ctx context.Context, app store.GithubApp, org string, a
 	for id, as := range assigned {
 		if !seen[id] {
 			out.Installations = append(out.Installations, apitypes.GitHubInstallation{
-				ID: id, Account: as.account, Org: as.org, Connections: conns[id], Missing: err == nil,
+				ID: id, Account: as.account, Org: as.org, Connections: conns[id], Missing: ask && err == nil,
 			})
 		}
 	}
@@ -389,8 +405,9 @@ func (c *Core) installationConnections(ctx context.Context) (map[int64]int, erro
 }
 
 // GitHubStatus describes every App, where each receives pushes, and its
-// installations: GitHub's list merged with Dock's assignments. Operators
-// only.
+// installations: for the platform's Apps GitHub's list merged with Dock's
+// assignments, for orgs' own the installations Dock has recorded.
+// Operators only.
 func (c *Core) GitHubStatus(ctx context.Context, a Actor) (apitypes.GitHubStatus, error) {
 	if err := a.requirePlatform(PlatformView, "reading the GitHub App"); err != nil {
 		return apitypes.GitHubStatus{}, err
@@ -423,8 +440,11 @@ func (c *Core) GitHubStatus(ctx context.Context, a Actor) (apitypes.GitHubStatus
 		}
 		byApp[r.AppID][r.InstallationID] = assignedInstallation{org: r.OrgSlug, account: r.Account}
 	}
+	// GitHub is asked about the platform's Apps (at most maxGitHubApps):
+	// orgs' own are their admins', listed as Dock knows them.
 	for _, r := range apps {
-		out.Apps = append(out.Apps, c.appStatus(ctx, r.GithubApp, r.OrgSlug, byApp[r.GithubApp.ID], conns, true))
+		platform := r.GithubApp.OrgID == nil
+		out.Apps = append(out.Apps, c.appStatus(ctx, r.GithubApp, r.OrgSlug, byApp[r.GithubApp.ID], conns, platform, platform))
 	}
 	if first := out.Apps[0]; first.App.Org == "" {
 		out.App, out.WebhookURL, out.Installations, out.InstallationsError = &first.App, first.WebhookURL, first.Installations, first.InstallationsError
@@ -461,14 +481,25 @@ func (c *Core) StartGitHubApp(ctx context.Context, a Actor, platform bool, req a
 	if c.hooksHost() == "" {
 		return "", invalid("GitHub needs a public address to send pushes to; an operator sets one with `dock address set <hostname>`")
 	}
-	apps, err := c.store.ListGitHubApps(ctx)
-	if err != nil {
+	if err := appRoom(ctx, c.store.Queries, owner); err != nil {
 		return "", err
 	}
-	if n := len(slices.DeleteFunc(apps, func(r store.ListGitHubAppsRow) bool { return appOrg(r.GithubApp) != owner })); n >= maxGitHubApps {
-		return "", conflict("there are already %d GitHub Apps here, the most one owner has; remove one first with `dock github app remove <slug>`", n)
-	}
 	return c.git.app.startFlow(githubFlow{kind: flowManifest, actor: a, org: org, owner: login, hookID: randomHex(16), public: req.Public}), nil
+}
+
+// appRoom refuses another App for owner (0: the platform) once it has
+// maxGitHubApps. StartGitHubApp checks it so nobody goes to GitHub for
+// nothing, and CompleteGitHubApp again in the transaction that stores the
+// App, so flows started side by side can't pass it together.
+func appRoom(ctx context.Context, q *store.Queries, owner int64) error {
+	apps, err := q.ListOrgGitHubApps(ctx, &owner)
+	if err != nil {
+		return err
+	}
+	if n := len(slices.DeleteFunc(apps, func(app store.GithubApp) bool { return appOrg(app) != owner })); n >= maxGitHubApps {
+		return conflict("there are already %d GitHub Apps here, the most one owner has; remove one first with `dock github app remove <slug>`", n)
+	}
+	return nil
 }
 
 // githubManifest is the App GitHub is asked to register.
@@ -574,14 +605,25 @@ func (c *Core) CompleteGitHubApp(ctx context.Context, code, state string) (apity
 	if f.org.ID != 0 {
 		orgID = &f.org.ID
 	}
-	row, err := c.store.CreateGitHubApp(ctx, store.CreateGitHubAppParams{
-		OrgID: orgID, AppID: created.ID, HookID: f.hookID, Slug: cleanLine(created.Slug, 100), Name: cleanLine(created.Name, 100),
-		Owner: cleanLine(created.Owner.Login, 39), OwnerID: created.Owner.ID, HtmlUrl: cleanLine(created.HTMLURL, 200),
-		PrivateKey: key, WebhookSecret: secret, ClientID: cleanLine(created.ClientID, 100), ClientSecret: clientSecret,
-		CreatedBy: f.actor.Name, CreatedAt: now(),
+	var row store.GithubApp
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		if err := appRoom(ctx, q, f.org.ID); err != nil {
+			return err
+		}
+		row, err = q.CreateGitHubApp(ctx, store.CreateGitHubAppParams{
+			OrgID: orgID, AppID: created.ID, HookID: f.hookID, Slug: cleanLine(created.Slug, 100), Name: cleanLine(created.Name, 100),
+			Owner: cleanLine(created.Owner.Login, 39), OwnerID: created.Owner.ID, HtmlUrl: cleanLine(created.HTMLURL, 200),
+			PrivateKey: key, WebhookSecret: secret, ClientID: cleanLine(created.ClientID, 100), ClientSecret: clientSecret,
+			CreatedBy: f.actor.Name, CreatedAt: now(),
+		})
+		return err
 	})
-	if store.IsUnique(err) {
+	switch {
+	case store.IsUnique(err):
 		return apitypes.GitHubApp{}, conflict("Dock already has the GitHub App %s", created.Slug)
+	case CodeOf(err) == apitypes.CodeConflict:
+		// Another App was stored while this one was made on GitHub.
+		return apitypes.GitHubApp{}, conflict("%s. GitHub made the App %s anyway: delete it in its settings on GitHub (%s)", strings.TrimSuffix(c.errorLine(err), "."), cleanLine(created.Slug, 100), cleanLine(created.HTMLURL, 200))
 	}
 	if err != nil {
 		return apitypes.GitHubApp{}, err
@@ -923,7 +965,7 @@ func (c *Core) GitHubOrgStatus(ctx context.Context, a Actor) (apitypes.GitHubOrg
 		if app.OrgID != nil {
 			org = a.OrgSlug
 		}
-		st := c.appStatus(ctx, app, org, assigned, conns, app.OrgID != nil)
+		st := c.appStatus(ctx, app, org, assigned, conns, app.OrgID != nil, true)
 		out.Apps = append(out.Apps, st)
 		if app.OrgID == nil && out.App == nil {
 			out.App = &apitypes.GitHubOrgApp{Slug: app.Slug, Name: app.Name, Owner: app.Owner, URL: app.HtmlUrl}
@@ -952,12 +994,26 @@ func (c *Core) GitHubRepos(ctx context.Context, a Actor) (apitypes.GitHubRepos, 
 	}
 	out := apitypes.GitHubRepos{Repos: []apitypes.GitHubRepo{}}
 	insts, err := c.store.ListOrgGitHubInstallations(ctx, a.OrgID)
+	if err != nil || len(insts) == 0 {
+		return out, err
+	}
+	// The org's installations are of the Apps it may use: one read of
+	// them, whatever the number of installations.
+	apps, err := c.orgApps(ctx, a.OrgID)
 	if err != nil {
 		return out, err
 	}
+	appOf := make(map[int64]store.GithubApp, len(apps))
+	for _, app := range apps {
+		appOf[app.ID] = app
+	}
 	seen := map[int64]bool{}
 	for _, inst := range insts {
-		token, err := c.installationToken(ctx, inst.AppID, inst.InstallationID)
+		app, ok := appOf[inst.AppID]
+		if !ok {
+			continue // an App removed since the read above
+		}
+		token, err := c.appInstallationToken(ctx, app, inst.InstallationID)
 		if err != nil {
 			return out, err
 		}
