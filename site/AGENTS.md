@@ -2,9 +2,11 @@
 
 Tempo Dock's landing page ([ADR 0067](../docs/decisions/0067-landing-site-and-console-address.md)):
 Astro, Tailwind, built to static HTML, served by Caddy (`Dockerfile`,
-`Caddyfile`). Its own pnpm project, separate from `web/`. The home page
-ships no client JavaScript; the docs pages ship one script, their heading
-search (`DocsSearch.astro`).
+`Caddyfile`). Its own pnpm project, separate from `web/`. Every page loads
+Dock Analytics' script (`/_dock/a/s.js` in `src/layouts/Page.astro`, served
+by Dock's edge, not the site); beyond that the home page ships no client
+JavaScript and the docs pages ship one script, their heading search
+(`DocsSearch.astro`).
 
 ```sh
 pnpm dev     # hot reload on :4321

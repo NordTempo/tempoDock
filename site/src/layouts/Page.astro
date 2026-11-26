@@ -1,7 +1,7 @@
 ---
 import "../styles/global.css";
 
-/** The document shell: head, fonts and the black page. */
+/** The document shell: head, fonts, Dock Analytics' script and the black page. */
 interface Props {
   title: string;
   description: string;
@@ -26,6 +26,8 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     <meta name="theme-color" content="#000000" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <!-- Dock Analytics: Dock's edge serves /_dock/a/s.js in front of the site (404 under pnpm dev). -->
+    <script is:inline src="/_dock/a/s.js" defer></script>
   </head>
   <body class="min-h-screen bg-black text-white">
     <slot />
