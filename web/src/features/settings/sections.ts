@@ -8,7 +8,15 @@ export const serviceSettingSections = [
   {
     id: "source",
     label: "Source",
-    words: ["image", "repository", "github", "build", "dockerfile", "previews"],
+    words: [
+      "image",
+      "repository",
+      "github",
+      "build",
+      "dockerfile",
+      "previews",
+      "pull requests",
+    ],
   },
   {
     id: "running",

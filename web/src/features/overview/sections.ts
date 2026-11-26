@@ -32,12 +32,6 @@ export const projectSettingSections = [
     words: ["name", "rename", "address"],
   },
   {
-    id: "previews",
-    label: "Previews",
-    scope: "project",
-    words: ["pull requests", "preview environments", "branches"],
-  },
-  {
     id: "placement",
     label: "New environments",
     scope: "project",

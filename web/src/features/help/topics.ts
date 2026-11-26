@@ -310,7 +310,7 @@ export const topics: Record<TopicId, Topic> = {
       {
         what: "Turn them on for a service",
         cli: "dock service previews on -s web",
-        at: { p: "previews" },
+        at: { s: "source" },
       },
       {
         what: "Copy one of its values into every preview",
@@ -327,6 +327,7 @@ export const topics: Record<TopicId, Topic> = {
       {
         what: "Limit how many are open, and when they sleep",
         cli: "dock env previews set staging --max 5 --sleep-after 1h",
+        at: { s: "source" },
       },
       { what: "See open previews", cli: "dock env previews" },
       { what: "Close one", cli: "dock env previews close pr-12" },

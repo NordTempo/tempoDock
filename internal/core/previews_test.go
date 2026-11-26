@@ -317,8 +317,8 @@ func TestPreviewRefusals(t *testing.T) {
 	}
 
 	// Allowing forks lets one in, once a slot is free.
-	if _, err := h.c.ClosePreview(h.ctx, testSystem, EnvRef{"shop", "pr-4"}); err != nil {
-		t.Fatal(err)
+	if pv, err := h.c.ClosePreview(h.ctx, testSystem, EnvRef{"shop", "pr-4"}); err != nil || pv.Base != "staging" {
+		t.Fatalf("closed preview: %+v, %v", pv, err)
 	}
 	h.servicePreviews(ServiceRef{"shop", "staging", "web"}, apitypes.SetServicePreviewsRequest{Build: true, AllowForks: true})
 	if msg, _ := h.deliver(appHook, "f2", prEvent{action: "synchronize", number: 1, sha: shaB, updated: t0.Add(time.Minute), fork: true}); !strings.Contains(msg, "preview pr-1 created") {
@@ -381,7 +381,7 @@ func TestPreviewPermissions(t *testing.T) {
 		t.Fatalf("api built pull requests without a source: %v", err)
 	}
 	ro := Actor{Kind: "token", OrgID: 1, Name: "ro", Scope: apitypes.ScopeRead}
-	if s, err := h.c.GetPreviews(h.ctx, ro, "shop"); err != nil || !s.Enabled || s.Base != "staging" || len(s.Previews) != 1 {
+	if s, err := h.c.GetPreviews(h.ctx, ro, "shop"); err != nil || !s.Enabled || s.Base != "staging" || len(s.Previews) != 1 || s.Previews[0].Base != "staging" {
 		t.Fatalf("read previews: %+v, %v", s, err)
 	}
 	if _, err := h.c.ClosePreview(h.ctx, ro, EnvRef{"shop", "pr-9"}); CodeOf(err) != apitypes.CodeForbidden {

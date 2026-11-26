@@ -10511,6 +10511,8 @@ export interface components {
         };
         Preview: {
             author: string;
+            /** @description The environment the preview was cloned from */
+            base: string;
             /** @description The pull request's head branch */
             branch: string;
             /** Format: date-time */

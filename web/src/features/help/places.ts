@@ -2,7 +2,7 @@
  * The screens a help topic's "Do" rows link to, by scope: a service's
  * tabs need a service in view, a project's pages a project, the
  * organization's pages only the org. Topics name them as `{ s: "logs" }`,
- * `{ p: "previews" }` or `{ o: "inbox" }`. A `hash` is a section of a
+ * `{ p: "compare" }` or `{ o: "inbox" }`. A `hash` is a section of a
  * Settings page (features/settings/sections.ts, overview/sections.ts).
  */
 export const servicePlaces = {
@@ -38,6 +38,11 @@ export const servicePlaces = {
     to: "/$org/$project/$environment/$service/settings",
     label: "Settings",
   },
+  source: {
+    to: "/$org/$project/$environment/$service/settings",
+    hash: "source",
+    label: "Settings › Source",
+  },
   health: {
     to: "/$org/$project/$environment/$service/settings",
     hash: "health",
@@ -61,11 +66,6 @@ export const servicePlaces = {
 
 export const projectPlaces = {
   compare: { to: "/$org/$project/compare", label: "Compare" },
-  previews: {
-    to: "/$org/$project/project-settings",
-    hash: "previews",
-    label: "Previews",
-  },
   drains: {
     to: "/$org/$project/settings",
     hash: "log-drains",

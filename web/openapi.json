@@ -12184,6 +12184,10 @@
           "author": {
             "type": "string"
           },
+          "base": {
+            "description": "The environment the preview was cloned from",
+            "type": "string"
+          },
           "branch": {
             "description": "The pull request's head branch",
             "type": "string"
@@ -12260,6 +12264,7 @@
         },
         "required": [
           "environment",
+          "base",
           "repo",
           "number",
           "title",
