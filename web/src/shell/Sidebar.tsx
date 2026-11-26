@@ -163,13 +163,15 @@ function AppNav({ tree, onToggle }: { tree: boolean; onToggle: () => void }) {
         title={`${tree ? "Collapse to the project rail" : "Expand to the project tree"} ([)`}
         className={`group nav-row text-faint ${tree ? "" : "justify-center px-0"}`}
       >
-        {/* The panel icon toggles both ways; the shortcut shows on hover. */}
+        {/* The panel icon toggles both ways; the shortcut shows on hover or focus. */}
         {tree && (
           <>
             <span className="flex-1 text-left text-2xs font-medium">
               Projects
             </span>
-            <kbd className="hidden group-hover:inline">[</kbd>
+            <kbd className="hidden group-hover:inline group-focus-visible:inline">
+              [
+            </kbd>
           </>
         )}
         <Icon name="sidebar" size={14} />
