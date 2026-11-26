@@ -62,9 +62,9 @@ export default function AddDomainDialog({
     .replace(/\.$/, "")
     .replace(new RegExp(`(^|\\.)${picked.replaceAll(".", "\\.")}$`), "");
   // Without a connected zone there is nothing to choose: the dialog is
-  // just your own hostname, with no radio buttons or option box.
+  // just your own hostname, with no radio buttons or option box. Only
+  // classes change when zones arrive, so a field being typed in keeps focus.
   const canCloudflare = zones.length > 0;
-  const Own = canCloudflare ? "label" : "div";
   const fromCloudflare = canCloudflare && mode === "cloudflare";
   const host = fromCloudflare
     ? sub
@@ -106,15 +106,14 @@ export default function AddDomainDialog({
           );
         }}
       >
-        <Own className={canCloudflare ? option(!fromCloudflare) : "flex"}>
-          {canCloudflare && (
-            <input
-              type="radio"
-              name="mode"
-              checked={!fromCloudflare}
-              onChange={() => setMode("own")}
-            />
-          )}
+        <label className={canCloudflare ? option(!fromCloudflare) : "flex"}>
+          <input
+            type="radio"
+            name="mode"
+            hidden={!canCloudflare}
+            checked={!fromCloudflare}
+            onChange={() => setMode("own")}
+          />
           <span className="flex min-w-0 flex-1 flex-col gap-2">
             <span>
               Your own hostname
@@ -152,7 +151,7 @@ export default function AddDomainDialog({
               </span>
             )}
           </span>
-        </Own>
+        </label>
         {canCloudflare && (
           <label className={option(fromCloudflare)}>
             <input
