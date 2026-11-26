@@ -39,8 +39,8 @@ WHERE archived_at IS NULL AND EXISTS (
 -- A live service that a site counted but that leads no live site now gets
 -- a site of its own, counting from now. It is named after its first such
 -- hostname (with the service's ID when the project has a live site of
--- that name, and a random part too if even that is taken, so the
--- upgrade never fails on a name) and takes that hostname's site's
+-- that name, and a random part too if a live site or another site made
+-- here could have that one, so the upgrade never fails on a name) and takes that hostname's site's
 -- settings, but not its
 -- public domain, which is one site's. The public address comes when
 -- analytics starts (assignPublicSlugs).
@@ -54,6 +54,9 @@ SELECT s.environment_id,
            WHEN NOT EXISTS (
                SELECT 1 FROM sites o JOIN environments oe ON oe.id = o.environment_id
                WHERE oe.project_id = e.project_id AND o.name = c.hostname || '-' || s.id AND o.archived_at IS NULL
+           ) AND NOT EXISTS (
+               -- Nor a hostname another site made here may be named after.
+               SELECT 1 FROM counted_before c3 WHERE c3.hostname = c.hostname || '-' || s.id
            ) THEN c.hostname || '-' || s.id
            ELSE c.hostname || '-' || s.id || '-' || lower(hex(randomblob(4)))
        END,

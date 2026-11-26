@@ -21,7 +21,7 @@ func TestSitesPerServiceMigration(t *testing.T) {
 		`INSERT INTO services (id, environment_id, name, image, archived_at) VALUES
 			(1, 1, 'web', '', NULL), (2, 1, 'blog', '', NULL), (3, 1, 'api', '', NULL),
 			(4, 1, 'retired', '', '2026-01-03'), (5, 1, 'shop', '', NULL), (6, 1, 'docs', '', NULL),
-			(7, 1, 'a', '', NULL), (8, 1, 'b', '', NULL)`,
+			(7, 1, 'a', '', NULL), (9, 1, 'odd', '', NULL)`,
 		`INSERT INTO sites (id, environment_id, name, settings, archived_at, created_by, created_at) VALUES
 			(1, 1, 'shop.example.com', '{"event_retention_days":30,"public_domain":"stats.example.com"}', NULL, 'a', '2026-01-01'),
 			(2, 1, 'shop.example.org', '{"consent":"none"}', NULL, 'a', '2026-01-02'),
@@ -29,8 +29,7 @@ func TestSitesPerServiceMigration(t *testing.T) {
 			(4, 1, 'old', '{}', '2026-01-05', 'a', '2026-01-04'),
 			(5, 1, 'blog.example.com', '{}', NULL, 'a', '2026-01-04'),
 			(6, 1, 'retired', '{}', NULL, 'a', '2026-01-04'),
-			(7, 1, 'docs.example.com', '{}', NULL, 'a', '2026-01-04'),
-			(8, 1, 'docs.example.com-6', '{}', NULL, 'a', '2026-01-04')`,
+			(7, 1, 'docs.example.com', '{}', NULL, 'a', '2026-01-04')`,
 		`INSERT INTO site_hostnames (hostname, site_id, service_id, added_at) VALUES
 			('shop.example.com', 1, 1, '2026-01-01'), ('www.shop.example.com', 1, 1, '2026-01-01'),
 			('blog.example.com', 1, 2, '2026-01-01'),
@@ -38,7 +37,7 @@ func TestSitesPerServiceMigration(t *testing.T) {
 			('removed.example.com', 3, NULL, '2026-01-03'),
 			('old.example.com', 4, 3, '2026-01-04'),
 			('r1.example.com', 6, 4, '2026-01-04'), ('r2.example.com', 6, 4, '2026-01-04'), ('new.example.com', 6, 5, '2026-01-05'),
-			('a.example.com', 7, 7, '2026-01-04'), ('b.example.com', 8, 8, '2026-01-04')`,
+			('a.example.com', 7, 7, '2026-01-04'), ('docs.example.com-6', 2, 9, '2026-01-04')`,
 	)
 	s, err := Open(ctx, path)
 	if err != nil {
@@ -78,12 +77,15 @@ func TestSitesPerServiceMigration(t *testing.T) {
 	}
 	// docs was counted by site 2, which this migration archived: it keeps
 	// counting, with site 2's settings.
-	// Its name and that name with its service's ID are taken by live
-	// sites 7 and 8, so it gets a random part: the upgrade can't fail on
-	// a name.
+	// Its name is taken by live site 7, and that name with its service's
+	// ID is the hostname odd's new site is named after, so it gets a
+	// random part: the upgrade can't fail on a name.
 	if docs, err := s.LiveSiteOfService(ctx, ptr(int64(6))); err != nil || docs.Settings != `{"consent":"none"}` ||
 		!strings.HasPrefix(docs.Name, "docs.example.com-6-") || len(docs.Name) != len("docs.example.com-6-")+8 {
 		t.Errorf("docs's site = %+v, %v", docs, err)
+	}
+	if odd, err := s.LiveSiteOfService(ctx, ptr(int64(9))); err != nil || odd.Name != "docs.example.com-6" {
+		t.Errorf("odd's site = %+v, %v", odd, err)
 	}
 	if hosts, err := s.ListSiteHostnames(ctx, []int64{1}); err != nil || len(hosts) != 0 {
 		t.Errorf("site 1 counts %+v, %v; web has no domains", hosts, err)
