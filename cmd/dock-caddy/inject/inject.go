@@ -91,12 +91,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		return next.ServeHTTP(w, r)
 	}
 	if !pageLoad(r) {
-		// A fragment of the same address mustn't be cached for the page,
-		// or the page for it.
-		if r.Header.Get("Sec-Fetch-Dest") == "empty" {
-			w.Header().Add("Vary", "Sec-Fetch-Dest")
-		}
-		return next.ServeHTTP(w, r)
+		// HTML that isn't a page load (a fragment, an object) mustn't be
+		// cached for the page, or the page for it.
+		return next.ServeHTTP(&varyWriter{ResponseWriter: w}, r)
 	}
 	gz := acceptsGzip(r.Header.Values("Accept-Encoding"))
 	// An uncompressed page can be changed as it streams; gzip comes back
@@ -156,6 +153,35 @@ type writer struct {
 	out         io.Writer
 	zw          *gzip.Writer
 }
+
+// varyWriter adds Vary: Sec-Fetch-Dest to an HTML response it passes on
+// unchanged, at its final status: a 1xx before it clears the headers.
+type varyWriter struct {
+	http.ResponseWriter
+	done bool
+}
+
+// WriteHeader adds the Vary at the final status.
+func (w *varyWriter) WriteHeader(code int) {
+	if code >= 200 && !w.done {
+		w.done = true
+		if hdr := w.Header(); isHTML(hdr.Get("Content-Type")) && !hasToken(hdr.Values("Vary"), "Sec-Fetch-Dest") {
+			hdr.Add("Vary", "Sec-Fetch-Dest")
+		}
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+// Write passes the body on, after the status.
+func (w *varyWriter) Write(p []byte) (int, error) {
+	if !w.done {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(p)
+}
+
+// Unwrap lets http.ResponseController reach the connection underneath.
+func (w *varyWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 // gzips are pooled: a writer's state is a few hundred KB.
 var gzips sync.Pool

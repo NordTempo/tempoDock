@@ -142,13 +142,45 @@ func TestRevalidation(t *testing.T) {
 	}
 }
 
-// A fragment of a page's address varies on Sec-Fetch-Dest, so a cache
-// keeps the two apart.
-func TestFragmentVaries(t *testing.T) {
+// infoRecorder takes 1xx responses as net/http does: not final.
+type infoRecorder struct{ *httptest.ResponseRecorder }
+
+func (r infoRecorder) WriteHeader(code int) {
+	if code >= 200 {
+		r.ResponseRecorder.WriteHeader(code)
+	}
+}
+
+// HTML that isn't a page load varies on Sec-Fetch-Dest, so a cache keeps
+// it apart from the page, also after a 103; other responses don't.
+func TestNotPageLoadsVary(t *testing.T) {
+	for _, dest := range []string{"empty", "object"} {
+		r := visit("example.com")
+		r.Header.Set("Sec-Fetch-Dest", dest)
+		h := &Handler{Hosts: []string{"example.com"}, Src: "/_dock/a/s.js"}
+		_ = h.Provision(caddyCtx())
+		rec := httptest.NewRecorder()
+		err := h.ServeHTTP(infoRecorder{rec}, r, caddyhttp.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) error {
+			w.WriteHeader(http.StatusEarlyHints)
+			for k := range w.Header() {
+				delete(w.Header(), k) // as Caddy's proxy does after a 1xx
+			}
+			w.Header().Set("Content-Type", "text/html")
+			w.Header().Set("Vary", "Cookie")
+			_, err := io.WriteString(w, page)
+			return err
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Join(rec.Header().Values("Vary"), ", "); got != "Cookie, Sec-Fetch-Dest" || strings.Contains(rec.Body.String(), "data-dock-auto") {
+			t.Errorf("%s: Vary %q", dest, got)
+		}
+	}
 	r := visit("example.com")
-	r.Header.Set("Sec-Fetch-Dest", "empty")
-	if rec := serve(t, &app{body: page}, r); rec.Header().Get("Vary") != "Sec-Fetch-Dest" || strings.Contains(body(t, rec), "data-dock-auto") {
-		t.Errorf("fragment: Vary %q", rec.Header().Get("Vary"))
+	r.Header.Set("Sec-Fetch-Dest", "image")
+	if rec := serve(t, &app{body: "png", hdr: http.Header{"Content-Type": {"image/png"}}}, r); rec.Header().Get("Vary") != "" {
+		t.Errorf("an image varies: %q", rec.Header().Get("Vary"))
 	}
 }
 
