@@ -389,7 +389,7 @@ toml_unset() {
   out="$(awk -v section="$2" -v key="$3" '
     # bare: the line without its strings and comment, so a "]" in an
     # address ("[2001:db8::1]:7443") does not end the array.
-    function bare(l) { gsub(/"[^"]*"/, "", l); sub(/#.*$/, "", l); return l }
+    function bare(l) { gsub(/"[^"]*"|\047[^\047]*\047/, "", l); sub(/#.*$/, "", l); return l }
     BEGIN { in_section = (section == "") }
     skipping { if (bare($0) ~ /\]/) skipping = 0; next }
     /^[[:space:]]*\[/ {

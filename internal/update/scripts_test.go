@@ -378,13 +378,15 @@ func TestInstallShRefreshesTheBuildKitImage(t *testing.T) {
 }
 
 // A restore drops [node] addrs (ADR 0102) however it is written: one line,
-// or several with a "]" inside an IPv6 address or a comment.
+// or several with a "]" inside an IPv6 address (in either kind of TOML
+// string) or a comment.
 func TestInstallShUnsetsNodeAddrs(t *testing.T) {
 	o := newOffline(t)
 	path := filepath.Join(o.dir, "config.toml")
 	for _, addrs := range []string{
 		`addrs = ["100.64.0.10:7443"] # old server`,
 		"addrs = [\n  \"[2001:db8::1]:7443\", # a ] too\n  \"100.64.0.10:7443\",\n]",
+		"addrs = [\n  '[2001:db8::10]:7443',\n  'cp.example.com:7443',\n]",
 	} {
 		o.write(t, "config.toml", "listen = \"127.0.0.1:7070\"\n\n[node]\n"+addrs+"\nlisten = \":7443\"\n\n[registry]\nenabled = true\n", 0o644)
 		if out, err := o.installSh(t, nil, "toml_unset", path, "node", "addrs"); err != nil {
