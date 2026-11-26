@@ -13,8 +13,8 @@ import {
   Panel,
 } from "../../ui/kit";
 import {
+  type GitHubAppStatus,
   type GitHubInstallation,
-  type GitHubStatus,
   useAssign,
   useCreateApp,
   useGitHub,
@@ -23,29 +23,24 @@ import {
   useSetClientSecret,
 } from "./data";
 
-// The console's GitHub page (mock G1): Dock's GitHub App as a list of
-// properties, its installations below with the org each deploys for
-// (ADR 0031). Creating and installing continue on github.com, and Dock
-// checks with GitHub who installed it (ADR 0066).
+// The console's GitHub page (mock G1, P-B for several Apps): every GitHub
+// App stacked, each as a list of properties with its installations below
+// and the org each deploys for (ADR 0031, 0105). The platform's Apps come
+// first, then each org's own, which its admins manage. Creating and
+// installing continue on github.com, and Dock checks with GitHub who
+// installed a platform App (ADR 0066).
 
 export function GitHubPage() {
   const { data: gh, refetch, isFetching } = useGitHub();
+  const apps = gh.apps ?? [];
+  const [creating, setCreating] = useState(false);
   return (
     <>
-      <PageBar title="GitHub" />
-      <Page>
-        {gh.hooks_hint && (
-          <p className="text-warn">
-            GitHub needs a public address to deliver pushes to.{" "}
-            <Link to="/console/address">Set Dock's address</Link> first.
-          </p>
-        )}
-        {gh.app ? (
-          <>
-            <AppPanel gh={gh} />
-            <Installations gh={gh} />
-            <span className="flex flex-wrap items-center gap-2">
-              <InstallForm orgs={gh.orgs ?? []} />
+      <PageBar
+        title="GitHub"
+        actions={
+          apps.length > 0 && (
+            <>
               <Act
                 small
                 cli="dock github status"
@@ -54,22 +49,62 @@ export function GitHubPage() {
               >
                 Check again
               </Act>
-            </span>
-          </>
-        ) : (
-          <CreateForm disabled={!!gh.hooks_hint} />
+              <Button
+                small
+                primary
+                disabled={creating}
+                onClick={() => setCreating(true)}
+              >
+                Create platform App
+              </Button>
+            </>
+          )
+        }
+      />
+      <Page>
+        {gh.hooks_hint && (
+          <p className="text-warn">
+            GitHub needs a public address to deliver pushes to.{" "}
+            <Link to="/console/address">Set Dock's address</Link> first.
+          </p>
         )}
+        {(apps.length === 0 || creating) && (
+          <CreateForm
+            disabled={!!gh.hooks_hint}
+            onCancel={apps.length > 0 ? () => setCreating(false) : undefined}
+          />
+        )}
+        {apps.map((a) => (
+          <section key={a.app.slug} className="flex flex-col gap-2">
+            <h2 className="flex flex-wrap items-baseline gap-2 font-mono">
+              {a.app.slug}
+              <span className="font-sans text-xs text-faint">
+                {a.app.org ? `org ${a.app.org}` : "platform"}
+              </span>
+            </h2>
+            <AppPanel app={a} callbackURL={gh.callback_url ?? ""} />
+            <Installations app={a} orgs={gh.orgs ?? []} />
+            {!a.app.org && (
+              <InstallForm app={a.app.slug} orgs={gh.orgs ?? []} />
+            )}
+          </section>
+        ))}
       </Page>
     </>
   );
 }
 
-/** The App, its webhook and permissions; Remove asks first. */
-function AppPanel({ gh }: { gh: GitHubStatus }) {
+/** An App, its webhook and permissions; Remove asks first. */
+function AppPanel({
+  app: a,
+  callbackURL,
+}: {
+  app: GitHubAppStatus;
+  callbackURL: string;
+}) {
   const remove = useRemoveApp();
   const [asking, setAsking] = useState(false);
-  const app = gh.app;
-  if (!app) return null;
+  const app = a.app;
   return (
     <Panel>
       <table>
@@ -83,7 +118,7 @@ function AppPanel({ gh }: { gh: GitHubStatus }) {
                 rel="noreferrer"
                 className="font-mono"
               >
-                {app.slug}
+                {app.name}
               </a>{" "}
               <span className="text-faint">
                 on {app.owner} · created {ago(app.created_at)} by{" "}
@@ -94,10 +129,10 @@ function AppPanel({ gh }: { gh: GitHubStatus }) {
           <tr>
             <td className="py-2.5 text-faint">Webhook</td>
             <td className="py-2.5">
-              {gh.webhook_url ? (
+              {a.webhook_url ? (
                 <span className="inline-flex flex-wrap items-baseline gap-2">
-                  <span className="font-mono">{gh.webhook_url}</span>
-                  <CopyButton text={gh.webhook_url} />
+                  <span className="font-mono">{a.webhook_url}</span>
+                  <CopyButton text={a.webhook_url} />
                 </span>
               ) : (
                 <span className="text-warn">no public address</span>
@@ -107,19 +142,25 @@ function AppPanel({ gh }: { gh: GitHubStatus }) {
           <tr>
             <td className="py-2.5 text-faint">Installs</td>
             <td className="py-2.5 whitespace-normal">
-              {app.verifies_installs ? (
+              {app.org ? (
+                <span className="text-mut">
+                  org {app.org}'s own: only {app.owner} counts, managed by its
+                  admins
+                </span>
+              ) : app.verifies_installs ? (
                 <span className="text-mut">
                   checked against the installer's GitHub account
                 </span>
               ) : (
-                <ClientSecretForm callbackURL={gh.callback_url ?? ""} />
+                <ClientSecretForm slug={app.slug} callbackURL={callbackURL} />
               )}
             </td>
           </tr>
           <tr>
             <td className="py-2.5 text-faint">Permissions</td>
             <td className="py-2.5 text-mut">
-              contents read · metadata read · statuses write · push events
+              contents read · metadata read · statuses write · pull requests
+              write · push events
             </td>
           </tr>
           <tr>
@@ -132,10 +173,10 @@ function AppPanel({ gh }: { gh: GitHubStatus }) {
                 <Confirm
                   danger
                   action={`Remove ${app.slug}`}
-                  cli="dock github app remove"
+                  cli={`dock github app remove ${app.slug}`}
                   pending={remove.isPending}
                   error={remove.error}
-                  onConfirm={() => remove.mutate()}
+                  onConfirm={() => remove.mutate(app.slug)}
                   onCancel={() => {
                     remove.reset();
                     setAsking(false);
@@ -157,7 +198,13 @@ function AppPanel({ gh }: { gh: GitHubStatus }) {
  * For an App made before Dock kept its OAuth client: the callback URL to
  * add on GitHub and the client secret generated there.
  */
-function ClientSecretForm({ callbackURL }: { callbackURL: string }) {
+function ClientSecretForm({
+  slug,
+  callbackURL,
+}: {
+  slug: string;
+  callbackURL: string;
+}) {
   const set = useSetClientSecret();
   const [secret, setSecret] = useState("");
   return (
@@ -175,7 +222,7 @@ function ClientSecretForm({ callbackURL }: { callbackURL: string }) {
         className="flex flex-wrap items-center gap-2"
         onSubmit={(e) => {
           e.preventDefault();
-          set.mutate(secret.trim());
+          set.mutate({ slug, secret: secret.trim() });
         }}
       >
         <input
@@ -191,7 +238,7 @@ function ClientSecretForm({ callbackURL }: { callbackURL: string }) {
           small
           primary
           type="submit"
-          cli="dock github app secret"
+          cli={`dock github app secret ${slug}`}
           disabled={!secret.trim() || set.isPending}
         >
           Save
@@ -202,18 +249,27 @@ function ClientSecretForm({ callbackURL }: { callbackURL: string }) {
   );
 }
 
-/** The App's installations, each assigned to an org from a select. */
-function Installations({ gh }: { gh: GitHubStatus }) {
+/**
+ * An App's installations: a platform App's each assigned to an org from a
+ * select, an org's own App's with the org they count for.
+ */
+function Installations({
+  app: a,
+  orgs,
+}: {
+  app: GitHubAppStatus;
+  orgs: string[];
+}) {
   const assign = useAssign();
   const { refetch } = useGitHub();
-  const installations = gh.installations ?? [];
+  const installations = a.installations ?? [];
   return (
     <section className="flex flex-col gap-2">
-      {gh.installations_error && (
+      {a.installations_error && (
         <ErrorBlock
           error={
             new Error(
-              `GitHub couldn't list the installations: ${gh.installations_error}`,
+              `GitHub couldn't list the installations: ${a.installations_error}`,
             )
           }
           onRetry={() => refetch()}
@@ -221,7 +277,9 @@ function Installations({ gh }: { gh: GitHubStatus }) {
       )}
       {installations.length === 0 ? (
         <p className="text-mut">
-          Not installed anywhere yet. Install it for an org below.
+          {a.app.org
+            ? `Not installed yet. Org ${a.app.org}'s admins install it.`
+            : "Not installed anywhere yet. Install it for an org below."}
         </p>
       ) : (
         <Panel>
@@ -239,9 +297,12 @@ function Installations({ gh }: { gh: GitHubStatus }) {
                 <InstallationRow
                   key={i.id}
                   installation={i}
-                  orgs={gh.orgs ?? []}
+                  owner={a.app.org ? a.app.owner : undefined}
+                  orgs={orgs}
                   pending={assign.isPending}
-                  onAssign={(org) => assign.mutate({ id: i.id, org })}
+                  onAssign={(org) =>
+                    assign.mutate({ id: i.id, org, app: a.app.slug })
+                  }
                 />
               ))}
             </tbody>
@@ -253,13 +314,20 @@ function Installations({ gh }: { gh: GitHubStatus }) {
   );
 }
 
+/**
+ * An installation and its org. owner is set for an org's own App, whose
+ * installations aren't assigned: they count for its org on owner's
+ * account only.
+ */
 function InstallationRow({
   installation: i,
+  owner,
   orgs,
   pending,
   onAssign,
 }: {
   installation: GitHubInstallation;
+  owner?: string;
   orgs: string[];
   pending: boolean;
   onAssign: (org: string) => void;
@@ -287,35 +355,43 @@ function InstallationRow({
       <td className="py-2 text-mut">{i.repositories || "unknown"}</td>
       <td className="py-2 text-mut">{i.connections}</td>
       <td className="w-full py-1.5">
-        <select
-          aria-label={`Org for ${i.account}`}
-          value={i.org ?? ""}
-          disabled={pending}
-          title={cli(i.org ?? "")}
-          onChange={(e) => onAssign(e.target.value)}
-          className={i.org ? "" : "text-warn"}
-        >
-          <option value="">unassigned</option>
-          {orgs.map((o) => (
-            <option key={o}>{o}</option>
-          ))}
-        </select>
+        {owner !== undefined ? (
+          i.org ? (
+            <span>{i.org}</span>
+          ) : (
+            <span className="text-mut">not counted: not on {owner}</span>
+          )
+        ) : (
+          <select
+            aria-label={`Org for ${i.account}`}
+            value={i.org ?? ""}
+            disabled={pending}
+            title={cli(i.org ?? "")}
+            onChange={(e) => onAssign(e.target.value)}
+            className={i.org ? "" : "text-warn"}
+          >
+            <option value="">unassigned</option>
+            {orgs.map((o) => (
+              <option key={o}>{o}</option>
+            ))}
+          </select>
+        )}
       </td>
     </tr>
   );
 }
 
-/** Opens the App's install page on GitHub for the chosen org. */
-function InstallForm({ orgs }: { orgs: string[] }) {
+/** Opens a platform App's install page on GitHub for the chosen org. */
+function InstallForm({ app, orgs }: { app: string; orgs: string[] }) {
   const install = useInstall();
   const [org, setOrg] = useState(orgs[0] ?? "");
   return (
     <form
-      aria-label="Install the GitHub App"
+      aria-label={`Install ${app}`}
       className="flex flex-wrap items-center gap-2"
       onSubmit={(e) => {
         e.preventDefault();
-        install.mutate(org);
+        install.mutate({ org, app });
       }}
     >
       <select
@@ -331,7 +407,7 @@ function InstallForm({ orgs }: { orgs: string[] }) {
         small
         primary
         type="submit"
-        cli={`dock github install ${org || "<org>"}`}
+        cli={`dock github install ${org || "<org>"} --app ${app}`}
         disabled={!org || install.isPending}
       >
         Install on GitHub
@@ -341,9 +417,18 @@ function InstallForm({ orgs }: { orgs: string[] }) {
   );
 }
 
-/** Creates the App: Dock's page posts its manifest to GitHub. */
-function CreateForm({ disabled }: { disabled: boolean }) {
-  const create = useCreateApp();
+/**
+ * Creates a platform App: Dock's page posts its manifest to GitHub.
+ * onCancel closes it, when there are Apps already.
+ */
+function CreateForm({
+  disabled,
+  onCancel,
+}: {
+  disabled: boolean;
+  onCancel?: () => void;
+}) {
+  const create = useCreateApp(true);
   const [owner, setOwner] = useState("");
   const [isPublic, setPublic] = useState(false);
   const flag =
@@ -355,7 +440,7 @@ function CreateForm({ disabled }: { disabled: boolean }) {
         <tbody className="[&>tr>td]:align-middle">
           <tr>
             <td className="w-36 py-2.5 text-faint">App</td>
-            <td className="py-2.5 text-mut">none yet</td>
+            <td className="py-2.5 text-mut">a new platform App</td>
           </tr>
           <tr>
             <td className="py-2.5 text-faint">Owner</td>
@@ -391,11 +476,16 @@ function CreateForm({ disabled }: { disabled: boolean }) {
                   small
                   primary
                   type="submit"
-                  cli={`dock github app create${flag}`}
+                  cli={`dock github app create --platform${flag}`}
                   disabled={disabled || create.isPending}
                 >
                   Create on GitHub
                 </Act>
+                {onCancel && (
+                  <Button small onClick={onCancel}>
+                    Cancel
+                  </Button>
+                )}
                 <ErrorText error={create.error} />
               </form>
             </td>
@@ -403,10 +493,11 @@ function CreateForm({ disabled }: { disabled: boolean }) {
           <tr>
             <td className="py-2.5 text-faint" />
             <td className="py-2.5 whitespace-normal text-mut">
-              An App owned by that GitHub organization, or by you. Private: only
-              that account can install it. Public: any GitHub account can, so
-              orgs deploy from their own; GitHub can make it public later, not
-              private again. It reads code, posts statuses and comments, and
+              An App for every org, owned by that GitHub organization or by you.
+              Private: only that account can install it. Public: any GitHub
+              account can, so orgs deploy from their own; GitHub can make it
+              public later, not private again. An org can also make its own in
+              its settings. It reads code, posts statuses and comments, and
               receives pushes. GitHub asks you to confirm its name, then sends
               you back here.
             </td>
