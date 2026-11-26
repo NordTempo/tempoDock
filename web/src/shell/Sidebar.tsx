@@ -161,19 +161,18 @@ function AppNav({ tree, onToggle }: { tree: boolean; onToggle: () => void }) {
         aria-expanded={tree}
         aria-label={tree ? "Collapse the projects" : "Expand the projects"}
         title={`${tree ? "Collapse to the project rail" : "Expand to the project tree"} ([)`}
-        className={`nav-row text-mut ${tree ? "" : "justify-center px-0"}`}
+        className={`group nav-row text-faint ${tree ? "" : "justify-center px-0"}`}
       >
-        {tree ? (
+        {/* The panel icon toggles both ways; the shortcut shows on hover. */}
+        {tree && (
           <>
-            <span className="flex-1 text-left text-2xs font-medium text-faint">
+            <span className="flex-1 text-left text-2xs font-medium">
               Projects
             </span>
-            <Icon name="chevronLeft" size={14} />
-            <kbd>[</kbd>
+            <kbd className="hidden group-hover:inline">[</kbd>
           </>
-        ) : (
-          <Icon name="chevronRight" size={14} />
         )}
+        <Icon name="sidebar" size={14} />
       </button>
       {tree ? <ProjectTree /> : <ProjectRail />}
     </>

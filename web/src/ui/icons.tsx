@@ -3,7 +3,7 @@
 const paths = {
   chevronDown: "m7 10 5 5 5-5",
   chevronRight: "m10 7 5 5-5 5",
-  chevronLeft: "m14 7-5 5 5 5",
+  sidebar: "M4 5h16v14H4ZM9 5v14",
   search: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM20 20l-3.5-3.5",
   plus: "M12 5v14M5 12h14",
   activity: "M3 12h4l3-8 4 16 3-8h4",
