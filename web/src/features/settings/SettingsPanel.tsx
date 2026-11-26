@@ -597,6 +597,15 @@ function SettingRow({
     return c ? c.new === "true" : service[flag.key];
   };
   const [flagOn, setFlagOn] = useState(flagStart);
+  // What the open editor started from: a save sends only what differs
+  // from it, so a change staged elsewhere meanwhile isn't overwritten.
+  const [opened, setOpened] = useState(() =>
+    open ? { text: start(), flag: flagStart() } : null,
+  );
+  const close = () => {
+    setDraft(null);
+    setOpened(null);
+  };
   const [error, setError] = useState<Error | null>(null);
   const saved: SettingKey[] = [
     ...parts.filter(({ key }) => change(key)).map(({ key }) => key),
@@ -606,10 +615,10 @@ function SettingRow({
   const cancel = () => {
     setError(null);
     stage.reset();
-    setDraft(null);
+    close();
   };
   const submit = (values: Record<TextSettingKey, string>) => {
-    const before = start();
+    const before = opened?.text ?? start();
     let patch: SettingsPatch = {};
     for (const { key } of parts) {
       if (values[key] === before[key]) continue;
@@ -617,11 +626,11 @@ function SettingRow({
       if (one instanceof Error) return setError(one);
       patch = { ...patch, ...one };
     }
-    if (flag && flagOn !== flagStart())
+    if (flag && opened && flagOn !== opened.flag)
       patch = { ...patch, [flag.key]: flagOn };
     setError(null);
-    if (Object.keys(patch).length === 0) return setDraft(null);
-    stage.mutate({ ref, patch }, { onSuccess: () => setDraft(null) });
+    if (Object.keys(patch).length === 0) return close();
+    stage.mutate({ ref, patch }, { onSuccess: close });
   };
 
   const value = ({ key, shown }: { key: SettingKey; shown?: string }) => {
@@ -721,8 +730,11 @@ function SettingRow({
             label={`Edit ${label.toLowerCase()}`}
             onOpen={() => {
               setError(null);
-              setFlagOn(flagStart());
-              setDraft(start());
+              const text = start();
+              const on = flagStart();
+              setFlagOn(on);
+              setDraft(text);
+              setOpened({ text, flag: on });
             }}
           >
             <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1 font-mono break-all">

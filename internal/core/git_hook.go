@@ -182,7 +182,7 @@ func (c *Core) GitWebhook(ctx context.Context, d GitDelivery) (string, error) {
 	if err := json.Unmarshal(d.Body, &p); err != nil {
 		return "", invalid("push payload is not JSON: %v; set the webhook's content type to application/json", err)
 	}
-	return c.queuePush(ctx, conn, p)
+	return c.queuePush(ctx, conn, nil, p)
 }
 
 // badSignature is the answer to a delivery whose signature is missing or
@@ -271,12 +271,18 @@ func (c *Core) gitAppWebhook(ctx context.Context, app store.GithubApp, d GitDeli
 	}
 	msgs := make([]string, 0, len(conns))
 	for _, conn := range conns {
-		msg, err := c.queuePush(ctx, conn, p)
+		// The scope names the service in the answer and publishes its
+		// git events, read once per connection.
+		var scope *svcScope
+		if ss, err := c.scopeOf(ctx, conn.ServiceID); err == nil {
+			scope = &ss
+		}
+		msg, err := c.queuePush(ctx, conn, scope, p)
 		if err != nil {
 			return "", err
 		}
-		if ss, err := c.scopeOf(ctx, conn.ServiceID); err == nil {
-			msg = ss.String() + ": " + msg
+		if scope != nil {
+			msg = scope.String() + ": " + msg
 		}
 		msgs = append(msgs, msg)
 	}
@@ -327,29 +333,30 @@ func (c *Core) gitAppInstallation(ctx context.Context, body []byte) (string, err
 
 // queuePush queues the push's commit on a connection, unless the
 // connection doesn't deploy it or it is already live or deploying, and
-// returns what happened.
-func (c *Core) queuePush(ctx context.Context, conn store.GitConnection, p pushPayload) (string, error) {
+// returns what happened. ss is the connection's service scope for its git
+// events, nil to look it up.
+func (c *Core) queuePush(ctx context.Context, conn store.GitConnection, ss *svcScope, p pushPayload) (string, error) {
 	// A push older than the replay window may have been forgotten by
 	// gitDelivery, so a captured body could be replayed: refuse it.
 	if at, ok := p.pushedAt(); ok && now().Sub(at) > gitReplayWindow {
 		msg := fmt.Sprintf("push %s: ignored, it was pushed %s, longer ago than deliveries are remembered; push again to deploy it",
 			shortSHA(p.After), at.UTC().Format(time.DateOnly))
-		c.gitEvent(conn.ID, msg)
+		c.gitEventIn(ss, conn.ID, msg)
 		return msg, nil
 	}
 	commit, ignored := pushDecision(conn, p)
 	if ignored != "" {
-		c.gitEvent(conn.ID, ignored)
+		c.gitEventIn(ss, conn.ID, ignored)
 		return ignored, nil
 	}
 	if r, err := c.store.GetInFlightRelease(ctx, conn.ServiceID); err == nil && r.CommitSha == commit.SHA {
 		msg := fmt.Sprintf("push %s: ignored, release %d is deploying it", shortSHA(commit.SHA), r.Number)
-		c.gitEvent(conn.ID, msg)
+		c.gitEventIn(ss, conn.ID, msg)
 		return msg, nil
 	}
 	if r, err := c.store.GetActiveRelease(ctx, conn.ServiceID); err == nil && r.CommitSha == commit.SHA {
 		msg := fmt.Sprintf("push %s: ignored, already live in release %d", shortSHA(commit.SHA), r.Number)
-		c.gitEvent(conn.ID, msg)
+		c.gitEventIn(ss, conn.ID, msg)
 		return msg, nil
 	}
 	if err := c.store.SetGitPending(ctx, store.SetGitPendingParams{
@@ -362,7 +369,7 @@ func (c *Core) queuePush(ctx context.Context, conn store.GitConnection, p pushPa
 	if conn.PendingSha != "" && conn.PendingSha != commit.SHA {
 		msg += fmt.Sprintf(", replacing %s", shortSHA(conn.PendingSha))
 	}
-	c.gitEvent(conn.ID, msg)
+	c.gitEventIn(ss, conn.ID, msg)
 	c.kickGit(conn.ServiceID, true)
 	return msg, nil
 }

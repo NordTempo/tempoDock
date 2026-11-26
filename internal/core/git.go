@@ -547,22 +547,29 @@ func (c *Core) gitToken(conn store.GitConnection) (string, error) {
 // (a dock.toml parse error), and the line is shown in terminals. The
 // connection then goes out on the bus (EventGit), so an open Settings or
 // History shows it: an ignored push changes nothing else. Failures are
-// logged: the event is informational. Pushes are rare, so the scope's
-// lookups don't matter.
-func (c *Core) gitEvent(connID int64, msg string) {
+// logged: the event is informational.
+func (c *Core) gitEvent(connID int64, msg string) { c.gitEventIn(nil, connID, msg) }
+
+// gitEventIn is gitEvent for a caller that has the connection's service
+// scope already (an App delivery's loop over its connections); nil looks
+// it up.
+func (c *Core) gitEventIn(ss *svcScope, connID int64, msg string) {
 	t := now()
 	conn, err := c.store.SetGitLastEvent(c.ctx, store.SetGitLastEventParams{LastEvent: cleanLine(msg, 500), LastEventAt: &t, ID: connID})
 	if err != nil {
 		c.log.Error("record git event", "err", err)
 		return
 	}
-	ss, err := c.scopeOf(c.ctx, conn.ServiceID)
-	if err != nil {
-		c.log.Error("publish git event", "err", err)
-		return
+	if ss == nil {
+		s, err := c.scopeOf(c.ctx, conn.ServiceID)
+		if err != nil {
+			c.log.Error("publish git event", "err", err)
+			return
+		}
+		ss = &s
 	}
 	gc := c.toGitConnection(conn)
-	c.publish(ss, apitypes.Event{Type: apitypes.EventGit, Git: &gc})
+	c.publish(*ss, apitypes.Event{Type: apitypes.EventGit, Git: &gc})
 }
 
 // shortSHA is the 7-character form of a commit SHA.
