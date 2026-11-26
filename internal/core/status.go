@@ -6,7 +6,6 @@ import (
 	"maps"
 	"slices"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -46,9 +45,11 @@ const (
 // hostname is which page.
 type statusState struct {
 	hosts atomic.Pointer[map[string]statusHost]
-	// syncMu serializes syncStatusRecords: a pass reads hosts and the
-	// records under it, so one never deletes what a later one added.
-	syncMu sync.Mutex
+	// syncing claims syncStatusRecords' passes, which run one at a
+	// time so one never deletes what a later one added; rerun asks the
+	// pass holding it for another. Flags, not a mutex: passes write to
+	// the store.
+	syncing, rerun atomic.Bool
 }
 
 // statusHost is a page a hostname belongs to. moved is set for an old
@@ -108,7 +109,7 @@ func (c *Core) statusPagesChanged(ctx context.Context) {
 		return
 	}
 	old := c.statusPages.hosts.Swap(&hosts)
-	c.syncStatusRecords(ctx)
+	c.syncStatusRecords()
 	if old != nil && maps.Equal(*old, hosts) {
 		return
 	}

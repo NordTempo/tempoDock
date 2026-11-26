@@ -352,7 +352,7 @@ func (c *Core) tunnelReady(ctx context.Context, srv store.Server, rowID int64, t
 	c.setManagedTunnel(srv.ID, hostname)
 	c.syncServerRecords(ctx, srv)
 	if srv.Local {
-		c.syncStatusRecords(ctx)
+		c.syncStatusRecords()
 	}
 	c.publishServer(ctx, srv.ID)
 	rt := c.connected(srv.ID)

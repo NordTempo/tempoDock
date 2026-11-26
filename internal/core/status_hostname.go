@@ -257,18 +257,33 @@ func (c *Core) statusHostnameView(ctx context.Context, p store.StatusPage, base 
 // and may be saved before the hosts map has it. Otherwise records stay
 // as they are, as for a server sent back to its public IP (ADR 0036).
 // Called when the pages' addresses change, on start and when the
-// control plane switches; one query when nothing is missing.
-func (c *Core) syncStatusRecords(ctx context.Context) {
+// control plane switches; one query when nothing is missing. Passes run
+// one at a time, under c.ctx: a call while one runs has the runner do
+// another, which reads the hosts map as it is then, and returns.
+func (c *Core) syncStatusRecords() {
+	s := &c.statusPages
+	s.rerun.Store(true)
+	for s.rerun.Load() && s.syncing.CompareAndSwap(false, true) {
+		func() {
+			defer s.syncing.Store(false)
+			for s.rerun.Swap(false) {
+				c.syncStatusRecordsPass(c.ctx)
+			}
+		}()
+	}
+}
+
+// syncStatusRecordsPass is one pass of syncStatusRecords. The worker is
+// woken for what it saved, also when a later step fails.
+func (c *Core) syncStatusRecordsPass(ctx context.Context) {
 	srv, err := c.store.GetLocalServer(ctx)
 	if err != nil {
 		c.log.Error("status pages: records in Cloudflare", "err", err)
 		return
 	}
 	ing := c.ingressOf(srv)
-	// Read hosts under the lock: every change of it is followed by a
-	// pass, so the last pass sees the last map.
-	c.statusPages.syncMu.Lock()
-	defer c.statusPages.syncMu.Unlock()
+	// Every change of the map is followed by a pass, so the last pass
+	// sees the last map.
 	m := c.statusPages.hosts.Load()
 	if ing.mode != apitypes.IngressCloudflareTunnel || ing.baseDomain == "" || c.managedTunnel(srv.ID) == "" || m == nil {
 		return
@@ -281,6 +296,11 @@ func (c *Core) syncStatusRecords(ctx context.Context) {
 	}
 	t := now()
 	kick := false
+	defer func() {
+		if kick {
+			c.kickCloudflare()
+		}
+	}()
 	have := make(map[string]bool, len(rows))
 	for _, r := range rows {
 		have[r.Hostname] = true
@@ -311,8 +331,5 @@ func (c *Core) syncStatusRecords(ctx context.Context) {
 			return
 		}
 		kick = kick || n > 0
-	}
-	if kick {
-		c.kickCloudflare()
 	}
 }

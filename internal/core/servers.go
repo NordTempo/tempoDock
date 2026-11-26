@@ -319,7 +319,7 @@ func (c *Core) UpdateServer(ctx context.Context, a Actor, name string, req apity
 			return apitypes.Server{}, err
 		}
 		if srv.Local {
-			c.syncStatusRecords(ctx) // and the status pages' addresses
+			c.syncStatusRecords() // and the status pages' addresses
 		}
 	}
 	return c.serverDetail(ctx, srv.ID)

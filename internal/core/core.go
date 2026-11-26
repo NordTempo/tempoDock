@@ -579,7 +579,7 @@ func (c *Core) Start(ctx context.Context) error {
 	// Status pages' addresses, before the routes that serve them.
 	if hosts, err := c.loadStatusHosts(ctx); err == nil {
 		c.statusPages.hosts.Store(&hosts)
-		c.syncStatusRecords(ctx) // the ones a switch before this fix left without
+		c.syncStatusRecords() // the ones a switch before this fix left without
 	} else {
 		c.log.Error("status pages: read the pages; they aren't served until one changes", "err", err)
 	}
