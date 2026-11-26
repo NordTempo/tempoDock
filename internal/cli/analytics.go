@@ -957,7 +957,7 @@ func (sf *siteSettingFlags) add(cmd *cobra.Command) {
 	fl.IntVar(&sf.sample, "replay-sample", 0, "percent of page loads recorded, 1 to 100")
 	fl.StringVar(&sf.maskText, "mask-text", "", "mask all text in replays: on or off (field values are always masked)")
 	fl.StringVar(&sf.errors, "errors", "", "collect errors and Web Vitals: on or off (phase A2)")
-	fl.StringVar(&sf.autoScript, "auto-script", "", "Dock adds the analytics script to the site's pages: on (the default) or off, when the pages load /_dock/a/s.js themselves")
+	fl.StringVar(&sf.autoScript, "auto-script", "", "Dock adds the analytics script to the site's pages: on (the default) or off, when the pages load /_dock/a/s.js themselves (as they do with --consent none)")
 	fl.IntVar(&sf.events, "event-retention-days", 0, "days raw events are kept (daily totals stay)")
 	fl.IntVar(&sf.replays, "replay-retention-days", 0, "days replays are kept")
 	fl.IntVar(&sf.errorsDays, "error-retention-days", 0, "days errors are kept")

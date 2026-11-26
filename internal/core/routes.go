@@ -103,7 +103,7 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 		for _, s := range counted {
 			if s.ServiceID != nil {
 				o := siteOverrides(store.Site{Settings: s.Settings})
-				siteOf[*s.ServiceID] = countedSite{s.SiteID, *mergeSettings(defaults, o).AutoScript}
+				siteOf[*s.ServiceID] = countedSite{s.SiteID, addsScript(mergeSettings(defaults, o))}
 			}
 		}
 	}

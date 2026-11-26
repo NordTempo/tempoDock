@@ -18,12 +18,12 @@
 // of its own, whose data-consent counts.
 (function (c) {
   var w = window, d = document, l = location, n = navigator, last = "", first = true, rec, pre = w.dock && w.dock.consent;
-  if (w.dock && w.dock.track) return;
   var tag = d.currentScript;
   if (tag && tag.hasAttribute("data-dock-auto")) {
     tag.remove();
     if (d.querySelector('script[src*="/_dock/a/s.js"]:not([data-dock-auto])')) return;
   }
+  if (w.dock && w.dock.track) return;
   var ok = pre === true || (tag && tag.getAttribute("data-consent") === "granted") || (!c.c && pre !== false);
   var sampled = c.r && w.CompressionStream && Math.random() * 100 < c.r;
   function send(k, x) {

@@ -142,7 +142,7 @@ type SiteSettings struct {
 	ReplaySampleRate    *int      `json:"replay_sample_rate,omitempty" minimum:"1" maximum:"100" doc:"Percent of page loads recorded"`
 	MaskAllText         *bool     `json:"mask_all_text,omitempty" doc:"Mask all text in replays; field values are always masked"`
 	ErrorsAndVitals     *bool     `json:"errors_and_vitals,omitempty" doc:"Collect errors and Web Vitals (phase A2)"`
-	AutoScript          *bool     `json:"auto_script,omitempty" doc:"Dock adds the analytics script to the site's pages (ADR 0105); off, the pages load /_dock/a/s.js themselves"`
+	AutoScript          *bool     `json:"auto_script,omitempty" doc:"Dock adds the analytics script to the site's pages (ADR 0105); off, or with consent none, the pages load /_dock/a/s.js themselves"`
 	EventRetentionDays  *int      `json:"event_retention_days,omitempty" minimum:"1" maximum:"3650" doc:"Days raw events are kept; daily totals stay"`
 	ReplayRetentionDays *int      `json:"replay_retention_days,omitempty" minimum:"1" maximum:"3650"`
 	ErrorRetentionDays  *int      `json:"error_retention_days,omitempty" minimum:"1" maximum:"3650"`

@@ -25,7 +25,7 @@ import {
   publicDraft,
 } from "./PublicSection";
 import { count } from "./parts";
-import { scriptTag } from "./ServiceSite";
+import { addsScript, scriptTag } from "./ServiceSite";
 import { SettingInput } from "./SettingInput";
 import { useSiteView } from "./SitePage";
 import {
@@ -102,13 +102,15 @@ export function SettingsPage() {
         <Row
           label="Script"
           hint={
-            site.settings.auto_script
+            addsScript(site.settings)
               ? "Dock adds it to every page."
-              : "On every page of the site."
+              : site.settings.consent === "none"
+                ? "Load it once the visitor consents."
+                : "On every page of the site."
           }
         >
           <span className="flex flex-wrap items-center gap-3">
-            {!site.settings.auto_script && (
+            {!addsScript(site.settings) && (
               <>
                 <code className="text-xs break-all">{scriptTag}</code>
                 <CopyButton text={scriptTag} />

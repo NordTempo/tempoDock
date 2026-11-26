@@ -1081,7 +1081,12 @@ main() {
     install -m 0755 "$caddy_new" /usr/local/bin/caddy.new
     mv /usr/local/bin/caddy.new /usr/local/bin/caddy
     caddy_changed=true
-    [[ "$caddy_forget" == false ]] || rm -f /var/lib/dock-caddy/caddy/autosave.json
+    if [[ "$caddy_forget" == true ]]; then
+      # Stopped first, so the old Caddy can't save a route load in between;
+      # it starts again below.
+      systemctl stop dock-caddy.service 2>/dev/null || true
+      rm -f /var/lib/dock-caddy/caddy/autosave.json
+    fi
   fi
 
   tunnel_changed=false

@@ -71,7 +71,7 @@ func serve(t *testing.T, a *app, req *http.Request) *httptest.ResponseRecorder {
 	return rec
 }
 
-func pageLoad(host string) *http.Request {
+func visit(host string) *http.Request {
 	r := httptest.NewRequest(http.MethodGet, "http://"+host+"/", nil)
 	r.Header.Set("Sec-Fetch-Dest", "document")
 	return r
@@ -98,28 +98,62 @@ const tag = `<script src="/_dock/a/s.js" defer data-dock-auto></script>`
 func TestInjectsAfterHead(t *testing.T) {
 	want := strings.Replace(page, "<head>", "<head>"+tag, 1)
 	for _, chunk := range []int{1, 3, 7, 4096} {
-		a := &app{body: page, chunk: chunk, hdr: http.Header{"Content-Length": {"999"}, "Etag": {`"v1"`}, "Accept-Ranges": {"bytes"}}}
-		rec := serve(t, a, pageLoad("example.com:443"))
+		a := &app{body: page, chunk: chunk, hdr: http.Header{"Content-Length": {"999"}, "Etag": {`"v1"`}, "Accept-Ranges": {"bytes"}, "Last-Modified": {"Mon, 02 Jan 2006 15:04:05 GMT"}}}
+		rec := serve(t, a, visit("example.com:443"))
 		if got := body(t, rec); got != want {
 			t.Fatalf("chunk %d: body\n%s\nwant\n%s", chunk, got, want)
 		}
 		h := rec.Header()
-		if h.Get("Content-Length") != "" || h.Get("Accept-Ranges") != "" || h.Get("Etag") != `W/"v1"` || h.Get("Vary") != "Accept-Encoding" {
+		if h.Get("Content-Length") != "" || h.Get("Accept-Ranges") != "" || h.Get("Last-Modified") != "" || h.Get("Etag") != `W/"v1-dock"` ||
+			strings.Join(h.Values("Vary"), ", ") != "Accept-Encoding, Sec-Fetch-Dest" {
 			t.Fatalf("chunk %d: headers %v", chunk, h)
 		}
 	}
 }
 
 func TestHeadWithAttributesNotHeader(t *testing.T) {
-	p := `<html><HEADER></HEADER><Head data-x="1"><title>x</title>`
-	rec := serve(t, &app{body: p, chunk: 5}, pageLoad("example.com"))
-	if got, want := body(t, rec), strings.Replace(p, `<Head data-x="1">`, `<Head data-x="1">`+tag, 1); got != want {
-		t.Fatalf("got %s", got)
+	p := `<html><!-- <head> --><HEADER></HEADER><Head data-x=">" data-y='>'><title>x</title>`
+	for _, chunk := range []int{1, 5, 4096} {
+		rec := serve(t, &app{body: p, chunk: chunk}, visit("example.com"))
+		if got, want := body(t, rec), strings.Replace(p, `data-y='>'>`, `data-y='>'>`+tag, 1); got != want {
+			t.Fatalf("chunk %d: got %s", chunk, got)
+		}
+	}
+}
+
+// A page kept from before the script was added is sent again whole;
+// one kept with it is confirmed.
+func TestRevalidation(t *testing.T) {
+	r := visit("example.com")
+	r.Header.Set("If-None-Match", `"v1", W/"v2-dock"`)
+	r.Header.Set("If-Modified-Since", "Mon, 02 Jan 2006 15:04:05 GMT")
+	a := &app{status: http.StatusNotModified, hdr: http.Header{"Etag": {`"v2"`}}}
+	rec := serve(t, a, r)
+	if got := a.got.Header.Get("If-None-Match"); got != `W/"v2"` || a.got.Header.Get("If-Modified-Since") != "" {
+		t.Errorf("the upstream got If-None-Match %q, If-Modified-Since %q", got, a.got.Header.Get("If-Modified-Since"))
+	}
+	if rec.Code != http.StatusNotModified || rec.Header().Get("Etag") != `W/"v2-dock"` {
+		t.Errorf("304 with ETag %q", rec.Header().Get("Etag"))
+	}
+	r.Header.Set("If-None-Match", `"v1"`)
+	b := &app{body: page}
+	if serve(t, b, r); b.got.Header.Get("If-None-Match") != "" {
+		t.Errorf("a tag from before the script reached the upstream: %q", b.got.Header.Get("If-None-Match"))
+	}
+}
+
+// A fragment of a page's address varies on Sec-Fetch-Dest, so a cache
+// keeps the two apart.
+func TestFragmentVaries(t *testing.T) {
+	r := visit("example.com")
+	r.Header.Set("Sec-Fetch-Dest", "empty")
+	if rec := serve(t, &app{body: page}, r); rec.Header().Get("Vary") != "Sec-Fetch-Dest" || strings.Contains(body(t, rec), "data-dock-auto") {
+		t.Errorf("fragment: Vary %q", rec.Header().Get("Vary"))
 	}
 }
 
 func TestGzipsForVisitorsWhoTakeIt(t *testing.T) {
-	r := pageLoad("example.com")
+	r := visit("example.com")
 	r.Header.Set("Accept-Encoding", "br, gzip;q=0.8")
 	a := &app{body: page}
 	rec := serve(t, a, r)
@@ -136,27 +170,27 @@ func TestGzipsForVisitorsWhoTakeIt(t *testing.T) {
 }
 
 func TestLeftAlone(t *testing.T) {
-	post := pageLoad("example.com")
+	post := visit("example.com")
 	post.Method = http.MethodPost
-	fragment := pageLoad("example.com")
+	fragment := visit("example.com")
 	fragment.Header.Set("Sec-Fetch-Dest", "empty")
-	ranged := pageLoad("example.com")
+	ranged := visit("example.com")
 	ranged.Header.Set("Range", "bytes=0-10")
 	for name, c := range map[string]struct {
 		req *http.Request
 		a   *app
 	}{
-		"other host":    {pageLoad("other.com"), &app{body: page}},
+		"other host":    {visit("other.com"), &app{body: page}},
 		"post":          {post, &app{body: page}},
 		"fragment":      {fragment, &app{body: page}},
 		"range":         {ranged, &app{body: page}},
-		"not found":     {pageLoad("example.com"), &app{status: 404, body: page}},
-		"json":          {pageLoad("example.com"), &app{body: page, hdr: http.Header{"Content-Type": {"application/json"}}}},
-		"compressed":    {pageLoad("example.com"), &app{body: page, hdr: http.Header{"Content-Encoding": {"br"}}}},
-		"no-transform":  {pageLoad("example.com"), &app{body: page, hdr: http.Header{"Cache-Control": {"public, No-Transform"}}}},
-		"csp":           {pageLoad("example.com"), &app{body: page, hdr: http.Header{"Content-Security-Policy": {"script-src https://cdn.example.net"}}}},
-		"no head":       {pageLoad("example.com"), &app{body: "<p>hello</p>"}},
-		"head too late": {pageLoad("example.com"), &app{body: strings.Repeat(" ", maxScan) + page, chunk: 1000}},
+		"not found":     {visit("example.com"), &app{status: 404, body: page}},
+		"json":          {visit("example.com"), &app{body: page, hdr: http.Header{"Content-Type": {"application/json"}}}},
+		"compressed":    {visit("example.com"), &app{body: page, hdr: http.Header{"Content-Encoding": {"br"}}}},
+		"no-transform":  {visit("example.com"), &app{body: page, hdr: http.Header{"Cache-Control": {"public, No-Transform"}}}},
+		"csp":           {visit("example.com"), &app{body: page, hdr: http.Header{"Content-Security-Policy": {"script-src https://cdn.example.net"}}}},
+		"no head":       {visit("example.com"), &app{body: "<p>hello</p>"}},
+		"head too late": {visit("example.com"), &app{body: strings.Repeat(" ", maxScan) + page, chunk: 1000}},
 	} {
 		rec := serve(t, c.a, c.req)
 		if got := body(t, rec); strings.Contains(got, "data-dock-auto") || !strings.HasSuffix(got, c.a.body) {
@@ -169,7 +203,7 @@ func TestFlushBeforeHeadGivesUp(t *testing.T) {
 	h := &Handler{Hosts: []string{"example.com"}, Src: "/_dock/a/s.js"}
 	_ = h.Provision(caddyCtx())
 	rec := httptest.NewRecorder()
-	err := h.ServeHTTP(rec, pageLoad("example.com"), caddyhttp.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) error {
+	err := h.ServeHTTP(rec, visit("example.com"), caddyhttp.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) error {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = io.WriteString(w, "<!doctype html><ht")
 		if err := http.NewResponseController(w).Flush(); err != nil {
@@ -210,13 +244,13 @@ func TestCSP(t *testing.T) {
 		}
 	}
 	a := &app{body: page, hdr: http.Header{"Content-Security-Policy": {"script-src 'nonce-n0Nce' 'strict-dynamic'"}}}
-	if got := body(t, serve(t, a, pageLoad("example.com"))); !strings.Contains(got, `data-dock-auto nonce="n0Nce"></script>`) {
+	if got := body(t, serve(t, a, visit("example.com"))); !strings.Contains(got, `data-dock-auto nonce="n0Nce"></script>`) {
 		t.Fatalf("no nonce: %s", got)
 	}
 }
 
 func TestAcceptsGzip(t *testing.T) {
-	for v, want := range map[string]bool{"gzip": true, "deflate, GZIP": true, "*": true, "gzip;q=0": false, "gzip; q=0.000": false, "gzip;q=0.5": true, "br": false, "": false} {
+	for v, want := range map[string]bool{"gzip": true, "deflate, GZIP": true, "*": true, "gzip;q=0": false, "gzip; q=0.000": false, "gzip;q=0.5": true, "br": false, "": false, "gzip;q=0, *": false, "*;q=0, gzip": true} {
 		if got := acceptsGzip([]string{v}); got != want {
 			t.Errorf("%q: %v", v, got)
 		}
@@ -233,30 +267,3 @@ func TestValidate(t *testing.T) {
 
 // caddyCtx is the zero caddy.Context: Provision reads nothing from it.
 func caddyCtx() caddy.Context { return caddy.Context{} }
-
-func BenchmarkInject(b *testing.B) {
-	big := strings.Replace(page, "<body>", "<body>"+strings.Repeat("<p>Lorem ipsum dolor sit amet</p>", 1000), 1)
-	h := &Handler{Hosts: []string{"example.com"}, Src: "/_dock/a/s.js"}
-	_ = h.Provision(caddyCtx())
-	for _, enc := range []string{"", "gzip"} {
-		b.Run("encoding="+enc, func(b *testing.B) {
-			a := &app{status: 200, bytes: []byte(big), chunk: 4096}
-			req := pageLoad("example.com")
-			b.ReportAllocs()
-			for b.Loop() {
-				req.Header.Set("Accept-Encoding", enc)
-				w := discard{h: http.Header{}}
-				if err := h.ServeHTTP(&w, req, caddyhttp.HandlerFunc(a.ServeHTTP)); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
-	}
-}
-
-// discard is a ResponseWriter that keeps nothing.
-type discard struct{ h http.Header }
-
-func (d *discard) Header() http.Header         { return d.h }
-func (d *discard) Write(p []byte) (int, error) { return len(p), nil }
-func (d *discard) WriteHeader(int)             {}

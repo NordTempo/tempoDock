@@ -248,9 +248,13 @@ func (c *Core) checkSite(ctx context.Context, hosts []string) apitypes.SiteCheck
 	return out
 }
 
-// scriptTagRe finds script tags' src attributes in a page, and the
-// attributes after (the one Dock's Caddy adds is marked data-dock-auto).
-var scriptTagRe = regexp.MustCompile(`(?is)<script\b[^>]*?\bsrc\s*=\s*["']?([^"'\s>]+)([^>]*)`)
+// scriptTagRe finds script tags' attributes in a page; srcRe and nonceRe
+// read two of them. The one Dock's Caddy adds is marked data-dock-auto.
+var (
+	scriptTagRe = regexp.MustCompile(`(?is)<script\b([^>]*)>`)
+	srcRe       = regexp.MustCompile(`(?is)\bsrc\s*=\s*["']?([^"'\s>]+)`)
+	nonceRe     = regexp.MustCompile(`(?is)\bnonce\s*=\s*["']?([^"'\s>]+)`)
+)
 
 // checkSiteHost checks one hostname of a site: its page (a redirect to
 // another of the site's hostnames is followed once), the script tag, the
@@ -296,17 +300,21 @@ func (c *Core) checkSiteHost(ctx context.Context, host string, siteHosts []strin
 	}
 	step(apitypes.CheckOK, "", "", "the page answers %d", resp.status)
 
-	found := false
+	found, nonce := false, ""
 	for _, m := range scriptTagRe.FindAllSubmatch(resp.body, -1) {
-		src := string(m[1])
-		if !strings.Contains(src, ingest.ScriptPath) {
+		s := srcRe.FindSubmatch(m[1])
+		if s == nil || !strings.Contains(string(s[1]), ingest.ScriptPath) {
 			continue
+		}
+		src := string(s[1])
+		if n := nonceRe.FindSubmatch(m[1]); n != nil {
+			nonce = string(n[1])
 		}
 		found = true
 		if u, err := url.Parse(src); err == nil && u.Host != "" && !strings.EqualFold(u.Hostname(), host) {
 			step(apitypes.CheckFail, apitypes.TrackingWrongHost, `<script src="`+ingest.ScriptPath+`" defer></script>`,
 				"the script tag loads it from %s; use the relative address so each hostname serves its own", u.Hostname())
-		} else if strings.Contains(string(m[2]), "data-dock-auto") {
+		} else if strings.Contains(string(m[1]), "data-dock-auto") {
 			step(apitypes.CheckOK, "", "", "Dock adds the script tag to the page")
 		} else {
 			step(apitypes.CheckOK, "", "", "the page has the script tag")
@@ -318,7 +326,7 @@ func (c *Core) checkSiteHost(ctx context.Context, host string, siteHosts []strin
 			"no Dock script tag in the page's HTML. Dock adds it to a page with a <head> unless the site's auto_script is off, the page is marked no-transform or its Content-Security-Policy blocks the script, or the server's Caddy isn't Dock's (an update installs it); otherwise add it to the page's <head> (an app that adds it from JavaScript shows active once events arrive)")
 	}
 	if csp := resp.header.Get("Content-Security-Policy"); csp != "" {
-		if d := cspBlocks(csp); d != "" {
+		if d := cspBlocks(csp, nonce); d != "" {
 			step(apitypes.CheckFail, apitypes.TrackingBlocked, "add 'self' to "+d,
 				"the page's Content-Security-Policy leaves 'self' out of %s, so the browser blocks the script", d)
 		}
@@ -380,8 +388,10 @@ func (c *Core) siteGet(ctx context.Context, target string, read bool) (sitePage,
 
 // cspBlocks returns the directive of a Content-Security-Policy that keeps
 // the script out (script-src, or connect-src for its events), falling
-// back to default-src as browsers do; "" when it allows them.
-func cspBlocks(csp string) string {
+// back to default-src as browsers do; "" when it allows them. The script
+// tag's nonce lets the script in when script-src names it, never its
+// events.
+func cspBlocks(csp, nonce string) string {
 	dirs := map[string][]string{}
 	for part := range strings.SplitSeq(csp, ";") {
 		f := strings.Fields(strings.TrimSpace(part))
@@ -389,10 +399,13 @@ func cspBlocks(csp string) string {
 			dirs[strings.ToLower(f[0])] = f[1:]
 		}
 	}
-	allows := func(vals []string) bool {
+	allows := func(vals []string, nonce string) bool {
 		for _, v := range vals {
 			switch strings.ToLower(v) {
 			case "'self'", "*", "https:":
+				return true
+			}
+			if nonce != "" && v == "'nonce-"+nonce+"'" {
 				return true
 			}
 		}
@@ -407,7 +420,11 @@ func cspBlocks(csp string) string {
 			}
 			name = "default-src"
 		}
-		if !allows(vals) {
+		n := nonce
+		if d == "connect-src" {
+			n = ""
+		}
+		if !allows(vals, n) {
 			return name
 		}
 	}

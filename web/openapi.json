@@ -17717,7 +17717,7 @@
         "additionalProperties": false,
         "properties": {
           "auto_script": {
-            "description": "Dock adds the analytics script to the site's pages (ADR 0105); off, the pages load /_dock/a/s.js themselves",
+            "description": "Dock adds the analytics script to the site's pages (ADR 0105); off, or with consent none, the pages load /_dock/a/s.js themselves",
             "type": "boolean"
           },
           "consent": {

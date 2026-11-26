@@ -8,7 +8,7 @@ import { Act, Confirm, CopyButton, ErrorText } from "../../ui/kit";
 import { SettingsSection } from "../../ui/sections";
 import { useCountVisits, useMoveSite, useStopCounting } from "./data";
 import { sitesQuery } from "./loaders";
-import { scriptTag } from "./ServiceSite";
+import { addsScript, scriptTag } from "./ServiceSite";
 
 /**
  * Settings' Analytics section (ADR 0104): whether Dock Analytics counts
@@ -89,7 +89,7 @@ export function ServiceAnalyticsPanel({
           </dd>
           <dt>Script</dt>
           <dd className="flex flex-wrap items-center gap-2">
-            {site.settings.auto_script ? (
+            {addsScript(site.settings) ? (
               <span className="text-mut">added to each page by Dock</span>
             ) : (
               <>

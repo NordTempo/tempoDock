@@ -90,8 +90,18 @@ func TestCSPBlocks(t *testing.T) {
 		"default-src 'none'; script-src 'self'":      "default-src",
 		"img-src *":                                  "",
 	} {
-		if got := cspBlocks(csp); got != want {
+		if got := cspBlocks(csp, ""); got != want {
 			t.Errorf("%q: %q, want %q", csp, got, want)
+		}
+	}
+	// The tag's nonce lets the script in, never its events.
+	for csp, want := range map[string]string{
+		"script-src 'nonce-abc' 'strict-dynamic'; connect-src 'self'": "",
+		"script-src 'nonce-xyz'; connect-src 'self'":                  "script-src",
+		"default-src 'nonce-abc'":                                     "default-src",
+	} {
+		if got := cspBlocks(csp, "abc"); got != want {
+			t.Errorf("nonce abc, %q: %q, want %q", csp, got, want)
 		}
 	}
 }

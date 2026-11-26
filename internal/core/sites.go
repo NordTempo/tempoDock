@@ -105,10 +105,18 @@ func resetSettings(s *apitypes.SiteSettings, names []string) error {
 	return nil
 }
 
-// touchesAutoScript reports whether a change sets or resets auto_script,
-// which the routes carry (ADR 0105): they are applied again after it.
+// addsScript reports whether Caddy adds the script to a site's pages
+// (ADR 0105): auto_script on, and never for consent none, whose pages load
+// the script only once the visitor consents.
+func addsScript(s apitypes.SiteSettings) bool {
+	return *s.AutoScript && *s.Consent != apitypes.ConsentNone
+}
+
+// touchesAutoScript reports whether a change sets or resets auto_script
+// or consent, which decide what the routes carry (addsScript): they are
+// applied again after it.
 func touchesAutoScript(set apitypes.SiteSettings, reset []string) bool {
-	return set.AutoScript != nil || slices.Contains(reset, "auto_script")
+	return set.AutoScript != nil || set.Consent != nil || slices.Contains(reset, "auto_script") || slices.Contains(reset, "consent")
 }
 
 // checkSettings refuses settings the ingest can't apply.

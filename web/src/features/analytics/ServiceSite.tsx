@@ -7,6 +7,7 @@ import {
   type AnalyticsChange,
   type Filter,
   type Site,
+  type SiteSettings,
   type StatsRange,
   sitesQuery,
 } from "./data";
@@ -19,6 +20,11 @@ import { SiteBar } from "./SiteBar";
 
 /** The script a counted hostname's pages load. */
 export const scriptTag = '<script src="/_dock/a/s.js" defer></script>';
+
+/** Whether Dock adds the script to the site's pages (ADR 0105): never for
+ * consent none, whose pages load it once the visitor agrees. */
+export const addsScript = (s: SiteSettings) =>
+  !!s.auto_script && s.consent !== "none";
 
 /** The service's live site, as a list (at most one, ADR 0104). */
 export const sitesOf = (all: Site[], ref: ServiceRef) =>
