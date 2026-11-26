@@ -57,8 +57,8 @@
     },
     "api.BenchmarkNewAPI": {
       "ns_op": 29381792,
-      "bytes_op": 13984276,
-      "allocs_op": 144007
+      "bytes_op": 14008896,
+      "allocs_op": 144264
     },
     "api.BenchmarkPublicPage": {
       "ns_op": 4753,
