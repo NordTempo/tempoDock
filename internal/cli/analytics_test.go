@@ -53,11 +53,11 @@ func TestAnalyticsSiteCommands(t *testing.T) {
 			t.Fatalf("%v: %s", args, stderr)
 		}
 	}
-	code, stdout, stderr := exec(t, "analytics", "enable", "shop.example.com")
-	if code != 0 || !strings.Contains(stdout, "shop.example.com counts for site shop.example.com") || !strings.Contains(stderr, `<script src="/_dock/a/s.js" defer></script>`) {
+	code, stdout, stderr := exec(t, "analytics", "enable", "-p", "shop", "-e", "production", "-s", "web")
+	if code != 0 || !strings.Contains(stdout, "web counts visits for site shop.example.com") || !strings.Contains(stderr, `<script src="/_dock/a/s.js" defer></script>`) {
 		t.Fatalf("enable = %d\n%s\n%s", code, stdout, stderr)
 	}
-	if sites := ok[[]apitypes.Site](t, "analytics", "sites", "-p", "shop"); len(sites) != 1 || sites[0].Hostnames[0].Service != "web" {
+	if sites := ok[[]apitypes.Site](t, "analytics", "sites", "-p", "shop"); len(sites) != 1 || sites[0].Service != "web" || sites[0].Name != "shop.example.com" {
 		t.Fatalf("sites = %+v", sites)
 	}
 	site := ok[apitypes.Site](t, "analytics", "site", "set", "shop.example.com", "-p", "shop", "--exclude-path", "/admin/*", "--replay", "on", "--replay-sample", "10")
@@ -96,7 +96,17 @@ func TestAnalyticsSiteCommands(t *testing.T) {
 	if code, _, stderr := exec(t, "analytics", "stats", "shop.example.com", "-p", "shop", "--filter", "nope"); code == 0 || !strings.Contains(stderr, "country:is:NO") {
 		t.Errorf("a malformed filter: %d %s", code, stderr)
 	}
-	if code, _, stderr := exec(t, "analytics", "disable", "shop.example.com"); code != 0 {
+	// Handed to a new service, the site counts its domains.
+	if code, _, stderr := exec(t, "deploy", "-p", "shop", "-e", "production", "-s", "web-v2", "--image", "web:2"); code != 0 {
+		t.Fatalf("deploy web-v2: %s", stderr)
+	}
+	if code, _, stderr := exec(t, "analytics", "move", "shop.example.com", "-p", "shop", "-e", "production"); code != 2 || !strings.Contains(stderr, "--to") {
+		t.Errorf("move without --to: %d %s", code, stderr)
+	}
+	if site := ok[apitypes.Site](t, "analytics", "move", "shop.example.com", "--to", "web-v2", "-p", "shop", "-e", "production"); site.Service != "web-v2" {
+		t.Fatalf("moved = %+v", site)
+	}
+	if code, _, stderr := exec(t, "analytics", "disable", "-p", "shop", "-e", "production", "-s", "web-v2"); code != 0 {
 		t.Fatalf("disable: %s", stderr)
 	}
 	if sites := ok[[]apitypes.Site](t, "analytics", "sites", "-p", "shop"); len(sites) != 1 || !sites[0].Archived {

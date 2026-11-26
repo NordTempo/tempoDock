@@ -76,7 +76,6 @@ var projectDeletes = []struct{ table, where string }{
 	{"traffic_stats", `service_id IN ` + projServices},
 	{"traffic_paths", `service_id IN ` + projServices},
 	{"variables", `environment_id IN ` + projEnvs},
-	{"site_hostnames", `site_id IN ` + projSites + ` OR service_id IN ` + projServices},
 	{"site_funnels", `site_id IN ` + projSites},
 	{"site_goals", `site_id IN ` + projSites},
 	{"site_markers", `site_id IN ` + projSites},

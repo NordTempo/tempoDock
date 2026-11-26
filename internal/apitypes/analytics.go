@@ -50,11 +50,15 @@ type SetAnalyticsServerRequest struct {
 // Analytics counts together (ADR 0037). Its history follows a hostname
 // when the hostname's domain moves to another service.
 type Site struct {
-	Name        string         `json:"name"`
-	Environment string         `json:"environment"`
-	Hostnames   []SiteHostname `json:"hostnames"`
-	Archived    bool           `json:"archived"`
-	CreatedAt   time.Time      `json:"created_at"`
+	Name        string `json:"name"`
+	Environment string `json:"environment"`
+	// Service is the service whose analytics it is (ADR 0104).
+	Service string `json:"service"`
+	// Hostnames are the ones it counts: the service's domains that don't
+	// redirect.
+	Hostnames []SiteHostname `json:"hostnames"`
+	Archived  bool           `json:"archived"`
+	CreatedAt time.Time      `json:"created_at"`
 	// Settings are in effect: the site's own, or the install's defaults.
 	Settings SiteSettings `json:"settings"`
 	// Overrides are the settings the site sets itself.
@@ -124,8 +128,7 @@ type OrgSite struct {
 	Series []AnalyticsPoint `json:"series,omitempty"`
 }
 
-// SiteHostname is one of a site's hostnames and the service it serves
-// (empty while no service has a domain for it).
+// SiteHostname is a hostname a site counts and the service it serves.
 type SiteHostname struct {
 	Hostname string `json:"hostname"`
 	Service  string `json:"service,omitempty"`
@@ -157,12 +160,11 @@ type UpdateSiteRequest struct {
 	Reset []string `json:"reset,omitempty"`
 }
 
-// EnableAnalyticsRequest turns analytics on for a hostname.
-type EnableAnalyticsRequest struct {
-	// Site joins a site of the same environment; empty joins the site of
-	// the service's other hostnames, or makes one named after the
-	// hostname.
-	Site string `json:"site,omitempty"`
+// MoveSiteRequest names the service a site moves to (ADR 0104).
+type MoveSiteRequest struct {
+	Project     string `json:"project,omitempty" doc:"The service's project; empty for the site's own"`
+	Environment string `json:"environment" minLength:"1"`
+	Service     string `json:"service" minLength:"1"`
 }
 
 // SiteStats is a site's dashboard for a range: the numbers, the previous

@@ -27,35 +27,46 @@ func analyticsRoute(h *harness, hostname string) (node.AnalyticsHosts, bool) {
 }
 
 // domain adds hostname to a service.
-func (h *harness) domain(ref ServiceRef, hostname, analytics string) {
+func (h *harness) domain(ref ServiceRef, hostname string) {
 	h.t.Helper()
-	if _, err := h.c.AddDomain(h.ctx, testSystem, ref, apitypes.AddDomainRequest{Hostname: hostname, Analytics: analytics}); err != nil {
+	if _, err := h.c.AddDomain(h.ctx, testSystem, ref, apitypes.AddDomainRequest{Hostname: hostname}); err != nil {
 		h.t.Fatal(err)
 	}
+}
+
+// countVisits turns analytics on for a service and returns its site.
+func (h *harness) countVisits(ref ServiceRef) apitypes.Site {
+	h.t.Helper()
+	site, err := h.c.EnableServiceAnalytics(h.ctx, testSystem, ref)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return site
 }
 
 func TestSites(t *testing.T) {
 	h := newHarness(t)
 	web := h.service("web", apitypes.CreateServiceRequest{Port: 8080})
 	rel := h.deploy(web, "nginx:1")
-	h.domain(web, "shop.example.com", "")
-	h.domain(web, "www.shop.example.com", "")
-
-	site, err := h.c.EnableHostnameAnalytics(h.ctx, testSystem, "shop.example.com", apitypes.EnableAnalyticsRequest{})
-	if err != nil {
+	h.domain(web, "shop.example.com")
+	if _, err := h.c.AddDomain(h.ctx, testSystem, web, apitypes.AddDomainRequest{Hostname: "www.shop.example.com", RedirectTo: "shop.example.com"}); err != nil {
 		t.Fatal(err)
 	}
-	if site.Name != "shop.example.com" || site.Environment != "production" || len(site.Hostnames) != 1 || site.Hostnames[0].Service != "web" {
+
+	// Named after its custom domain; the redirect isn't counted.
+	site := h.countVisits(web)
+	if site.Name != "shop.example.com" || site.Service != "web" || site.Environment != "production" ||
+		len(site.Hostnames) != 1 || site.Hostnames[0].Hostname != "shop.example.com" {
 		t.Fatalf("site = %+v", site)
 	}
-	// The service's other hostname joins the same site.
-	if site, err = h.c.EnableHostnameAnalytics(h.ctx, testSystem, "www.shop.example.com", apitypes.EnableAnalyticsRequest{}); err != nil || len(site.Hostnames) != 2 {
-		t.Fatalf("second hostname: %+v, %v", site, err)
-	}
-	// Routing tags both with the site, service and release.
+	// A domain added later counts without being asked.
+	h.domain(web, "shop.example.org")
 	r, ok := analyticsRoute(h, "shop.example.com")
-	if !ok || len(r.Hostnames) != 2 || r.Tag == "" {
+	if !ok || !slices.Contains(r.Hostnames, "shop.example.org") || r.Tag == "" {
 		t.Fatalf("analytics route = %+v", r)
+	}
+	if _, ok := analyticsRoute(h, "www.shop.example.com"); ok {
+		t.Error("a redirect routes to the ingest")
 	}
 	var siteID, svcID, relID int64
 	if _, err := fmt.Sscanf(r.Tag, "%d.%d.%d", &siteID, &svcID, &relID); err != nil || siteID == 0 || svcID == 0 || relID == 0 {
@@ -81,60 +92,123 @@ func TestSites(t *testing.T) {
 		t.Errorf("resetting an unknown setting: %v", err)
 	}
 
-	// Off for both: the site keeps its history, archived.
-	for _, host := range []string{"shop.example.com", "www.shop.example.com"} {
-		if err := h.c.DisableHostnameAnalytics(h.ctx, testSystem, host); err != nil {
-			t.Fatal(err)
-		}
+	// Removing a domain leaves the site as it is.
+	if err := h.c.RemoveDomain(h.ctx, testSystem, web, "shop.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if site, err := h.c.GetSite(h.ctx, testSystem, "shop", "shop.example.com"); err != nil || site.Archived || len(site.Hostnames) != 1 {
+		t.Errorf("after removing its name's domain: %+v, %v", site, err)
+	}
+
+	// Off: archived with its history. On again: the same site comes back.
+	if err := h.c.DisableServiceAnalytics(h.ctx, testSystem, web); err != nil {
+		t.Fatal(err)
 	}
 	sites, err := h.c.ListSites(h.ctx, testSystem, "shop")
 	if err != nil || len(sites) != 1 || !sites[0].Archived {
-		t.Errorf("sites after turning both off: %+v, %v", sites, err)
+		t.Errorf("sites after turning it off: %+v, %v", sites, err)
 	}
-	if _, ok := analyticsRoute(h, "shop.example.com"); ok {
+	if _, ok := analyticsRoute(h, "shop.example.org"); ok {
 		t.Error("an archived site's hostname still routes to the ingest")
+	}
+	if err := h.c.DisableServiceAnalytics(h.ctx, testSystem, web); CodeOf(err) != apitypes.CodeNotFound {
+		t.Errorf("turning it off twice: %v", err)
+	}
+	if back := h.countVisits(web); back.Name != "shop.example.com" || back.Archived {
+		t.Errorf("on again = %+v, want the old site back", back)
+	}
+	if r, _ := analyticsRoute(h, "shop.example.org"); !strings.HasPrefix(r.Tag, fmt.Sprint(siteID, ".")) {
+		t.Errorf("on again routes with tag %q, want site %d", r.Tag, siteID)
+	}
+
+	// Archiving the service archives its site.
+	if _, err := h.c.ArchiveService(h.ctx, testSystem, web); err != nil {
+		t.Fatal(err)
+	}
+	if sites, _ := h.c.ListSites(h.ctx, testSystem, "shop"); len(sites) != 1 || !sites[0].Archived {
+		t.Errorf("sites after archiving the service: %+v", sites)
 	}
 }
 
-func TestSiteFollowsADomainMove(t *testing.T) {
+// A site without a custom domain is named after its service.
+func TestSiteNamedAfterItsService(t *testing.T) {
+	h := newHarness(t)
+	api := h.service("api", apitypes.CreateServiceRequest{Port: 8080})
+	if site := h.countVisits(api); site.Name != "api" {
+		t.Errorf("site = %q, want api", site.Name)
+	}
+}
+
+// A site moves whole to a service that replaced its own; the old one
+// stops counting, and a target that counts already is refused.
+func TestSiteMove(t *testing.T) {
 	h := newHarness(t)
 	v1 := h.service("web", apitypes.CreateServiceRequest{Port: 8080})
 	v2 := h.service("web-v2", apitypes.CreateServiceRequest{Port: 8080})
 	h.deploy(v1, "nginx:1")
 	h.deploy(v2, "nginx:1")
-	h.domain(v1, "shop.example.com", "")
-	if _, err := h.c.EnableHostnameAnalytics(h.ctx, testSystem, "shop.example.com", apitypes.EnableAnalyticsRequest{}); err != nil {
+	h.domain(v1, "old.example.com")
+	h.domain(v2, "shop.example.com")
+	h.countVisits(v1)
+	before, _ := analyticsRoute(h, "old.example.com")
+	// web-v2 counted for a while too, so it has a site, newer than web's,
+	// archived since: the site moved in must win over it.
+	early := h.countVisits(v2)
+	if err := h.c.DisableServiceAnalytics(h.ctx, testSystem, v2); err != nil {
 		t.Fatal(err)
-	}
-	// Moved to web-v2: the same site, now served by web-v2, with a marker.
-	if err := h.c.RemoveDomain(h.ctx, testSystem, v1, "shop.example.com"); err != nil {
-		t.Fatal(err)
-	}
-	h.domain(v2, "shop.example.com", "")
-	site, err := h.c.GetSite(h.ctx, testSystem, "shop", "shop.example.com")
-	if err != nil || len(site.Hostnames) != 1 || site.Hostnames[0].Service != "web-v2" {
-		t.Fatalf("after the move: %+v, %v", site, err)
-	}
-	stats, err := h.c.SiteStats(h.ctx, testSystem, "shop", "shop.example.com", StatsQuery{Range: "24h"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var moved bool
-	for _, m := range stats.Markers {
-		moved = moved || (m.Kind == "moved" && m.Message == "shop.example.com moved to web-v2")
-	}
-	if !moved || !slices.IsSortedFunc(stats.Markers, func(a, b apitypes.SiteMarker) int { return a.At.Compare(b.At) }) {
-		t.Errorf("markers = %+v, want the move among them, oldest first", stats.Markers)
 	}
 
-	// Moved back with a new site: the old one is archived.
-	if err := h.c.RemoveDomain(h.ctx, testSystem, v2, "shop.example.com"); err != nil {
+	to := apitypes.MoveSiteRequest{Environment: "production", Service: "web-v2"}
+	reader := Actor{Name: "reader", Kind: "token", Scope: apitypes.ScopeRead, OrgID: 1}
+	if _, err := h.c.MoveSite(h.ctx, reader, "shop", "old.example.com", to); CodeOf(err) != apitypes.CodeForbidden {
+		t.Errorf("a reader moved a site: %v", err)
+	}
+	site, err := h.c.MoveSite(h.ctx, testSystem, "shop", "old.example.com", to)
+	if err != nil || site.Name != "old.example.com" || site.Service != "web-v2" || len(site.Hostnames) != 1 || site.Hostnames[0].Hostname != "shop.example.com" {
+		t.Fatalf("moved = %+v, %v", site, err)
+	}
+	after, ok := analyticsRoute(h, "shop.example.com")
+	if !ok || strings.Split(after.Tag, ".")[0] != strings.Split(before.Tag, ".")[0] {
+		t.Errorf("web-v2 routes with tag %q, want the site of %q", after.Tag, before.Tag)
+	}
+	if _, ok := analyticsRoute(h, "old.example.com"); ok {
+		t.Error("the old service still counts")
+	}
+	stats, err := h.c.SiteStats(h.ctx, testSystem, "shop", "old.example.com", StatsQuery{Range: "24h"})
+	if err != nil || !slices.ContainsFunc(stats.Markers, func(m apitypes.SiteMarker) bool { return m.Kind == "moved" }) {
+		t.Errorf("markers = %+v, %v; want the move", stats.Markers, err)
+	}
+	// Counting on web-v2 again keeps the moved site, not its older one;
+	// off and on brings back the one it counted last.
+	if again := h.countVisits(v2); again.Name != "old.example.com" {
+		t.Errorf("enable after the move = %s, want old.example.com (not %s)", again.Name, early.Name)
+	}
+	if err := h.c.DisableServiceAnalytics(h.ctx, testSystem, v2); err != nil {
 		t.Fatal(err)
 	}
-	h.domain(v1, "shop.example.com", "new")
-	sites, err := h.c.ListSites(h.ctx, testSystem, "shop")
-	if err != nil || len(sites) != 2 || sites[0].Archived || !sites[1].Archived || sites[0].Hostnames[0].Service != "web" {
-		t.Errorf("sites = %+v, %v", sites, err)
+	if back := h.countVisits(v2); back.Name != "old.example.com" {
+		t.Errorf("on again = %s, want the site it counted last", back.Name)
+	}
+
+	// web counts again in a site of its own; moving into web-v2 now is refused.
+	h.countVisits(v1)
+	sites, _ := h.c.ListSites(h.ctx, testSystem, "shop")
+	var web string
+	for _, s := range sites {
+		if s.Service == "web" && !s.Archived {
+			web = s.Name
+		}
+	}
+	if _, err := h.c.MoveSite(h.ctx, testSystem, "shop", web, to); CodeOf(err) != apitypes.CodeConflict {
+		t.Errorf("moving into a service that counts: %v", err)
+	}
+	// Nor into an archived service.
+	v3 := h.service("web-v3", apitypes.CreateServiceRequest{Port: 8080})
+	if _, err := h.c.ArchiveService(h.ctx, testSystem, v3); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.MoveSite(h.ctx, testSystem, "shop", web, apitypes.MoveSiteRequest{Environment: "production", Service: "web-v3"}); CodeOf(err) != apitypes.CodeConflict {
+		t.Errorf("moving into an archived service: %v", err)
 	}
 }
 
@@ -142,8 +216,8 @@ func TestSiteStats(t *testing.T) {
 	h := newHarness(t)
 	web := h.service("web", apitypes.CreateServiceRequest{Port: 8080})
 	h.deploy(web, "nginx:1")
-	h.domain(web, "shop.example.com", "")
-	if _, err := h.c.EnableHostnameAnalytics(h.ctx, testSystem, "shop.example.com", apitypes.EnableAnalyticsRequest{}); err != nil {
+	h.domain(web, "shop.example.com")
+	if _, err := h.c.EnableServiceAnalytics(h.ctx, testSystem, web); err != nil {
 		t.Fatal(err)
 	}
 	r, _ := analyticsRoute(h, "shop.example.com")
@@ -212,16 +286,16 @@ func TestSiteStats(t *testing.T) {
 func TestSitePermissions(t *testing.T) {
 	h := newHarness(t)
 	web := h.service("web", apitypes.CreateServiceRequest{Port: 8080})
-	h.domain(web, "shop.example.com", "")
+	h.domain(web, "shop.example.com")
 	reader := Actor{Name: "reader", Kind: "token", Scope: apitypes.ScopeRead, OrgID: 1}
-	if _, err := h.c.EnableHostnameAnalytics(h.ctx, reader, "shop.example.com", apitypes.EnableAnalyticsRequest{}); CodeOf(err) != apitypes.CodeForbidden {
+	if _, err := h.c.EnableServiceAnalytics(h.ctx, reader, web); CodeOf(err) != apitypes.CodeForbidden {
 		t.Errorf("a reader turned analytics on: %v", err)
 	}
 	other := Actor{Name: "other-org", Kind: "token", Scope: apitypes.ScopeAdmin, OrgID: 2}
-	if _, err := h.c.EnableHostnameAnalytics(h.ctx, other, "shop.example.com", apitypes.EnableAnalyticsRequest{}); CodeOf(err) != apitypes.CodeNotFound {
+	if _, err := h.c.EnableServiceAnalytics(h.ctx, other, web); CodeOf(err) != apitypes.CodeNotFound {
 		t.Errorf("another org's actor: %v", err)
 	}
-	if _, err := h.c.EnableHostnameAnalytics(h.ctx, testSystem, "shop.example.com", apitypes.EnableAnalyticsRequest{}); err != nil {
+	if _, err := h.c.EnableServiceAnalytics(h.ctx, testSystem, web); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := h.c.SiteStats(h.ctx, reader, "shop", "shop.example.com", StatsQuery{}); err != nil {
@@ -239,8 +313,8 @@ func TestSiteLive(t *testing.T) {
 	h := newHarness(t)
 	web := h.service("web", apitypes.CreateServiceRequest{Port: 8080})
 	h.deploy(web, "nginx:1")
-	h.domain(web, "shop.example.com", "")
-	if _, err := h.c.EnableHostnameAnalytics(h.ctx, testSystem, "shop.example.com", apitypes.EnableAnalyticsRequest{}); err != nil {
+	h.domain(web, "shop.example.com")
+	if _, err := h.c.EnableServiceAnalytics(h.ctx, testSystem, web); err != nil {
 		t.Fatal(err)
 	}
 	r, _ := analyticsRoute(h, "shop.example.com")
@@ -287,8 +361,8 @@ func TestSiteRetention(t *testing.T) {
 	h := newHarness(t)
 	web := h.service("web", apitypes.CreateServiceRequest{Port: 8080})
 	h.deploy(web, "nginx:1")
-	h.domain(web, "shop.example.com", "")
-	if _, err := h.c.EnableHostnameAnalytics(h.ctx, testSystem, "shop.example.com", apitypes.EnableAnalyticsRequest{}); err != nil {
+	h.domain(web, "shop.example.com")
+	if _, err := h.c.EnableServiceAnalytics(h.ctx, testSystem, web); err != nil {
 		t.Fatal(err)
 	}
 	days := 30

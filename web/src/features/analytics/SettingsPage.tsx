@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { type KeyboardEvent, type ReactNode, useState } from "react";
 import { useOrg } from "../../shell/location";
 import { Act, Button, CopyButton, ErrorText, SectionHead } from "../../ui/kit";
@@ -8,8 +8,6 @@ import {
   type SiteSettings,
   siteGoalsQuery,
   useAddGoal,
-  useDisableHostname,
-  useEnableHostname,
   useRemoveGoal,
   useUpdateSite,
 } from "./data";
@@ -123,7 +121,7 @@ export function SettingsPage() {
           <PolicyText site={site} />
         </Row>
       </Section>
-      <Hostnames site={site} canEdit={canEdit} />
+      <Hostnames project={project} site={site} />
       <Goals project={project} site={site.name} canEdit={canEdit} />
       {sections.map((s) => (
         <Section key={s.id} id={s.id} title={s.title}>
@@ -578,67 +576,41 @@ function SharingForm({
   );
 }
 
-/** The hostnames the site counts, and another of its environment to add. */
-function Hostnames({ site, canEdit }: { site: Site; canEdit: boolean }) {
-  const disable = useDisableHostname();
-  const enable = useEnableHostname();
-  const [hostname, setHostname] = useState("");
-  const host = hostname.trim();
+/**
+ * The service whose visits the site counts and the hostnames that are:
+ * its domains that don't redirect (ADR 0104), changed on the service.
+ */
+function Hostnames({ project, site }: { project: string; site: Site }) {
+  const org = useOrg();
   const hostnames = site.hostnames ?? [];
   return (
     <Section id="set-hostnames" title="Hostnames">
+      <Row label="Service" hint="Its domains count; redirects don't.">
+        {site.service ? (
+          <Link
+            to="/$org/$project/$environment/$service/settings"
+            params={{
+              org,
+              project,
+              environment: site.environment,
+              service: site.service,
+            }}
+            hash="analytics"
+          >
+            {site.service}
+          </Link>
+        ) : (
+          <span className="text-mut">none</span>
+        )}
+      </Row>
       {hostnames.map((h) => (
         <Row
           key={h.hostname}
           label={<span className="font-mono">{h.hostname}</span>}
-          hint={h.service}
         >
-          <span className="flex max-w-[760px] items-start gap-3">
-            <span className="flex-1 text-mut">counted</span>
-            {canEdit && (
-              <Act
-                small
-                cli={`dock analytics disable ${h.hostname}`}
-                disabled={disable.isPending}
-                onClick={() => disable.mutate(h.hostname)}
-              >
-                Stop counting
-              </Act>
-            )}
-          </span>
+          <span className="text-mut">counted</span>
         </Row>
       ))}
-      {canEdit && (
-        <Row label="Count another" hint="A hostname of the same environment.">
-          <form
-            className="flex max-w-[760px] flex-wrap items-center gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              enable.mutate(
-                { hostname: host, site: site.name },
-                { onSuccess: () => setHostname("") },
-              );
-            }}
-          >
-            <input
-              aria-label="Hostname to count for this site"
-              placeholder="www.example.com"
-              className="field w-72 font-mono"
-              value={hostname}
-              onChange={(e) => setHostname(e.target.value)}
-            />
-            <Act
-              small
-              type="submit"
-              cli={`dock analytics enable ${host || "<hostname>"} --site ${site.name}`}
-              disabled={!host || enable.isPending}
-            >
-              Count it
-            </Act>
-          </form>
-        </Row>
-      )}
-      <ErrorText error={disable.error ?? enable.error} />
     </Section>
   );
 }

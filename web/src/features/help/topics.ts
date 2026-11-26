@@ -612,8 +612,8 @@ export const topics: Record<TopicId, Topic> = {
     what: "Cookieless visits, browser errors, Web Vitals and replays for your sites.",
     do: [
       {
-        what: "Count a domain's visits",
-        cli: "dock analytics enable shop.example.com",
+        what: "Count a service's visits",
+        cli: "dock analytics enable -s web",
         at: { o: "analytics" },
       },
       { what: "Visitors and top pages", cli: "dock analytics stats shop" },

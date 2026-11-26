@@ -20,6 +20,11 @@ func TestSitePublicAddressesMigration(t *testing.T) {
 			(3, 2, 'blog', '{"public":true,"public_domain":"stats.example.com"}', NULL, 'b', '2026-01-01'),
 			(4, 2, 'shop', '{"public_domain":""}', NULL, 'b', '2026-01-01'),
 			(5, 1, 'shop', '{"public_domain":""}', NULL, 'a', '2026-01-01')`,
+		// Each live site counts a service's hostname, so it stays live
+		// when sites become their service's (0133).
+		`INSERT INTO services (id, environment_id, name, image) VALUES (2, 1, 'blog', ''), (3, 2, 'blog', ''), (4, 2, 'shop', ''), (5, 1, 'shop', '')`,
+		`INSERT INTO site_hostnames (hostname, site_id, service_id, added_at) VALUES
+			('blog.one', 2, 2, '2026-01-01'), ('blog.two', 3, 3, '2026-01-01'), ('shop.two', 4, 4, '2026-01-01'), ('shop.one', 5, 5, '2026-01-01')`,
 	)
 	s, err := Open(ctx, path)
 	if err != nil {

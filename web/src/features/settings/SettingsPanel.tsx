@@ -32,6 +32,7 @@ import { modKey } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
 import { Act, Button, Check, ErrorText } from "../../ui/kit";
 import { SettingsSection } from "../../ui/sections";
+import { ServiceAnalyticsPanel } from "../analytics/ServiceAnalyticsPanel";
 import { BackupsPanel } from "../backups/BackupsPanel";
 import { autofocus } from "../create/form";
 import { SourceSection } from "../git/SourceSection";
@@ -259,6 +260,8 @@ export function SettingsPanel({
       </SettingsSection>
 
       <DomainsPanel serviceRef={ref} />
+
+      <ServiceAnalyticsPanel serviceRef={ref} />
 
       {service.stateful && <BackupsPanel serviceRef={ref} />}
 

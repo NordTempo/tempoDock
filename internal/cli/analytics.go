@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/cli/output"
 )
 
 // Dock Analytics (ADR 0037): the platform side, for operators. Sites and
@@ -79,7 +80,7 @@ old store is removed when that server is back.`,
 		})
 	}
 	cmd.AddCommand(server, newAnalyticsSwitchCmd(g, true), newAnalyticsSwitchCmd(g, false))
-	cmd.AddCommand(newAnalyticsEnableCmd(g), newAnalyticsDisableCmd(g), newAnalyticsSitesCmd(g),
+	cmd.AddCommand(newAnalyticsEnableCmd(g), newAnalyticsDisableCmd(g), newAnalyticsMoveCmd(g), newAnalyticsSitesCmd(g),
 		newAnalyticsStatsCmd(g), newAnalyticsCheckCmd(g), newAnalyticsErrorsCmd(g), newAnalyticsVitalsCmd(g), newAnalyticsReplaysCmd(g), newAnalyticsGoalsCmd(g), newAnalyticsFunnelsCmd(g), newAnalyticsSiteCmd(g), newAnalyticsDefaultsCmd(g))
 	return cmd
 }
@@ -140,59 +141,101 @@ does (` + "`dock analytics on`" + `). The store's data stays for that, unless
 const snippet = `<script src="/_dock/a/s.js" defer></script>`
 
 func newAnalyticsEnableCmd(g *globals) *cobra.Command {
-	var site string
+	var f targetFlags
 	cmd := &cobra.Command{
-		Use:   "enable <hostname>",
-		Short: "Count visits to a domain: it joins a site, or starts one",
-		Long: `Turn analytics on for one of a service's domains. The hostname joins --site,
-or the site of the service's other hostnames, or a new site named after the
-service's custom domain or it. Its pages then need one line in their <head>:
+		Use:   "enable",
+		Short: "Count a service's visits, on every domain of it",
+		Long: `Turn analytics on for a service. Its domains that don't redirect count for
+its site: the one it had before, with that history, else a new one named
+after it. Domains added later count too. Its pages then need one line in
+their <head>:
 
   ` + snippet + `
 
 No cookies or browser storage are used. The first site starts the
 analytics store.`,
-		Example: "  dock analytics enable shop.example.com",
-		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := g.connect()
+		Example: "  dock analytics enable -s web -e production",
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			s, t, err := g.open(f, needService)
 			if err != nil {
 				return err
 			}
-			st, err := send[apitypes.Site](cmd.Context(), s, http.MethodPut, apiPrefix+"/analytics/hostnames/"+url.PathEscape(args[0]), apitypes.EnableAnalyticsRequest{Site: site})
+			st, err := send[apitypes.Site](cmd.Context(), s, http.MethodPut, t.servicePath()+"/analytics", nil)
 			if err != nil {
 				return err
 			}
 			return g.io.Print(st, func() error {
-				g.io.Successf("%s counts for site %s", args[0], st.Name)
+				g.io.Successf("%s counts visits for site %s", t.Service, st.Name)
 				g.io.Detail("Add this to the <head> of its pages: " + snippet)
 				return nil
 			})
 		},
 	}
-	cmd.Flags().StringVar(&site, "site", "", "join this site (in the same environment)")
+	f.add(cmd, needService)
 	return cmd
 }
 
 func newAnalyticsDisableCmd(g *globals) *cobra.Command {
-	return &cobra.Command{
-		Use:   "disable <hostname>",
-		Short: "Stop counting visits to a domain; its site keeps its history",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := g.connect()
+	var f targetFlags
+	cmd := &cobra.Command{
+		Use:   "disable",
+		Short: "Stop counting a service's visits; its site keeps its history",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			s, t, err := g.open(f, needService)
 			if err != nil {
 				return err
 			}
-			if err := del(cmd.Context(), s, apiPrefix+"/analytics/hostnames/"+url.PathEscape(args[0])); err != nil {
+			if err := del(cmd.Context(), s, t.servicePath()+"/analytics"); err != nil {
 				return err
 			}
-			return g.io.Print(map[string]string{"hostname": args[0]}, func() error {
-				g.io.Successf("%s no longer counts visits", args[0])
+			return g.io.Print(map[string]string{"service": t.Service}, func() error {
+				g.io.Successf("%s no longer counts visits", t.Service)
 				return nil
 			})
 		},
 	}
+	f.add(cmd, needService)
+	return cmd
+}
+
+func newAnalyticsMoveCmd(g *globals) *cobra.Command {
+	var f targetFlags
+	var to string
+	cmd := &cobra.Command{
+		Use:   "move <site> --to <service>",
+		Short: "Hand a site and its history to another service",
+		Long: `Move a site, with its history, settings, goals and funnels, to another
+service, such as one that replaced the site's own. The new service's
+domains count for it from now on, and the old one stops counting. The new
+service must not count visits yet. -e and -p name the new service's
+environment and project (default: the site's own project and the linked
+environment).`,
+		Example: "  dock analytics move shop --to web-v2 -e production",
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if to == "" {
+				return &output.Error{Exit: output.ExitUsage, Message: "name the service the site moves to", Hint: "Add --to <service>, e.g. `dock analytics move " + args[0] + " --to web-v2`."}
+			}
+			s, t, err := g.open(f, needEnvironment)
+			if err != nil {
+				return err
+			}
+			req := apitypes.MoveSiteRequest{Project: t.Project, Environment: t.Environment, Service: to}
+			st, err := send[apitypes.Site](cmd.Context(), s, http.MethodPost, t.projectPath()+"/sites/"+url.PathEscape(args[0])+"/move", req)
+			if err != nil {
+				return err
+			}
+			return g.io.Print(st, func() error {
+				g.io.Successf("Site %s is %s's now", st.Name, to)
+				return nil
+			})
+		},
+	}
+	f.add(cmd, needEnvironment)
+	cmd.Flags().StringVar(&to, "to", "", "the service to move the site to")
+	return cmd
 }
 
 func newAnalyticsSitesCmd(g *globals) *cobra.Command {
@@ -212,23 +255,20 @@ func newAnalyticsSitesCmd(g *globals) *cobra.Command {
 			}
 			return g.io.Print(sites, func() error {
 				if len(sites) == 0 {
-					g.io.Successf("No sites yet. Count a domain's visits with `dock analytics enable <hostname>`.")
+					g.io.Successf("No sites yet. Count a service's visits with `dock analytics enable -s <service>`.")
 					return nil
 				}
-				tb := g.io.Table("site", "environment", "hostnames", "state")
+				tb := g.io.Table("site", "environment", "service", "hostnames", "state")
 				for _, st := range sites {
 					hosts := make([]string, len(st.Hostnames))
 					for i, h := range st.Hostnames {
 						hosts[i] = h.Hostname
-						if h.Service != "" {
-							hosts[i] += " (" + h.Service + ")"
-						}
 					}
 					state := "live"
 					if st.Archived {
 						state = "archived"
 					}
-					tb.Row(st.Name, st.Environment, dash(strings.Join(hosts, ", ")), state)
+					tb.Row(st.Name, st.Environment, dash(st.Service), dash(strings.Join(hosts, ", ")), state)
 				}
 				return tb.Flush()
 			})

@@ -116,17 +116,17 @@ func TestAccountsAndOperators(t *testing.T) {
 // sites keep theirs. The org's admins set them.
 func TestOrgSiteDefaults(t *testing.T) {
 	h := newHarness(t)
-	h.service("web", apitypes.CreateServiceRequest{})
-	es, err := h.c.envFor(h.ctx, testSystem, EnvRef{"shop", "production"}, apitypes.ScopeRead, "test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	// A site of a new service called name.
 	newSite := func(name string) apitypes.SiteSettings {
 		t.Helper()
+		ss, err := h.c.serviceFor(h.ctx, testSystem, h.service(name, apitypes.CreateServiceRequest{}), apitypes.ScopeRead, "test")
+		if err != nil {
+			t.Fatal(err)
+		}
 		var s store.Site
 		if err := h.store.Tx(h.ctx, func(q *store.Queries) error {
 			var err error
-			s, err = h.c.createSite(h.ctx, q, es.project.ID, es.env.ID, name, "test", now())
+			s, err = h.c.createSite(h.ctx, q, ss, name, "test", now())
 			return err
 		}); err != nil {
 			t.Fatal(err)

@@ -119,9 +119,6 @@ func (c *Core) startAnalytics(ctx context.Context) error {
 	if err := c.assignPublicSlugs(ctx); err != nil {
 		c.log.Error("analytics: give sites their public dashboard addresses", "err", err)
 	}
-	if err := c.renameSitesAfterGoneHostnames(ctx); err != nil {
-		c.log.Error("analytics: rename sites named after removed hostnames", "err", err)
-	}
 	if hosts, err := c.loadPublicHosts(ctx); err == nil {
 		c.analytics.public.hosts.Store(&hosts)
 	} else {

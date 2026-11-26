@@ -222,7 +222,11 @@ func (c *Core) CheckSiteTracking(ctx context.Context, a Actor, project, name str
 		}
 		names := make([]string, 0, len(hosts))
 		for _, h := range hosts {
-			names = append(names, h.Hostname)
+			// Only the environment the caller was allowed to read: a
+			// site moved since counts another's hostnames.
+			if h.EnvironmentID == s.site.EnvironmentID {
+				names = append(names, h.Hostname)
+			}
 		}
 		c.tracking.put(s.site.ID, c.checkSite(ctx, names))
 	}
@@ -259,22 +263,25 @@ func (c *Core) checkSiteHost(ctx context.Context, host string, siteHosts []strin
 	resp, err := c.siteGet(ctx, page, true)
 	if err == nil && resp.status/100 == 3 {
 		to, _ := url.Parse(resp.header.Get("Location"))
-		next := ""
+		// next is where it goes with any port; a port alone (:443) doesn't
+		// make it another host.
+		next, bare := "", ""
 		if to != nil {
-			next = strings.ToLower(resolveRef(page, to).Host)
+			u := resolveRef(page, to)
+			next, bare = strings.ToLower(u.Host), strings.ToLower(u.Hostname())
 		}
 		switch {
-		case next == "" || next == host:
+		case next == "" || next == host || bare == host:
 			// A redirect within the host (to /en/, to https): follow it.
 			if to != nil {
 				resp, err = c.siteGet(ctx, resolveRef(page, to).String(), true)
 			}
-		case slices.Contains(siteHosts, next):
+		case slices.Contains(siteHosts, next) || slices.Contains(siteHosts, bare):
 			step(apitypes.CheckOK, "", "", "redirects to %s, checked on its own", next)
 			return out
 		default:
-			step(apitypes.CheckFail, apitypes.TrackingWrongHost, fmt.Sprintf("dock analytics enable %s", next),
-				"redirects to %s, which has this site's analytics off: visitors land there and nothing counts", next)
+			step(apitypes.CheckFail, apitypes.TrackingWrongHost, "",
+				"redirects to %s, which isn't a domain of this site's service: visitors land there and count for its service's site, if it has one", next)
 			return out
 		}
 	}
@@ -319,8 +326,8 @@ func (c *Core) checkSiteHost(ctx context.Context, host string, siteHosts []strin
 	case err != nil:
 		step(apitypes.CheckSkip, "", "", "can't fetch %s: %s", ingest.ScriptPath, err)
 	case resp.header.Get(ingest.ScriptHeader) == "":
-		step(apitypes.CheckFail, apitypes.TrackingWrongHost, fmt.Sprintf("dock analytics enable %s", host),
-			"%s on %s isn't Dock's script (%d): analytics is off for this hostname, or a proxy in front doesn't pass /_dock/a/", ingest.ScriptPath, host, resp.status)
+		step(apitypes.CheckFail, apitypes.TrackingWrongHost, "",
+			"%s on %s isn't Dock's script (%d): the domain isn't routed to Dock yet, a proxy in front doesn't pass /_dock/a/, or the server's routes missed analytics, which `dock analytics enable` for its service applies again", ingest.ScriptPath, host, resp.status)
 	default:
 		step(apitypes.CheckOK, "", "", "%s is Dock's script", ingest.ScriptPath)
 	}

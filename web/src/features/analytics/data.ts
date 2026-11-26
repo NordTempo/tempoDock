@@ -10,7 +10,8 @@ import { api, body, done, list, withOrg } from "../../api/client";
 import { useEventStream } from "../../api/events";
 import type { components } from "../../api/schema";
 import { useAction } from "../../data/mutations";
-import { keys } from "../../data/queries";
+import { keys, servicePath } from "../../data/queries";
+import type { ServiceRef } from "../../data/types";
 import { frames } from "../data/ndjson";
 import { usePageVisible } from "../stats/live";
 import {
@@ -133,24 +134,46 @@ const useAnalyticsAction = <Vars, Data>(
   also: QueryKey[] = [],
 ) => useAction(mutationFn, () => [analyticsKey, ["audit"], ...also]);
 
-export const useEnableHostname = () =>
-  useAnalyticsAction(
-    ({ hostname, site }: { hostname: string; site?: string }) =>
-      body(
-        api.PUT("/api/v1/analytics/hostnames/{hostname}", {
-          params: { path: { hostname } },
-          body: site ? { site } : {},
-        }),
+/** Turns counting on for a service (ADR 0104): its site, new or brought back. */
+export const useCountVisits = () =>
+  useAnalyticsAction((ref: ServiceRef) =>
+    body(
+      api.PUT(
+        "/api/v1/projects/{project}/environments/{environment}/services/{service}/analytics",
+        { params: { path: servicePath(ref) } },
       ),
+    ),
   );
 
-export const useDisableHostname = () =>
-  useAnalyticsAction((hostname: string) =>
+/** Turns counting off for a service: its site is archived with its history. */
+export const useStopCounting = () =>
+  useAnalyticsAction((ref: ServiceRef) =>
     done(
-      api.DELETE("/api/v1/analytics/hostnames/{hostname}", {
-        params: { path: { hostname } },
-      }),
+      api.DELETE(
+        "/api/v1/projects/{project}/environments/{environment}/services/{service}/analytics",
+        { params: { path: servicePath(ref) } },
+      ),
     ),
+  );
+
+/** Hands a site and its history to another service of the project. */
+export const useMoveSite = () =>
+  useAnalyticsAction(
+    ({
+      project,
+      site,
+      to,
+    }: {
+      project: string;
+      site: string;
+      to: Schemas["MoveSiteRequest"];
+    }) =>
+      body(
+        api.POST("/api/v1/projects/{project}/sites/{site}/move", {
+          params: { path: { project, site } },
+          body: to,
+        }),
+      ),
   );
 
 export const useUpdateSite = () =>

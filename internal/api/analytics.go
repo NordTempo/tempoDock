@@ -376,24 +376,29 @@ func registerSites(s *Server, a huma.API) {
 		return nil, s.core.RemoveSiteFunnel(ctx, actor, in.Project, in.Site, in.Funnel)
 	})
 	authed(s, a, huma.Operation{
-		OperationID: "enable-hostname-analytics", Method: http.MethodPut, Path: Prefix + "/analytics/hostnames/{hostname}",
-		Summary: "Turn analytics on for a domain", Tags: tags,
-		Description: "The hostname joins a site: the one named, else its service's other hostnames' site, else a new one named after it. Its pages then need <script src=\"/_dock/a/s.js\" defer></script>. The first site starts the analytics store. Needs deploy.",
-		Errors:      []int{http.StatusConflict},
-	}, func(ctx context.Context, actor core.Actor, in *struct {
-		Hostname string `path:"hostname"`
-		Body     apitypes.EnableAnalyticsRequest
-	}) (*out[apitypes.Site], error) {
-		return reply(s.core.EnableHostnameAnalytics(ctx, actor, in.Hostname, in.Body))
+		OperationID: "enable-service-analytics", Method: http.MethodPut, Path: servicePathT + "/analytics",
+		Summary: "Count a service's visits", Tags: tags,
+		Description: "Its domains that don't redirect count for its site (ADR 0104): the one it had before, with that history, else a new one named after it. Its pages then need <script src=\"/_dock/a/s.js\" defer></script>. The first site starts the analytics store. Needs deploy.",
+	}, func(ctx context.Context, actor core.Actor, in *ServicePath) (*out[apitypes.Site], error) {
+		return reply(s.core.EnableServiceAnalytics(ctx, actor, in.ref()))
 	})
 	authed(s, a, huma.Operation{
-		OperationID: "disable-hostname-analytics", Method: http.MethodDelete, Path: Prefix + "/analytics/hostnames/{hostname}",
-		Summary: "Turn analytics off for a domain", Tags: tags,
-		Description: "The site keeps its history; one left without hostnames is archived. Needs deploy.",
+		OperationID: "disable-service-analytics", Method: http.MethodDelete, Path: servicePathT + "/analytics",
+		Summary: "Stop counting a service's visits", Tags: tags,
+		Description: "Its site is archived with its history, which comes back when counting is turned on again. Needs deploy.",
+	}, func(ctx context.Context, actor core.Actor, in *ServicePath) (*struct{}, error) {
+		return nil, s.core.DisableServiceAnalytics(ctx, actor, in.ref())
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "move-site", Method: http.MethodPost, Path: sitesPath + "/{site}/move",
+		Summary: "Move a site to another service", Tags: tags,
+		Description: "Hands the site, with its history, settings, goals and funnels, to a service that doesn't count visits yet, such as one that replaced the site's own; the site's old service stops counting. Needs deploy on both environments.",
+		Errors:      []int{http.StatusConflict},
 	}, func(ctx context.Context, actor core.Actor, in *struct {
-		Hostname string `path:"hostname"`
-	}) (*struct{}, error) {
-		return nil, s.core.DisableHostnameAnalytics(ctx, actor, in.Hostname)
+		SitePath
+		Body apitypes.MoveSiteRequest
+	}) (*out[apitypes.Site], error) {
+		return reply(s.core.MoveSite(ctx, actor, in.Project, in.Site, in.Body))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "get-analytics-defaults", Method: http.MethodGet, Path: Prefix + "/analytics/defaults",

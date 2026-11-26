@@ -161,10 +161,16 @@ privacy-policy text to copy. This is not legal advice.
 ```
 
 An operator picks the server the analytics store runs on first
-(`dock analytics server`). Then any domain can join a site:
+(`dock analytics server`). Then a service counts its visits: every
+verified domain of it that doesn't redirect, including ones added later,
+counts for its site, named after its custom domain (or the service, with
+none; `dock analytics sites` lists them). One service's domains are told
+apart inside the site with the Domains breakdown or a `hostname` filter.
+Below, web's site is `shop`.
 
 ```sh
-dock analytics enable shop.example.com   # count its visits
+dock analytics enable -s web             # count web's visits
+dock analytics move shop --to web-v2     # hand the site and its history to a new service
 dock analytics stats shop                # visitors, pages, sources
 dock analytics errors shop               # browser errors, grouped
 dock analytics vitals shop               # LCP, INP, CLS at p75

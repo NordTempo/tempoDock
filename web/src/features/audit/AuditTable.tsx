@@ -50,6 +50,7 @@ const words: Record<string, readonly [label: string, past: string]> = {
   "analytics.replay_view": ["watch replay", "watched a replay of"],
   "analytics.server": ["place analytics store", "put the analytics store on"],
   "analytics.site": ["change site", "changed"],
+  "analytics.site_move": ["move site", "moved"],
   "backup.check": ["start backup check", "started checking"],
   "backup.check_failed": ["backup check failed", "failed the check of"],
   "backup.checked": ["backups checked", "checked"],

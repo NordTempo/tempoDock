@@ -66,10 +66,10 @@ function Sites() {
       <Page width={view === "tiles" ? "max-w-none" : undefined}>
         {sites.length === 0 ? (
           <p className="text-mut">
-            No site counts visits yet. Turn counting on for a domain on its
-            service's Domains tab, or with{" "}
+            No site counts visits yet. Turn counting on for a service in its
+            Settings › Analytics, or with{" "}
             <code className="font-mono text-fg">
-              dock analytics enable &lt;hostname&gt;
+              dock analytics enable -s &lt;service&gt;
             </code>
             .
           </p>
@@ -85,9 +85,10 @@ function Sites() {
 }
 
 /**
- * Projects with no site: analytics is off for them. Turning it on is a
- * domain's switch, so each links to the first service with a domain of
- * its own (generated ones count too). The table keeps the default page
+ * Projects with no site: analytics is off for them. Each links to the
+ * Analytics section of a service with a domain, one whose domain would
+ * count now (verified, no redirect) first: a service without one has
+ * nothing to count. The table keeps the default page
  * width (1400px less its padding) when the tiles above run wider.
  */
 function WithoutAnalytics({ counted }: { counted: Set<string> }) {
@@ -107,7 +108,16 @@ function WithoutAnalytics({ counted }: { counted: Set<string> }) {
               const services = (overviews.get(p.name) ?? []).flatMap(
                 (e) => e.services ?? [],
               );
+              // One whose domain would count now first: verified, no redirect.
               const withDomain =
+                services.find((s) =>
+                  s.domains?.some(
+                    (d) => d.verified && !d.redirect_to && !d.generated,
+                  ),
+                ) ??
+                services.find((s) =>
+                  s.domains?.some((d) => d.verified && !d.redirect_to),
+                ) ??
                 services.find((s) => s.domains?.some((d) => !d.generated)) ??
                 services.find((s) => s.domains?.length);
               return (
@@ -119,9 +129,9 @@ function WithoutAnalytics({ counted }: { counted: Set<string> }) {
                       <Link
                         to="/$org/$project/$environment/$service/settings"
                         params={{ org, ...serviceRef(withDomain.service) }}
-                        hash="domains"
+                        hash="analytics"
                         className="btn sm"
-                        title={`Opens the domains of ${withDomain.service.name}, ${p.name}'s service with a domain; turn counting on there`}
+                        title={`Opens Settings › Analytics of ${withDomain.service.name}, ${p.name}'s service with a domain; turn counting on there`}
                       >
                         Turn on for {p.name}
                       </Link>

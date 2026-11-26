@@ -656,7 +656,7 @@ func TestAnalyticsTools(t *testing.T) {
 	if _, err := f.core.AddDomain(ctx, sys, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.core.EnableHostnameAnalytics(ctx, sys, "shop.example.com", apitypes.EnableAnalyticsRequest{}); err != nil {
+	if _, err := f.core.EnableServiceAnalytics(ctx, sys, web); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.core.AddSiteGoal(ctx, sys, "shop", "shop.example.com", apitypes.CreateGoalRequest{Name: "Signup",
