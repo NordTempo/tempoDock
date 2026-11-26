@@ -245,7 +245,8 @@ type ScanningSettings struct {
 	Enabled bool `json:"enabled"`
 	// RemoveDatabase, turning scanning off, also removes every builder's
 	// vulnerability database (3.4 GB each); turning it on again
-	// downloads it (ADR 0101).
+	// downloads it, or with [scan] offline an operator imports one (ADR
+	// 0101).
 	RemoveDatabase bool `json:"remove_database,omitempty"`
 }
 

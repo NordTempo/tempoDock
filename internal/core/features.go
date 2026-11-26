@@ -124,16 +124,26 @@ func (c *Core) SetAnalytics(ctx context.Context, a Actor, req apitypes.Analytics
 	}
 	if req.Enabled {
 		if cl, _ := c.analyticsClient(); cl == nil {
-			if err := c.enableAnalytics(ctx, a.Name, nil); err != nil {
+			if err := c.enableAnalytics(ctx, a.Name, nil, false); err != nil {
 				return apitypes.AnalyticsStatus{}, err
 			}
 			c.audit(ctx, a.platform(), "analytics.on", nil, nil, "analytics", "turned Dock Analytics on")
 		}
 		return c.AnalyticsStatus(ctx, a)
 	}
+	c.analytics.switching.Lock()
+	defer c.analytics.switching.Unlock()
 	cl, serverID := c.analyticsClient()
 	if cl == nil {
-		return c.AnalyticsStatus(ctx, a) // off already, or never on
+		// Never on, or off already: recorded, so a site's first domain
+		// doesn't turn it on.
+		if !c.analyticsOff() {
+			if err := c.recordAnalyticsOff(ctx, a); err != nil {
+				return apitypes.AnalyticsStatus{}, err
+			}
+			c.audit(ctx, a.platform(), "analytics.off", nil, nil, "analytics", "turned Dock Analytics off before it ran")
+		}
+		return c.AnalyticsStatus(ctx, a)
 	}
 	c.analytics.mu.Lock()
 	busy := c.analytics.starting || c.analytics.moving != nil || c.analytics.restoring
@@ -154,20 +164,42 @@ func (c *Core) SetAnalytics(ctx context.Context, a Actor, req apitypes.Analytics
 	if err := stop(rctx, node.StoreAnalytics); err != nil {
 		return apitypes.AnalyticsStatus{}, fmt.Errorf("stop the analytics store: %w", c.nodeErr(serverID, err))
 	}
-	if err := c.store.SetAnalyticsDisabled(ctx, store.SetAnalyticsDisabledParams{UpdatedBy: a.Name, UpdatedAt: now()}); err != nil {
+	if err := c.recordAnalyticsOff(ctx, a); err != nil {
 		return apitypes.AnalyticsStatus{}, err
 	}
 	c.analytics.mu.Lock()
 	if c.analytics.runCancel != nil {
 		c.analytics.runCancel() // ends the forwarders' tails
 	}
-	c.analytics.client, c.analytics.storeErr, c.analytics.off = nil, "", true
+	c.analytics.client, c.analytics.storeErr = nil, ""
 	c.analytics.mu.Unlock()
 	c.wakeForwarders()
-	c.pushAnalyticsToAll(ctx) // no salts: the ingests keep nothing
 	c.audit(ctx, a.platform(), "analytics.off", nil, nil, "analytics", "turned Dock Analytics off; "+what)
 	c.publishAnalytics()
 	return c.AnalyticsStatus(ctx, a)
+}
+
+// recordAnalyticsOff stores that an operator turned analytics off, making
+// the settings row if analytics never ran, and withholds the servers'
+// salts (analyticsConfig). The caller holds analytics.switching.
+func (c *Core) recordAnalyticsOff(ctx context.Context, a Actor) error {
+	sealed, err := c.box.Seal([]byte(newAnalyticsToken()), analyticsTokenAAD)
+	if err != nil {
+		return err
+	}
+	t := now()
+	// A no-op when the row exists; its token and server stay.
+	if err := c.store.CreateAnalyticsSettings(ctx, store.CreateAnalyticsSettingsParams{Token: sealed, UpdatedBy: a.Name, UpdatedAt: t}); err != nil {
+		return err
+	}
+	if err := c.store.SetAnalyticsDisabled(ctx, store.SetAnalyticsDisabledParams{UpdatedBy: a.Name, UpdatedAt: t}); err != nil {
+		return err
+	}
+	c.analytics.mu.Lock()
+	c.analytics.off = true
+	c.analytics.mu.Unlock()
+	c.pushAnalyticsToAll(ctx) // no salts: the ingests keep nothing
+	return nil
 }
 
 // removeScanDatabases removes every online builder's vulnerability

@@ -641,7 +641,7 @@ moment one starts.`,
 			sub.Long = `Stop scanning: a running scan stops at once and none starts; findings
 already made stay. --remove-database also removes every builder's
 vulnerability database (3.4 GB each), which ` + "`dock scanning on`" + ` downloads
-again (ADR 0101).`
+again; with [scan] offline, import one again with ` + "`dock scanning import`" + ` (ADR 0101).`
 			sub.Flags().BoolVar(&removeDatabase, "remove-database", false, "also remove every builder's vulnerability database (3.4 GB each)")
 		}
 		cmd.AddCommand(sub)

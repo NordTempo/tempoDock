@@ -3,7 +3,7 @@
 Status: accepted (Saile picked mock A on 2026-11-26, Postplan
 `j712y3gquqao`). Amends [0037](0037-analytics.md) (analytics can be
 turned off), [0074](0074-image-vulnerability-scanning.md) (scanning off
-can remove its database) and [0075](0075-otlp-tracing.md) (tracing's
+can remove its database) and [0075](0075-tracing-over-otlp.md) (tracing's
 switch moves to the Features page too).
 
 ## Context
@@ -27,7 +27,7 @@ three different ways:
 | On | Switches at once: scanning starts its worker (and downloads a database a builder doesn't have); analytics runs its store on the analytics server again, on the data it kept, and the servers' ingests get their salts back; tracing starts its trace store |
 | Off | Asks once. Scanning: keep or remove every builder's database (`PUT /scanning {remove_database}`, `dock scanning off --remove-database`). Analytics: keep or remove the store's data (`PUT /analytics/enabled {remove_data}`, `dock analytics off [--remove-data]`). Tracing: its spans always go with the trace store, as before |
 | Analytics off | The store's container stops (node op `stop-analytics-store`, protocol 35; its volume and binary stay) or is removed with its data. The servers' ingests get no salts, so they keep nothing: the sites' script still loads and counts nothing. A site's first domain no longer turns analytics on (refused, naming the switch) until an operator does; `analytics_settings.turned_off` (migration 0130) tells that apart from never on, since tracing makes the settings row too |
-| Scanning off | Stops a running scan and starts none, as before; with the database removed (`pruneScanDatabase`), turning it on downloads it again before the next scan |
+| Scanning off | Stops a running scan and starts none, as before; with the database removed (`pruneScanDatabase`), turning it on downloads it again before the next scan, or with `[scan] offline` waits for an operator to import one (`dock scanning import`) |
 | Builds | Not a feature here: whether a server builds is its own setting (`dock server update --no-builder`), and BuildKit already stops when idle ([#498](https://github.com/NordTempo/tempoDock/pull/498)) |
 
 ## Consequences

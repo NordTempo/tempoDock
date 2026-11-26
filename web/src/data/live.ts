@@ -12,6 +12,7 @@ import { alertKeys, applyAlertEvent } from "../features/alerts/data";
 import { backupSettingsKey } from "../features/backups/settings";
 import { applyRedirectEvent, cloudflareKey } from "../features/cloudflare/data";
 import { applyEmailEvent } from "../features/console/email";
+import { featuresKey } from "../features/console/features";
 import { applyScanEvent } from "../features/images/data";
 import { applyJobEvent, applyJobRunEvent } from "../features/jobs/data";
 import { applyMoveEvent } from "../features/move/data";
@@ -328,8 +329,9 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       // Only operators get these: a server's disk was read again.
       if (event.disk) {
         queryClient.setQueryData(diskKey(event.disk.server), event.disk);
-        // Each org's volumes come from these readings.
+        // Each org's volumes and the features' disk come from these readings.
         queryClient.invalidateQueries({ queryKey: ["console", "orgs"] });
+        queryClient.invalidateQueries({ queryKey: featuresKey });
       }
       return;
     case "analytics":
@@ -337,6 +339,7 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       // started or failed.
       queryClient.invalidateQueries({ queryKey: ["analytics", "status"] });
       queryClient.invalidateQueries({ queryKey: ["analytics", "tracing"] });
+      queryClient.invalidateQueries({ queryKey: featuresKey });
       return;
     case "environment_lock":
       // Locked, unlocked or opened for a while (ADR 0044).
@@ -773,6 +776,9 @@ function invalidateForAudit(
   )
     invalidate(cloudflareKey);
   if (kind === "analytics") invalidateForAnalytics(queryClient, audit);
+  // A feature turned on or off, by anyone (ADR 0101).
+  if (kind === "analytics" || kind === "tracing" || kind === "scanning")
+    invalidate(featuresKey);
   // A domain added or removed may carry a site along or leave it.
   if (kind === "domain" && audit.project)
     invalidate(["analytics", "sites", audit.project]);

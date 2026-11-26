@@ -937,7 +937,8 @@ servers it runs on, its memory now (or at most) and its data on disk, and
 switches it on and off ([ADR 0101](../decisions/0101-features-on-and-off.md)).
 Off stops its containers and jobs at once and asks whether to keep its
 data: scanning's vulnerability database (3.4 GB on each builder,
-downloaded again when turned on) or analytics' events, replays and
+downloaded again when turned on; with `[scan] offline`, import one again
+with `dock scanning import FILE`) or analytics' events, replays and
 errors. Tracing's spans always go with it. While analytics is off the
 servers keep no events, and adding a site doesn't turn it back on.
 

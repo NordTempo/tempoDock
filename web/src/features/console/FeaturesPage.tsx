@@ -1,6 +1,7 @@
 import { useState } from "react";
+import { CliHint } from "../../ui/CliHint";
 import { size } from "../../ui/format";
-import { Act, Button, ErrorText, Page, PageBar, Panel } from "../../ui/kit";
+import { Confirm, ErrorText, Page, PageBar, Panel } from "../../ui/kit";
 import {
   type Feature,
   type FeatureKey,
@@ -119,7 +120,10 @@ export function FeaturesPage() {
   );
 }
 
-/** One feature's row, and under it the question off asks. */
+/**
+ * One feature's row, and the question off asks: the kit's Confirm, with
+ * the choice to keep or remove the feature's data.
+ */
 function FeatureRows({
   feature: f,
   asking,
@@ -144,47 +148,57 @@ function FeatureRows({
   const a = about[f.key];
   const disk = f.disk_bytes ?? null;
   return (
-    <>
-      <tr>
-        <td className="whitespace-nowrap">{a.label}</td>
-        <td className="font-mono whitespace-nowrap text-sec">
-          {f.servers?.join(", ") || "·"}
-        </td>
-        <td className="text-right font-mono whitespace-nowrap">
-          {f.enabled && f.memory_bytes != null
-            ? size(f.memory_bytes)
-            : `up to ${size(f.memory_limit_bytes)}`}
-        </td>
-        <td className="text-right font-mono whitespace-nowrap">
-          {disk == null ? <span className="text-faint">·</span> : size(disk)}
-        </td>
-        <td>
+    <tr>
+      <td className="whitespace-nowrap">{a.label}</td>
+      <td className="font-mono whitespace-nowrap text-sec">
+        {f.servers?.join(", ") || "·"}
+      </td>
+      <td className="text-right font-mono whitespace-nowrap">
+        {f.enabled && f.memory_bytes != null
+          ? size(f.memory_bytes)
+          : `up to ${size(f.memory_limit_bytes)}`}
+      </td>
+      <td className="text-right font-mono whitespace-nowrap">
+        {disk == null ? <span className="text-faint">·</span> : size(disk)}
+      </td>
+      <td>
+        <CliHint cli={a.cli(!f.enabled, false)} className="act">
           <Switch
             label={a.label}
             on={f.enabled}
             disabled={pending || asking}
             onClick={onSwitch}
           />
-        </td>
-        <td className="text-mut">
-          {f.enabled ? a.detail : "off"}
-          {!asking && error && (
-            <>
-              {" "}
-              <ErrorText error={error} />
-            </>
-          )}
-        </td>
-      </tr>
-      {asking && (
-        <tr className="bg-panel">
-          <td colSpan={6} className="py-3">
-            <div className="mb-1.5 font-medium">
-              Turn {a.label.toLowerCase()} off?
-            </div>
+        </CliHint>
+      </td>
+      <td className="text-mut">
+        {f.enabled ? a.detail : "off"}
+        {!asking && error && (
+          <>
+            {" "}
+            <ErrorText error={error} />
+          </>
+        )}
+        {asking && (
+          <Confirm
+            title={`Turn ${a.label.toLowerCase()} off?`}
+            action={
+              remove && disk != null
+                ? `Turn off and remove ${size(disk)}`
+                : "Turn off"
+            }
+            cli={a.cli(false, remove)}
+            danger
+            pending={pending}
+            error={error}
+            onConfirm={onOff}
+            onCancel={onCancel}
+          >
             {a.data ? (
-              <fieldset className="flex flex-col gap-1 text-sec">
-                <legend className="sr-only">What happens to its data</legend>
+              <fieldset className="flex flex-col gap-1.5">
+                <legend className="mb-1">
+                  Its containers and jobs stop now, which frees their memory.
+                </legend>
                 <label className="flex items-center gap-2">
                   <input
                     type="radio"
@@ -210,31 +224,12 @@ function FeatureRows({
                 </label>
               </fieldset>
             ) : (
-              <p className="text-sec">{a.gone}.</p>
+              <p>Its trace store stops now, and {a.gone}.</p>
             )}
-            <div className="mt-2.5 flex flex-wrap items-center gap-2">
-              <Act
-                small
-                danger
-                cli={a.cli(false, remove)}
-                disabled={pending}
-                onClick={onOff}
-              >
-                {pending
-                  ? "Turning off…"
-                  : remove && disk != null
-                    ? `Turn off and remove ${size(disk)}`
-                    : "Turn off"}
-              </Act>
-              <Button small onClick={onCancel}>
-                Cancel
-              </Button>
-              <ErrorText error={error} />
-            </div>
-          </td>
-        </tr>
-      )}
-    </>
+          </Confirm>
+        )}
+      </td>
+    </tr>
   );
 }
 

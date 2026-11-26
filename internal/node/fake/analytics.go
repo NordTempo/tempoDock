@@ -39,6 +39,12 @@ type fakeAnalytics struct {
 	traces     *node.AnalyticsStoreSpec
 	traceStore *fakestore.Traces
 	traceLn    net.Listener
+	// keptStore and keptTraces are stores StopAnalyticsStore stopped with
+	// their data, under the token they ran with: an ensure with that token
+	// runs them again.
+	keptStore  *fakestore.Store
+	keptTraces *fakestore.Traces
+	keptToken  map[node.StoreKind]string
 	// demo, demoSpans and demoMetrics append DOCK_FAKE_SPOOL's,
 	// DOCK_FAKE_SPANS's and DOCK_FAKE_METRICS's lines once, on the first
 	// tail of their spool.
@@ -248,7 +254,8 @@ func (r *Runtime) AckSpool(_ context.Context, which node.Spool, position uint64,
 
 // EnsureAnalyticsStore implements node.Analytics: it records spec and
 // runs an in-memory store (fakestore) of spec's kind with spec's token, on
-// a loopback port. A new token starts a new, empty store.
+// a loopback port: the one StopAnalyticsStore kept, with its data, if it
+// ran with that token. A new token starts a new, empty store.
 func (r *Runtime) EnsureAnalyticsStore(_ context.Context, spec node.AnalyticsStoreSpec) error {
 	if spec.Binary == "" || len(spec.SHA256) != 64 {
 		return errors.New("the analytics store needs its binary and its SHA-256")
@@ -271,7 +278,11 @@ func (r *Runtime) EnsureAnalyticsStore(_ context.Context, spec node.AnalyticsSto
 				a.mu.Unlock()
 				return err
 			}
-			ts := fakestore.NewTraces(spec.Token)
+			ts := a.keptTraces
+			if ts == nil || a.keptToken[node.StoreTraces] != spec.Token {
+				ts = fakestore.NewTraces(spec.Token)
+			}
+			a.keptTraces = nil
 			go func() { _ = http.Serve(ln, ts.Handler()) }()
 			a.traceStore, a.traceLn = ts, ln
 		}
@@ -286,7 +297,11 @@ func (r *Runtime) EnsureAnalyticsStore(_ context.Context, spec node.AnalyticsSto
 				a.mu.Unlock()
 				return err
 			}
-			fs := fakestore.New(spec.Token)
+			fs := a.keptStore
+			if fs == nil || a.keptToken[node.StoreAnalytics] != spec.Token {
+				fs = fakestore.New(spec.Token)
+			}
+			a.keptStore = nil
 			go func() { _ = http.Serve(ln, fs.Handler()) }()
 			a.fakeStore, a.storeLn = fs, ln
 		}
@@ -307,8 +322,10 @@ func (r *Runtime) RemoveAnalyticsStore(_ context.Context, kind node.StoreKind) e
 	if kind == node.StoreTraces {
 		op = "remove-trace-store"
 		r.analytics.stopTraces()
+		r.analytics.keptTraces = nil
 	} else {
 		r.analytics.stopStore()
+		r.analytics.keptStore = nil
 	}
 	r.analytics.mu.Unlock()
 	r.mu.Lock()
@@ -318,18 +335,28 @@ func (r *Runtime) RemoveAnalyticsStore(_ context.Context, kind node.StoreKind) e
 }
 
 // StopAnalyticsStore implements node.Analytics, recorded as
-// "stop-analytics-store" or "stop-trace-store". The fake keeps no data
-// apart from the store, so it stops it the same way.
+// "stop-analytics-store" or "stop-trace-store": the store stops answering
+// and keeps its data for the next ensure with its token.
 func (r *Runtime) StopAnalyticsStore(_ context.Context, kind node.StoreKind) error {
 	op := "stop-analytics-store"
-	r.analytics.mu.Lock()
+	a := &r.analytics
+	a.mu.Lock()
+	if a.keptToken == nil {
+		a.keptToken = map[node.StoreKind]string{}
+	}
 	if kind == node.StoreTraces {
 		op = "stop-trace-store"
-		r.analytics.stopTraces()
+		if a.traces != nil {
+			a.keptTraces, a.keptToken[kind] = a.traceStore, a.traces.Token
+		}
+		a.stopTraces()
 	} else {
-		r.analytics.stopStore()
+		if a.store != nil {
+			a.keptStore, a.keptToken[kind] = a.fakeStore, a.store.Token
+		}
+		a.stopStore()
 	}
-	r.analytics.mu.Unlock()
+	a.mu.Unlock()
 	r.mu.Lock()
 	r.ops = append(r.ops, op)
 	r.mu.Unlock()

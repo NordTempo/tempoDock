@@ -350,7 +350,7 @@ func (c *Core) SetAnalyticsServer(ctx context.Context, a Actor, req apitypes.Set
 		} else if err != nil && !store.IsNotFound(err) {
 			return apitypes.AnalyticsStatus{}, err
 		}
-		if err := c.enableAnalytics(ctx, a.Name, id); err != nil {
+		if err := c.enableAnalytics(ctx, a.Name, id, false); err != nil {
 			return apitypes.AnalyticsStatus{}, err
 		}
 		c.audit(ctx, a, "analytics.server", nil, nil, target.Name, "analytics store on "+target.Name)

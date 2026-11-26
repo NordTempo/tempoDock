@@ -77,6 +77,10 @@ type analyticsState struct {
 	alerts analyticsAlerts
 	// public are the public dashboards' hostnames (analytics_public.go).
 	public publicIndex
+	// switching is held through turning analytics on or off, so a site's
+	// first domain can't turn it on again while an operator turns it off
+	// (enableAnalytics, SetAnalytics). Taken before mu, never under it.
+	switching sync.Mutex
 	// off: an operator turned analytics off (ADR 0101). The ingests get no
 	// salts, so they keep nothing, and a site's first domain doesn't turn
 	// it on again.
@@ -123,17 +127,19 @@ func (c *Core) startAnalytics(ctx context.Context) error {
 	} else {
 		c.log.Error("analytics: read the public dashboards; they aren't served until a site changes", "err", err)
 	}
-	c.rotateSalts(ctx, now())
+	// Whether an operator turned analytics off comes first: the salts
+	// handed out next are withheld then (analyticsConfig).
 	st, err := c.store.GetAnalyticsSettings(ctx)
-	if store.IsNotFound(err) {
-		return nil
-	}
-	if err != nil {
+	if err != nil && !store.IsNotFound(err) {
 		return err
 	}
 	c.analytics.mu.Lock()
-	c.analytics.off = st.TurnedOff
+	c.analytics.off = err == nil && st.TurnedOff
 	c.analytics.mu.Unlock()
+	c.rotateSalts(ctx, now())
+	if store.IsNotFound(err) {
+		return nil
+	}
 	if st.TracesEnabled {
 		if err := c.runTraces(st); err != nil {
 			return err
@@ -656,20 +662,27 @@ func (c *Core) EnableAnalytics(ctx context.Context, a Actor) error {
 	if err := a.requirePlatform(PlatformSettings, "turning analytics on"); err != nil {
 		return err
 	}
-	return c.enableAnalytics(ctx, a.Name, nil)
+	return c.enableAnalytics(ctx, a.Name, nil, false)
 }
 
 // enableAnalytics is EnableAnalytics without the permission check, for
-// operations that enable it on the way (the first site). A first enable
-// puts the store on serverID (nil: the control plane's server); a later
-// one changes nothing. Turned on again after it was turned off, the store
-// runs on its server again, on the data it kept, and the ingests get
-// their salts back.
-func (c *Core) enableAnalytics(ctx context.Context, by string, serverID *int64) error {
+// operations that enable it on the way: the first site (bySite), which
+// is refused while an operator has turned analytics off, and moving the
+// store. A first enable puts the store on serverID (nil: the control
+// plane's server); a later one changes nothing. Turned on again after it
+// was turned off, the store runs on its server again, on the data it
+// kept, and the ingests get their salts back, even when the start fails
+// part way.
+func (c *Core) enableAnalytics(ctx context.Context, by string, serverID *int64, bySite bool) error {
+	c.analytics.switching.Lock()
+	defer c.analytics.switching.Unlock()
 	if cl, _ := c.analyticsClient(); cl != nil {
 		return nil
 	}
 	wasOff := c.analyticsOff()
+	if wasOff && bySite {
+		return errAnalyticsTurnedOff
+	}
 	sealed, err := c.box.Seal([]byte(newAnalyticsToken()), analyticsTokenAAD)
 	if err != nil {
 		return err
@@ -688,14 +701,16 @@ func (c *Core) enableAnalytics(ctx context.Context, by string, serverID *int64) 
 	c.analytics.mu.Lock()
 	c.analytics.off = false
 	c.analytics.mu.Unlock()
-	if err := c.runAnalytics(ctx, st); err != nil {
-		return err
-	}
 	if wasOff {
-		c.pushAnalyticsToAll(ctx)
+		// The salts again, whatever happens to the start below.
+		defer c.pushAnalyticsToAll(context.WithoutCancel(ctx))
 	}
-	return nil
+	return c.runAnalytics(ctx, st)
 }
+
+// errAnalyticsTurnedOff refuses turning analytics on by the way while an
+// operator has turned it off.
+var errAnalyticsTurnedOff = conflict("Dock Analytics is turned off on this platform; a platform operator turns it on in Console › Features (`dock analytics on`)")
 
 // overBudget logs the sites a write took past their budget for the day
 // (analytics.StoreLimits): the store names each once a day, so this is

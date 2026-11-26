@@ -417,7 +417,7 @@ func (c *Core) EnableHostnameAnalytics(ctx context.Context, a Actor, hostname st
 		return apitypes.Site{}, invalid("%s redirects to %s; turn analytics on for that domain instead", d.Hostname, d.RedirectTo)
 	}
 	if c.analyticsOff() {
-		return apitypes.Site{}, conflict("Dock Analytics is turned off on this platform; a platform operator turns it on in Console › Features (`dock analytics on`)")
+		return apitypes.Site{}, errAnalyticsTurnedOff
 	}
 	if sh, err := c.store.GetSiteHostname(ctx, d.Hostname); err == nil {
 		if site, err := c.store.GetSite(ctx, sh.SiteID); err == nil && site.ArchivedAt == nil {
@@ -458,7 +458,9 @@ func (c *Core) EnableHostnameAnalytics(ctx context.Context, a Actor, hostname st
 	if err != nil {
 		return apitypes.Site{}, err
 	}
-	if err := c.enableAnalytics(ctx, a.Name, nil); err != nil {
+	// Checked again under the switch: an operator may have turned it off
+	// since.
+	if err := c.enableAnalytics(ctx, a.Name, nil, true); err != nil {
 		return apitypes.Site{}, err
 	}
 	c.analyticsSitesChanged(ctx)

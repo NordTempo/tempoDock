@@ -11,7 +11,9 @@ import { useAction } from "../../data/action";
 export type Feature = components["schemas"]["Feature"];
 export type FeatureKey = Feature["key"];
 
-const featuresKey = ["features"] as const;
+/** The Features page's query; live.ts refetches it when a feature or a
+ * server's disk changes. */
+export const featuresKey = ["features"] as const;
 
 export const featuresQuery = () =>
   queryOptions({
