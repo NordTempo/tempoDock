@@ -78,9 +78,61 @@ old store is removed when that server is back.`,
 			return printAnalytics(g, st)
 		})
 	}
-	cmd.AddCommand(server)
+	cmd.AddCommand(server, newAnalyticsSwitchCmd(g, true), newAnalyticsSwitchCmd(g, false))
 	cmd.AddCommand(newAnalyticsEnableCmd(g), newAnalyticsDisableCmd(g), newAnalyticsSitesCmd(g),
 		newAnalyticsStatsCmd(g), newAnalyticsCheckCmd(g), newAnalyticsErrorsCmd(g), newAnalyticsVitalsCmd(g), newAnalyticsReplaysCmd(g), newAnalyticsGoalsCmd(g), newAnalyticsFunnelsCmd(g), newAnalyticsSiteCmd(g), newAnalyticsDefaultsCmd(g))
+	return cmd
+}
+
+// newAnalyticsSwitchCmd is `dock analytics on` and `dock analytics off`:
+// Dock Analytics for the whole platform (ADR 0101). Per domain it is
+// `dock analytics enable|disable <hostname>`.
+func newAnalyticsSwitchCmd(g *globals, on bool) *cobra.Command {
+	var removeData, yes bool
+	cmd := &cobra.Command{
+		Use:   "on",
+		Args:  cobra.NoArgs,
+		Short: "Turn Dock Analytics on for the platform (operator)",
+		Long: `Run the analytics store again on the analytics server, on the data it
+kept, and have the servers' ingests take events again (ADR 0101).`,
+	}
+	if !on {
+		cmd.Use, cmd.Short = "off", "Turn Dock Analytics off for the platform, keeping or removing its data (operator)"
+		cmd.Long = `Stop the analytics store, which frees its memory, and have the servers'
+ingests keep nothing; sites' pages still load the script, which then
+counts nothing. A domain can't turn analytics on again until an operator
+does (` + "`dock analytics on`" + `). The store's data stays for that, unless
+--remove-data removes it too: every site's events, replays and errors.`
+		cmd.Flags().BoolVar(&removeData, "remove-data", false, "also remove the store's data: every site's events, replays and errors")
+		cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
+	}
+	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		if removeData && !yes {
+			if err := g.io.Confirm("Turn analytics off and remove every site's events, replays and errors for good?", "yes"); err != nil {
+				return err
+			}
+		}
+		s, err := g.connect()
+		if err != nil {
+			return err
+		}
+		st, err := send[apitypes.AnalyticsStatus](cmd.Context(), s, http.MethodPut, apiPrefix+"/analytics/enabled",
+			apitypes.AnalyticsSwitch{Enabled: on, RemoveData: removeData})
+		if err != nil {
+			return err
+		}
+		return g.io.Print(st, func() error {
+			switch {
+			case on:
+				g.io.Successf("Dock Analytics is on; the store runs on %s", st.Server)
+			case removeData:
+				g.io.Successf("Dock Analytics is off; its store and data are removed")
+			default:
+				g.io.Successf("Dock Analytics is off; its data stays on %s for `dock analytics on`", st.Server)
+			}
+			return nil
+		})
+	}
 	return cmd
 }
 

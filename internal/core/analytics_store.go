@@ -67,7 +67,9 @@ func (c *Core) ensureAnalyticsStore(serverID int64) {
 		return
 	}
 	c.analytics.mu.Lock()
-	if c.analytics.starting || c.analytics.moving != nil {
+	// The client again, under the lock turning analytics off takes it
+	// away under (SetAnalytics): a start never begins after that.
+	if c.analytics.starting || c.analytics.moving != nil || c.analytics.client != cl {
 		c.analytics.mu.Unlock()
 		return
 	}
@@ -336,34 +338,56 @@ func (c *Core) SetAnalyticsServer(ctx context.Context, a Actor, req apitypes.Set
 	if !target.Local {
 		id = &target.ID
 	}
+	// Whether analytics runs, and the server it starts on when it doesn't,
+	// are decided under the switch turning it off holds, so a shutdown in
+	// flight is either done (off, its data kept on its server) or hasn't
+	// begun.
+	c.analytics.switching.Lock()
 	cl, old := c.analyticsClient()
-	switch {
-	case cl == nil:
-		// The first time: straight onto the chosen server. Tracing may
-		// have made the settings with another server: the trace store
-		// follows.
-		if prev, err := c.store.GetAnalyticsSettings(ctx); err == nil && c.settingsServer(prev) != target.ID {
-			if err := c.store.SetAnalyticsServer(ctx, store.SetAnalyticsServerParams{ServerID: id, UpdatedBy: a.Name, UpdatedAt: now()}); err != nil {
-				return apitypes.AnalyticsStatus{}, err
-			}
-			c.moveTraceStore(c.settingsServer(prev), target.ID)
-		} else if err != nil && !store.IsNotFound(err) {
-			return apitypes.AnalyticsStatus{}, err
-		}
-		if err := c.enableAnalytics(ctx, a.Name, id); err != nil {
+	if cl == nil {
+		err := c.startAnalyticsOn(ctx, a, target, id)
+		c.analytics.switching.Unlock()
+		if err != nil {
 			return apitypes.AnalyticsStatus{}, err
 		}
 		c.audit(ctx, a, "analytics.server", nil, nil, target.Name, "analytics store on "+target.Name)
-	case old != target.ID:
+		return c.AnalyticsStatus(ctx, a)
+	}
+	c.analytics.switching.Unlock()
+	if old != target.ID {
 		from, err := c.store.GetServer(ctx, old)
 		if err != nil {
 			return apitypes.AnalyticsStatus{}, err
 		}
-		if err := c.startStoreMove(ctx, a, from, target, req.StartEmpty); err != nil {
+		if err := c.startStoreMove(ctx, a, cl, from, target, req.StartEmpty); err != nil {
 			return apitypes.AnalyticsStatus{}, err
 		}
 	}
 	return c.AnalyticsStatus(ctx, a)
+}
+
+// startAnalyticsOn turns analytics on with its store on target (id: nil
+// for the control plane's server), for SetAnalyticsServer while it doesn't
+// run. Turned off, its data may still be on its server, and a store
+// started elsewhere would have it removed as a stray: only its own server
+// is taken. The first time, the store goes straight there; tracing may
+// have made the settings with another server, and the trace store
+// follows. The caller holds analytics.switching.
+func (c *Core) startAnalyticsOn(ctx context.Context, a Actor, target store.Server, id *int64) error {
+	prev, err := c.store.GetAnalyticsSettings(ctx)
+	if err != nil && !store.IsNotFound(err) {
+		return err
+	}
+	switch {
+	case c.analyticsOff() && c.settingsServer(prev) != target.ID:
+		return conflict("analytics is turned off and its data stays on its server; turn it on there first (`dock analytics on`), then move it to %s", target.Name)
+	case err == nil && c.settingsServer(prev) != target.ID:
+		if err := c.store.SetAnalyticsServer(ctx, store.SetAnalyticsServerParams{ServerID: id, UpdatedBy: a.Name, UpdatedAt: now()}); err != nil {
+			return err
+		}
+		c.moveTraceStore(c.settingsServer(prev), target.ID)
+	}
+	return c.enableAnalyticsLocked(ctx, a.Name, id, false)
 }
 
 // settingsServer is the analytics server st names: the control plane's
@@ -375,8 +399,10 @@ func (c *Core) settingsServer(st store.AnalyticsSetting) int64 {
 	return c.localID
 }
 
-// startStoreMove checks a move can run and starts it in the background.
-func (c *Core) startStoreMove(ctx context.Context, a Actor, from, to store.Server, startEmpty bool) error {
+// startStoreMove checks a move can run and starts it in the background:
+// still from the store whose client cl the caller saw, which turning
+// analytics off takes away under the same lock.
+func (c *Core) startStoreMove(ctx context.Context, a Actor, cl *analytics.Client, from, to store.Server, startEmpty bool) error {
 	if !c.online(to.ID) {
 		return errf(apitypes.CodeServerOffline, "server %s is offline; move the analytics store once it is back", to.Name)
 	}
@@ -391,6 +417,12 @@ func (c *Core) startStoreMove(ctx context.Context, a Actor, from, to store.Serve
 	}
 	c.analytics.mu.Lock()
 	switch {
+	case c.analytics.client != cl:
+		// Turned off (or moved) since the caller looked: turning off
+		// takes the client away under this lock, after checking no move
+		// is reserved, so one of the two goes through.
+		c.analytics.mu.Unlock()
+		return conflict("analytics was turned off or moved meanwhile; see `dock analytics`")
 	case c.analytics.moving != nil:
 		m := c.analytics.moving
 		c.analytics.mu.Unlock()

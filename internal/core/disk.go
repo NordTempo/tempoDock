@@ -177,6 +177,14 @@ func (c *Core) readDisk(ctx context.Context, srv store.Server) (apitypes.ServerD
 	return c.diskParts(srv, du, host, registry, names), vols, nil
 }
 
+// The names of the scanner volume's parts, which Features adds up too.
+// The stores' parts are named as in the memory breakdown
+// (node.MemoryAnalyticsStore, node.MemoryTraceStore).
+const (
+	diskPartScanDB        = "vulnerability database"
+	diskPartScanLeftovers = "scanner leftovers"
+)
+
 // diskParts groups a server's disk usage into the console's parts.
 // registry is the registry's storage on this server's disk (the control
 // plane's, while its images aren't in a bucket); names are the server's
@@ -207,9 +215,9 @@ func (c *Core) diskParts(srv store.Server, du node.DiskUsage, host node.HostStat
 		case v.Role == node.VolumeScanDB:
 			scanDB += v.Bytes
 		case v.Role == node.VolumeAnalytics:
-			add(apitypes.DiskDock, "analytics store", "Dock Analytics' events and replays, volume "+v.Name, v.Bytes, 0)
+			add(apitypes.DiskDock, node.MemoryAnalyticsStore, "Dock Analytics' events and replays, volume "+v.Name, v.Bytes, 0)
 		case v.Role == node.VolumeTraces:
-			add(apitypes.DiskDock, "trace store", "spans and app metrics, volume "+v.Name, v.Bytes, 0)
+			add(apitypes.DiskDock, node.MemoryTraceStore, "spans and app metrics, volume "+v.Name, v.Bytes, 0)
 		case strings.HasPrefix(v.Name, backup.LocalVolumePrefix):
 			backups += v.Bytes
 		case strings.HasPrefix(v.Name, snapshotVolumePrefix):
@@ -235,7 +243,7 @@ func (c *Core) diskParts(srv store.Server, du node.DiskUsage, host node.HostStat
 	add(apitypes.DiskImages, "not Dock's", "images other work on the server pulled", du.ImagesOther, 0)
 	add(apitypes.DiskReclaimable, "unused images", "of archived services, out of rollback windows, and Dock's replaced images", du.ImagesReclaimable, du.ImagesReclaimable)
 	leftovers := min(du.ScanLeftovers, scanDB)
-	add(apitypes.DiskReclaimable, "scanner leftovers", "cut-off downloads of the vulnerability database", leftovers, leftovers)
+	add(apitypes.DiskReclaimable, diskPartScanLeftovers, "cut-off downloads of the vulnerability database", leftovers, leftovers)
 	var cacheFree int64
 	if cacheBytes > 0 {
 		if srv.Builder {
@@ -250,7 +258,7 @@ func (c *Core) diskParts(srv store.Server, du node.DiskUsage, host node.HostStat
 		add(apitypes.DiskDock, "data dir", "database, keys, build logs, tool caches", du.DataDir, 0)
 		add(apitypes.DiskDock, "registry", "the image registry's storage dir", registry, 0)
 	}
-	add(apitypes.DiskDock, "vulnerability database", "Grype's database for image scans; downloaded again if removed", scanDB-leftovers, 0)
+	add(apitypes.DiskDock, diskPartScanDB, "Grype's database for image scans; downloaded again if removed", scanDB-leftovers, 0)
 	add(apitypes.DiskDock, "local backups", "restic repository on this server, not off-box", backups, 0)
 	add(apitypes.DiskDock, "volume snapshots", "copies of volumes kept on this server (dock volume snapshot)", snapshots, 0)
 	add(apitypes.DiskDock, "backup tool", "the restic binary backups run", restic, 0)

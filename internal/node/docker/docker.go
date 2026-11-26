@@ -866,9 +866,9 @@ func (r *Runtime) MemoryOwner(ctx context.Context, id string) (node.MemoryPart, 
 	case role == node.RoleBuildKit:
 		return node.MemoryPart{Group: node.MemoryPlatform, Name: "BuildKit"}, nil
 	case role == node.RoleAnalytics:
-		return node.MemoryPart{Group: node.MemoryPlatform, Name: "analytics store"}, nil
+		return node.MemoryPart{Group: node.MemoryPlatform, Name: node.MemoryAnalyticsStore}, nil
 	case role == node.RoleTraces:
-		return node.MemoryPart{Group: node.MemoryPlatform, Name: "trace store"}, nil
+		return node.MemoryPart{Group: node.MemoryPlatform, Name: node.MemoryTraceStore}, nil
 	case role == node.RoleCloudflared:
 		// The same name as dock-cloudflared.service (stats.platformUnits).
 		return node.MemoryPart{Group: node.MemoryPlatform, Name: "cloudflared"}, nil

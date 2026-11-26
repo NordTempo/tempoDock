@@ -129,6 +129,7 @@ type AnalyticsSetting struct {
 	TracesEnabled      bool
 	TracesKeyEpoch     int64
 	TracesKeyRotatedAt *time.Time
+	TurnedOff          bool
 }
 
 type AuditDetail struct {

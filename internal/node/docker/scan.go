@@ -181,11 +181,8 @@ func (r *Runtime) Match(ctx context.Context, req node.MatchRequest, sbom io.Read
 }
 
 // scanDatabaseMemory caps the jobs that write the vulnerability database
-// (download, refresh, import). Unpacking Grype's archive (200 MB packed,
-// 3.4 GB unpacked, 2026-11-11) goes through the page cache the job is
-// charged for: it was killed at 1 GB and passed at 1.25 GB, so 2 GB
-// leaves room for the database to grow. Matches only read it (1 GB).
-const scanDatabaseMemory = 2 << 30
+// (node.ScanDatabaseMemory). Matches only read it (1 GB).
+const scanDatabaseMemory = node.ScanDatabaseMemory
 
 // ScanDatabase implements node.Scanner.
 func (r *Runtime) ScanDatabase(ctx context.Context, req node.ScanDatabaseRequest) (node.ScanDatabase, error) {

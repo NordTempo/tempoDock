@@ -110,6 +110,28 @@ func TestIntegrationAnalyticsStore(t *testing.T) {
 		}
 	}
 
+	// Stopped (analytics turned off with its data kept, ADR 0101), the
+	// container goes and the data stays: started again, the event is there.
+	if err := a.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.cli.ContainerInspect(ctx, a.name, client.ContainerInspectOptions{}); err == nil {
+		t.Error("Stop left the container")
+	}
+	if _, err := e.cli.VolumeInspect(ctx, a.volume, client.VolumeInspectOptions{}); err != nil {
+		t.Fatalf("Stop removed the volume: %v", err)
+	}
+	if err := a.Stop(ctx); err != nil {
+		t.Fatalf("stopping a stopped store: %v", err)
+	}
+	if err := a.Ensure(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+	waitStore(t, c)
+	if h, err := c.Health(ctx); err != nil || h.Events != 1 {
+		t.Fatalf("after a stop and start: %+v, %v; want the event kept", h, err)
+	}
+
 	if err := a.Remove(ctx); err != nil {
 		t.Fatal(err)
 	}

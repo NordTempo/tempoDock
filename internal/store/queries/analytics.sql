@@ -11,7 +11,12 @@ ON CONFLICT (id) DO NOTHING;
 UPDATE analytics_settings SET server_id = ?, updated_by = ?, updated_at = ? WHERE id = 1;
 
 -- name: SetAnalyticsEnabled :exec
-UPDATE analytics_settings SET enabled = 1, updated_by = ?, updated_at = ? WHERE id = 1;
+UPDATE analytics_settings SET enabled = 1, turned_off = 0, updated_by = ?, updated_at = ? WHERE id = 1;
+
+-- SetAnalyticsDisabled turns analytics off (ADR 0101); the row, its
+-- token and server stay for turning it on again.
+-- name: SetAnalyticsDisabled :exec
+UPDATE analytics_settings SET enabled = 0, turned_off = 1, updated_by = ?, updated_at = ? WHERE id = 1;
 
 -- SetTracesEnabled turns the trace store on or off.
 -- name: SetTracesEnabled :exec

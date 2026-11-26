@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"net/netip"
 	"slices"
 	"strconv"
@@ -416,10 +417,26 @@ func (c *Core) EnableHostnameAnalytics(ctx context.Context, a Actor, hostname st
 	if d.RedirectTo != "" {
 		return apitypes.Site{}, invalid("%s redirects to %s; turn analytics on for that domain instead", d.Hostname, d.RedirectTo)
 	}
+	if c.analyticsOff() {
+		return apitypes.Site{}, errAnalyticsTurnedOff
+	}
 	if sh, err := c.store.GetSiteHostname(ctx, d.Hostname); err == nil {
 		if site, err := c.store.GetSite(ctx, sh.SiteID); err == nil && site.ArchivedAt == nil {
 			if site.EnvironmentID != es.env.ID {
 				return apitypes.Site{}, conflict("%s collects for site %s in another environment; turn it off there first with `dock analytics disable %s`", d.Hostname, site.Name, d.Hostname)
+			}
+			if cl, _ := c.analyticsClient(); cl == nil {
+				// An earlier call joined it but stopped before turning
+				// analytics on (an operator turned it off meanwhile):
+				// finish that now.
+				if err := c.enableAnalytics(ctx, a.Name, nil, true); err != nil {
+					return apitypes.Site{}, err
+				}
+				c.analyticsSitesChanged(ctx)
+				if err := c.applyRoutes(ctx, d.ServerID); err != nil {
+					c.log.Error("apply routes after turning analytics on", "domain", d.Hostname, "err", err)
+				}
+				c.audit(ctx, a, "analytics.enable", &es.project, &es.env, d.Hostname, "analytics on for "+d.Hostname+" (site "+site.Name+")")
 			}
 			return c.GetSite(ctx, a, es.project.Name, site.Name)
 		}
@@ -455,7 +472,15 @@ func (c *Core) EnableHostnameAnalytics(ctx context.Context, a Actor, hostname st
 	if err != nil {
 		return apitypes.Site{}, err
 	}
-	if err := c.enableAnalytics(ctx, a.Name, nil); err != nil {
+	// Checked again under the switch: an operator may have turned it off
+	// since. Then the hostname leaves its site again, so a retry once
+	// analytics is on goes the whole way.
+	if err := c.enableAnalytics(ctx, a.Name, nil, true); err != nil {
+		if errors.Is(err, errAnalyticsTurnedOff) {
+			if rerr := c.DisableHostnameAnalytics(context.WithoutCancel(ctx), a, d.Hostname); rerr != nil {
+				c.log.Error("analytics: take back a hostname analytics turned off for", "domain", d.Hostname, "err", rerr)
+			}
+		}
 		return apitypes.Site{}, err
 	}
 	c.analyticsSitesChanged(ctx)

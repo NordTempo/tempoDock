@@ -362,7 +362,7 @@ running).
 | `[traces] service_day_spans`, `org_day_spans`, `error_day_spans`, `max_gb` | `2000000`, `5000000`, `200000`, `4` | Control plane: spans a service and an org keep a day; past either only spans with an error are kept, up to `error_day_spans` a service. `max_gb` caps the trace store's data; past it the oldest day goes early, first for an organization that holds more than half of it, and with only today left the organizations at an equal share or more keep no new spans until it fits again |
 | `[traces] metric_series`, `metric_names` | `2000`, `200` | Control plane: the app metrics' series and metric names a service keeps a day; past either its new series are cut (the series it already sent go on) |
 | `[scan] syft_image`, `grype_image` | `anchore/syft:v1.57.1@sha256:0321…`, `anchore/grype:v0.121.3@sha256:1311…` | The image scanners, pinned by digest ([ADR 0074](../decisions/0074-image-vulnerability-scanning.md)). Builders pull them the first time they scan |
-| `[scan] memory_mb`, `quiet_seconds` | `1024`, `60` | Each scan job's memory limit, and how long no build, deploy, wake or move may have run before a scan starts. `dock scanning off` turns scanning off |
+| `[scan] memory_mb`, `quiet_seconds` | `1024`, `60` | Each scan job's memory limit, and how long no build, deploy, wake or move may have run before a scan starts. Console › Features or `dock scanning off [--remove-database]` turns scanning off, keeping or removing its 3.4 GB database |
 | `[scan] offline` | `false` | For installs without internet access: builders never download a vulnerability database or check base images; import one with `dock scanning import FILE` (a Grype database archive) |
 | `[previews] copy_max_mb` | `2048` | The largest database a preview copies from its base ([ADR 0092](../decisions/0092-preview-database-copies.md)); a larger one starts empty |
 | `[updates] source` | `github.com/NordTempo/tempoDock` | Where [updates](#upgrading) come from: a GitHub repository's releases, or an absolute path to a directory of releases (`<dir>/<version>/` with the release's assets and an optional `notes.md`), for a mirror or an air-gapped install. Control plane only |
@@ -927,6 +927,26 @@ are never touched.
 dock server disk ubuntu-4gb-nbg1-1                     # the same breakdown, and what each prune frees
 dock server prune ubuntu-4gb-nbg1-1                    # everything nothing needs
 dock server prune ubuntu-4gb-nbg1-1 --only scanner     # one part
+```
+
+### Optional features
+
+Vulnerability scanning, Dock Analytics and tracing take memory and disk a
+small server may want back. Console › **Features** lists each with the
+servers it runs on, its memory now (or at most) and its data on disk, and
+switches it on and off ([ADR 0101](../decisions/0101-features-on-and-off.md)).
+Off stops its containers and jobs at once and asks whether to keep its
+data: scanning's vulnerability database (3.4 GB on each builder,
+downloaded again when turned on; with `[scan] offline`, import one again
+with `dock scanning import FILE`) or analytics' events, replays and
+errors. Tracing's spans always go with it. While analytics is off the
+servers keep no events, and adding a site doesn't turn it back on.
+
+```sh
+dock features                                  # what each takes, and its switch
+dock scanning off --remove-database            # stop scanning, free its database
+dock analytics off                             # stop the store, keep its data
+dock analytics on
 ```
 
 ## Upgrading
