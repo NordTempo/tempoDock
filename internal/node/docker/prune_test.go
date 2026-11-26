@@ -53,3 +53,28 @@ func TestImageRulesReplaced(t *testing.T) {
 		t.Error("an image made just now is removable")
 	}
 }
+
+// A rollbacks-only prune takes the rollbacks it is given and nothing
+// else, but never the pinned version in use nor a protected image.
+func TestImageRulesRollbacksOnly(t *testing.T) {
+	const pin = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+	r := &Runtime{}
+	old := time.Now().Add(-2 * time.Hour).Unix()
+	rollback := image.Summary{ID: "sha256:r", Created: old, Labels: map[string]string{node.LabelImage: "true"}}
+	pinned := image.Summary{ID: "sha256:p", Created: old, RepoDigests: []string{"restic/restic@" + pin}}
+	kept := image.Summary{ID: "sha256:k", Created: old, RepoTags: []string{"alpine:latest"}}
+	other := image.Summary{ID: "sha256:o", Created: old, Labels: map[string]string{node.LabelImage: "true"}}
+	ru := r.imageRules(node.PruneImagesRequest{
+		Rollbacks: []string{rollback.ID, pinned.ID, kept.ID}, OnlyRollbacks: true,
+		Pinned: []string{"restic/restic@" + pin}, Protect: []string{"alpine:latest"},
+	})
+	for _, tc := range []struct {
+		name string
+		img  image.Summary
+		want bool
+	}{{"rollback", rollback, true}, {"pinned version", pinned, false}, {"protected", kept, false}, {"not a rollback", other, false}} {
+		if got := ru.prunes(tc.img); got != tc.want {
+			t.Errorf("%s: prunes = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

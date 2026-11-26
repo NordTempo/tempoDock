@@ -79,6 +79,17 @@ func (ru imageRules) removable(img image.Summary) bool {
 	return pinned || ru.unneeded[img.ID] || ownedImage(img.Labels, img.RepoDigests, ru.repos)
 }
 
+// prunes reports whether PruneImages removes img, leaving aside whether
+// a container uses it: with only, just the rollbacks; either way never
+// the pinned version in use nor a protected one.
+func (ru imageRules) prunes(img image.Summary) bool {
+	if !ru.only {
+		return ru.removable(img)
+	}
+	_, current := ru.pinnedVersion(img)
+	return ru.rollbacks[img.ID] && !current && !ru.protected(img)
+}
+
 // pinnedVersion reports whether img is of a repository of one of the
 // platform's own images and, if so, whether it is the version pinned
 // now, which is never removed, whatever else used it.
@@ -146,8 +157,7 @@ func ownedImage(labels map[string]string, repoDigests, repos []string) bool {
 
 // PruneImages implements node.Containers. Docker's own `image prune`
 // can't be told what to keep or whose images are whose, so this lists
-// the images and removes those imageRules picks, each by its ID with all
-// its names (removeImage).
+// the images and removes those imageRules picks (removeImage).
 func (r *Runtime) PruneImages(ctx context.Context, req node.PruneImagesRequest) (node.PruneResult, error) {
 	ru := r.imageRules(req)
 	res, err := r.cli.ImageList(ctx, client.ImageListOptions{SharedSize: true})
@@ -160,7 +170,7 @@ func (r *Runtime) PruneImages(ctx context.Context, req node.PruneImagesRequest) 
 	}
 	var out node.PruneResult
 	for _, img := range res.Items {
-		if used[img.ID] || (ru.only && !ru.rollbacks[img.ID]) || (!ru.only && !ru.removable(img)) {
+		if used[img.ID] || !ru.prunes(img) {
 			continue
 		}
 		gone, err := r.removeImage(ctx, img, ownedImage(img.Labels, img.RepoDigests, ru.repos))
@@ -190,23 +200,39 @@ func (r *Runtime) usedImages(ctx context.Context) (map[string]bool, error) {
 	return used, nil
 }
 
-// removeImage removes an image by its ID and reports whether it is gone.
-// By ID, not by name: a pull or tag since the listing may have moved a
-// name to a newer image, which nothing checked. Docker refuses an image
-// other repositories name too unless forced; force, for the platform's
-// own images (build tag and registry name), still refuses while a running
-// container uses the image, and stopped ones were skipped (usedImages).
-// Any other image is never forced: a name other work gave it keeps it. An
-// image a container came to use meanwhile, one refused, or one that went
+// removeImage removes an image the listing picked and reports whether
+// it is gone. Nothing is forced, so Docker refuses to remove the last
+// name of an image any container uses, stopped ones and one created
+// since the listing too. The platform's own images go name by name, each
+// only while it still names this image (a pull or tag since the listing
+// may have moved it to a newer one, which nothing checked). Any other
+// image goes by ID, which Docker refuses while another repository names
+// it too: a name other work gave it keeps it. An image refused, or gone
 // already, is no error.
-func (r *Runtime) removeImage(ctx context.Context, img image.Summary, force bool) (bool, error) {
-	_, err := r.cli.ImageRemove(ctx, img.ID, client.ImageRemoveOptions{Force: force, PruneChildren: true})
-	switch {
-	case err == nil:
-		return true, nil
-	case cerrdefs.IsConflict(err), cerrdefs.IsNotFound(err):
-		return false, nil
-	default:
-		return false, fmt.Errorf("remove image %s: %w", img.ID, err)
+func (r *Runtime) removeImage(ctx context.Context, img image.Summary, owned bool) (bool, error) {
+	names := imageNames(img)
+	if !owned || len(names) == 0 {
+		names = []string{img.ID}
 	}
+	for _, name := range names {
+		if name != img.ID {
+			cur, err := r.cli.ImageInspect(ctx, name)
+			if cerrdefs.IsNotFound(err) || (err == nil && cur.ID != img.ID) {
+				continue // gone, or now another image's
+			}
+			if err != nil {
+				return false, fmt.Errorf("inspect image %s: %w", name, err)
+			}
+		}
+		_, err := r.cli.ImageRemove(ctx, name, client.ImageRemoveOptions{PruneChildren: true})
+		switch {
+		case err == nil, cerrdefs.IsNotFound(err):
+		case cerrdefs.IsConflict(err):
+			return false, nil
+		default:
+			return false, fmt.Errorf("remove image %s: %w", name, err)
+		}
+	}
+	_, err := r.cli.ImageInspect(ctx, img.ID)
+	return cerrdefs.IsNotFound(err), nil
 }

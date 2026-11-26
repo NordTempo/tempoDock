@@ -24,6 +24,7 @@ import (
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
 
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -825,6 +826,53 @@ func TestPruneImages(t *testing.T) {
 		if _, err := e.cli.ImageInspect(ctx, id); err != nil {
 			t.Errorf("%s image was removed: %v", name, err)
 		}
+	}
+}
+
+// An image picked from the listing stays when a container came to use it
+// afterwards, even a stopped one: nothing is forced. One of the
+// platform's own whose name moved to another image since keeps that
+// other image.
+func TestRemoveImageAfterTheListing(t *testing.T) {
+	e := newEnv(t)
+	ctx := ctxTimeout(t, time.Minute)
+	id := e.importDangling(e.prefix+"-picked", true)
+	name := e.prefix + "-picked:1"
+	if _, err := e.cli.ImageTag(ctx, client.ImageTagOptions{Source: id, Target: name}); err != nil {
+		t.Fatal(err)
+	}
+	picked, err := e.cli.ImageInspect(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary := image.Summary{ID: picked.ID, RepoTags: picked.RepoTags, RepoDigests: picked.RepoDigests}
+	// A container comes to use it after the listing.
+	if _, err := e.cli.ContainerCreate(ctx, client.ContainerCreateOptions{Config: &container.Config{Image: id, Cmd: []string{"x"}}, Name: e.name("late")}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = e.cli.ContainerRemove(context.Background(), e.name("late"), client.ContainerRemoveOptions{Force: true})
+	})
+	if gone, err := e.removeImage(ctx, summary, true); err != nil || gone {
+		t.Fatalf("removeImage = %v, %v; want it kept for the stopped container", gone, err)
+	}
+	if _, err := e.cli.ImageInspect(ctx, id); err != nil {
+		t.Fatalf("the stopped container's image was removed: %v", err)
+	}
+
+	// Its name moves to a newer image: that one keeps it.
+	newer := e.importDangling(e.prefix+"-newer", true)
+	if _, err := e.cli.ImageTag(ctx, client.ImageTagOptions{Source: newer, Target: name}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.cli.ContainerRemove(ctx, e.name("late"), client.ContainerRemoveOptions{Force: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.removeImage(ctx, summary, true); err != nil {
+		t.Fatal(err)
+	}
+	if cur, err := e.cli.ImageInspect(ctx, name); err != nil || cur.ID != newer {
+		t.Fatalf("the moved name = %v, %v; want it on the newer image %s", cur.ID, err, newer)
 	}
 }
 
