@@ -48,7 +48,7 @@ const registryPruneEvery = time.Hour
 const imageSweep = 3
 
 // buildTagPrefix starts every build tag (buildTag).
-const buildTagPrefix = "dock/p"
+const buildTagPrefix = node.BuildTagPrefix
 
 // imageUpkeep is the state of registry pruning.
 type imageUpkeep struct {

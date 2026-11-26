@@ -768,7 +768,7 @@ func TestPruneImages(t *testing.T) {
 	ctx := ctxTimeout(t, time.Minute)
 	gone := e.importDangling(e.prefix+"-gone", true)
 	tagged := e.importDangling(e.prefix+"-tagged", true)
-	if _, err := e.cli.ImageTag(ctx, client.ImageTagOptions{Source: tagged, Target: e.prefix + "-tagged:1"}); err != nil {
+	if _, err := e.cli.ImageTag(ctx, client.ImageTagOptions{Source: tagged, Target: node.BuildTagPrefix + "1_e1_s1:" + e.prefix}); err != nil {
 		t.Fatal(err)
 	}
 	used := e.importDangling(e.prefix+"-used", true)
@@ -832,12 +832,12 @@ func TestPruneImages(t *testing.T) {
 // An image picked from the listing stays when a container came to use it
 // afterwards, even a stopped one: nothing is forced. One of the
 // platform's own whose name moved to another image since keeps that
-// other image.
+// other image, and one other work named too keeps that name.
 func TestRemoveImageAfterTheListing(t *testing.T) {
 	e := newEnv(t)
 	ctx := ctxTimeout(t, time.Minute)
 	id := e.importDangling(e.prefix+"-picked", true)
-	name := e.prefix + "-picked:1"
+	name := node.BuildTagPrefix + "2_e2_s2:" + e.prefix
 	if _, err := e.cli.ImageTag(ctx, client.ImageTagOptions{Source: id, Target: name}); err != nil {
 		t.Fatal(err)
 	}
@@ -853,7 +853,7 @@ func TestRemoveImageAfterTheListing(t *testing.T) {
 	t.Cleanup(func() {
 		_, _ = e.cli.ContainerRemove(context.Background(), e.name("late"), client.ContainerRemoveOptions{Force: true})
 	})
-	if gone, err := e.removeImage(ctx, summary, true); err != nil || gone {
+	if gone, err := e.removeImage(ctx, summary, true, nil); err != nil || gone {
 		t.Fatalf("removeImage = %v, %v; want it kept for the stopped container", gone, err)
 	}
 	if _, err := e.cli.ImageInspect(ctx, id); err != nil {
@@ -868,11 +868,31 @@ func TestRemoveImageAfterTheListing(t *testing.T) {
 	if _, err := e.cli.ContainerRemove(ctx, e.name("late"), client.ContainerRemoveOptions{Force: true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.removeImage(ctx, summary, true); err != nil {
+	if _, err := e.removeImage(ctx, summary, true, nil); err != nil {
 		t.Fatal(err)
 	}
 	if cur, err := e.cli.ImageInspect(ctx, name); err != nil || cur.ID != newer {
 		t.Fatalf("the moved name = %v, %v; want it on the newer image %s", cur.ID, err, newer)
+	}
+
+	// The platform's image that other work named too loses only its
+	// build tag, and stays.
+	built := e.importDangling(e.prefix+"-built", true)
+	tag, theirs := node.BuildTagPrefix+"3_e3_s3:"+e.prefix, e.prefix+"-theirs:1"
+	for _, n := range []string{tag, theirs} {
+		if _, err := e.cli.ImageTag(ctx, client.ImageTagOptions{Source: built, Target: n}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() { _, _ = e.cli.ImageRemove(context.Background(), built, client.ImageRemoveOptions{Force: true}) })
+	if gone, err := e.removeImage(ctx, image.Summary{ID: built, RepoTags: []string{tag, theirs}}, true, nil); err != nil || gone {
+		t.Fatalf("removeImage = %v, %v; want it kept by the other name", gone, err)
+	}
+	if _, err := e.cli.ImageInspect(ctx, tag); !cerrdefs.IsNotFound(err) {
+		t.Errorf("the build tag is still there: %v", err)
+	}
+	if cur, err := e.cli.ImageInspect(ctx, theirs); err != nil || cur.ID != built {
+		t.Errorf("the other name = %v, %v", cur.ID, err)
 	}
 }
 

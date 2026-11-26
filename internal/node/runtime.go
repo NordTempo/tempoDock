@@ -514,6 +514,10 @@ type PruneImagesRequest struct {
 	Tool string
 }
 
+// BuildTagPrefix starts every build tag the platform gives what it builds
+// ("dock/p3_e4_s5:12"): a name prune may remove from its own images.
+const BuildTagPrefix = "dock/p"
+
 // BuildCacheVolume holds BuildKit's state and build cache on a builder
 // (build.CacheVolume).
 const BuildCacheVolume = "dock-buildkit-cache"

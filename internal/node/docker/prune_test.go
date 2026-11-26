@@ -48,6 +48,11 @@ func TestImageRulesReplaced(t *testing.T) {
 	if ru := r.imageRules(node.PruneImagesRequest{Protect: []string{"docker.io/library/alpine:latest"}, Unneeded: []string{kept.ID}}); ru.removable(kept) {
 		t.Error("a protected image is removable")
 	}
+	// Protected by tag and digest: Docker names it by the digest alone.
+	both := image.Summary{ID: "sha256:b", Created: old, RepoTags: []string{"moby/buildkit:v0.34.1"}, RepoDigests: []string{"moby/buildkit@" + other}}
+	if ru := r.imageRules(node.PruneImagesRequest{Protect: []string{"moby/buildkit:v0.34.1@" + other}, Unneeded: []string{both.ID}}); ru.removable(both) {
+		t.Error("an image protected by tag and digest is removable")
+	}
 	young := image.Summary{ID: "sha256:y", Created: time.Now().Unix(), RepoDigests: []string{"moby/buildkit@" + other}}
 	if ru.removable(young) {
 		t.Error("an image made just now is removable")

@@ -51,8 +51,8 @@ func (r *Runtime) imageRules(req node.PruneImagesRequest) imageRules {
 		before: time.Now().Add(-grace).Unix(),
 	}
 	for _, ref := range req.Protect {
-		if named, err := reference.ParseNormalizedNamed(ref); err == nil {
-			ru.protect[reference.TagNameOnly(named).String()] = true
+		if key, ok := canonicalRef(ref); ok {
+			ru.protect[key] = true
 		}
 	}
 	for _, ref := range req.Pinned {
@@ -120,11 +120,22 @@ func (ru imageRules) protected(img image.Summary) bool {
 		return false
 	}
 	for _, name := range imageNames(img) {
-		if named, err := reference.ParseNormalizedNamed(name); err == nil && ru.protect[reference.TagNameOnly(named).String()] {
+		if key, ok := canonicalRef(name); ok && ru.protect[key] {
 			return true
 		}
 	}
 	return false
+}
+
+// canonicalRef is a reference as Docker resolves it, for comparing: the
+// full name, ":latest" without a tag or digest, and only the digest when
+// it has both ("moby/buildkit:v1@sha256:..." is "docker.io/moby/buildkit@sha256:...").
+func canonicalRef(ref string) (string, bool) {
+	named, err := reference.ParseDockerRef(ref)
+	if err != nil {
+		return "", false
+	}
+	return named.String(), true
 }
 
 // imageNames are an image's tags and digest references, "<none>" left out.
@@ -173,7 +184,7 @@ func (r *Runtime) PruneImages(ctx context.Context, req node.PruneImagesRequest) 
 		if used[img.ID] || !ru.prunes(img) {
 			continue
 		}
-		gone, err := r.removeImage(ctx, img, ownedImage(img.Labels, img.RepoDigests, ru.repos))
+		gone, err := r.removeImage(ctx, img, ownedImage(img.Labels, img.RepoDigests, ru.repos), ru.repos)
 		switch {
 		case gone:
 			out.Removed++
@@ -203,16 +214,20 @@ func (r *Runtime) usedImages(ctx context.Context) (map[string]bool, error) {
 // removeImage removes an image the listing picked and reports whether
 // it is gone. Nothing is forced, so Docker refuses to remove the last
 // name of an image any container uses, stopped ones and one created
-// since the listing too. The platform's own images go name by name, each
-// only while it still names this image (a pull or tag since the listing
-// may have moved it to a newer one, which nothing checked). Any other
-// image goes by ID, which Docker refuses while another repository names
-// it too: a name other work gave it keeps it. An image refused, or gone
-// already, is no error.
-func (r *Runtime) removeImage(ctx context.Context, img image.Summary, owned bool) (bool, error) {
-	names := imageNames(img)
-	if !owned || len(names) == 0 {
-		names = []string{img.ID}
+// since the listing too. The platform's own images (owned) lose only the
+// platform's names, its build tags and registry names (repos), each only
+// while it still names this image: a pull or tag since the listing may
+// have moved it to a newer one, which nothing checked. A name other work
+// gave the image keeps it. Any other image goes by ID, which Docker
+// refuses while another repository names it too. An image refused, or
+// gone already, is no error.
+func (r *Runtime) removeImage(ctx context.Context, img image.Summary, owned bool, repos []string) (bool, error) {
+	names := []string{img.ID}
+	if owned {
+		names = slices.DeleteFunc(imageNames(img), func(n string) bool { return !platformName(n, repos) })
+		if len(names) == 0 && len(imageNames(img)) == 0 {
+			names = []string{img.ID} // no names left at all
+		}
 	}
 	for _, name := range names {
 		if name != img.ID {
@@ -233,6 +248,19 @@ func (r *Runtime) removeImage(ctx context.Context, img image.Summary, owned bool
 			return false, fmt.Errorf("remove image %s: %w", name, err)
 		}
 	}
-	_, err := r.cli.ImageInspect(ctx, img.ID)
-	return cerrdefs.IsNotFound(err), nil
+	switch _, err := r.cli.ImageInspect(ctx, img.ID); {
+	case cerrdefs.IsNotFound(err):
+		return true, nil
+	case err != nil:
+		return false, fmt.Errorf("inspect image %s: %w", img.ID, err)
+	default:
+		return false, nil // another name keeps it
+	}
+}
+
+// platformName reports whether name is one the platform gives images: a
+// build tag (node.BuildTagPrefix) or a name under its registry (repos).
+func platformName(name string, repos []string) bool {
+	return strings.HasPrefix(name, node.BuildTagPrefix) ||
+		slices.ContainsFunc(repos, func(p string) bool { return p != "" && strings.HasPrefix(name, p) })
 }
