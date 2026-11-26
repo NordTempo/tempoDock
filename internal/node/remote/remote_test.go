@@ -874,7 +874,7 @@ func newHarness(t testing.TB, opts ...func(*HubOptions)) *harness {
 	o := HubOptions{
 		Identity:  mustIdentity(t),
 		Store:     h.store,
-		Addrs:     []string{h.proxy.addr},
+		Addrs:     func() []string { return []string{h.proxy.addr} },
 		OnStatus:  h.onStatus,
 		KeepAlive: testKeepAlive,
 		Logger:    slog.New(slog.NewTextHandler(h.hubLog, nil)),

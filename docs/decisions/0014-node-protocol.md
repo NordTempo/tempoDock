@@ -394,7 +394,7 @@ Decided 2026-10-21.
 
 | Question | Decision |
 |---|---|
-| Node port `:7443` exposure | Tailscale only. Public stays possible later (unknown keys fail in the handshake) for nodes off the tailnet. |
+| Node port `:7443` exposure | Tailscale only. Public stays possible later (unknown keys fail in the handshake) for nodes off the tailnet. Superseded by [0102](0102-nodes-over-any-network.md): every interface, Tailscale preferred. |
 | Registry exposure | Tailscale only. CI images keep coming from external registries (`--image`). |
 | Deploy to an offline server | Rejected immediately with "server X is offline". No queue. |
 | Promote with services missing in production | Skipped and listed in the output. Production services are only created on purpose. |

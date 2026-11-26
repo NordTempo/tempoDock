@@ -386,7 +386,7 @@ func (c *Core) AddServer(ctx context.Context, a Actor, req apitypes.AddServerReq
 		ingress = "INGRESS=cloudflare_tunnel "
 	}
 	return apitypes.AddedServer{
-		Server: srv, Token: token, ExpiresAt: row.ExpiresAt,
+		Server: srv, Token: token, ExpiresAt: row.ExpiresAt, Addrs: tok.Addrs,
 		Command: nodeInstallCommand(token, ingress, version.Version),
 	}, nil
 }
@@ -656,6 +656,9 @@ func (c *Core) toServer(r store.ListServerLoadsRow, usage bool, tunnels map[int6
 		out.Tunnel = &t
 	}
 	out.TunnelPort = c.tunnelPort(s)
+	if !s.Local && c.nodes != nil && (out.Status == apitypes.ServerOnline || out.Status == apitypes.ServerIncompatible) {
+		out.LinkVia = string(c.nodes.State(s.ID).Via)
+	}
 	return out
 }
 

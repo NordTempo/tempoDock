@@ -66,18 +66,3 @@ func TestRegistryConfigIsDeterministic(t *testing.T) {
 		t.Errorf("registry off: exit %d, %s", code, stderr)
 	}
 }
-
-func TestCheckNodeListen(t *testing.T) {
-	for addr, ok := range map[string]bool{
-		"":                 true,
-		"100.64.0.10:7443": true,
-		"cp.tailnet:7443":  true,
-		"0.0.0.0:7443":     false,
-		"[::]:7443":        false,
-		":7443":            false,
-	} {
-		if err := checkNodeListen(addr); (err == nil) != ok {
-			t.Errorf("%q: %v", addr, err)
-		}
-	}
-}

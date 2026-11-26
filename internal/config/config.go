@@ -425,10 +425,17 @@ type Defaults struct {
 // `dock node` reads ControlPlane and the files in DataDir (NodeKeyPath,
 // NodeStatePath).
 type Node struct {
-	// Listen is where the control plane accepts node connections, e.g.
-	// "100.64.0.10:7443" (a Tailscale IP). Empty disables the node port:
-	// the control plane then only runs apps on its own server.
+	// Listen is where the control plane accepts node connections: an
+	// address ("100.64.0.10:7443", a Tailscale IP) or every interface
+	// (":7443", ADR 0102). Empty disables the node port: the control plane
+	// then only runs apps on its own server. The link pins keys on both
+	// sides, so the port is safe to expose.
 	Listen string `toml:"listen"`
+	// Addrs are where nodes dial the control plane, tried in order and
+	// written into join tokens ("host:port"). Empty: Listen when it names
+	// an address; for every interface, this server's Tailscale address,
+	// then public_ip, on Listen's port.
+	Addrs []string `toml:"addrs"`
 	// ControlPlane overrides the address `dock node` dials ("host:port").
 	// Empty uses the address from the join token, kept in NodeStatePath.
 	// Set it when the control plane moves; its key stays pinned, so no
@@ -646,6 +653,17 @@ func (c *Config) validate() error {
 	}
 	if err := CheckHostPort("[node] control_plane", c.Node.ControlPlane); err != nil {
 		return err
+	}
+	for _, a := range c.Node.Addrs {
+		if err := CheckHostPort("[node] addrs", a); err != nil {
+			return err
+		}
+		// Nodes dial these: a missing or unspecified host would send a
+		// node to itself.
+		host, _, _ := net.SplitHostPort(a)
+		if ip := net.ParseIP(host); strings.Contains(a, ",") || host == "" || (ip != nil && ip.IsUnspecified()) {
+			return fmt.Errorf("[node] addrs %q must be an address nodes can dial, like \"100.64.0.10:7443\" or \"cp.example.com:7443\"", a)
+		}
 	}
 	if c.Registry.Enabled {
 		if c.Registry.Listen == "" || c.Registry.StorageDir == "" || c.Registry.ConfigDir == "" || c.Registry.PublicName == "" {

@@ -115,6 +115,7 @@ line means a later record added to it without changing what it decided.
 | [0099](0099-one-obvious-place-for-each-feature.md) | One obvious place for each feature: the same page shape at every level, one Settings layout with sections, one home per setting, `···` in one order, search finds settings | accepted |
 | [0100](0100-public-demo.md) | The public demo: `dock serve` on the fake runtime behind `[demo] user`, every visitor signed in to one shared operator account, account and outbound changes refused, seeded by `dock-demo` and reset every hour | accepted |
 | [0101](0101-features-on-and-off.md) | Features on and off: one console page for scanning, analytics and tracing with what each takes; off keeps or removes their data, analytics can be turned off | accepted |
+| [0102](0102-nodes-over-any-network.md) | Nodes over any network: the node port on every interface, tokens and hellos carry the Tailscale then public address, nodes fall through in order and keep the list current, the console shows the path, a reachability check before install | accepted |
 
 ## Template
 

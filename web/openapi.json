@@ -556,6 +556,16 @@
       "AddedServer": {
         "additionalProperties": false,
         "properties": {
+          "addrs": {
+            "description": "Control plane addresses the new server tries, in order",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "command": {
             "description": "Install command to run on the new server",
             "type": "string"
@@ -575,6 +585,7 @@
           "server",
           "token",
           "command",
+          "addrs",
           "expires_at"
         ],
         "type": "object"
@@ -14673,6 +14684,15 @@
           },
           "last_seen_at": {
             "format": "date-time",
+            "type": "string"
+          },
+          "link_via": {
+            "description": "How a connected node reaches the control plane",
+            "enum": [
+              "tailscale",
+              "lan",
+              "internet"
+            ],
             "type": "string"
           },
           "local": {

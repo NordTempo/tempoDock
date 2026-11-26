@@ -74,11 +74,13 @@ type Hello struct {
 }
 
 // helloRequest is the control plane's side of hello: the node logs a
-// clear error when it is too old for the control plane.
+// clear error when it is too old for the control plane, and keeps Addrs
+// (ADR 0102) as the addresses it dials from then on.
 type helloRequest struct {
-	Version     string `json:"version"`
-	Protocol    int    `json:"protocol"`
-	MinProtocol int    `json:"min_protocol"`
+	Version     string   `json:"version"`
+	Protocol    int      `json:"protocol"`
+	MinProtocol int      `json:"min_protocol"`
+	Addrs       []string `json:"addrs,omitempty"`
 }
 
 // Joining mode (join.go).

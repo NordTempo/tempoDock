@@ -9,12 +9,14 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/config"
+	"github.com/NordTempo/tempoDock/internal/httpkit"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/version"
 )
@@ -42,6 +44,8 @@ type State struct {
 	Status   Status
 	// Hello is what the node reported when it connected; zero when offline.
 	Hello Hello
+	// Via is the path the connection came over; empty when offline.
+	Via Via
 }
 
 // Server identifies a remote server: its row in the servers table.
@@ -103,10 +107,9 @@ type HubOptions struct {
 	// its fingerprint.
 	Identity Identity
 	Store    Store
-	// Addrs are the host:port addresses nodes dial (the [nodes] listen
-	// address as reachable from nodes, e.g. the Tailscale IP), written into
-	// join tokens.
-	Addrs []string
+	// Addrs returns the host:port addresses nodes dial, in order
+	// (ListenAddrs), written into join tokens and sent in every hello.
+	Addrs func() []string
 	// Registry is the host:port of the control plane's registry
 	// (127.0.0.1:5000), which nodes reach through the link (registry.go).
 	// Empty: nodes get no registry.
@@ -131,6 +134,14 @@ type HubOptions struct {
 const (
 	// handshakeTimeout bounds TLS plus hello on a new connection.
 	handshakeTimeout = 10 * time.Second
+	// maxHandshakes caps connections still in their handshake, and
+	// maxHandshakesPerClient those from one address (httpkit.ClientKey):
+	// the node port may face the internet (ADR 0102), and a flood of
+	// half-open connections must not grow memory or starve real nodes.
+	// One node holds at most one at a time; past a cap, a connection is
+	// closed at once and the node retries with backoff.
+	maxHandshakes          = 128
+	maxHandshakesPerClient = 8
 	// joinTimeout is how long a joining-mode connection may stay open.
 	joinTimeout = 10 * time.Second
 )
@@ -140,6 +151,11 @@ type Hub struct {
 	o     HubOptions
 	log   *slog.Logger
 	joins joinLimiter
+	// shaking counts connections in their handshake, in all and per
+	// client (handshakeSlot).
+	shakeMu  sync.Mutex
+	shaking  int
+	shakeFor map[string]int
 
 	// statusMu serializes status changes with their OnStatus calls, so
 	// they arrive in order. Taken before mu.
@@ -163,6 +179,7 @@ type session struct {
 	fingerprint string
 	hello       Hello
 	status      Status
+	via         Via
 	cc          *http.ClientConn
 	closed      atomic.Bool
 	done        chan struct{}
@@ -198,7 +215,7 @@ func newSession(ctx context.Context, id int64, name string, cc *http.ClientConn)
 func (s *session) name() string { return *s.label.Load() }
 
 func (s *session) state() State {
-	return State{ServerID: s.id, Server: s.name(), Status: s.status, Hello: s.hello}
+	return State{ServerID: s.id, Server: s.name(), Status: s.status, Hello: s.hello, Via: s.via}
 }
 
 // NewHub creates a hub. Call Serve to accept connections.
@@ -208,7 +225,7 @@ func NewHub(o HubOptions) *Hub {
 		log = slog.New(slog.DiscardHandler)
 	}
 	return &Hub{
-		o: o, log: log, joins: joinLimiter{seen: map[string]joinWindow{}},
+		o: o, log: log, joins: joinLimiter{seen: map[string]joinWindow{}}, shakeFor: map[string]int{},
 		sessions: map[int64]*session{}, names: map[int64]string{}, changed: make(chan struct{}),
 	}
 }
@@ -220,7 +237,15 @@ func (h *Hub) Fingerprint() string { return h.o.Identity.Fingerprint() }
 // stores its SecretHash with the server name, role and an expiry
 // (JoinTokenTTL) and shows its String once.
 func (h *Hub) MintJoinToken() (JoinToken, error) {
-	return newJoinToken(h.Fingerprint(), h.o.Addrs)
+	return newJoinToken(h.Fingerprint(), h.addrs())
+}
+
+// addrs is HubOptions.Addrs, or none.
+func (h *Hub) addrs() []string {
+	if h.o.Addrs == nil {
+		return nil
+	}
+	return h.o.Addrs()
 }
 
 // Serve accepts node connections on ln until ctx ends, then closes ln and
@@ -247,13 +272,49 @@ func (h *Hub) Serve(ctx context.Context, ln net.Listener) error {
 			}
 			return err
 		}
+		release, ok := h.handshakeSlot(raw.RemoteAddr())
+		if !ok {
+			_ = raw.Close()
+			continue
+		}
 		go func() {
-			if err := h.handle(ctx, raw); err != nil {
-				h.log.Warn("node connection rejected", "remote", raw.RemoteAddr().String(), "err", explainRejection(err))
+			dock, err := h.handle(ctx, raw, release)
+			if err != nil {
+				// Port scanners and stray TLS clients never offer a
+				// dock ALPN; on a public port they would flood the log.
+				level := slog.LevelDebug
+				if dock {
+					level = slog.LevelWarn
+				}
+				h.log.Log(ctx, level, "node connection rejected", "remote", raw.RemoteAddr().String(), "err", explainRejection(err))
 				_ = raw.Close()
 			}
 		}()
 	}
+}
+
+// handshakeSlot counts a new connection against maxHandshakes and
+// maxHandshakesPerClient; release, called once, frees its slot.
+func (h *Hub) handshakeSlot(addr net.Addr) (release func(), ok bool) {
+	key := addr.String()
+	if host, _, err := net.SplitHostPort(key); err == nil {
+		key = httpkit.ClientKey(host)
+	}
+	h.shakeMu.Lock()
+	defer h.shakeMu.Unlock()
+	if h.shaking >= maxHandshakes || h.shakeFor[key] >= maxHandshakesPerClient {
+		return nil, false
+	}
+	h.shaking++
+	h.shakeFor[key]++
+	return sync.OnceFunc(func() {
+		h.shakeMu.Lock()
+		defer h.shakeMu.Unlock()
+		h.shaking--
+		if h.shakeFor[key]--; h.shakeFor[key] == 0 {
+			delete(h.shakeFor, key)
+		}
+	}), true
 }
 
 // explainRejection turns a handshake failure into words for the log.
@@ -265,13 +326,17 @@ func explainRejection(err error) error {
 }
 
 // handle authenticates a connection, then joins the node or starts its
-// session.
-func (h *Hub) handle(ctx context.Context, raw net.Conn) error {
+// session. dock reports whether the client offered a dock protocol in
+// its TLS hello (any version), which tells a node's failure from a
+// stranger's. release frees the connection's handshake slot once the
+// handshake (and hello, or the join) is over.
+func (h *Hub) handle(ctx context.Context, raw net.Conn, release func()) (dock bool, err error) {
+	defer release()
 	hsCtx, cancel := context.WithTimeout(ctx, handshakeTimeout)
 	defer cancel()
 	var key NodeKey
 	var keyFP string
-	conn := tls.Server(raw, controlPlaneTLS(h.o.Identity, func(cs tls.ConnectionState, fp string) error {
+	cfg := controlPlaneTLS(h.o.Identity, func(cs tls.ConnectionState, fp string) error {
 		switch cs.NegotiatedProtocol {
 		case joinALPN:
 			if !h.joins.allow(raw.RemoteAddr()) {
@@ -290,14 +355,21 @@ func (h *Hub) handle(ctx context.Context, raw net.Conn) error {
 			return nil
 		}
 		return fmt.Errorf("unsupported protocol %q", cs.NegotiatedProtocol)
-	}))
+	})
+	cfg.GetConfigForClient = func(hi *tls.ClientHelloInfo) (*tls.Config, error) {
+		dock = slices.ContainsFunc(hi.SupportedProtos, func(p string) bool {
+			return strings.HasPrefix(p, "dock-node/") || strings.HasPrefix(p, "dock-join/")
+		})
+		return nil, nil
+	}
+	conn := tls.Server(raw, cfg)
 	if err := conn.HandshakeContext(hsCtx); err != nil {
-		return err
+		return dock, err
 	}
 	if conn.ConnectionState().NegotiatedProtocol == joinALPN {
-		return h.join(ctx, conn)
+		return true, h.join(ctx, conn)
 	}
-	return h.connect(ctx, hsCtx, conn, key, keyFP)
+	return true, h.connect(ctx, hsCtx, conn, key, keyFP)
 }
 
 // newClientConn starts the control plane's HTTP/2 client on conn.
@@ -321,14 +393,14 @@ func (h *Hub) connect(ctx, helloCtx context.Context, conn *tls.Conn, key NodeKey
 		return err
 	}
 	s := newSession(ctx, key.ID, key.Name, cc)
-	s.fingerprint = fp
+	s.fingerprint, s.via = fp, ViaOf(conn.RemoteAddr())
 	cc.SetStateHook(func(cc *http.ClientConn) {
 		if cc.Err() != nil {
 			s.close()
 		}
 	})
 	minProto := or(h.o.MinProtocol, MinProtocol)
-	req := helloRequest{Version: version.Version, Protocol: Protocol, MinProtocol: minProto}
+	req := helloRequest{Version: version.Version, Protocol: Protocol, MinProtocol: minProto, Addrs: h.addrs()}
 	if err := call(helloCtx, s, opHello, req, nil, nil, nil, &s.hello); err != nil {
 		s.close()
 		return fmt.Errorf("hello from %s: %w", s.name(), err)
@@ -358,7 +430,7 @@ func (h *Hub) connect(ctx, helloCtx context.Context, conn *tls.Conn, key NodeKey
 		s.close()
 		return fmt.Errorf("hello from %s: %w", s.name(), err)
 	}
-	h.log.Info("node connected", "server", s.name(), "version", s.hello.Version, "status", s.status)
+	h.log.Info("node connected", "server", s.name(), "version", s.hello.Version, "status", s.status, "via", s.via)
 	if s.status == StatusOnline && h.o.Registry != "" {
 		(&registryPool{h: h, s: s}).fill()
 	}
@@ -668,10 +740,12 @@ const (
 )
 
 // allow counts a join attempt from addr and reports whether it may go on.
+// An IPv6 client counts as its /48 (httpkit.ClientKey), so one host
+// can't pick fresh addresses to get around it.
 func (l *joinLimiter) allow(addr net.Addr) bool {
 	host := addr.String()
 	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
+		host = httpkit.ClientKey(h)
 	}
 	now := time.Now()
 	l.mu.Lock()

@@ -167,8 +167,14 @@ function Added({ added, onDone }: { added: AddedServer; onDone: () => void }) {
       <Secret label="Install command" text={added.command} />
       <Secret label="Join token" text={added.token} />
       <p className="text-mut">
-        The new server dials this control plane on port 7443, so it must reach
-        it over Tailscale or the LAN; nothing has to reach the new server.
+        The new server dials this control plane at{" "}
+        {(added.addrs ?? []).map((a, i) => (
+          <span key={a}>
+            {i > 0 && " or "}
+            <code className="font-mono">{a}</code>
+          </span>
+        ))}
+        , in that order; nothing has to reach the new server.
       </p>
       <p>
         <StateText state={serverState(status)} />{" "}

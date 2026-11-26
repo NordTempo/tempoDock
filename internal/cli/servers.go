@@ -56,9 +56,12 @@ func newServerListCmd(g *globals) *cobra.Command {
 }
 
 // serverStatus is a server's link status, with when it was last seen if
-// it is offline and until when it can join if it is joining.
+// it is offline, until when it can join if it is joining, and the path
+// its link takes if it is connected (ADR 0102).
 func serverStatus(s apitypes.Server) string {
 	switch {
+	case s.LinkVia != "":
+		return string(s.Status) + " (via " + s.LinkVia + ")"
 	case s.Status == apitypes.ServerOffline && s.LastSeenAt != nil:
 		return "offline (seen " + ago(*s.LastSeenAt) + ")"
 	case s.Status == apitypes.ServerJoining && s.JoinExpiresAt != nil:
@@ -130,6 +133,7 @@ open ports, and domains added from Cloudflare go through the tunnel.`,
 				}
 				g.io.Successf("Server %s added; it accepts %s%s", a.Server.Name, accepts(a.Server), builds)
 				_, _ = fmt.Fprintf(g.io.Out, "\nOn the new server (Debian or Ubuntu; Docker is installed if missing), run:\n\n  %s\n\n", a.Command)
+				_, _ = fmt.Fprintf(g.io.Out, "It dials this control plane at %s, in that order.\n", strings.Join(a.Addrs, " or "))
 				_, _ = fmt.Fprintf(g.io.Out, "The token works once, until %s, and is not shown again.\nThen check it is online: dock server list\n", a.ExpiresAt.Local().Format("15:04"))
 				return nil
 			})
