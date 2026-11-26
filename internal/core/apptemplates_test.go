@@ -1,9 +1,11 @@
 package core
 
 import (
+	"context"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
@@ -75,11 +77,20 @@ func TestUseAppTemplate(t *testing.T) {
 		t.Fatalf("a refused use created services: %d", len(svcs))
 	}
 
-	// Detached, it returns once the services exist and they deploy on.
-	res, err = h.c.UseAppTemplate(h.ctx, testSystem, env, "umami", apitypes.UseTemplateRequest{Name: "stats", Detach: true})
+	// Detached, it returns once the services exist, while the database's
+	// deploy is still held (a wait would end at the timeout and say so in
+	// Failed), and they deploy on once it's let go.
+	release := h.rt.HoldHealthChecks()
+	ctx, cancel := context.WithTimeout(h.ctx, 2*time.Second)
+	defer cancel()
+	res, err = h.c.UseAppTemplate(ctx, testSystem, env, "umami", apitypes.UseTemplateRequest{Name: "stats", Detach: true})
 	if err != nil || len(res.Failed) != 0 || len(res.Releases) != 0 || len(res.Services) != 2 {
 		t.Fatalf("detached use: %v %+v", err, res)
 	}
+	if _, err := h.c.GetRelease(h.ctx, testSystem, ServiceRef{"shop", "production", "stats"}, 1); err == nil {
+		t.Fatal("stats deployed before stats-db was live")
+	}
+	release()
 	for _, name := range res.Services {
 		ref := ServiceRef{"shop", "production", name}
 		eventually(t, name+"'s first release", func() bool {
