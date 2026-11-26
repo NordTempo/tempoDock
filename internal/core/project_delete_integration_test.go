@@ -89,8 +89,11 @@ func TestIntegrationDeleteProject(t *testing.T) {
 // Deleting an environment with a running stateful service stops it and
 // leaves no container, volume or network of that environment on a real
 // Docker Engine, while the project's other environment keeps running.
+//
+// Not parallel: its archive prunes the archived image by ID on the
+// Docker daemon all harnesses share, which removes it under a parallel
+// test that just pulled the same image (a "No such image" start).
 func TestIntegrationDeleteEnvironment(t *testing.T) {
-	t.Parallel()
 	c := dockerHarness(t)
 	ctx := context.Background()
 	project := fmt.Sprintf("delenv-%d", time.Now().UnixNano()%1_000_000)

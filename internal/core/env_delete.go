@@ -42,8 +42,8 @@ func (c *Core) DeleteEnvironment(ctx context.Context, a Actor, ref EnvRef, req a
 	// pass them, and the second would remove its resources before its
 	// final check refused it. No move starts in the project meanwhile
 	// either (beginMove).
-	if _, busy := c.envDeletes.LoadOrStore(p.ID, true); busy {
-		return apitypes.EnvironmentDeleted{}, conflict("another environment of project %s is being deleted; delete %s once that finishes", p.Name, e.Name)
+	if err := c.holdEnvDelete(ctx, es); err != nil {
+		return apitypes.EnvironmentDeleted{}, err
 	}
 	defer c.envDeletes.Delete(p.ID)
 	if req.ID != 0 && req.ID != e.ID {
@@ -156,6 +156,34 @@ func (c *Core) DeleteEnvironment(ctx context.Context, a Actor, ref EnvRef, req a
 	}
 	c.audit(ctx, a, "environment.delete", &p, &e, es.String(), archiveSummary(what+"; its activity stays", notes))
 	return out, nil
+}
+
+// holdEnvDelete takes the project's envDeletes hold and checks that es
+// isn't moving, in one write transaction. beginMove checks the hold and
+// creates its move in one too, and the store takes the write lock up
+// front, so one of them sees the other: a move that passed its check
+// before the hold is open here, and one after it is refused. On an error
+// the hold isn't kept.
+func (c *Core) holdEnvDelete(ctx context.Context, es envScope) error {
+	held := false
+	err := c.store.Tx(ctx, func(q *store.Queries) error {
+		if _, busy := c.envDeletes.LoadOrStore(es.project.ID, true); busy {
+			return conflict("another environment of project %s is being deleted; delete %s once that finishes", es.project.Name, es.env.Name)
+		}
+		held = true
+		_, err := q.GetOpenEnvironmentMove(ctx, es.env.ID)
+		switch {
+		case err == nil:
+			return conflict("%s is moving to another server; delete the environment once the move ends (`dock env move %s --status`)", es, es.env.Name)
+		case store.IsNotFound(err):
+			return nil
+		}
+		return err
+	})
+	if err != nil && held {
+		c.envDeletes.Delete(es.project.ID)
+	}
+	return err
 }
 
 // onlyEnvironment refuses deleting the project's last environment that
