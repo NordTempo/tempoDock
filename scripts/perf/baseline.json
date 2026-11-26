@@ -257,8 +257,8 @@
     },
     "core.BenchmarkListImagesIgnored": {
       "ns_op": 447894,
-      "bytes_op": 130776,
-      "allocs_op": 2082
+      "bytes_op": 132543,
+      "allocs_op": 2107
     },
     "core.BenchmarkNewRedactor/values=20": {
       "ns_op": 13100.6,
