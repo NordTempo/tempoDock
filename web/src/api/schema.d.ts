@@ -6280,7 +6280,7 @@ export interface paths {
         put?: never;
         /**
          * Prune a server's disk now
-         * @description Removes images Dock made that no release needs and, on a builder, BuildKit's cache above [retention] build_cache_keep_mb: what Dock does by itself once the disk passes prune_disk_percent. Running apps, rollback images and volumes are never touched. A prune that partly failed answers with what it freed and its error. 409 while the server is being pruned. Operators only.
+         * @description Frees disk on a server (ADR 0035 amendment 2), one target at a time or several. Safe ones, run without targets and by Dock itself once the disk passes prune_disk_percent: `images` (images of archived services, out of rollback windows, and Dock's replaced images), `scanner` (cut-off downloads left in the vulnerability database) and `cache` (BuildKit's cache above [retention] build_cache_keep_mb). Asked for by name: `rollbacks` (rollback images the registry has too, but the active release's and the one before), `all-cache` (all of BuildKit's cache) and `scan-db` (the whole vulnerability database, downloaded again before the next scan). Running apps and volumes are never touched. A prune that partly failed answers with what it freed and its error. 409 while the server is being pruned. Operators only.
          */
         post: operations["prune-server"];
         delete?: never;
@@ -8969,6 +8969,13 @@ export interface components {
             /** Format: int64 */
             reclaimable: number;
         };
+        DiskPrune: {
+            /** Format: int64 */
+            bytes: number;
+            safe: boolean;
+            /** @enum {string} */
+            target: "images" | "scanner" | "cache" | "rollbacks" | "all-cache" | "scan-db";
+        };
         DiskUsage: {
             paths: string[] | null;
             /** Format: int64 */
@@ -10654,6 +10661,14 @@ export interface components {
             release: components["schemas"]["Release"];
             service: string;
         };
+        PruneFreed: {
+            /** Format: int64 */
+            bytes: number;
+            /** Format: int64 */
+            removed: number;
+            /** @enum {string} */
+            target: "images" | "scanner" | "cache" | "rollbacks" | "all-cache" | "scan-db";
+        };
         PublicAddress: {
             dns_records: components["schemas"]["DNSRecord"][] | null;
             hostname: string;
@@ -11239,6 +11254,7 @@ export interface components {
         ServerDisk: {
             error?: string;
             parts: components["schemas"]["DiskPart"][] | null;
+            prunes: components["schemas"]["DiskPrune"][] | null;
             /** Format: date-time */
             read_at: string;
             /** Format: int64 */
@@ -11288,10 +11304,14 @@ export interface components {
             pinned: boolean;
             project: string;
         };
+        ServerPruneRequest: {
+            targets?: ("images" | "scanner" | "cache" | "rollbacks" | "all-cache" | "scan-db")[] | null;
+        };
         ServerPruneResult: {
             /** Format: int64 */
             cache_bytes: number;
             error?: string;
+            freed: components["schemas"]["PruneFreed"][] | null;
             /** Format: int64 */
             image_bytes: number;
             /** Format: int64 */
@@ -50006,7 +50026,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ServerPruneRequest"];
+            };
+        };
         responses: {
             /** @description OK */
             200: {

@@ -54,9 +54,16 @@ func registerServers(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "prune-server", Method: http.MethodPost, Path: serverPathT + "/prune",
 		Summary: "Prune a server's disk now", Tags: tags,
-		Description: "Removes images Dock made that no release needs and, on a builder, BuildKit's cache above [retention] build_cache_keep_mb: what Dock does by itself once the disk passes prune_disk_percent. Running apps, rollback images and volumes are never touched. A prune that partly failed answers with what it freed and its error. 409 while the server is being pruned. Operators only.",
-	}, func(ctx context.Context, actor core.Actor, in *ServerPath) (*out[apitypes.ServerPruneResult], error) {
-		return reply(s.core.PruneServer(ctx, actor, in.Server))
+		Description: "Frees disk on a server (ADR 0035 amendment 2), one target at a time or several. Safe ones, run without targets and by Dock itself once the disk passes prune_disk_percent: `images` (images of archived services, out of rollback windows, and Dock's replaced images), `scanner` (cut-off downloads left in the vulnerability database) and `cache` (BuildKit's cache above [retention] build_cache_keep_mb). Asked for by name: `rollbacks` (rollback images the registry has too, but the active release's and the one before), `all-cache` (all of BuildKit's cache) and `scan-db` (the whole vulnerability database, downloaded again before the next scan). Running apps and volumes are never touched. A prune that partly failed answers with what it freed and its error. 409 while the server is being pruned. Operators only.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ServerPath
+		Body *apitypes.ServerPruneRequest
+	}) (*out[apitypes.ServerPruneResult], error) {
+		var targets []apitypes.PruneTarget
+		if in.Body != nil {
+			targets = in.Body.Targets
+		}
+		return reply(s.core.PruneServer(ctx, actor, in.Server, targets))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "add-server", Method: http.MethodPost, Path: Prefix + "/servers",

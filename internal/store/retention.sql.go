@@ -84,47 +84,6 @@ func (q *Queries) ListExpiredReleaseHistory(ctx context.Context, arg ListExpired
 	return items, nil
 }
 
-const listKeptImageIDs = `-- name: ListKeptImageIDs :many
-SELECT DISTINCT releases.image_id FROM environments
-JOIN services ON services.environment_id = environments.id AND services.archived_at IS NULL
-JOIN releases ON releases.service_id = services.id
-WHERE environments.server_id = +?1 AND releases.image_id != ''
-  AND (releases.status IN ('active', 'queued', 'building', 'starting', 'health_checking')
-       OR releases.number > (SELECT max(newest.number) FROM releases newest WHERE newest.service_id = releases.service_id)
-                            - CAST(?2 AS INTEGER))
-`
-
-type ListKeptImageIDsParams struct {
-	ServerID int64
-	Keep     int64
-}
-
-// The image IDs on one server a rollback may still need: its services'
-// rollback windows and active and in-flight releases. Image pruning
-// keeps them. Archived services are never rolled back, so theirs go.
-func (q *Queries) ListKeptImageIDs(ctx context.Context, arg ListKeptImageIDsParams) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, listKeptImageIDs, arg.ServerID, arg.Keep)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var image_id string
-		if err := rows.Scan(&image_id); err != nil {
-			return nil, err
-		}
-		items = append(items, image_id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listOldestAuditEvents = `-- name: ListOldestAuditEvents :many
 SELECT id, created_at, detail_id FROM audit_events ORDER BY id LIMIT +?
 `
@@ -146,6 +105,59 @@ func (q *Queries) ListOldestAuditEvents(ctx context.Context, limit int64) ([]Lis
 	for rows.Next() {
 		var i ListOldestAuditEventsRow
 		if err := rows.Scan(&i.ID, &i.CreatedAt, &i.DetailID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listServerReleaseImages = `-- name: ListServerReleaseImages :many
+SELECT releases.service_id, CAST(services.archived_at IS NOT NULL AS INTEGER) AS archived,
+       releases.number, releases.status, releases.image_id, releases.image_digest
+FROM environments
+JOIN services ON services.environment_id = environments.id
+JOIN releases ON releases.service_id = services.id
+WHERE environments.server_id = +?1 AND releases.image_id != ''
+`
+
+type ListServerReleaseImagesRow struct {
+	ServiceID   int64
+	Archived    int64
+	Number      int64
+	Status      string
+	ImageID     string
+	ImageDigest string
+}
+
+// The images of every release on one server, with what decides whether
+// a rollback may still need them: the service archived or not, the
+// release's number and status, and its registry digest. Image pruning
+// (core imagePrune) sorts them into kept, older rollbacks and unneeded.
+// In no particular order.
+func (q *Queries) ListServerReleaseImages(ctx context.Context, serverID int64) ([]ListServerReleaseImagesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listServerReleaseImages, serverID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListServerReleaseImagesRow
+	for rows.Next() {
+		var i ListServerReleaseImagesRow
+		if err := rows.Scan(
+			&i.ServiceID,
+			&i.Archived,
+			&i.Number,
+			&i.Status,
+			&i.ImageID,
+			&i.ImageDigest,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

@@ -419,7 +419,7 @@ func (n *Node) runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 		return empty{}, rt.RemoveImage(ctx, a.Ref)
 	}))
 	h(opPruneImages, unary(func(ctx context.Context, a pruneImagesRequest) (pruneResult, error) {
-		r, err := rt.PruneImages(ctx, node.PruneImagesRequest{Keep: a.Keep, Repos: a.Repos})
+		r, err := rt.PruneImages(ctx, a.node())
 		return pruneResult(r), err
 	}))
 	h(opPruneCache, unary(func(ctx context.Context, a pruneCacheRequest) (pruneResult, error) {
@@ -535,7 +535,7 @@ func (n *Node) runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 		return probeResult{Up: r.Up, Status: r.Status, LatencyMS: r.Latency.Milliseconds(), Error: r.Error}, err
 	}))
 	h(opDiskUsage, unary(func(ctx context.Context, a pruneImagesRequest) (wireDiskUsage, error) {
-		d, err := rt.DiskUsage(ctx, node.PruneImagesRequest{Keep: a.Keep, Repos: a.Repos})
+		d, err := rt.DiskUsage(ctx, a.node())
 		return toWireDiskUsage(d), err
 	}))
 	h(opDrainTraffic, unary(func(ctx context.Context, _ empty) (trafficResult, error) {

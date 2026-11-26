@@ -200,6 +200,9 @@ func (r *Runtime) ScanDatabase(ctx context.Context, req node.ScanDatabaseRequest
 		if r.ScanNetwork == "" {
 			return node.ScanDatabase{}, errors.New("this server doesn't build, so it has no network for the vulnerability database")
 		}
+		if err := r.cleanScanLeftovers(ctx, req); err != nil {
+			return node.ScanDatabase{}, err
+		}
 		cfg := &container.Config{
 			Image: req.Images.Grype, Labels: r.scanLabels(req.Labels), Cmd: []string{"db", "update"},
 			Env: grypeEnv(), Healthcheck: noHealthcheck(), AttachStdout: true, AttachStderr: true,
@@ -267,6 +270,9 @@ func (r *Runtime) ImportScanDatabase(ctx context.Context, req node.ScanDatabaseR
 		return node.ScanDatabase{}, err
 	}
 	if err := r.EnsureVolume(ctx, r.scanDBVolume(), req.Labels); err != nil {
+		return node.ScanDatabase{}, err
+	}
+	if err := r.cleanScanLeftovers(ctx, req); err != nil {
 		return node.ScanDatabase{}, err
 	}
 	dir := filepath.Join(r.DataDir, "scan")

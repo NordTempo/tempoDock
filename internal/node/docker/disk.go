@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
-	"slices"
 	"time"
 
-	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
 
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -16,13 +14,15 @@ import (
 
 // DiskUsage implements node.Containers with Docker's own disk usage
 // (`docker system df -v`), which sizes every image and volume, and a walk
-// of DataDir. An image is reclaimable when PruneImages would remove it:
-// dangling, made by the platform, unused and not in req.Keep.
+// of DataDir. Images are sorted by imageRules, as PruneImages removes
+// them; with req.Tool, a job sizes the vulnerability database's
+// leftovers.
 func (r *Runtime) DiskUsage(ctx context.Context, req node.PruneImagesRequest) (node.DiskUsage, error) {
 	res, err := r.systemDF(ctx)
 	if err != nil {
 		return node.DiskUsage{}, err
 	}
+	ru := r.imageRules(req)
 	var out node.DiskUsage
 	var unique int64
 	for _, img := range res.Images.Items {
@@ -31,28 +31,42 @@ func (r *Runtime) DiskUsage(ctx context.Context, req node.PruneImagesRequest) (n
 		switch {
 		case img.Containers > 0:
 			out.ImagesRunning += own
-		case !ownedImage(img.Labels, img.RepoDigests, req.Repos):
-			out.ImagesOther += own
-		case dangling(img) && !slices.Contains(req.Keep, img.ID):
+		case ru.rollbacks[img.ID]:
+			out.ImagesRollbacks += own
+		case ru.removable(img):
 			out.ImagesReclaimable += own
-		default:
+		case ru.keep[img.ID] || ownedImage(img.Labels, img.RepoDigests, req.Repos):
 			out.ImagesKept += own
+		default:
+			out.ImagesOther += own
 		}
 	}
 	// TotalSize counts each layer once; what no single image owns is shared.
 	out.ImagesShared = max(res.Images.TotalSize-unique, 0)
+	scanDB := r.scanDBVolume()
 	for _, v := range res.Volumes.Items {
 		var size int64
 		if v.UsageData != nil {
 			size = max(v.UsageData.Size, 0)
 		}
-		if isManaged(v.Labels) {
-			out.Volumes = append(out.Volumes, node.VolumeUsage{
-				Name: v.Name, Service: v.Labels[node.LabelService], ControlPlane: v.Labels[node.LabelControlPlane], Bytes: size,
-			})
-		} else {
+		if !isManaged(v.Labels) {
 			out.OtherVolumes += size
+			continue
 		}
+		u := node.VolumeUsage{Name: v.Name, Service: v.Labels[node.LabelService], ControlPlane: v.Labels[node.LabelControlPlane], Bytes: size}
+		switch v.Name {
+		case scanDB:
+			u.Role = node.VolumeScanDB
+			if req.Tool != "" && size > 0 {
+				// The reading goes on without it: it is a detail.
+				out.ScanLeftovers, _ = r.scanLeftovers(ctx, req.Tool, node.LabelsFrom(v.Labels), false)
+			}
+		case AnalyticsVolume:
+			u.Role = node.VolumeAnalytics
+		case TracesVolume:
+			u.Role = node.VolumeTraces
+		}
+		out.Volumes = append(out.Volumes, u)
 	}
 	out.Containers = max(res.Containers.TotalSize, 0)
 	if r.DataDir != "" {
@@ -84,12 +98,6 @@ func (r *Runtime) systemDF(ctx context.Context) (client.DiskUsageResult, error) 
 		}
 	}
 	return client.DiskUsageResult{}, fmt.Errorf("docker disk usage: %w", err)
-}
-
-// dangling reports whether an image has no tag left, as Docker's dangling
-// filter (which PruneImages lists with) sees it.
-func dangling(img image.Summary) bool {
-	return !slices.ContainsFunc(img.RepoTags, func(t string) bool { return t != "<none>:<none>" })
 }
 
 // dirSize is the size of the regular files under dir; what it can't read

@@ -939,13 +939,17 @@ func (c *Core) localRepoVolume() string {
 	return backup.LocalVolumePrefix + hex.EncodeToString(sum[:4])
 }
 
+// resticVolumePrefix starts the volume each server keeps the restic
+// binary in (ensureRestic).
+const resticVolumePrefix = "dock_restic_"
+
 // ensureRestic returns the server's restic volume, copying the binary
 // out of the restic image into it once per daemon start. It is named
 // after the install and the image, so an upgrade gets a fresh one and
 // control planes sharing a Docker host keep their own.
 func (c *Core) ensureRestic(ctx context.Context, serverID int64, rt node.Runtime) (string, error) {
 	sum := sha256.Sum256([]byte(c.install + "\x00" + c.cfg.Backup.ResticImage))
-	vol := "dock_restic_" + hex.EncodeToString(sum[:6])
+	vol := resticVolumePrefix + hex.EncodeToString(sum[:6])
 	c.backups.mu.Lock()
 	ready := c.backups.restic[serverID]
 	c.backups.mu.Unlock()

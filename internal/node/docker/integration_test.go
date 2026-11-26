@@ -24,6 +24,7 @@ import (
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
 
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -714,12 +715,13 @@ func (e *testEnv) importDangling(content string, built bool) string {
 	return status.Status
 }
 
-// DiskUsage counts a dangling image of the platform's that nothing keeps
-// (what PruneImages removes) as reclaimable; platform volumes carry their
+// DiskUsage counts an image of the platform's that nothing keeps (what
+// PruneImages removes) as reclaimable; platform volumes carry their
 // service, and the data dir is measured. Other work on the Docker host
 // adds images too, so the image numbers aren't pinned.
 func TestDiskUsage(t *testing.T) {
 	e := newEnv(t)
+	e.PruneGrace = time.Nanosecond
 	ctx := ctxTimeout(t, 3*time.Minute)
 	e.DataDir = t.TempDir()
 	if err := os.WriteFile(filepath.Join(e.DataDir, "dock.db"), make([]byte, 4096), 0o600); err != nil {
@@ -754,41 +756,207 @@ func TestDiskUsage(t *testing.T) {
 	}
 }
 
-// PruneImages removes the platform's dangling images except the kept ones,
-// and never a dangling image it didn't make, even one nothing keeps: a
-// shared host's other work keeps its images. The platform's dangling
-// images of other test runs are kept, so the test only touches its own.
+// PruneImages removes the platform's images nothing keeps, tagged or not,
+// and those the request names as unneeded, but never an image a
+// container uses, one it didn't make that other repositories name too,
+// nor one it didn't make and wasn't told about: a shared
+// host's other work keeps its images. Asked for rollbacks only, it
+// removes those and nothing else. Every other image on the host is kept,
+// so the test only touches its own.
 func TestPruneImages(t *testing.T) {
 	e := newEnv(t)
+	e.PruneGrace = time.Nanosecond
 	ctx := ctxTimeout(t, time.Minute)
 	gone := e.importDangling(e.prefix+"-gone", true)
-	kept := e.importDangling(e.prefix+"-kept", true)
+	tagged := e.importDangling(e.prefix+"-tagged", true)
+	if _, err := e.cli.ImageTag(ctx, client.ImageTagOptions{Source: tagged, Target: node.BuildTagPrefix + "1_e1_s1:" + e.prefix}); err != nil {
+		t.Fatal(err)
+	}
+	used := e.importDangling(e.prefix+"-used", true)
+	if _, err := e.cli.ContainerCreate(ctx, client.ContainerCreateOptions{Config: &container.Config{Image: used, Cmd: []string{"x"}}, Name: e.name("user")}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = e.cli.ContainerRemove(context.Background(), e.name("user"), client.ContainerRemoveOptions{Force: true})
+	})
 	theirs := e.importDangling(e.prefix+"-theirs", false)
-	list, err := e.cli.ImageList(ctx, client.ImageListOptions{Filters: client.Filters{}.Add("dangling", "true")})
+	released := e.importDangling(e.prefix+"-released", false)
+	// An unneeded image other work named too keeps its names and stays.
+	shared := e.importDangling(e.prefix+"-shared", false)
+	for _, name := range []string{e.prefix + "-release:1", e.prefix + "-other-work:1"} {
+		if _, err := e.cli.ImageTag(ctx, client.ImageTagOptions{Source: shared, Target: name}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() { _, _ = e.cli.ImageRemove(context.Background(), shared, client.ImageRemoveOptions{Force: true}) })
+	rollback := e.importDangling(e.prefix+"-rollback", true)
+	list, err := e.cli.ImageList(ctx, client.ImageListOptions{All: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	var keep []string
 	for _, img := range list.Items {
-		if img.ID != gone && img.ID != theirs {
+		if !slices.Contains([]string{gone, tagged, used, theirs, released, shared}, img.ID) {
 			keep = append(keep, img.ID)
 		}
 	}
-	if !slices.Contains(keep, kept) || len(keep) != len(list.Items)-2 {
-		t.Fatalf("dangling images %v should hold all three imports", list.Items)
+	req := node.PruneImagesRequest{Keep: keep, Repos: []string{"127.0.0.1:5000/dock/p"}, Unneeded: []string{released, shared}, Rollbacks: []string{rollback}}
+
+	only := req
+	only.OnlyRollbacks = true
+	if res, err := e.PruneImages(ctx, only); err != nil || res.Removed != 1 {
+		t.Fatalf("PruneImages, rollbacks only = %+v, %v", res, err)
 	}
-	res, err := e.PruneImages(ctx, node.PruneImagesRequest{Keep: keep, Repos: []string{"127.0.0.1:5000/dock/p"}})
-	if err != nil || res.Removed != 1 {
+	if _, err := e.cli.ImageInspect(ctx, rollback); !cerrdefs.IsNotFound(err) {
+		t.Errorf("the older rollback is still there: %v", err)
+	}
+	if _, err := e.cli.ImageInspect(ctx, gone); err != nil {
+		t.Errorf("a rollbacks-only prune removed another image: %v", err)
+	}
+
+	res, err := e.PruneImages(ctx, req)
+	if err != nil || res.Removed != 3 {
 		t.Fatalf("PruneImages = %+v, %v", res, err)
 	}
-	if _, err := e.cli.ImageInspect(ctx, gone); !cerrdefs.IsNotFound(err) {
-		t.Errorf("pruned image still there: %v", err)
+	for name, id := range map[string]string{"dangling": gone, "tagged": tagged, "unneeded": released} {
+		if _, err := e.cli.ImageInspect(ctx, id); !cerrdefs.IsNotFound(err) {
+			t.Errorf("the %s image is still there: %v", name, err)
+		}
 	}
-	if _, err := e.cli.ImageInspect(ctx, kept); err != nil {
-		t.Errorf("kept image: %v", err)
+	for name, id := range map[string]string{"a container's": used, "an unlabelled": theirs, "another repository's": shared} {
+		if _, err := e.cli.ImageInspect(ctx, id); err != nil {
+			t.Errorf("%s image was removed: %v", name, err)
+		}
 	}
-	if _, err := e.cli.ImageInspect(ctx, theirs); err != nil {
-		t.Errorf("unlabelled dangling image was removed: %v", err)
+}
+
+// An image picked from the listing stays when a container came to use it
+// afterwards, even a stopped one: nothing is forced. One of the
+// platform's own whose name moved to another image since keeps that
+// other image, and one other work named too keeps that name.
+func TestRemoveImageAfterTheListing(t *testing.T) {
+	e := newEnv(t)
+	ctx := ctxTimeout(t, time.Minute)
+	id := e.importDangling(e.prefix+"-picked", true)
+	name := node.BuildTagPrefix + "2_e2_s2:" + e.prefix
+	if _, err := e.cli.ImageTag(ctx, client.ImageTagOptions{Source: id, Target: name}); err != nil {
+		t.Fatal(err)
+	}
+	picked, err := e.cli.ImageInspect(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary := image.Summary{ID: picked.ID, RepoTags: picked.RepoTags, RepoDigests: picked.RepoDigests}
+	// A container comes to use it after the listing.
+	if _, err := e.cli.ContainerCreate(ctx, client.ContainerCreateOptions{Config: &container.Config{Image: id, Cmd: []string{"x"}}, Name: e.name("late")}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = e.cli.ContainerRemove(context.Background(), e.name("late"), client.ContainerRemoveOptions{Force: true})
+	})
+	if gone, err := e.removeImage(ctx, summary, true, nil); err != nil || gone {
+		t.Fatalf("removeImage = %v, %v; want it kept for the stopped container", gone, err)
+	}
+	if _, err := e.cli.ImageInspect(ctx, id); err != nil {
+		t.Fatalf("the stopped container's image was removed: %v", err)
+	}
+
+	// Its name moves to a newer image: that one keeps it.
+	newer := e.importDangling(e.prefix+"-newer", true)
+	if _, err := e.cli.ImageTag(ctx, client.ImageTagOptions{Source: newer, Target: name}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.cli.ContainerRemove(ctx, e.name("late"), client.ContainerRemoveOptions{Force: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.removeImage(ctx, summary, true, nil); err != nil {
+		t.Fatal(err)
+	}
+	if cur, err := e.cli.ImageInspect(ctx, name); err != nil || cur.ID != newer {
+		t.Fatalf("the moved name = %v, %v; want it on the newer image %s", cur.ID, err, newer)
+	}
+
+	// The platform's image that other work named too loses only its
+	// build tag, and stays.
+	built := e.importDangling(e.prefix+"-built", true)
+	// "dock/postgres" starts like a build tag but is another repository.
+	tag, theirs := node.BuildTagPrefix+"3_e3_s3:"+e.prefix, "dock/postgres:"+e.prefix
+	for _, n := range []string{tag, theirs} {
+		if _, err := e.cli.ImageTag(ctx, client.ImageTagOptions{Source: built, Target: n}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() { _, _ = e.cli.ImageRemove(context.Background(), built, client.ImageRemoveOptions{Force: true}) })
+	if gone, err := e.removeImage(ctx, image.Summary{ID: built, RepoTags: []string{tag, theirs}}, true, nil); err != nil || gone {
+		t.Fatalf("removeImage = %v, %v; want it kept by the other name", gone, err)
+	}
+	if _, err := e.cli.ImageInspect(ctx, tag); !cerrdefs.IsNotFound(err) {
+		t.Errorf("the build tag is still there: %v", err)
+	}
+	if cur, err := e.cli.ImageInspect(ctx, theirs); err != nil || cur.ID != built {
+		t.Errorf("the other name = %v, %v", cur.ID, err)
+	}
+}
+
+// What cut-off downloads leave beside the vulnerability database is sized
+// by a disk reading, removed by a prune of the leftovers (the database
+// stays), and the whole volume goes with All.
+func TestPruneScanDatabase(t *testing.T) {
+	e := newEnv(t)
+	e.DataDir = t.TempDir() // its own database volume
+	ctx := ctxTimeout(t, 2*time.Minute)
+	labels := node.Labels{ControlPlane: e.prefix}
+	vol := e.scanDBVolume()
+	if err := e.EnsureVolume(ctx, vol, labels); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = e.cli.VolumeRemove(context.Background(), vol, client.VolumeRemoveOptions{Force: true}) })
+	fill := e.start(node.ContainerSpec{
+		Name: e.name("fill"), Image: shellImage, Mounts: []node.Mount{{Volume: vol, Path: "/db"}},
+		Cmd: "mkdir -p /db/6 /db/grype-db-download123 && head -c 2097152 /dev/zero > /db/grype-db-download123/vulnerability.db && head -c 1024 /dev/zero > /db/6/vulnerability.db && sleep 60",
+	})
+	rm := func() error {
+		_, err := e.cli.ContainerRemove(context.Background(), fill.ID, client.ContainerRemoveOptions{Force: true})
+		if cerrdefs.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	defer func() { _ = rm() }()
+	deadline := time.Now().Add(30 * time.Second)
+	var du node.DiskUsage
+	for du.ScanLeftovers < 2<<20 {
+		if time.Now().After(deadline) {
+			t.Fatalf("leftovers never sized: %+v", du)
+		}
+		var err error
+		if du, err = e.DiskUsage(ctx, node.PruneImagesRequest{Tool: shellImage}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !slices.ContainsFunc(du.Volumes, func(v node.VolumeUsage) bool { return v.Name == vol && v.Role == node.VolumeScanDB }) {
+		t.Errorf("the database's volume isn't named: %+v", du.Volumes)
+	}
+	if err := rm(); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := e.PruneScanDatabase(ctx, node.ScanDatabasePrune{Tool: shellImage, Labels: labels})
+	if err != nil || res.ReclaimedBytes < 2<<20 {
+		t.Fatalf("PruneScanDatabase = %+v, %v", res, err)
+	}
+	if n, err := e.scanLeftovers(ctx, shellImage, labels, false); err != nil || n != 0 {
+		t.Fatalf("leftovers after the prune: %d, %v", n, err)
+	}
+	if _, err := e.cli.VolumeInspect(ctx, vol, client.VolumeInspectOptions{}); err != nil {
+		t.Fatalf("the database's volume went with its leftovers: %v", err)
+	}
+
+	if _, err := e.PruneScanDatabase(ctx, node.ScanDatabasePrune{All: true, Labels: labels}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.cli.VolumeInspect(ctx, vol, client.VolumeInspectOptions{}); !cerrdefs.IsNotFound(err) {
+		t.Fatalf("the database's volume is still there: %v", err)
 	}
 }
 

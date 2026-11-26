@@ -905,7 +905,8 @@ refused while one of its services is deploying.
 Archived services can't be rolled back, so their images leave the
 rollback window: the registry deletes them at its next prune (an archive
 starts one unless one ran in the last hour; otherwise the next deploy
-does), and a server whose disk fills up prunes their dangling copies.
+does), and their copies on the service's server go as soon as its
+containers have stopped.
 
 Archiving works while a service's server is unreachable; the answer (and
 the audit log) says what was left:

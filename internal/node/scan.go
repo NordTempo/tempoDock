@@ -42,6 +42,19 @@ type Scanner interface {
 	// Grype publishes it, size bytes read from archive) into the server's
 	// database, for installs that can't download one: no network.
 	ImportScanDatabase(ctx context.Context, req ScanDatabaseRequest, archive io.Reader, size int64) (ScanDatabase, error)
+	// PruneScanDatabase frees the vulnerability database's volume: what
+	// downloads that were cut off left in it or, with req.All, the whole
+	// volume (the next scan downloads the database again). Core stops
+	// scans first; a volume a job still uses is an error.
+	PruneScanDatabase(ctx context.Context, req ScanDatabasePrune) (PruneResult, error)
+}
+
+// ScanDatabasePrune says what PruneScanDatabase removes.
+type ScanDatabasePrune struct {
+	// Tool is the image the leftovers are removed with (ScanImages.Tool).
+	Tool   string
+	All    bool
+	Labels Labels
 }
 
 // MaxScanDatabaseArchive caps an imported database archive (Grype's v6
@@ -62,6 +75,10 @@ const MaxSBOMBytes = 64 << 20
 // ScanImages are the pinned scanner images (config [scan]).
 type ScanImages struct {
 	Syft, Grype string
+	// Tool is a small image with a shell: before Grype updates or imports
+	// the database, a job in it removes what a cut-off download left
+	// (Grype never does). Empty skips that.
+	Tool string
 }
 
 // ScanLimits bound one scan job.

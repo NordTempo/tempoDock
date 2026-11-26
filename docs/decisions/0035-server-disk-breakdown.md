@@ -63,3 +63,30 @@ way, so the page shows what it freed. A failed refresh sends the last
 reading with its `error`. Still no timer: a read only follows someone
 asking, so a server nobody looks at is never read.
 
+
+## Amendment 2 (2026-11-26): prune everything nothing needs, or one part
+
+Prod's disk filled to 98% with its registry in a bucket and the spool
+empty, so pushes were refused, and nothing in the console could free it:
+the prune freed 22 MB. What held the space, and why the prune missed it:
+
+| On prod | Size | Why it stayed |
+|---|---|---|
+| Images of archived services (about 25 closed previews) | part of 7.4 GB "for rollbacks" | old images go only after a deploy of the same service, which an archived one never gets; the prune took dangling images only, and these are tagged |
+| Images from other registries out of the window (five `dock-demo` versions in a day), old template database digests | part of 5.5 GB "not Dock's" | the prune only knew images Dock built or pulled from its registry |
+| A cut-off download of the vulnerability database | about 3.5 GB of 6.9 GB "other volumes" | Grype leaves `grype-db-download*` beside the database when its update is killed (a deploy preempting the scanner, the memory limit, a restart) and never removes it; reproduced on the dev VM: 3.4 GB database plus 2.6 GB left over |
+
+| Topic | Decision |
+|---|---|
+| Targets | A prune runs targets (`apitypes.PruneTarget`). Safe ones, run without targets, by Dock on a full disk and from the console's Prune all: `images`, `scanner` (the leftovers), `cache` (above `build_cache_keep_mb`). Ones that cost something later, only by name: `rollbacks`, `all-cache` (the next builds start cold), `scan-db` (the whole database, downloaded again before the next scan). `POST /servers/{server}/prune` takes `{"targets": [...]}`; `dock server prune NAME --only ...` |
+| Images nothing needs | From every release on the server (one query): each live service's window and active and in-flight releases are kept; every other image a release used is unneeded, from any registry; Dock's own images (built, or from its registry) not kept go, tagged or not; other versions of the images Dock pins (the scanners, restic, the registry, the analytics base, and on the control plane's own server BuildKit and cloudflared) go. Never one a container uses, stopped ones too, nor one made in the last hour (a build may not have recorded it yet) |
+| Shared hosts | Nothing is forced, so Docker keeps an image any container uses, a stopped one or one created since the listing. Dock's own images (built, or from its registry) lose only Dock's names (build tags, registry names), each only while it still names the picked image, so a name other work gave one keeps it; any other image goes by ID, which Docker refuses while another repository names it too. Docker has no compare-and-delete, so a name moved between the check and the removal (two local calls) is the one gap left. `[retention] keep_images` lists references no prune removes, for what other work uses without always running it (the core integration harness lists the test images it shares the host with) |
+| Older rollbacks | With the registry, kept images it has too, other than each service's active release and the one before it (where a plain rollback goes): a rollback further back pulls them by digest, as a release on another server does. Not automatic: during a bucket outage that rollback would fail |
+| Scanner | Grype's image has no shell, so a job in the restic image (busybox `du`, `rm`) sizes and removes the leftovers, and runs before every database update and import so they don't build up again. `scan-db` removes the volume. Either stops the scanner first (`scanBusy`), which cancels a running update |
+| Archives | Archiving runs the images target on the servers involved once the containers have stopped, so archived services' images go at once |
+| Reading | The disk reading sizes each target with the same rules (node protocol 34) and names Dock's volumes: vulnerability database, analytics store, trace store, backup tool. Reclaimable is the safe targets' sum |
+| UI | Mock C (Saile): the breakdown stays a reading; under it a Prune list by what each does, Prune all for the safe ones and a Prune per row, then "Not in Prune all: each costs something later" |
+
+Nodes older than protocol 34 ignore the new request fields and prune as
+before (dangling images only); freeing their scanner volume says to
+upgrade dock on them.

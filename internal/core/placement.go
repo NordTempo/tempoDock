@@ -427,6 +427,9 @@ func (o offlineRuntime) ImageDigest(context.Context, string) (string, error) { r
 func (o offlineRuntime) RemoteDigest(context.Context, string, node.PullOptions) (string, error) {
 	return "", o.err
 }
+func (o offlineRuntime) PruneScanDatabase(context.Context, node.ScanDatabasePrune) (node.PruneResult, error) {
+	return node.PruneResult{}, o.err
+}
 func (o offlineRuntime) ImportScanDatabase(context.Context, node.ScanDatabaseRequest, io.Reader, int64) (node.ScanDatabase, error) {
 	return node.ScanDatabase{}, o.err
 }

@@ -97,8 +97,12 @@ const (
 	// WarmProtocol). 33 adds ensure-sidecar and remove-sidecar, and events
 	// of sidecars with their role: a Postgres database's WAL archiver (ADR
 	// 0093, SidecarProtocol), and run-job's dock: jobs that run the
-	// node's own dock binary.
-	Protocol = 33
+	// node's own dock binary. 34 adds scan-database-prune, and prunes
+	// and disk readings that know every image a release left, other
+	// versions of the platform's own images, older rollbacks and the
+	// vulnerability database's leftovers (ADR 0035 amendment 2,
+	// PruneProtocol).
+	Protocol = 34
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1

@@ -536,12 +536,15 @@ func (r *Runtime) SetDiskUsage(d node.DiskUsage) {
 func (r *Runtime) DiskUsage(_ context.Context, req node.PruneImagesRequest) (node.DiskUsage, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.op("disk usage keep=%s repos=%s", strings.Join(req.Keep, ","), strings.Join(req.Repos, ","))
+	r.op("disk usage %s", pruneOp(req))
 	if !r.diskSet {
 		d := node.DiskUsage{
 			ImagesRunning: int64(len(r.containers)) * 180 << 20, ImagesKept: 1400 << 20, ImagesReclaimable: 620 << 20,
-			ImagesShared: 900 << 20, Containers: 64 << 20, DataDir: 96 << 20,
-			Volumes: []node.VolumeUsage{{Name: node.BuildCacheVolume, Bytes: 2900 << 20}},
+			ImagesRollbacks: 380 << 20, ImagesShared: 900 << 20, Containers: 64 << 20, DataDir: 96 << 20, ScanLeftovers: 1200 << 20,
+			Volumes: []node.VolumeUsage{
+				{Name: node.BuildCacheVolume, Bytes: 2900 << 20},
+				{Name: "dock_scan_db_fake", Role: node.VolumeScanDB, Bytes: 4600 << 20},
+			},
 		}
 		for _, name := range slices.Sorted(maps.Keys(r.volumes)) {
 			d.Volumes = append(d.Volumes, node.VolumeUsage{Name: name, Service: r.volumes[name].Service, Bytes: 300 << 20})
@@ -554,13 +557,34 @@ func (r *Runtime) DiskUsage(_ context.Context, req node.PruneImagesRequest) (nod
 }
 
 // PruneImages implements node.Containers, recorded as "prune images
-// keep=<ids> repos=<prefixes>". The fake has no dangling images, so
-// nothing is removed.
+// keep=<ids> repos=<prefixes>" and the request's other lists when set
+// (pruneOp). The fake removes nothing.
 func (r *Runtime) PruneImages(_ context.Context, req node.PruneImagesRequest) (node.PruneResult, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.op("prune images keep=%s repos=%s", strings.Join(req.Keep, ","), strings.Join(req.Repos, ","))
+	r.op("prune images %s", pruneOp(req))
 	return node.PruneResult{}, nil
+}
+
+// pruneOp is how a prune request is recorded: keep and repos always, the
+// other lists and flags when set.
+func pruneOp(req node.PruneImagesRequest) string {
+	s := "keep=" + strings.Join(req.Keep, ",") + " repos=" + strings.Join(req.Repos, ",")
+	for _, l := range []struct {
+		name string
+		ids  []string
+	}{{"unneeded", req.Unneeded}, {"rollbacks", req.Rollbacks}, {"pinned", req.Pinned}, {"protect", req.Protect}} {
+		if len(l.ids) > 0 {
+			s += " " + l.name + "=" + strings.Join(l.ids, ",")
+		}
+	}
+	if req.OnlyRollbacks {
+		s += " only-rollbacks"
+	}
+	if req.Tool != "" {
+		s += " tool=" + req.Tool
+	}
+	return s
 }
 
 // HasImageID reports whether an image with this ID is present under any
