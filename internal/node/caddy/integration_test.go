@@ -1007,7 +1007,7 @@ func TestIntegrationAnalytics(t *testing.T) {
 }
 
 // Analytics hostnames with Script get the script tag in their pages from
-// Dock's Caddy (cmd/dock-caddy, ADR 0105), gzipped for a client that
+// Dock's Caddy (cmd/dock-caddy, ADR 0106), gzipped for a client that
 // takes it; a stock Caddy loads the same routes without it.
 func TestIntegrationScriptInject(t *testing.T) {
 	bin, err := exec.LookPath("caddy")

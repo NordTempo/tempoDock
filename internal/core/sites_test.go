@@ -46,7 +46,7 @@ func (h *harness) countVisits(ref ServiceRef) apitypes.Site {
 
 // A site's pages get the script from Caddy unless its auto_script is off,
 // on the site or as the platform's default, or its consent is none (ADR
-// 0105).
+// 0106).
 func TestSiteAutoScript(t *testing.T) {
 	h := newHarness(t)
 	web := h.service("web", apitypes.CreateServiceRequest{Port: 8080})

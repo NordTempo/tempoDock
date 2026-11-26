@@ -10,7 +10,7 @@ import (
 
 // BenchmarkInject is a 33 KB page through the handler in 4 KB writes, as
 // is and gzipped for the visitor: the cost every page load of an
-// analytics site pays (ADR 0105).
+// analytics site pays (ADR 0106).
 func BenchmarkInject(b *testing.B) {
 	big := strings.Replace(page, "<body>", "<body>"+strings.Repeat("<p>Lorem ipsum dolor sit amet</p>", 1000), 1)
 	h := &Handler{Hosts: []string{"example.com"}, Src: "/_dock/a/s.js"}

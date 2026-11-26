@@ -318,7 +318,7 @@ func TestInstallShTakesOnlyAnAddress(t *testing.T) {
 
 // install.sh's Caddy (the stock build, for a dock binary given without
 // its release) is the version Dock's Caddy builds on (cmd/dock-caddy,
-// ADR 0105): install.sh keeps a Caddy of its version, so a stock one of
+// ADR 0106): install.sh keeps a Caddy of its version, so a stock one of
 // another version would replace Dock's. Both arches have a checksum.
 func TestInstallShCaddyMatchesDockCaddy(t *testing.T) {
 	read := func(path string) string {

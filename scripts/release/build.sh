@@ -4,7 +4,7 @@
 #
 #   dock-linux-{amd64,arm64}            server binary with the UI, dock-probe and dock-sync embedded
 #   dock-cli-{darwin,linux}-{arm64,amd64}  CLI only (-tags dockcli)
-#   dock-caddy-linux-{amd64,arm64}      Caddy with Dock's handlers (cmd/dock-caddy, ADR 0105),
+#   dock-caddy-linux-{amd64,arm64}      Caddy with Dock's handlers (cmd/dock-caddy, ADR 0106),
 #                                       which install.sh installs as /usr/local/bin/caddy
 #   dock-install-VERSION.tar.gz         deploy/ (install.sh, systemd units, VERSION)
 #   install.sh                          deploy/install.sh on its own, for `curl | sudo bash`:

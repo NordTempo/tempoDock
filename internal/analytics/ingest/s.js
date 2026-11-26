@@ -13,7 +13,7 @@
 // script tag; dock.consent(false) withdraws it and stops the recorder.
 //
 // Dock's Caddy adds the tag to pages itself, marked data-dock-auto (ADR
-// 0105). That tag takes itself out of the page, so a framework hydrating
+// 0106). That tag takes itself out of the page, so a framework hydrating
 // the whole document never meets it, and gives way to a tag the page has
 // of its own, whose data-consent counts.
 (function (c) {

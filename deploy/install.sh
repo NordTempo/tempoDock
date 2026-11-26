@@ -80,7 +80,7 @@
 #                 as [updates] trusted_keys: for builds signed with your own key
 #   DOCK_CADDY    path to Dock's Caddy (a release's dock-caddy-linux-<arch>, or make
 #                 caddy-binary): Caddy with Dock's handlers, which add the analytics
-#                 script to pages (ADR 0105). Default: the release's, downloaded with
+#                 script to pages (ADR 0106). Default: the release's, downloaded with
 #                 its binary; a dock binary given without its release keeps the Caddy
 #                 there is, or gets Caddy's own build (CADDY_VERSION)
 #   CADDY_VERSION, CADDY_SHA256  without Dock's Caddy: another Caddy release and the
@@ -348,7 +348,7 @@ release_has() {
   fi
 }
 
-# fetch_caddy VERSION downloads release VERSION's Dock Caddy (ADR 0105)
+# fetch_caddy VERSION downloads release VERSION's Dock Caddy (ADR 0106)
 # and sets DOCK_CADDY to it, for a dock binary that came without it: the
 # one-line install's bootstrap, an updater from before Dock's Caddy, or a
 # release tarball run by hand. A release from before it has none. A
@@ -990,7 +990,7 @@ main() {
   caddy_new=""
   caddy_name="caddy $CADDY_VERSION"
   if [[ -n "${DOCK_CADDY:-}" ]]; then
-    # Dock's Caddy (ADR 0105), checked with its release or by the updater.
+    # Dock's Caddy (ADR 0106), checked with its release or by the updater.
     [[ -f "$DOCK_CADDY" ]] || die "$DOCK_CADDY is not a file"
     caddy_name="Dock's caddy"
     cmp -s "$DOCK_CADDY" /usr/local/bin/caddy || caddy_new="$DOCK_CADDY"
@@ -1358,7 +1358,7 @@ CONF
 
   systemctl enable dock-caddy.service
   # Caddy's own build can't resume a saved config with Dock's handlers
-  # (ADR 0105) and wouldn't start: it starts on caddy.json instead, and the
+  # (ADR 0106) and wouldn't start: it starts on caddy.json instead, and the
   # daemon loads the routes again. Judged from what is on disk, so a run
   # that failed after putting Caddy's own build in place is caught by the
   # next. Stopped before the file goes, so the running Caddy can't save a

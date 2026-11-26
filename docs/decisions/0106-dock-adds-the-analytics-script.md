@@ -1,4 +1,4 @@
-# 0105: Dock adds the analytics script
+# 0106: Dock adds the analytics script
 
 Status: accepted (Saile asked for it on 2026-11-26). Amends
 [0037](0037-analytics.md) (how pages load the script) and

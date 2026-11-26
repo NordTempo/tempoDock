@@ -106,7 +106,7 @@ func resetSettings(s *apitypes.SiteSettings, names []string) error {
 }
 
 // addsScript reports whether Caddy adds the script to a site's pages
-// (ADR 0105): auto_script on, and never for consent none, whose pages load
+// (ADR 0106): auto_script on, and never for consent none, whose pages load
 // the script only once the visitor consents.
 func addsScript(s apitypes.SiteSettings) bool {
 	return *s.AutoScript && *s.Consent != apitypes.ConsentNone

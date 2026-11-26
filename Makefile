@@ -62,7 +62,7 @@ analytics-binary:
 	docker build -f deploy/analytics/Dockerfile --target binary --build-arg VERSION=$(VERSION) --output type=local,dest=bin .
 
 ## caddy-binary: bin/dock-caddy, Caddy with Dock's handlers (cmd/dock-caddy,
-## ADR 0105), built as the release builds it; install it as caddy (on PATH,
+## ADR 0106), built as the release builds it; install it as caddy (on PATH,
 ## or /usr/local/bin/caddy) to run Dock's own handlers
 caddy-binary:
 	cd cmd/dock-caddy && CGO_ENABLED=0 go build -trimpath -buildvcs=false -tags nobadger,nomysql,nopgx -ldflags '-s -w' -o ../../bin/dock-caddy .

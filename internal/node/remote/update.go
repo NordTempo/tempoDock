@@ -25,7 +25,7 @@ const UpdateProtocol = 4
 const SignedUpdateProtocol = 30
 
 // CaddyUpdateProtocol is the first that takes the release's Dock Caddy
-// (update.CaddyAsset, ADR 0105) with its update; older nodes refuse it,
+// (update.CaddyAsset, ADR 0106) with its update; older nodes refuse it,
 // and their install.sh fetches it from the release itself.
 const CaddyUpdateProtocol = 36
 

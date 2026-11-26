@@ -18,7 +18,7 @@ import (
 // (ADR 0030), its requests counted (ADR 0033) and, for hostnames of an
 // analytics site, /_dock/a/* sent to the server's ingest tagged with the
 // site, service and release (ADR 0037) and, unless the site's auto_script
-// is off, the script added to their pages (ADR 0105); services that moved away are
+// is off, the script added to their pages (ADR 0106); services that moved away are
 // forwarded with their domains, except generated ones under another
 // server's base (ADR 0063); redirect domains redirect, and
 // those of a stopped service answer 503 saying so (ADR 0050). Those of an
@@ -89,7 +89,7 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 		return err
 	}
 	// A counted service's site, by service (ADR 0104), and whether its
-	// pages get the script from Caddy (ADR 0105).
+	// pages get the script from Caddy (ADR 0106).
 	type countedSite struct {
 		id     int64
 		script bool

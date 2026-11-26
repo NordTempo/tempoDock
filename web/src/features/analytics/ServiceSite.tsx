@@ -21,7 +21,7 @@ import { SiteBar } from "./SiteBar";
 /** The script a counted hostname's pages load. */
 export const scriptTag = '<script src="/_dock/a/s.js" defer></script>';
 
-/** Whether Dock adds the script to the site's pages (ADR 0105): never for
+/** Whether Dock adds the script to the site's pages (ADR 0106): never for
  * consent none, whose pages load it once the visitor agrees. */
 export const addsScript = (s: SiteSettings) =>
   !!s.auto_script && s.consent !== "none";

@@ -1,4 +1,4 @@
-// dock-caddy is its own module (ADR 0105): Caddy and its dependencies stay
+// dock-caddy is its own module (ADR 0106): Caddy and its dependencies stay
 // out of the main module's go.mod, so `go build ./cmd/dock` can't link
 // them.
 module github.com/NordTempo/tempoDock/cmd/dock-caddy

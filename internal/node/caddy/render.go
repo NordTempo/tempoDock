@@ -748,7 +748,7 @@ func analyticsRoute(a node.AnalyticsHosts, addr string) route {
 	}
 }
 
-// scriptInject is the dock_inject handler (cmd/dock-caddy, ADR 0105) that
+// scriptInject is the dock_inject handler (cmd/dock-caddy, ADR 0106) that
 // adds the analytics script to the HTML pages of r's hostnames whose
 // groups have Script set, or nil for none, for a route that redirects or
 // is stopped, and on a Caddy without the handler (Options.noInject).

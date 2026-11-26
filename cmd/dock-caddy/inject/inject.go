@@ -1,4 +1,4 @@
-// Package inject is Caddy's dock_inject handler (ADR 0105): it adds Dock
+// Package inject is Caddy's dock_inject handler (ADR 0106): it adds Dock
 // Analytics' script tag to the HTML pages of the hostnames it is given, so
 // an app counts visits without adding the tag itself.
 //

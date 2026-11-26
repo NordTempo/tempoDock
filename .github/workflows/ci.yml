@@ -102,7 +102,7 @@ jobs:
       - run: make tempobase-deps
       # dock must not link DuckDB (ADR 0037).
       - run: make analytics-deps
-      # Dock's Caddy, its own module (ADR 0105).
+      # Dock's Caddy, its own module (ADR 0106).
       - run: make lint-caddy
 
   test:
@@ -127,7 +127,7 @@ jobs:
           cache-dependency-path: |
             go.sum
             cmd/dock-caddy/go.sum
-      # Dock's Caddy, as servers run it (ADR 0105): its handlers' tests,
+      # Dock's Caddy, as servers run it (ADR 0106): its handlers' tests,
       # then the integration tests drive it.
       - name: Dock's Caddy
         run: |

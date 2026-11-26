@@ -1,4 +1,4 @@
-// Command dock-caddy is the Caddy Dock installs on its servers (ADR 0105):
+// Command dock-caddy is the Caddy Dock installs on its servers (ADR 0106):
 // Caddy's standard build, as `caddy` from its releases, plus Dock's own
 // handlers. It is its own module so Caddy's dependencies stay out of the
 // main module's go.mod; the release ships it as dock-caddy-linux-<arch>
