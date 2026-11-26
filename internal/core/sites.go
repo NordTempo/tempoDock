@@ -384,7 +384,9 @@ func (c *Core) toSites(ctx context.Context, sites []store.Site, envs map[int64]s
 			}
 		}
 		for _, h := range hosts {
-			if h.SiteID == s.ID {
+			// Read after the site: a site moved since is in another
+			// environment, whose hostnames the caller may not see.
+			if h.SiteID == s.ID && h.EnvironmentID == s.EnvironmentID {
 				site.Hostnames = append(site.Hostnames, apitypes.SiteHostname{Hostname: h.Hostname, Service: h.ServiceName})
 			}
 		}
@@ -411,21 +413,35 @@ func (c *Core) EnableServiceAnalytics(ctx context.Context, a Actor, ref ServiceR
 	var site store.Site
 	var fresh bool
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
-		last, err := q.LastSiteOfService(ctx, &ss.svc.ID)
-		switch {
-		case err == nil && last.ArchivedAt == nil:
-			site = last
+		// Archived meanwhile: its site was archived with it (archiveTx).
+		if svc, err := q.GetService(ctx, ss.svc.ID); err != nil {
+			return err
+		} else if svc.ArchivedAt != nil {
+			return conflict("%s is archived; analytics counts live services", ss)
+		}
+		if live, err := q.LiveSiteOfService(ctx, &ss.svc.ID); err == nil {
+			site = live
 			return nil
+		} else if !store.IsNotFound(err) {
+			return err
+		}
+		last, err := q.LastArchivedSiteOfService(ctx, &ss.svc.ID)
+		switch {
 		case err == nil:
-			// Back with its history, under a name no live site took meanwhile.
+			// Back with its history, under a name no live site took
+			// meanwhile; a public domain another site took is dropped.
 			name, err := freeSiteName(ctx, q, ss.project.ID, last.Name)
 			if err != nil {
 				return err
 			}
-			if err := q.UnarchiveSite(ctx, store.UnarchiveSiteParams{Name: name, ID: last.ID}); err != nil {
+			settings, err := freePublicDomain(ctx, q, last.Settings)
+			if err != nil {
 				return err
 			}
-			site, site.Name, site.ArchivedAt = last, name, nil
+			if err := q.UnarchiveSite(ctx, store.UnarchiveSiteParams{Name: name, Settings: settings, ID: last.ID}); err != nil {
+				return err
+			}
+			site, site.Name, site.Settings, site.ArchivedAt = last, name, settings, nil
 		case store.IsNotFound(err):
 			name, err := newSiteName(ctx, q, ss)
 			if err != nil {
@@ -456,10 +472,12 @@ func (c *Core) EnableServiceAnalytics(ctx context.Context, a Actor, ref ServiceR
 	}
 	if fresh {
 		c.analyticsSitesChanged(ctx)
-		if err := c.applyRoutes(ctx, ss.env.ServerID); err != nil {
-			c.log.Error("apply routes after turning analytics on", "service", ss.String(), "err", err)
-		}
 		c.audit(ctx, a, "analytics.enable", &ss.project, &ss.env, ss.String(), "analytics on for "+ss.svc.Name+" (site "+site.Name+")")
+	}
+	// Every time, so turning it on again repairs routes an earlier call
+	// failed to apply; routes that don't change reload nothing.
+	if err := c.applyRoutes(ctx, ss.env.ServerID); err != nil {
+		c.log.Error("apply routes after turning analytics on", "service", ss.String(), "err", err)
 	}
 	return c.GetSite(ctx, a, ss.project.Name, site.Name)
 }
@@ -521,25 +539,35 @@ func (c *Core) MoveSite(ctx context.Context, a Actor, project, name string, req 
 	t := now()
 	newName := s.site.Name
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		if svc, err := q.GetService(ctx, ts.svc.ID); err != nil {
+			return err
+		} else if svc.ArchivedAt != nil {
+			return conflict("%s is archived; move the site to a live service", ts)
+		}
 		if other, err := q.LiveSiteOfService(ctx, &ts.svc.ID); err == nil {
 			return conflict("%s counts visits for site %s already; turn that off first with `dock analytics disable -s %s -e %s` (its history is kept)", ts, other.Name, ts.svc.Name, ts.env.Name)
 		} else if !store.IsNotFound(err) {
 			return err
 		}
-		if err := q.SetSiteService(ctx, store.SetSiteServiceParams{ServiceID: &ts.svc.ID, EnvironmentID: ts.env.ID, ID: s.site.ID}); err != nil {
-			return err
-		}
-		// Into another project, where its name may be taken.
+		// Into another project, where its name may be taken: looked up
+		// before the site is there itself.
 		if ts.project.ID != s.project.ID {
 			var err error
 			if newName, err = freeSiteName(ctx, q, ts.project.ID, s.site.Name); err != nil {
 				return err
 			}
-			if newName != s.site.Name {
-				if err := q.RenameSite(ctx, store.RenameSiteParams{Name: newName, ID: s.site.ID}); err != nil {
-					return err
-				}
-			}
+		}
+		// Only from where the actor was allowed to move it: a move
+		// committed since leaves nothing to change.
+		n, err := q.SetSiteService(ctx, store.SetSiteServiceParams{
+			ServiceID: &ts.svc.ID, EnvironmentID: ts.env.ID, Name: newName,
+			ID: s.site.ID, FromEnvironment: s.site.EnvironmentID, FromService: s.site.ServiceID,
+		})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return conflict("site %s changed while it was being moved; look at `dock analytics sites` and try again", name)
 		}
 		return q.AddSiteMarker(ctx, store.AddSiteMarkerParams{SiteID: s.site.ID, At: t, Kind: "moved", Message: "moved from " + from + " to " + ts.svc.Name})
 	})
@@ -590,6 +618,24 @@ func (c *Core) createSite(ctx context.Context, q *store.Queries, ss svcScope, na
 	}
 	site.Settings = od.Settings
 	return site, nil
+}
+
+// freePublicDomain is settings (a site's own, JSON) without its public
+// domain when another live site holds that domain now: a site brought
+// back keeps everything else.
+func freePublicDomain(ctx context.Context, q *store.Queries, settings string) (string, error) {
+	var o apitypes.SiteSettings
+	if err := json.Unmarshal([]byte(settings), &o); err != nil || o.PublicDomain == nil || *o.PublicDomain == "" {
+		return settings, nil
+	}
+	if _, err := q.PublicDomainHolder(ctx, *o.PublicDomain); store.IsNotFound(err) {
+		return settings, nil
+	} else if err != nil {
+		return "", err
+	}
+	o.PublicDomain = nil
+	b, err := json.Marshal(o)
+	return string(b), err
 }
 
 // OrgSiteDefaults returns the org's defaults for new analytics sites:

@@ -85,9 +85,9 @@ function Sites() {
 }
 
 /**
- * Projects with no site: analytics is off for them. Turning it on is a
- * domain's switch, so each links to the first service with a domain of
- * its own (generated ones count too). The table keeps the default page
+ * Projects with no site: analytics is off for them. Each links to the
+ * Analytics section of its first service with a domain of its own
+ * (generated ones count too): a service without one has nothing to count. The table keeps the default page
  * width (1400px less its padding) when the tiles above run wider.
  */
 function WithoutAnalytics({ counted }: { counted: Set<string> }) {
@@ -119,9 +119,9 @@ function WithoutAnalytics({ counted }: { counted: Set<string> }) {
                       <Link
                         to="/$org/$project/$environment/$service/settings"
                         params={{ org, ...serviceRef(withDomain.service) }}
-                        hash="domains"
+                        hash="analytics"
                         className="btn sm"
-                        title={`Opens the domains of ${withDomain.service.name}, ${p.name}'s service with a domain; turn counting on there`}
+                        title={`Opens Settings › Analytics of ${withDomain.service.name}, ${p.name}'s service with a domain; turn counting on there`}
                       >
                         Turn on for {p.name}
                       </Link>

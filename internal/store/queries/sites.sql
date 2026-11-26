@@ -9,10 +9,12 @@ RETURNING *;
 -- name: LiveSiteOfService :one
 SELECT * FROM sites WHERE service_id = +? AND archived_at IS NULL;
 
--- LastSiteOfService returns the service's newest site, archived or not:
--- turning analytics on again brings it back.
--- name: LastSiteOfService :one
-SELECT * FROM sites WHERE service_id = +? ORDER BY id DESC LIMIT 1;
+-- LastArchivedSiteOfService returns the service's site archived last:
+-- the one it counted for before analytics was turned off, which turning
+-- it on again brings back.
+-- name: LastArchivedSiteOfService :one
+SELECT * FROM sites WHERE service_id = +? AND archived_at IS NOT NULL
+ORDER BY archived_at DESC, id DESC LIMIT 1;
 
 -- name: GetSite :one
 SELECT * FROM sites WHERE id = +?;
@@ -65,9 +67,12 @@ SELECT id, name FROM sites WHERE public_slug IS NULL AND archived_at IS NULL ORD
 -- name: ListPublicSites :many
 SELECT id, public_slug, settings FROM sites WHERE archived_at IS NULL ORDER BY id;
 
--- SetSiteService hands a site to another service (dock analytics move).
--- name: SetSiteService :exec
-UPDATE sites SET service_id = ?, environment_id = ? WHERE id = +?;
+-- SetSiteService hands a live site to another service, under name
+-- (dock analytics move), only while it is still where it was moved from.
+-- name: SetSiteService :execrows
+UPDATE sites SET service_id = ?, environment_id = ?, name = ?
+WHERE id = +sqlc.arg(id) AND environment_id = +sqlc.arg(from_environment)
+  AND service_id IS +sqlc.arg(from_service) AND archived_at IS NULL;
 
 -- name: ArchiveSite :exec
 UPDATE sites SET archived_at = ? WHERE id = +? AND archived_at IS NULL;
@@ -77,13 +82,13 @@ UPDATE sites SET archived_at = ? WHERE id = +? AND archived_at IS NULL;
 UPDATE sites SET archived_at = ? WHERE service_id = +? AND archived_at IS NULL;
 
 -- name: UnarchiveSite :exec
-UPDATE sites SET archived_at = NULL, name = ? WHERE id = +?;
+UPDATE sites SET archived_at = NULL, name = ?, settings = ? WHERE id = +?;
 
 -- ListSiteHostnames returns the hostnames the given sites count: their
 -- service's verified domains that don't redirect, with the service's
 -- name. An unverified one might be another org's.
 -- name: ListSiteHostnames :many
-SELECT sites.id AS site_id, domains.hostname, services.name AS service_name
+SELECT sites.id AS site_id, domains.hostname, services.name AS service_name, services.environment_id
 FROM sites
 JOIN services ON services.id = sites.service_id
 JOIN domains ON domains.service_id = sites.service_id AND domains.redirect_to = '' AND domains.verified_at IS NOT NULL
@@ -181,15 +186,15 @@ DELETE FROM site_funnels WHERE site_id = +sqlc.arg(site_id) AND name = +sqlc.arg
 
 -- name: SiteServing :one
 -- Whether a site's service is live, not stopped (ADR 0050), in an
--- environment that isn't asleep, and has a domain that doesn't redirect:
--- a site without one has no traffic to expect.
+-- environment that isn't asleep, and has a verified domain that doesn't
+-- redirect: a site without one has no traffic to expect.
 SELECT CAST(EXISTS (
     SELECT 1 FROM sites
     JOIN services ON services.id = sites.service_id
     JOIN environments ON environments.id = services.environment_id
     WHERE sites.id = +? AND services.archived_at IS NULL AND services.stopped_at IS NULL
       AND environments.asleep_at IS NULL
-      AND EXISTS (SELECT 1 FROM domains WHERE domains.service_id = services.id AND domains.redirect_to = '')
+      AND EXISTS (SELECT 1 FROM domains WHERE domains.service_id = services.id AND domains.redirect_to = '' AND domains.verified_at IS NOT NULL)
 ) AS BOOLEAN) AS serving;
 
 -- ListOrgSites returns an organization's live sites in live projects, by

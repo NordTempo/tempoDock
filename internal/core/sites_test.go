@@ -149,6 +149,11 @@ func TestSiteMove(t *testing.T) {
 	h.deploy(v2, "nginx:1")
 	h.domain(v1, "old.example.com")
 	h.domain(v2, "shop.example.com")
+	// web-v2 counted once, so it has a site archived since.
+	early := h.countVisits(v2)
+	if err := h.c.DisableServiceAnalytics(h.ctx, testSystem, v2); err != nil {
+		t.Fatal(err)
+	}
 	h.countVisits(v1)
 	before, _ := analyticsRoute(h, "old.example.com")
 
@@ -172,21 +177,37 @@ func TestSiteMove(t *testing.T) {
 	if err != nil || !slices.ContainsFunc(stats.Markers, func(m apitypes.SiteMarker) bool { return m.Kind == "moved" }) {
 		t.Errorf("markers = %+v, %v; want the move", stats.Markers, err)
 	}
+	// Counting on web-v2 again keeps the moved site, not its older one;
+	// off and on brings back the one it counted last.
+	if again := h.countVisits(v2); again.Name != "old.example.com" {
+		t.Errorf("enable after the move = %s, want old.example.com (not %s)", again.Name, early.Name)
+	}
+	if err := h.c.DisableServiceAnalytics(h.ctx, testSystem, v2); err != nil {
+		t.Fatal(err)
+	}
+	if back := h.countVisits(v2); back.Name != "old.example.com" {
+		t.Errorf("on again = %s, want the site it counted last", back.Name)
+	}
 
 	// web counts again in a site of its own; moving into web-v2 now is refused.
 	h.countVisits(v1)
 	sites, _ := h.c.ListSites(h.ctx, testSystem, "shop")
-	if len(sites) != 2 {
-		t.Fatalf("sites = %+v", sites)
-	}
 	var web string
 	for _, s := range sites {
-		if s.Service == "web" {
+		if s.Service == "web" && !s.Archived {
 			web = s.Name
 		}
 	}
 	if _, err := h.c.MoveSite(h.ctx, testSystem, "shop", web, to); CodeOf(err) != apitypes.CodeConflict {
 		t.Errorf("moving into a service that counts: %v", err)
+	}
+	// Nor into an archived service.
+	v3 := h.service("web-v3", apitypes.CreateServiceRequest{Port: 8080})
+	if _, err := h.c.ArchiveService(h.ctx, testSystem, v3); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.MoveSite(h.ctx, testSystem, "shop", web, apitypes.MoveSiteRequest{Environment: "production", Service: "web-v3"}); CodeOf(err) != apitypes.CodeConflict {
+		t.Errorf("moving into an archived service: %v", err)
 	}
 }
 

@@ -27,7 +27,7 @@ tunnel.
 | Topic | Decision |
 |---|---|
 | Sites | A site is one service's analytics: `sites.service_id`, at most one live site per service. The site lives in the service's environment, so staging and production still never mix. A site no longer spans services; `analytics enable --site` goes |
-| Counted hostnames | Every domain of a counted service is counted, except redirects. A domain added later is counted from its first request; nothing is asked. `site_hostnames` goes: routing reads the service's domains |
+| Counted hostnames | Every verified domain of a counted service is counted, except redirects. An unverified one isn't routed (ADR 0042), so a domain added later counts once it verifies; nothing is asked. `site_hostnames` goes: routing reads the service's domains |
 | Turning it on | Per service: `dock analytics enable -s <service> -e <env>` (and `disable`), or the Analytics section of the service's Settings. Turning it off archives the site; turning it on again brings the service's last site back with its history. The first site starts the store, as before |
 | Naming | A new site is named after the service's first custom domain that doesn't redirect (verified ones first), else the service; `-2`, `-3` when the project has a live site of that name. The name is a label: sites no longer rename themselves when a hostname goes away |
 | Domains moving | Adding, removing or moving a domain never touches a site. Its past visits stay in the site of the service that served them; its new ones count for the service it is on now, if that service is counted. `domain add --analytics` and its API field go |

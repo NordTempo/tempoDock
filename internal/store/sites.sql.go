@@ -299,14 +299,16 @@ func (q *Queries) GetSiteFunnel(ctx context.Context, arg GetSiteFunnelParams) (S
 	return i, err
 }
 
-const lastSiteOfService = `-- name: LastSiteOfService :one
-SELECT id, environment_id, name, settings, archived_at, created_by, created_at, public_slug, service_id FROM sites WHERE service_id = +? ORDER BY id DESC LIMIT 1
+const lastArchivedSiteOfService = `-- name: LastArchivedSiteOfService :one
+SELECT id, environment_id, name, settings, archived_at, created_by, created_at, public_slug, service_id FROM sites WHERE service_id = +? AND archived_at IS NOT NULL
+ORDER BY archived_at DESC, id DESC LIMIT 1
 `
 
-// LastSiteOfService returns the service's newest site, archived or not:
-// turning analytics on again brings it back.
-func (q *Queries) LastSiteOfService(ctx context.Context, serviceID *int64) (Site, error) {
-	row := q.db.QueryRowContext(ctx, lastSiteOfService, serviceID)
+// LastArchivedSiteOfService returns the service's site archived last:
+// the one it counted for before analytics was turned off, which turning
+// it on again brings back.
+func (q *Queries) LastArchivedSiteOfService(ctx context.Context, serviceID *int64) (Site, error) {
+	row := q.db.QueryRowContext(ctx, lastArchivedSiteOfService, serviceID)
 	var i Site
 	err := row.Scan(
 		&i.ID,
@@ -696,7 +698,7 @@ func (q *Queries) ListSiteGoals(ctx context.Context, siteID int64) ([]SiteGoal, 
 }
 
 const listSiteHostnames = `-- name: ListSiteHostnames :many
-SELECT sites.id AS site_id, domains.hostname, services.name AS service_name
+SELECT sites.id AS site_id, domains.hostname, services.name AS service_name, services.environment_id
 FROM sites
 JOIN services ON services.id = sites.service_id
 JOIN domains ON domains.service_id = sites.service_id AND domains.redirect_to = '' AND domains.verified_at IS NOT NULL
@@ -705,9 +707,10 @@ ORDER BY domains.generated, domains.hostname
 `
 
 type ListSiteHostnamesRow struct {
-	SiteID      int64
-	Hostname    string
-	ServiceName string
+	SiteID        int64
+	Hostname      string
+	ServiceName   string
+	EnvironmentID int64
 }
 
 // ListSiteHostnames returns the hostnames the given sites count: their
@@ -732,7 +735,12 @@ func (q *Queries) ListSiteHostnames(ctx context.Context, siteIds []int64) ([]Lis
 	var items []ListSiteHostnamesRow
 	for rows.Next() {
 		var i ListSiteHostnamesRow
-		if err := rows.Scan(&i.SiteID, &i.Hostname, &i.ServiceName); err != nil {
+		if err := rows.Scan(
+			&i.SiteID,
+			&i.Hostname,
+			&i.ServiceName,
+			&i.EnvironmentID,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1037,20 +1045,36 @@ func (q *Queries) SetSitePublicSlug(ctx context.Context, arg SetSitePublicSlugPa
 	return err
 }
 
-const setSiteService = `-- name: SetSiteService :exec
-UPDATE sites SET service_id = ?, environment_id = ? WHERE id = +?
+const setSiteService = `-- name: SetSiteService :execrows
+UPDATE sites SET service_id = ?, environment_id = ?, name = ?
+WHERE id = +?4 AND environment_id = +?5
+  AND service_id IS +?6 AND archived_at IS NULL
 `
 
 type SetSiteServiceParams struct {
-	ServiceID     *int64
-	EnvironmentID int64
-	ID            int64
+	ServiceID       *int64
+	EnvironmentID   int64
+	Name            string
+	ID              int64
+	FromEnvironment int64
+	FromService     *int64
 }
 
-// SetSiteService hands a site to another service (dock analytics move).
-func (q *Queries) SetSiteService(ctx context.Context, arg SetSiteServiceParams) error {
-	_, err := q.db.ExecContext(ctx, setSiteService, arg.ServiceID, arg.EnvironmentID, arg.ID)
-	return err
+// SetSiteService hands a live site to another service, under name
+// (dock analytics move), only while it is still where it was moved from.
+func (q *Queries) SetSiteService(ctx context.Context, arg SetSiteServiceParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setSiteService,
+		arg.ServiceID,
+		arg.EnvironmentID,
+		arg.Name,
+		arg.ID,
+		arg.FromEnvironment,
+		arg.FromService,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const setSiteSettings = `-- name: SetSiteSettings :exec
@@ -1074,13 +1098,13 @@ SELECT CAST(EXISTS (
     JOIN environments ON environments.id = services.environment_id
     WHERE sites.id = +? AND services.archived_at IS NULL AND services.stopped_at IS NULL
       AND environments.asleep_at IS NULL
-      AND EXISTS (SELECT 1 FROM domains WHERE domains.service_id = services.id AND domains.redirect_to = '')
+      AND EXISTS (SELECT 1 FROM domains WHERE domains.service_id = services.id AND domains.redirect_to = '' AND domains.verified_at IS NOT NULL)
 ) AS BOOLEAN) AS serving
 `
 
 // Whether a site's service is live, not stopped (ADR 0050), in an
-// environment that isn't asleep, and has a domain that doesn't redirect:
-// a site without one has no traffic to expect.
+// environment that isn't asleep, and has a verified domain that doesn't
+// redirect: a site without one has no traffic to expect.
 func (q *Queries) SiteServing(ctx context.Context, id int64) (bool, error) {
 	row := q.db.QueryRowContext(ctx, siteServing, id)
 	var serving bool
@@ -1089,15 +1113,16 @@ func (q *Queries) SiteServing(ctx context.Context, id int64) (bool, error) {
 }
 
 const unarchiveSite = `-- name: UnarchiveSite :exec
-UPDATE sites SET archived_at = NULL, name = ? WHERE id = +?
+UPDATE sites SET archived_at = NULL, name = ?, settings = ? WHERE id = +?
 `
 
 type UnarchiveSiteParams struct {
-	Name string
-	ID   int64
+	Name     string
+	Settings string
+	ID       int64
 }
 
 func (q *Queries) UnarchiveSite(ctx context.Context, arg UnarchiveSiteParams) error {
-	_, err := q.db.ExecContext(ctx, unarchiveSite, arg.Name, arg.ID)
+	_, err := q.db.ExecContext(ctx, unarchiveSite, arg.Name, arg.Settings, arg.ID)
 	return err
 }
