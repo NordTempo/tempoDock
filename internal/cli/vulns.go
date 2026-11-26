@@ -3,6 +3,7 @@ package cli
 import (
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -495,20 +496,26 @@ func printImages(g *globals, l apitypes.ImageList) error {
 		g.io.Detail("No live releases.")
 		return nil
 	}
-	tbl := g.io.Table("image", "used by", "base", "vulnerabilities", "scanned")
+	tbl := g.io.Table("image", "used by", "base", "vulnerabilities", "update", "scanned")
 	for _, img := range l.Images {
 		var used []string
 		for _, u := range img.UsedBy {
 			used = append(used, u.Service+" · "+u.Environment)
 		}
-		base, vulns, scanned := "", "queued", ""
+		base, vulns, update, scanned := "", "queued", "", ""
 		if sc := img.Scan; sc != nil {
 			base, vulns = sc.Distro, scanText(*sc)
 			if sc.ScannedAt != nil {
 				scanned = ago(*sc.ScannedAt)
 			}
+			if b := sc.Base; b != nil && b.Moved {
+				update = "newer base"
+				if b.Own {
+					update = "newer image"
+				}
+			}
 		}
-		tbl.Row(img.Image, strings.Join(used, ", "), base, vulns, scanned)
+		tbl.Row(img.Image, strings.Join(used, ", "), base, vulns, update, scanned)
 	}
 	if err := tbl.Flush(); err != nil {
 		return err
@@ -549,6 +556,102 @@ minute, so it never slows one down.`,
 	f.add(cmd, needService)
 	cmd.Flags().Int64VarP(&release, "release", "r", 0, "release number (default: the live one)")
 	return cmd
+}
+
+// newImageUpdatesCmd is `dock image-updates [auto|manual|check]`: a
+// service's image updates (ADR 0074, amendment 2026-11-26).
+func newImageUpdatesCmd(g *globals) *cobra.Command {
+	var f targetFlags
+	cmd := &cobra.Command{
+		Use:   "image-updates [auto|manual|check]",
+		Short: "Whether a service deployed by tag updates to the tag's newer image on its own",
+		Long: `Without an argument, shows the tag the service's live image follows, whether
+it points at a newer image and whether the service updates on its own.
+
+  auto     after the daily check sees the tag point at a newer image, Dock
+           snapshots the service's volumes and deploys that image by
+           digest; a release that doesn't come up leaves the previous one
+           serving
+  manual   the default: the service offers Update, deployed by hand with
+           ` + "`dock deploy --image TAG@DIGEST`" + `
+  check    ask the registry now instead of waiting for the daily check`,
+		Args:      cobra.MaximumNArgs(1),
+		ValidArgs: []string{"auto", "manual", "check"},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, t, err := g.open(f, needService)
+			if err != nil {
+				return err
+			}
+			ctx := cmd.Context()
+			switch {
+			case len(args) == 0:
+			case args[0] == "check":
+				if _, err := send[apitypes.ImageScan](ctx, s, http.MethodPost, t.servicePath()+"/image-check", nil); err != nil {
+					return err
+				}
+			case args[0] == "auto" || args[0] == "manual":
+				if _, err := send[apitypes.Service](ctx, s, http.MethodPut, t.servicePath()+"/auto-update", apitypes.AutoUpdateRequest{AutoUpdate: args[0] == "auto"}); err != nil {
+					return err
+				}
+			default:
+				return &output.Error{Exit: output.ExitUsage, Message: fmt.Sprintf("unknown argument %q", args[0]), Hint: "Use `dock image-updates`, `auto`, `manual` or `check`."}
+			}
+			svc, err := get[apitypes.Service](ctx, s, t.servicePath())
+			if err != nil {
+				return err
+			}
+			// 404 until the live image is scanned: no tag known yet.
+			detail, err := get[apitypes.ImageDetail](ctx, s, t.servicePath()+"/vulnerabilities")
+			if e, ok := errors.AsType[*output.Error](err); err != nil && (!ok || e.Exit != output.ExitNotFound) {
+				return err
+			}
+			st := imageUpdates{Service: svc.Name, AutoUpdate: svc.AutoUpdate, Base: detail.Scan.Base}
+			return g.io.Print(st, func() error {
+				printImageUpdates(g, st)
+				return nil
+			})
+		},
+	}
+	f.add(cmd, needService)
+	return cmd
+}
+
+// imageUpdates is `dock image-updates --json`: whether the service
+// updates on its own, and the tag its image follows (none before its
+// first scan, or for an image deployed by digest).
+type imageUpdates struct {
+	Service    string              `json:"service"`
+	AutoUpdate bool                `json:"auto_update"`
+	Base       *apitypes.ImageBase `json:"base,omitempty"`
+}
+
+func printImageUpdates(g *globals, st imageUpdates) {
+	mode := "manual"
+	if st.AutoUpdate {
+		mode = "automatic"
+	}
+	b := st.Base
+	switch {
+	case b == nil:
+		g.io.Detail(fmt.Sprintf("Image updates: %s. Dock doesn't know which tag %s's image follows yet: it is known once the image is scanned, and only for images deployed by tag or built from a Dockerfile.", mode, st.Service))
+		return
+	case !b.Own:
+		g.io.Detail(fmt.Sprintf("%s is built on %s.", st.Service, b.Image))
+	default:
+		g.io.Detail(fmt.Sprintf("%s follows %s. Image updates: %s.", st.Service, b.Image, mode))
+	}
+	checked := "not checked yet"
+	if b.CheckedAt != nil {
+		checked = "checked " + ago(*b.CheckedAt)
+	}
+	switch {
+	case b.Moved && b.Own:
+		g.io.Detail(fmt.Sprintf("The tag has a newer image (%s): `dock deploy -s %s --image %s@%s` updates it.", checked, st.Service, b.Image, b.Latest))
+	case b.Moved:
+		g.io.Detail(fmt.Sprintf("The tag has a newer image (%s): deploying again builds on it.", checked))
+	default:
+		g.io.Detail(fmt.Sprintf("Up to date (%s).", checked))
+	}
 }
 
 // newSBOMCmd is `dock sbom [-r N]`: a service's image's SBOM to stdout.

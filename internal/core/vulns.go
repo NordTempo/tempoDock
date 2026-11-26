@@ -67,7 +67,7 @@ func (c *Core) ListImages(ctx context.Context, a Actor, production bool) (apityp
 	byScan := map[int64]int{}
 	for _, r := range rows {
 		use := apitypes.ImageUse{Project: r.Project, Environment: r.Environment, Service: r.Service, Release: r.Number,
-			Production: r.EnvKind == string(apitypes.KindProduction), Live: true}
+			Production: r.EnvKind == string(apitypes.KindProduction), Live: true, AutoUpdate: r.AutoUpdate != 0}
 		if r.ImageScanID != nil {
 			if i, ok := byScan[*r.ImageScanID]; ok {
 				out.Images[i].UsedBy = append(out.Images[i].UsedBy, use)
@@ -255,6 +255,7 @@ func (c *Core) imageDetail(ctx context.Context, a Actor, scanID int64, name stri
 	for _, r := range rels {
 		u := apitypes.ImageUse{Project: r.Project, Environment: r.Environment, Service: r.Service, Release: r.Number,
 			Production: r.EnvKind == string(apitypes.KindProduction), Live: r.Status == string(apitypes.ReleaseActive)}
+		u.AutoUpdate = u.Live && r.AutoUpdate != 0
 		out.UsedBy = append(out.UsedBy, u)
 		vu := vulnUse{r.ProjectID, r.ServiceID}
 		if u.Live && !slices.Contains(live, vu) {

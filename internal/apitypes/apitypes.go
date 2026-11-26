@@ -466,6 +466,10 @@ type Service struct {
 	// Both apply immediately and are never staged.
 	Database            DatabaseSetting `json:"database" enum:",postgres,mysql,redis,none"`
 	DatabaseURLVariable string          `json:"database_url_variable"`
+	// AutoUpdate: a service deployed by tag updates to the tag's newer
+	// image on its own after the daily check (ADR 0074). Applies
+	// immediately and is never staged.
+	AutoUpdate bool `json:"auto_update"`
 	// DataEngine is the detected database engine; the Data tab shows when
 	// it is set.
 	DataEngine DataEngine `json:"data_engine,omitempty" enum:"postgres,mysql,redis"`

@@ -251,6 +251,8 @@ var actionPerms = map[actionKey]Perm{
 	{apitypes.ScopeDeploy, "running a command"}:                                  PermRun,
 	{apitypes.ScopeDeploy, "running a job"}:                                      PermRun,
 	{apitypes.ScopeDeploy, "scanning images"}:                                    PermDeploy,
+	{apitypes.ScopeDeploy, "checking for a newer image"}:                         PermDeploy,
+	{apitypes.ScopeDeploy, "changing image updates"}:                             PermDeploy,
 	{apitypes.ScopeRead, "scheduling maintenance"}:                               PermStatusPagesRead,
 	{apitypes.ScopeDeploy, "setting a job"}:                                      PermConfigWrite,
 	{apitypes.ScopeAdmin, "setting organization variables"}:                      PermOrgVariables,

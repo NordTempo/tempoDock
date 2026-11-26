@@ -92,7 +92,7 @@ ORDER BY severity DESC, vuln_id, package, version LIMIT +sqlc.arg(max_rows);
 -- The org's live releases with their scans (none yet: NULL), for the
 -- Images page; core groups them by scan.
 SELECT r.id AS release_id, r.number, r.image_ref, r.image_scan_id, r.finished_at,
-       s.id AS service_id, s.name AS service, e.id AS environment_id, e.name AS environment, e.kind AS env_kind, p.id AS project_id, p.name AS project
+       s.id AS service_id, s.name AS service, s.auto_update, e.id AS environment_id, e.name AS environment, e.kind AS env_kind, p.id AS project_id, p.name AS project
 FROM projects p
 JOIN environments e ON e.project_id = p.id AND e.archived_at IS NULL
 JOIN services s ON s.environment_id = e.id AND s.archived_at IS NULL
@@ -106,7 +106,7 @@ SELECT * FROM image_scans WHERE id IN (sqlc.slice(ids));
 
 -- name: ListImageScanReleases :many
 -- The org's releases of one image, live ones first, newest first.
-SELECT r.id AS release_id, r.number, r.status, r.image_ref, s.id AS service_id, s.name AS service,
+SELECT r.id AS release_id, r.number, r.status, r.image_ref, s.id AS service_id, s.name AS service, s.auto_update,
        e.id AS environment_id, e.name AS environment, e.kind AS env_kind, p.id AS project_id, p.name AS project
 FROM releases r
 JOIN services s ON s.id = r.service_id
@@ -282,14 +282,21 @@ WHERE i.base_image != '' AND i.base_digest != ''
   AND EXISTS (SELECT 1 FROM releases r WHERE r.image_scan_id = i.id AND r.status = 'active')
 GROUP BY i.base_image LIMIT +sqlc.arg(max_rows);
 
--- name: SetBaseImageDigest :exec
+-- name: SetBaseImageDigest :many
 -- What a base image's tag points at now: the images built on an older
 -- digest have a newer base a rebuild picks up, and an image deployed by
--- that tag has a newer image to update to. base_image != '' lets SQLite
--- use the partial index image_scans_base.
+-- that tag has a newer image to update to. Returns the scans it updated,
+-- for their pages to learn of it. base_image != '' lets SQLite use the
+-- partial index image_scans_base.
 UPDATE image_scans SET base_moved = CAST(base_digest != sqlc.arg(digest) AS INTEGER), base_latest = sqlc.arg(digest),
   base_checked_at = sqlc.arg(checked_at)
-WHERE base_image = +sqlc.arg(base_image) AND base_image != '' AND base_digest != '';
+WHERE base_image = +sqlc.arg(base_image) AND base_image != '' AND base_digest != ''
+RETURNING *;
+
+-- name: GetLastBaseCheck :one
+-- When the daily check last got an answer for any base image, 0 for
+-- never: at start-up, whether the next check is due.
+SELECT CAST(coalesce(max(base_checked_at), 0) AS INTEGER) FROM image_scans WHERE base_image != '';
 
 -- name: GetTagDigest :one
 -- What a tag pointed at at its last daily check since checked_after: the
@@ -310,3 +317,19 @@ ON CONFLICT (id) DO UPDATE SET scan_db_import = excluded.scan_db_import, updated
 -- name: SetServerScanImport :exec
 -- The database archive a builder imported (its sha256).
 UPDATE servers SET scan_db_import = ? WHERE id = +sqlc.arg(id);
+
+-- name: SetServiceAutoUpdate :exec
+-- Turns a service's automatic image updates on (1) or off (0); applies
+-- at once, never staged.
+UPDATE services SET auto_update = ? WHERE id = +sqlc.arg(id);
+
+-- name: ListImageAutoUpdates :many
+-- The live releases of services with auto_update on whose image is its
+-- tag's own (deployed by tag, not built on it) while the tag points at a
+-- newer image: what the daily check updates.
+SELECT r.service_id, r.image_ref, i.base_image, i.base_latest
+FROM image_scans i
+JOIN releases r ON r.image_scan_id = i.id AND r.status = 'active'
+JOIN services s ON s.id = r.service_id
+WHERE i.base_image != '' AND i.base_moved = 1 AND i.base_latest != '' AND i.base_digest = i.image_key
+  AND s.auto_update = 1 AND s.archived_at IS NULL AND s.stopped_at IS NULL;

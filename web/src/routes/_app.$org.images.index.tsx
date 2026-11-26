@@ -14,22 +14,31 @@ import {
   total,
   UsedBy,
 } from "../features/images/parts";
+import {
+  shortImage,
+  UpdateMany,
+  updateTargets,
+} from "../features/images/UpdateMany";
 import { useOrg } from "../shell/location";
-import { day, since } from "../ui/format";
+import { ago, day, since } from "../ui/format";
 import { Icon } from "../ui/icons";
 import { Button, Page, PageBar, Panel } from "../ui/kit";
 
 // The org's images in use (ADR 0074, mock I1): one row per image however
 // many services run it, worst first as the API sorts them, with counts by
-// severity. /acme/images?everywhere=1&show=vulnerable
-type Show = "vulnerable" | "unscanned";
+// severity, and (image updates, mock A) what a newer image of the tag it
+// follows offers: Update, or Update all of them.
+// /acme/images?everywhere=1&show=vulnerable
+type Show = "vulnerable" | "updates" | "unscanned";
 type Search = { everywhere?: true; show?: Show };
 
 export const Route = createFileRoute("/_app/$org/images/")({
   validateSearch: (s: Record<string, unknown>): Search => ({
     everywhere: s.everywhere === true || s.everywhere === "1" || undefined,
     show:
-      s.show === "vulnerable" || s.show === "unscanned" ? s.show : undefined,
+      s.show === "vulnerable" || s.show === "updates" || s.show === "unscanned"
+        ? s.show
+        : undefined,
   }),
   loaderDeps: ({ search }) => ({ everywhere: !!search.everywhere }),
   loader: ({ context: { queryClient }, deps }) =>
@@ -43,6 +52,8 @@ const CAP = 200;
 const scanned = (i: ImageListItem) => hasFindings(i.scan);
 const vulnerable = (i: ImageListItem) =>
   hasFindings(i.scan) && total(i.scan) > 0;
+/** The tag it follows, or its build's base, has a newer image. */
+const behind = (i: ImageListItem) => !!i.scan?.base?.moved;
 
 function Images() {
   const search = Route.useSearch();
@@ -53,15 +64,26 @@ function Images() {
   const counts = {
     all: images.length,
     vulnerable: images.filter(vulnerable).length,
+    updates: images.filter(behind).length,
     unscanned: images.filter((i) => !scanned(i)).length,
   };
   const rows = images.filter((i) =>
     search.show === "vulnerable"
       ? vulnerable(i)
-      : search.show === "unscanned"
-        ? !scanned(i)
-        : true,
+      : search.show === "updates"
+        ? behind(i)
+        : search.show === "unscanned"
+          ? !scanned(i)
+          : true,
   );
+  const updates = rows.flatMap(updateTargets);
+  // The daily check writes every tag's answer at once: the newest says
+  // when it last ran.
+  const checked = images
+    .map((i) => i.scan?.base?.checked_at)
+    .filter((t): t is string => !!t)
+    .sort()
+    .at(-1);
   const set = (next: Search) =>
     navigate({ search: { ...search, ...next }, replace: true });
   return (
@@ -69,14 +91,22 @@ function Images() {
       <PageBar
         title="Images"
         actions={
-          <Link
-            to="/$org/images/ignores"
-            params={{ org: useOrg() }}
-            className="btn no-underline"
-            title="dock vulns ignores"
-          >
-            Ignores
-          </Link>
+          <>
+            {updates.length > 0 && (
+              <UpdateMany
+                targets={updates}
+                label={`Update all ${updates.length}`}
+              />
+            )}
+            <Link
+              to="/$org/images/ignores"
+              params={{ org: useOrg() }}
+              className="btn no-underline"
+              title="dock vulns ignores"
+            >
+              Ignores
+            </Link>
+          </>
         }
       />
       <Page gap="gap-3">
@@ -117,6 +147,13 @@ function Images() {
             </button>
             <button
               type="button"
+              aria-pressed={search.show === "updates"}
+              onClick={() => set({ show: "updates" })}
+            >
+              Updates {counts.updates}
+            </button>
+            <button
+              type="button"
               aria-pressed={search.show === "unscanned"}
               onClick={() => set({ show: "unscanned" })}
             >
@@ -143,7 +180,7 @@ function Images() {
                   <th className="text-right">Critical</th>
                   <th className="text-right">High</th>
                   <th className="text-right">Other</th>
-                  <th className="text-right">Fixable</th>
+                  <th>Update</th>
                   <th>Scanned</th>
                   <th>
                     <span className="sr-only">Open</span>
@@ -168,9 +205,11 @@ function Images() {
             </Button>
           </div>
         )}
-        {database_built && (
+        {(database_built || checked) && (
           <p className="text-xs text-mut">
-            Vulnerability database from {day(database_built)}.
+            {database_built &&
+              `Vulnerability database from ${day(database_built)}.`}
+            {checked && ` Tags checked ${ago(checked)}.`}
           </p>
         )}
       </Page>
@@ -235,7 +274,9 @@ function Row({ item }: { item: ImageListItem }) {
           <Count n={scan.critical} tone="text-fail" kev={scan.kev > 0} />
           <Count n={scan.high} tone="text-warn" />
           <Count n={below(scan)} />
-          <Count n={scan.fixable} />
+          <td>
+            <UpdateCell item={item} />
+          </td>
           <td className="text-mut" title={scan.scanned_at}>
             {since(scan.scanned_at)}
             {rescan(scan) && (
@@ -254,5 +295,33 @@ function Row({ item }: { item: ImageListItem }) {
         {scan && <Icon name="chevronRight" size={14} />}
       </td>
     </tr>
+  );
+}
+
+/**
+ * What a newer image offers: Update for an image deployed by tag (and
+ * whether its services update on their own), a note for one Dock built,
+ * whose next deploy builds on the newer base.
+ */
+function UpdateCell({ item }: { item: ImageListItem }) {
+  const base = item.scan?.base;
+  if (!base?.moved)
+    return <span className="text-faint">{base ? "up to date" : "·"}</span>;
+  if (!base.own)
+    return (
+      <span className="text-mut" title={`${base.image} has a newer image`}>
+        newer base · redeploy
+      </span>
+    );
+  const targets = updateTargets(item);
+  const auto = (item.used_by ?? []).some((u) => u.live && u.auto_update);
+  return (
+    <span
+      className="inline-flex items-center gap-2"
+      title={base.latest && shortImage(`${base.image}@${base.latest}`)}
+    >
+      <UpdateMany small targets={targets} label="Update" />
+      {auto && <span className="text-mut">auto</span>}
+    </span>
   );
 }

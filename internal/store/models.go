@@ -1070,6 +1070,7 @@ type Service struct {
 	Database                       string
 	FromTemplate                   string
 	FromTemplateRevision           int64
+	AutoUpdate                     int64
 }
 
 type ServiceAccess struct {

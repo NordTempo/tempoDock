@@ -192,12 +192,16 @@ never slows a deploy. **Images** lists them worst first; an image's page
 groups what it found by fix: rebuild on a newer base image, upgrade the
 app's dependencies, or no fix yet. An image deployed by tag, like a
 database template's, is checked daily for a newer image of its tag, which
-**Update** on the service deploys.
+**Update** deploys: on the service, on the image's page (with **Check
+now** to ask at once) or for every image at once with **Update all**.
+With automatic image updates on (`dock image-updates auto`), a service
+updates itself after the daily check, a snapshot of its volumes first.
 
 ```sh
 dock images                       # every live image, worst first
 dock vulns -s web                 # one service's
 dock vulns --fixable              # only what a fix exists for
 dock vulns ignore CVE-2026-1234 --reason "not reachable" --days 30
+dock image-updates auto -s db     # update to the tag's newer image on its own
 dock alerts vulns critical        # alert when a live image has a critical one
 ```

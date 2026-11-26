@@ -560,7 +560,8 @@ func (c *Core) serviceOf(ss svcScope, link serverLink, pending apitypes.PendingC
 		ServiceSettings: settingsOf(ss.svc), Status: link.mark(c.getStatus(ss.svc.ID)),
 		ActiveRelease: active, Stateful: stateful,
 		Database: apitypes.DatabaseSetting(ss.svc.Database), DatabaseURLVariable: ss.svc.DatabaseUrlVariable,
-		CreatedAt: ss.svc.CreatedAt, ArchivedAt: ss.svc.ArchivedAt, Staged: ss.svc.Staged,
+		AutoUpdate: ss.svc.AutoUpdate != 0,
+		CreatedAt:  ss.svc.CreatedAt, ArchivedAt: ss.svc.ArchivedAt, Staged: ss.svc.Staged,
 		PendingChanges:  pending.CountFor(ss.svc.Name),
 		EffectiveLimits: c.limitsOf(ss.svc.MemoryMb, ss.svc.Cpus),
 	}

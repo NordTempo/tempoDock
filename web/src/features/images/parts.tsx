@@ -138,7 +138,8 @@ export function UsedBy({ uses }: { uses: readonly ImageUse[] }) {
 
 /**
  * The sentence after "N fixable." on the overview: what fixes the worst
- * findings (criticals, else highs). worst_fix fixes some of them, not
+ * findings (criticals, else highs); for an image deployed by tag, its
+ * tag's newer image. worst_fix fixes some of them, not
  * necessarily all, so with several it says "some".
  */
 export function worstFixSentence(scan: ImageScan) {
@@ -146,6 +147,12 @@ export function worstFixSentence(scan: ImageScan) {
   const word = scan.critical > 0 ? "critical" : "high";
   switch (scan.worst_fix) {
     case "rebuild":
+      // An image deployed by tag can't be rebuilt here: a newer image of
+      // its tag carries the fixed packages, once there is one.
+      if (scan.base?.own)
+        return scan.base.moved
+          ? `Updating to the newer ${scan.base.image} picks up the fixed packages.`
+          : `No newer ${scan.base.image} with the fixed packages yet.`;
       return n === 1
         ? `The ${word} is fixed by rebuilding on a newer base image.`
         : `Rebuilding on a newer base image fixes some of the ${word}s.`;

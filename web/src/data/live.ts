@@ -786,6 +786,8 @@ function invalidateForAudit(
   if (kind === "server" || kind === "environment" || kind === "preview")
     invalidate(keys.servers);
   if (!audit.project) return;
+  // The Images page shows which services update on their own.
+  if (audit.action === "service.auto_update") invalidate(["images"]);
   // A preview opened, moved to a new commit or closed (its environment
   // appears or leaves with the overview below), or the settings changed.
   if (kind === "preview" || kind === "previews")

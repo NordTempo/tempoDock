@@ -239,6 +239,11 @@ const words: Record<string, readonly [label: string, past: string]> = {
   "server.updated": ["server updated", "updated"],
   "service.access": ["change access", "changed who can open"],
   "service.archive": ["archive service", "archived"],
+  "service.auto_update": ["set image updates", "set the image updates of"],
+  "service.auto_update_skipped": [
+    "skip image update",
+    "skipped the image update of",
+  ],
   "service.charts": ["pin charts", "changed the pinned charts of"],
   "service.create": ["create service", "created"],
   "service.database": ["set database", "set the database of"],

@@ -40,9 +40,14 @@ The others follow the same pattern:
 - Its image follows the template's tag (`postgres:17-alpine`). Once a day
   Dock checks whether the tag has a newer image; when it has, the
   database's Overview offers **Update**, which deploys that image by
-  digest (`dock deploy -s db --image postgres:17-alpine@sha256:...`). A
-  new database starts on the newest image Dock has seen. Moving to a
-  newer major version (Postgres 18) comes with a Dock release.
+  digest (`dock deploy -s db --image postgres:17-alpine@sha256:...`).
+  **Check now** on its image's page asks at once. Turn on automatic
+  updates (Settings, Deploys, Image updates, or `dock image-updates auto
+  -s db`) and Dock does it itself after the daily check: it snapshots the
+  volume, deploys the newer image, and if the new release doesn't come
+  up the old one starts again. A new database starts on the newest image
+  Dock has seen. Moving to a newer major version (Postgres 18) comes with
+  a Dock release.
 - It publishes no port. Other services reach it by name on the
   environment's private network; the health check connects there too.
   A Postgres database counts as healthy once it accepts connections, not

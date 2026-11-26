@@ -721,14 +721,18 @@ export const topics: Record<TopicId, Topic> = {
         cli: "dock vulns ignore CVE-2026-1234 --reason 'not reachable'",
       },
       { what: "Alert on critical ones", cli: "dock alerts vulns critical" },
+      {
+        what: "Update a database to its tag's newer image on its own",
+        cli: "dock image-updates auto -s {service} -e {env}",
+      },
     ],
     watch: [
       "Scans run once no build or deploy is running.",
-      "Most fixes are a rebuild on a newer base image.",
+      "Most fixes are a rebuild on a newer base image, or for an image deployed by tag, Update.",
     ],
     related: ["deploying", "alerts", "services"],
     guide: "watching#images",
-    words: "cve vulnerability scan sbom security",
+    words: "cve vulnerability scan sbom security update newer image",
   },
 
   access: {

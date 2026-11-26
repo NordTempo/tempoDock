@@ -11,7 +11,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// A built image knows its base image; the daily refresh asks the
+// A built image knows its base image; the daily check asks the
 // registry whether its tag moved, and the image's scan says so.
 func TestBaseImageHint(t *testing.T) {
 	h := scanHarness(t)
@@ -122,8 +122,8 @@ func TestImportScanDatabase(t *testing.T) {
 	}
 }
 
-// dueRefresh makes every builder's database a day old and starts the
-// scanner, as the hourly pass would.
+// dueRefresh makes every builder's database and the tag check a day old
+// and starts the scanner, as the hourly pass would.
 func (h *harness) dueRefresh() {
 	h.t.Helper()
 	servers, err := h.c.store.ListServers(h.ctx)
@@ -138,6 +138,7 @@ func (h *harness) dueRefresh() {
 	}
 	h.c.scans.mu.Lock()
 	h.c.scans.refreshAt = now().Add(-time.Minute)
+	h.c.scans.tagsChecked = time.Time{}
 	h.c.scans.mu.Unlock()
 	h.c.kickScanRefresh()
 }
