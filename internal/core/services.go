@@ -335,10 +335,12 @@ func archiveSummary(summary string, notes []string) string {
 }
 
 // archivedService is a service archiveTx archived, with the release that
-// was active (nil if none).
+// was active (nil if none) and whether its analytics site was archived
+// with it.
 type archivedService struct {
 	svcScope
-	active *store.Release
+	active       *store.Release
+	siteArchived bool
 }
 
 // archiveTx archives a service within a transaction, gives up the DNS
@@ -369,6 +371,12 @@ func archiveTx(ctx context.Context, q *store.Queries, ss svcScope) (archivedServ
 	if err := q.SetServiceRecordsAbsent(ctx, store.SetServiceRecordsAbsentParams{UpdatedAt: n, ServiceID: ss.svc.ID}); err != nil {
 		return as, false, err
 	}
+	// Its site stops counting and keeps its history (ADR 0103).
+	sites, err := q.ArchiveServiceSite(ctx, store.ArchiveServiceSiteParams{ArchivedAt: &n, ServiceID: &ss.svc.ID})
+	if err != nil {
+		return as, false, err
+	}
+	as.siteArchived = sites > 0
 	active, err := q.GetActiveRelease(ctx, ss.svc.ID)
 	switch {
 	case store.IsNotFound(err):
@@ -403,6 +411,9 @@ func (c *Core) finishArchive(ctx context.Context, done []archivedService) (notes
 	c.kickUptime()     // their checks stop
 	links := map[int64]serverLink{}
 	stopping := map[int64]int{} // containers to stop, by server
+	if slices.ContainsFunc(done, func(as archivedService) bool { return as.siteArchived }) {
+		c.analyticsSitesChanged(ctx)
+	}
 	for _, as := range done {
 		c.pitrArchived(ctx, as.svcScope) // its archiver goes with it
 		id := as.env.ServerID

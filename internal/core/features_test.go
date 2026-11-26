@@ -36,8 +36,8 @@ func TestAnalyticsOffAndOn(t *testing.T) {
 	eventually(t, "the servers' salts withheld", func() bool { return len(h.rt.AnalyticsSalts()) == 0 })
 	web := h.service("web", apitypes.CreateServiceRequest{Port: 8080})
 	h.deploy(web, "nginx:1")
-	h.domain(web, "shop.example.com", "")
-	if _, err := h.c.EnableHostnameAnalytics(h.ctx, testSystem, "shop.example.com", apitypes.EnableAnalyticsRequest{}); CodeOf(err) != apitypes.CodeConflict {
+	h.domain(web, "shop.example.com")
+	if _, err := h.c.EnableServiceAnalytics(h.ctx, testSystem, web); CodeOf(err) != apitypes.CodeConflict {
 		t.Fatalf("a domain turned analytics on again: %v", err)
 	}
 
@@ -54,7 +54,7 @@ func TestAnalyticsOffAndOn(t *testing.T) {
 	if n := storeEvents(h); n != 1 {
 		t.Errorf("the store came back with %d events, want the one it kept", n)
 	}
-	if _, err := h.c.EnableHostnameAnalytics(h.ctx, testSystem, "shop.example.com", apitypes.EnableAnalyticsRequest{}); err != nil {
+	if _, err := h.c.EnableServiceAnalytics(h.ctx, testSystem, web); err != nil {
 		t.Fatalf("a domain once analytics is on: %v", err)
 	}
 
@@ -135,8 +135,8 @@ func TestAnalyticsOffBeforeItRan(t *testing.T) {
 	eventually(t, "the salts withheld", func() bool { return len(h.rt.AnalyticsSalts()) == 0 })
 	web := h.service("web", apitypes.CreateServiceRequest{Port: 8080})
 	h.deploy(web, "nginx:1")
-	h.domain(web, "shop.example.com", "")
-	if _, err := h.c.EnableHostnameAnalytics(h.ctx, testSystem, "shop.example.com", apitypes.EnableAnalyticsRequest{}); CodeOf(err) != apitypes.CodeConflict {
+	h.domain(web, "shop.example.com")
+	if _, err := h.c.EnableServiceAnalytics(h.ctx, testSystem, web); CodeOf(err) != apitypes.CodeConflict {
 		t.Fatalf("a domain turned analytics on: %v", err)
 	}
 	h.restart()

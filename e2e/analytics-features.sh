@@ -85,7 +85,7 @@ dock service create web -p shop -e production --image nginx:1.29-alpine --port 8
 dock deploy -p shop -e production -s web --image nginx:1.29-alpine >/dev/null 2>&1
 dock domain add "$HOST" -p shop -e production -s web --detach >/dev/null 2>&1
 wait_for "the site" 180 sh -c "curl -sf -H 'Host: $HOST' http://$(ip "$CP")/ | grep -q nginx"
-dock analytics enable "$HOST" >/dev/null 2>&1
+dock analytics enable -p shop -e production -s web >/dev/null 2>&1
 dock analytics site set "$HOST" -p shop --replay on --replay-sample 100 >/dev/null
 wait_for "the store" 180 sh -c 'dock analytics --json | jq -e .store_running'
 

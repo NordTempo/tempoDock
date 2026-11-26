@@ -83,13 +83,16 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 	if err != nil {
 		return err
 	}
-	hosts, err := c.store.ListAnalyticsHosts(ctx, serverID)
+	counted, err := c.store.ListAnalyticsServices(ctx, serverID)
 	if err != nil {
 		return err
 	}
-	siteOf := make(map[string]int64, len(hosts))
-	for _, h := range hosts {
-		siteOf[h.Hostname] = h.SiteID
+	// A counted service's site, by service (ADR 0103).
+	siteOf := make(map[int64]int64, len(counted))
+	for _, s := range counted {
+		if s.ServiceID != nil {
+			siteOf[*s.ServiceID] = s.SiteID
+		}
 	}
 	traced, err := c.edgeTraced(ctx, rows, override)
 	if err != nil {
@@ -145,7 +148,7 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 			r := &routes[i]
 			r.Hostnames = append(r.Hostnames, d.Hostname)
 			// A stopped service's 503 page has no analytics script.
-			if site, ok := siteOf[d.Hostname]; ok && !stopped {
+			if site, ok := siteOf[d.ServiceID]; ok && !stopped {
 				addAnalyticsHost(r, d.Hostname, fmt.Sprintf("%d.%d.%d", site, d.ServiceID, release))
 			}
 		}

@@ -33,7 +33,7 @@ func TestPublicAddressesAreUnique(t *testing.T) {
 	if _, err := h.c.AddDomain(h.ctx, them, ServiceRef{"theirs", "production", "web"}, apitypes.AddDomainRequest{Hostname: "shop-example.com"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.c.EnableHostnameAnalytics(h.ctx, them, "shop-example.com", apitypes.EnableAnalyticsRequest{}); err != nil {
+	if _, err := h.c.EnableServiceAnalytics(h.ctx, them, ServiceRef{"theirs", "production", "web"}); err != nil {
 		t.Fatal(err)
 	}
 	address := func(a Actor, project, name string) string {
@@ -94,8 +94,9 @@ func TestPublicAddressesAssignedOldestFirst(t *testing.T) {
 	h := newHarness(t)
 	h.c.cfg.BaseDomain = "dock.example.net"
 	for i, host := range []string{"shop-example.com", "shop.example.com"} {
-		h.domain(h.service(fmt.Sprint("web", i), apitypes.CreateServiceRequest{Port: 8080}), host, "")
-		if _, err := h.c.EnableHostnameAnalytics(h.ctx, testSystem, host, apitypes.EnableAnalyticsRequest{}); err != nil {
+		svc := h.service(fmt.Sprint("web", i), apitypes.CreateServiceRequest{Port: 8080})
+		h.domain(svc, host)
+		if _, err := h.c.EnableServiceAnalytics(h.ctx, testSystem, svc); err != nil {
 			t.Fatal(err)
 		}
 	}

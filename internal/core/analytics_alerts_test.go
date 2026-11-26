@@ -32,8 +32,8 @@ func countingSite(h *harness) (site, svc, rel int64) {
 	h.t.Helper()
 	web := h.service("web", apitypes.CreateServiceRequest{Port: 8080})
 	h.deploy(web, "nginx:1")
-	h.domain(web, "shop.example.com", "")
-	if _, err := h.c.EnableHostnameAnalytics(h.ctx, testSystem, "shop.example.com", apitypes.EnableAnalyticsRequest{}); err != nil {
+	h.domain(web, "shop.example.com")
+	if _, err := h.c.EnableServiceAnalytics(h.ctx, testSystem, web); err != nil {
 		h.t.Fatal(err)
 	}
 	r, _ := analyticsRoute(h, "shop.example.com")

@@ -1,5 +1,3 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { api, body } from "../../api/client";
 import {
@@ -8,15 +6,9 @@ import {
   useRemoveDomain,
 } from "../../data/mutations";
 import { domainNeedsAttention } from "../../data/problems";
-import {
-  listenPort,
-  servicePath,
-  useCanDeploy,
-  useService,
-} from "../../data/queries";
+import { listenPort, servicePath, useService } from "../../data/queries";
 import type { Domain, ServiceRef } from "../../data/types";
 import { useShortcuts } from "../../shell/keys";
-import { useOrg } from "../../shell/location";
 import { ago } from "../../ui/format";
 import {
   Act,
@@ -26,15 +18,12 @@ import {
   ErrorText,
   MoreItem,
   MoreMenu,
-  MoreSeparator,
   Scroll,
   StateText,
 } from "../../ui/kit";
 import { notify } from "../../ui/notice";
 import { SettingsSection } from "../../ui/sections";
 import { domainState } from "../../ui/status";
-import { useDisableHostname, useEnableHostname } from "../analytics/data";
-import { sitesQuery } from "../analytics/loaders";
 import { AccessLine } from "./AccessLine";
 
 // Loads when it opens.
@@ -61,14 +50,12 @@ function addedNotice(d: Domain, service: string) {
 
 /**
  * Settings' Domains section: who can open them, then one table of the
- * service's domains (where each goes and whether Dock Analytics counts
- * its visits). A domain still waiting for DNS, verification or its
+ * service's domains and where each goes. A domain still waiting for DNS, verification or its
  * certificate opens its records and "Check again" under its row. A domain
  * added here is marked in the list; its notice waits for Dock's first DNS
  * check, so it says what the row says.
  */
 export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
-  const org = useOrg();
   const { service, domains } = useService(ref);
   const port = listenPort(service);
   const [added, setAdded] = useState<string | null>(null);
@@ -76,17 +63,6 @@ export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const [checking, setChecking] = useState<string | null>(null);
   const waiting = domains.filter(
     (d) => domainNeedsAttention(d) || d.verification || d.status === "added",
-  );
-  // Which hostnames Dock Analytics counts, and for which site.
-  const { data: sites } = useSuspenseQuery(sitesQuery(ref.project));
-  const counted = new Map(
-    sites
-      .filter((s) => !s.archived && s.environment === ref.environment)
-      .flatMap((s) =>
-        (s.hostnames ?? [])
-          .filter((h) => h.service === ref.service)
-          .map((h) => [h.hostname, s.name] as const),
-      ),
   );
   useEffect(() => {
     const d = checking && domains.find((x) => x.hostname === checking);
@@ -134,7 +110,6 @@ export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                   <th>Hostname</th>
                   <th>Status</th>
                   <th>Goes to</th>
-                  <th>Visits</th>
                   <th>
                     <span className="sr-only">Actions</span>
                   </th>
@@ -149,30 +124,16 @@ export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                     port={port}
                     fresh={d.hostname === added}
                     waiting={waiting.includes(d)}
-                    site={counted.get(d.hostname)}
                   />
                 ))}
               </tbody>
             </table>
           </Scroll>
         )}
-        {counted.size > 0 && (
-          <p className="flex flex-wrap items-center gap-2 text-xs text-mut">
-            Counted pages load the script, in their {"<head>"}:
-            <code className="font-mono text-fg">{scriptTag}</code>
-            <CopyButton text={scriptTag} />
-            <Link to="/$org/analytics" params={{ org }} className="lnk ml-2">
-              Analytics
-            </Link>
-          </p>
-        )}
       </div>
     </SettingsSection>
   );
 }
-
-/** The script a counted hostname's pages load (ADR 0037). */
-const scriptTag = '<script src="/_dock/a/s.js" defer></script>';
 
 /** The section's Add domain (N), and Generate one while it has no generated domain. */
 function AddDomain({
@@ -449,9 +410,8 @@ function detail(d: Domain) {
 }
 
 /**
- * A domain's row: hostname, state, where it goes, whether its visits are
- * counted (with Count visits when not), and its menu (Stop counting,
- * Remove). `fresh` marks one just added here; `waiting` opens what it
+ * A domain's row: hostname, state, where it goes, and its menu (Remove).
+ * `fresh` marks one just added here; `waiting` opens what it
  * still needs (DnsSteps) under it.
  */
 function DomainRow({
@@ -460,21 +420,14 @@ function DomainRow({
   port,
   fresh,
   waiting,
-  site,
 }: {
   serviceRef: ServiceRef;
   domain: Domain;
   port: number;
   fresh: boolean;
   waiting: boolean;
-  /** The analytics site that counts its visits, if one does. */
-  site?: string;
 }) {
-  const org = useOrg();
   const remove = useRemoveDomain();
-  const canDeploy = useCanDeploy(ref);
-  const enable = useEnableHostname();
-  const disable = useDisableHostname();
   const [confirming, setConfirming] = useState(false);
   return (
     <>
@@ -501,43 +454,10 @@ function DomainRow({
           {waiting ? "" : ` · ${detail(d)}`}
           <span className="text-faint">{lastCheck(d)}</span>
         </td>
-        <td className="whitespace-nowrap">
-          {d.redirect_to ? (
-            <span className="text-faint">-</span>
-          ) : site ? (
-            <Link
-              to="/$org/analytics/$project/$site"
-              params={{ org, project: ref.project, site }}
-              title={`Counted for site ${site}`}
-            >
-              counted
-            </Link>
-          ) : (
-            <Act
-              small
-              cli={`dock analytics enable ${d.hostname}`}
-              disabled={!canDeploy || enable.isPending}
-              onClick={() => enable.mutate({ hostname: d.hostname })}
-            >
-              Count visits
-            </Act>
-          )}
-        </td>
         <td className="py-1 text-right">
           <MoreMenu label={`${d.hostname} actions`}>
             {(close) => (
               <>
-                {site && (
-                  <MoreItem
-                    close={close}
-                    cli={`dock analytics disable ${d.hostname}`}
-                    disabled={!canDeploy || disable.isPending}
-                    onClick={() => disable.mutate(d.hostname)}
-                  >
-                    Stop counting visits
-                  </MoreItem>
-                )}
-                {site && <MoreSeparator />}
                 <MoreItem
                   close={close}
                   danger
@@ -549,7 +469,6 @@ function DomainRow({
               </>
             )}
           </MoreMenu>
-          <ErrorText error={enable.error ?? disable.error} />
           {confirming && (
             <Confirm
               danger
@@ -576,7 +495,7 @@ function DomainRow({
       </tr>
       {waiting && (
         <tr>
-          <td colSpan={5} className="whitespace-normal">
+          <td colSpan={4} className="whitespace-normal">
             <DnsSteps serviceRef={ref} domain={d} />
           </td>
         </tr>

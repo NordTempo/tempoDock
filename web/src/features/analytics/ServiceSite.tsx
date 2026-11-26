@@ -20,13 +20,13 @@ import { SiteBar } from "./SiteBar";
 /** The script a counted hostname's pages load. */
 export const scriptTag = '<script src="/_dock/a/s.js" defer></script>';
 
-/** The live sites a service's hostnames count for in its environment. */
+/** The service's live site, as a list (at most one, ADR 0103). */
 export const sitesOf = (all: Site[], ref: ServiceRef) =>
   all.filter(
     (s) =>
       !s.archived &&
       s.environment === ref.environment &&
-      (s.hostnames ?? []).some((h) => h.service === ref.service),
+      s.service === ref.service,
   );
 
 export function ServiceSite({
@@ -52,14 +52,14 @@ export function ServiceSite({
   if (!site) {
     return (
       <p className="text-mut">
-        Visitors come from Dock Analytics' script on the service's pages. Count
-        visits to one of its domains on{" "}
+        Visitors come from Dock Analytics' script on the service's pages. Turn
+        counting on in{" "}
         <Link
           to="/$org/$project/$environment/$service/settings"
           params={{ org, ...ref }}
-          hash="domains"
+          hash="analytics"
         >
-          Domains
+          Settings › Analytics
         </Link>
         , then add the script to its pages.
       </p>

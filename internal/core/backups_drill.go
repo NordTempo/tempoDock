@@ -477,7 +477,6 @@ var drillDeletes = []struct{ table, where string }{
 	{"traffic_stats", `service_id = +?1`},
 	{"traffic_paths", `service_id = +?1`},
 	{"variables", `environment_id = (SELECT environment_id FROM services WHERE id = +?1) AND coalesce(service_id, 0) = +?1`},
-	{"site_hostnames", `service_id = +?1`},
 	{"releases", `service_id = +?1`},
 	{"services", `id = +?1`},
 }

@@ -4,7 +4,6 @@ import { useAddDomain } from "../../data/mutations";
 import { queries } from "../../data/queries";
 import type { Domain, ServiceRef } from "../../data/types";
 import { Dialog } from "../../ui/Dialog";
-import { Check } from "../../ui/kit";
 import { useCloudflareZones } from "../cloudflare/data";
 import { Footer, invalid, useValidation } from "../create/form";
 import { defaultName, defaultZone, takenBy } from "./defaultZone";
@@ -45,9 +44,6 @@ export default function AddDomainDialog({
   // Starts as the environment's name (defaultName); what is typed stays.
   const [name, setName] = useState(() => defaultName(environment));
   const [zone, setZone] = useState("");
-  // A hostname that collected analytics before carries its site's history
-  // here unless this is set (ADR 0037).
-  const [newSite, setNewSite] = useState(false);
   // Until one is chosen, the zone that fits the project (defaultZone).
   const picked =
     zone ||
@@ -95,7 +91,6 @@ export default function AddDomainDialog({
               hostname: host,
               ...(target && { redirect_to: target }),
               ...(fromCloudflare && { cloudflare: true }),
-              ...(newSite && !target && { analytics: "new" as const }),
             },
             {
               onSuccess: (added) => {
@@ -214,21 +209,6 @@ export default function AddDomainDialog({
             </span>
           </label>
         )}
-        {!target && (
-          <span className="flex flex-col gap-0.5">
-            <Check
-              label="Keep this hostname's earlier analytics, if it has any"
-              checked={!newSite}
-              onChange={(keep) => setNewSite(!keep)}
-            />
-            {/* What the box does either way, so leaving it isn't a guess. */}
-            <span className="pl-6 text-xs text-mut">
-              {newSite
-                ? "Its visitors start from zero in a new site."
-                : "If the hostname was counted before, its visitors and errors carry on in the same site."}
-            </span>
-          </span>
-        )}
         <Footer
           className="mt-1"
           submit={
@@ -242,7 +222,7 @@ export default function AddDomainDialog({
           problem={v.problem([!host && "a hostname"], !!hostError)}
           error={add.error}
           cli={[
-            `dock domain add ${host || "<host>"}${target ? ` --redirect-to ${target}` : ""}${fromCloudflare ? " --cloudflare" : ""}${newSite && !target ? " --analytics new" : ""} ${flags}`,
+            `dock domain add ${host || "<host>"}${target ? ` --redirect-to ${target}` : ""}${fromCloudflare ? " --cloudflare" : ""} ${flags}`,
           ]}
           onClose={onClose}
         />

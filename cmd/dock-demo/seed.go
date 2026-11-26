@@ -217,7 +217,8 @@ func (s *seeder) people() {
 }
 
 // analytics writes a day of the shop's visits to the spool, then turns
-// analytics on for its domain, which starts the collector reading them.
+// analytics on for its web service, which starts the collector reading
+// them.
 func (s *seeder) analytics(spool string) {
 	if s.err != nil {
 		return
@@ -226,7 +227,7 @@ func (s *seeder) analytics(spool string) {
 	if s.err = writeVisits(spool, visitsFor{Site: 1, Service: s.webService, Release: s.webRelease, Host: shopHost}, time.Now()); s.err != nil {
 		return
 	}
-	s.call(http.MethodPut, "/analytics/hostnames/"+shopHost, apitypes.EnableAnalyticsRequest{}, nil)
+	s.call(http.MethodPut, "/projects/shop/environments/production/services/web/analytics", nil, nil)
 	var sites []apitypes.Site
 	s.call(http.MethodGet, "/projects/shop/sites", nil, &sites)
 	if s.err != nil || len(sites) == 0 {

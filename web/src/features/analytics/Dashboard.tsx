@@ -172,6 +172,16 @@ function Main({
             ["Exit", "exit_page"],
           ]}
         />
+        {/* Next to Pages: a service's domains told apart (ADR 0103). */}
+        <Breakdown
+          {...panel}
+          title="Domains"
+          tabs={[
+            ["Domains", "hostname"],
+            ["Releases", "release"],
+            ["Services", "service"],
+          ]}
+        />
         <Breakdown
           {...panel}
           title="Sources"
@@ -211,15 +221,6 @@ function Main({
           tabs={[
             ["Custom", "event"],
             ["Outbound links", "outbound"],
-          ]}
-        />
-        <Breakdown
-          {...panel}
-          title="Served by"
-          tabs={[
-            ["Services", "service"],
-            ["Releases", "release"],
-            ["Hostnames", "hostname"],
           ]}
         />
       </div>

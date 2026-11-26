@@ -451,9 +451,9 @@
       "allocs_op": 15
     },
     "store.BenchmarkListSiteDeploys": {
-      "ns_op": 658254,
-      "bytes_op": 80396,
-      "allocs_op": 2186
+      "ns_op": 316763.9,
+      "bytes_op": 81801,
+      "allocs_op": 2226
     },
     "store.BenchmarkPreparedQuery/param": {
       "ns_op": 76501,

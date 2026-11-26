@@ -66,10 +66,10 @@ function Sites() {
       <Page width={view === "tiles" ? "max-w-none" : undefined}>
         {sites.length === 0 ? (
           <p className="text-mut">
-            No site counts visits yet. Turn counting on for a domain on its
-            service's Domains tab, or with{" "}
+            No site counts visits yet. Turn counting on for a service in its
+            Settings › Analytics, or with{" "}
             <code className="font-mono text-fg">
-              dock analytics enable &lt;hostname&gt;
+              dock analytics enable -s &lt;service&gt;
             </code>
             .
           </p>

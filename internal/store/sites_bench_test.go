@@ -9,8 +9,9 @@ import (
 )
 
 // BenchmarkListSiteDeploys reads a week of deploy markers for a site
-// served by four services, each with a year of releases (2,000 apiece, a
-// busy CI pipeline), as a site dashboard does on every load.
+// whose service has a year of 8,000 releases (a very busy CI pipeline),
+// next to three other services with as many, as a site dashboard does on
+// every load.
 func BenchmarkListSiteDeploys(b *testing.B) {
 	ctx := context.Background()
 	s, err := Open(ctx, filepath.Join(b.TempDir(), "bench.db"))
@@ -31,21 +32,18 @@ func BenchmarkListSiteDeploys(b *testing.B) {
 		b.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
-	site, err := s.CreateSite(ctx, CreateSiteParams{EnvironmentID: env.ID, Name: "shop", CreatedBy: "bench", CreatedAt: now})
-	if err != nil {
-		b.Fatal(err)
-	}
-	const services, releases = 4, 2000
+	const services, releases = 4, 8000
 	ids := make([]int64, services)
 	for i := range ids {
 		svc, err := s.CreateService(ctx, CreateServiceParams{EnvironmentID: env.ID, Name: fmt.Sprintf("web-%d", i), Image: "app:1"})
 		if err != nil {
 			b.Fatal(err)
 		}
-		if err := s.AddSiteHostname(ctx, AddSiteHostnameParams{Hostname: fmt.Sprintf("web-%d.example.com", i), SiteID: site.ID, ServiceID: &svc.ID, AddedAt: now}); err != nil {
-			b.Fatal(err)
-		}
 		ids[i] = svc.ID
+	}
+	site, err := s.CreateSite(ctx, CreateSiteParams{EnvironmentID: env.ID, ServiceID: &ids[0], Name: "shop", CreatedBy: "bench", CreatedAt: now})
+	if err != nil {
+		b.Fatal(err)
 	}
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -67,7 +65,7 @@ func BenchmarkListSiteDeploys(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		rows, err := s.ListSiteDeploys(ctx, q)
-		if err != nil || len(rows) < 4*38 {
+		if err != nil || len(rows) < 150 {
 			b.Fatalf("%d rows, %v", len(rows), err)
 		}
 	}

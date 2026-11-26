@@ -109,8 +109,8 @@ export function AnalyticsConsole() {
         )}
         {!status.enabled && (
           <p className="text-mut">
-            The store starts when the first hostname is counted: on a service's
-            Analytics tab, or with <code>dock analytics enable</code>.
+            The store starts when the first service counts visits: in its
+            Settings › Analytics, or with <code>dock analytics enable</code>.
           </p>
         )}
         <ServerPicker

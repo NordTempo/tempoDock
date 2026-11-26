@@ -1165,6 +1165,7 @@ type Site struct {
 	CreatedBy     string
 	CreatedAt     time.Time
 	PublicSlug    *string
+	ServiceID     *int64
 }
 
 type SiteFunnel struct {
@@ -1184,13 +1185,6 @@ type SiteGoal struct {
 	Match     string
 	CreatedBy string
 	CreatedAt time.Time
-}
-
-type SiteHostname struct {
-	Hostname  string
-	SiteID    int64
-	ServiceID *int64
-	AddedAt   time.Time
 }
 
 type SiteMarker struct {

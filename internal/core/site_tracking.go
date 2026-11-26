@@ -273,8 +273,8 @@ func (c *Core) checkSiteHost(ctx context.Context, host string, siteHosts []strin
 			step(apitypes.CheckOK, "", "", "redirects to %s, checked on its own", next)
 			return out
 		default:
-			step(apitypes.CheckFail, apitypes.TrackingWrongHost, fmt.Sprintf("dock analytics enable %s", next),
-				"redirects to %s, which has this site's analytics off: visitors land there and nothing counts", next)
+			step(apitypes.CheckFail, apitypes.TrackingWrongHost, "",
+				"redirects to %s, which isn't a domain of this site's service: visitors land there and count for its service's site, if it has one", next)
 			return out
 		}
 	}
@@ -319,8 +319,8 @@ func (c *Core) checkSiteHost(ctx context.Context, host string, siteHosts []strin
 	case err != nil:
 		step(apitypes.CheckSkip, "", "", "can't fetch %s: %s", ingest.ScriptPath, err)
 	case resp.header.Get(ingest.ScriptHeader) == "":
-		step(apitypes.CheckFail, apitypes.TrackingWrongHost, fmt.Sprintf("dock analytics enable %s", host),
-			"%s on %s isn't Dock's script (%d): analytics is off for this hostname, or a proxy in front doesn't pass /_dock/a/", ingest.ScriptPath, host, resp.status)
+		step(apitypes.CheckFail, apitypes.TrackingWrongHost, "",
+			"%s on %s isn't Dock's script (%d): the domain isn't routed to Dock yet, or a proxy in front doesn't pass /_dock/a/", ingest.ScriptPath, host, resp.status)
 	default:
 		step(apitypes.CheckOK, "", "", "%s is Dock's script", ingest.ScriptPath)
 	}

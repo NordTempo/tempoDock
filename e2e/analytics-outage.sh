@@ -129,7 +129,7 @@ dock deploy -p shop -e production -s web --image nginx:1.29-alpine >/dev/null 2>
 dock domain add "$HOST" -p shop -e production -s web --detach >/dev/null 2>&1
 wait_for "the site" 180 sh -c "curl -sf -H 'Host: $HOST' http://$(ip "$CP")/ | grep -q nginx"
 dock analytics server lab >/dev/null
-dock analytics enable "$HOST" >/dev/null 2>&1
+dock analytics enable -p shop -e production -s web >/dev/null 2>&1
 wait_for "the store on lab" 180 sh -c 'dock analytics --json | jq -e .store_running'
 
 say "lab up"

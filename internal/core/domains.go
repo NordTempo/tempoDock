@@ -146,31 +146,13 @@ func (c *Core) AddDomain(ctx context.Context, a Actor, ref ServiceRef, req apity
 			return apitypes.DomainChange{}, err
 		}
 	}
-	if req.Analytics != "" && req.Analytics != "keep" && req.Analytics != "new" {
-		return apitypes.DomainChange{}, invalid("analytics is keep or new, not %q", req.Analytics)
-	}
 	var zone *store.CloudflareZone
 	if req.Cloudflare {
 		if zone, err = c.cloudflareZoneFor(ctx, a, ss, host); err != nil {
 			return apitypes.DomainChange{}, err
 		}
 	}
-	change, err := c.addDomain(ctx, a, ss, host, redirect, false, zone)
-	if err != nil || redirect != "" || !change.Domain.Verified {
-		return change, err
-	}
-	// A hostname that collected analytics before keeps its site's history
-	// here, or starts a new site (ADR 0037). An unverified one waits until
-	// it verifies (proveDomain): it might not be this org's.
-	if moved, err := c.siteDomainAdded(ctx, a, ss, host, req.Analytics); err != nil {
-		c.log.Error("analytics: carry a site over to a domain", "domain", host, "err", err)
-	} else if moved {
-		c.analyticsSitesChanged(ctx)
-		if err := c.applyRoutes(ctx, ss.env.ServerID); err != nil {
-			c.log.Error("apply routes after a site change", "domain", host, "err", err)
-		}
-	}
-	return change, nil
+	return c.addDomain(ctx, a, ss, host, redirect, false, zone)
 }
 
 // cloudflareZoneFor gets a service's server ready for host to be added
@@ -422,7 +404,6 @@ func (c *Core) RemoveDomain(ctx context.Context, a Actor, ref ServiceRef, hostna
 		c.log.Error("apply routes after removing domain", "domain", host, "err", err)
 	}
 	c.audit(ctx, a, "domain.remove", &ss.project, &ss.env, ss.String(), "removed domain "+host)
-	c.siteDomainRemoved(ctx, a, ss.project, ss.env, host)
 	c.dropUptimeChecks(ctx, ss, host)
 	dom := c.toDomain(ss, d, nil, serverIngress{})
 	c.checksMu.Lock()

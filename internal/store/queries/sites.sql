@@ -1,8 +1,18 @@
 -- Dock Analytics' sites (ADR 0037).
 
 -- name: CreateSite :one
-INSERT INTO sites (environment_id, name, public_slug, created_by, created_at) VALUES (?, ?, ?, ?, ?)
+INSERT INTO sites (environment_id, service_id, name, public_slug, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)
 RETURNING *;
+
+-- LiveSiteOfService returns the service's live site: the one its domains
+-- count for (ADR 0103).
+-- name: LiveSiteOfService :one
+SELECT * FROM sites WHERE service_id = +? AND archived_at IS NULL;
+
+-- LastSiteOfService returns the service's newest site, archived or not:
+-- turning analytics on again brings it back.
+-- name: LastSiteOfService :one
+SELECT * FROM sites WHERE service_id = +? ORDER BY id DESC LIMIT 1;
 
 -- name: GetSite :one
 SELECT * FROM sites WHERE id = +?;
@@ -55,44 +65,30 @@ SELECT id, name FROM sites WHERE public_slug IS NULL AND archived_at IS NULL ORD
 -- name: ListPublicSites :many
 SELECT id, public_slug, settings FROM sites WHERE archived_at IS NULL ORDER BY id;
 
--- name: SetSiteEnvironment :exec
-UPDATE sites SET environment_id = ? WHERE id = +?;
+-- SetSiteService hands a site to another service (dock analytics move).
+-- name: SetSiteService :exec
+UPDATE sites SET service_id = ?, environment_id = ? WHERE id = +?;
 
 -- name: ArchiveSite :exec
 UPDATE sites SET archived_at = ? WHERE id = +? AND archived_at IS NULL;
 
--- name: GetSiteHostname :one
-SELECT * FROM site_hostnames WHERE hostname = +?;
+-- ArchiveServiceSite archives a service's live site, with the service.
+-- name: ArchiveServiceSite :execrows
+UPDATE sites SET archived_at = ? WHERE service_id = +? AND archived_at IS NULL;
 
--- ListSiteHostnames returns the hostnames of the given sites with the
--- name of the service each last served ('' for none).
+-- name: UnarchiveSite :exec
+UPDATE sites SET archived_at = NULL, name = ? WHERE id = +?;
+
+-- ListSiteHostnames returns the hostnames the given sites count: their
+-- service's verified domains that don't redirect, with the service's
+-- name. An unverified one might be another org's.
 -- name: ListSiteHostnames :many
-SELECT site_hostnames.*, CAST(coalesce(services.name, '') AS TEXT) AS service_name
-FROM site_hostnames
-LEFT JOIN services ON services.id = site_hostnames.service_id
-WHERE site_hostnames.site_id IN (sqlc.slice(site_ids))
-ORDER BY site_hostnames.hostname;
-
--- name: AddSiteHostname :exec
-INSERT INTO site_hostnames (hostname, site_id, service_id, added_at) VALUES (?, ?, ?, ?)
-ON CONFLICT (hostname) DO UPDATE SET site_id = excluded.site_id, service_id = excluded.service_id;
-
--- name: SetSiteHostnameService :exec
-UPDATE site_hostnames SET service_id = ? WHERE hostname = +?;
-
--- name: RemoveSiteHostname :exec
-DELETE FROM site_hostnames WHERE hostname = +?;
-
--- name: CountSiteHostnames :one
-SELECT count(*) FROM site_hostnames WHERE site_id = +?;
-
--- SiteOfService returns a live site that one of the service's hostnames
--- belongs to, if any: enabling another hostname of the service joins it.
--- name: SiteOfService :one
-SELECT sites.* FROM site_hostnames
-JOIN sites ON sites.id = site_hostnames.site_id
-WHERE site_hostnames.service_id = +? AND sites.archived_at IS NULL
-ORDER BY sites.id LIMIT 1;
+SELECT sites.id AS site_id, domains.hostname, services.name AS service_name
+FROM sites
+JOIN services ON services.id = sites.service_id
+JOIN domains ON domains.service_id = sites.service_id AND domains.redirect_to = '' AND domains.verified_at IS NOT NULL
+WHERE sites.id IN (sqlc.slice(site_ids))
+ORDER BY domains.generated, domains.hostname;
 
 -- name: AddSiteMarker :exec
 INSERT INTO site_markers (site_id, at, kind, message) VALUES (?, ?, ?, ?);
@@ -101,26 +97,25 @@ INSERT INTO site_markers (site_id, at, kind, message) VALUES (?, ?, ?, ?);
 -- name: ListSiteMarkers :many
 SELECT * FROM site_markers WHERE site_id = +sqlc.arg(site_id) AND at >= +sqlc.arg(from_at) AND at < +sqlc.arg(to_at) ORDER BY at;
 
--- ListSiteDeploys returns the releases that went live in [from, to) for
--- the services serving a site's hostnames, oldest first: deploy markers.
+-- ListSiteDeploys returns the releases of a site's service that went
+-- live in [from, to), oldest first: deploy markers.
 -- name: ListSiteDeploys :many
 SELECT releases.number, releases.finished_at, services.name AS service_name
 FROM releases
 JOIN services ON services.id = releases.service_id
-WHERE releases.service_id IN (SELECT site_hostnames.service_id FROM site_hostnames WHERE site_hostnames.site_id = +sqlc.arg(site_id))
+WHERE releases.service_id = (SELECT sites.service_id FROM sites WHERE sites.id = +sqlc.arg(site_id))
   AND releases.status IN ('active', 'superseded')
   AND releases.finished_at >= +sqlc.arg(from_at) AND releases.finished_at < +sqlc.arg(to_at)
 ORDER BY releases.finished_at
 LIMIT 200;
 
--- ListAnalyticsHosts returns, for routing, every live site's hostnames
--- on a server's environments: the hostname and its site.
--- name: ListAnalyticsHosts :many
-SELECT site_hostnames.hostname, site_hostnames.site_id
-FROM site_hostnames
-JOIN sites ON sites.id = site_hostnames.site_id
+-- ListAnalyticsServices returns, for routing, the counted services on a
+-- server's environments with their live site.
+-- name: ListAnalyticsServices :many
+SELECT sites.service_id, sites.id AS site_id
+FROM sites
 JOIN environments ON environments.id = sites.environment_id
-WHERE environments.server_id = +? AND sites.archived_at IS NULL;
+WHERE environments.server_id = +? AND sites.archived_at IS NULL AND sites.service_id IS NOT NULL;
 
 -- ListLiveSites returns every live site with its settings, for the
 -- ingest's per-site rules.
@@ -185,16 +180,16 @@ RETURNING *;
 DELETE FROM site_funnels WHERE site_id = +sqlc.arg(site_id) AND name = +sqlc.arg(name);
 
 -- name: SiteServing :one
--- Whether any of a site's hostnames is a domain of a live service that
--- isn't stopped (ADR 0050) in an environment that isn't asleep: a site
--- with none has no traffic to expect.
+-- Whether a site's service is live, not stopped (ADR 0050), in an
+-- environment that isn't asleep, and has a domain that doesn't redirect:
+-- a site without one has no traffic to expect.
 SELECT CAST(EXISTS (
-    SELECT 1 FROM site_hostnames
-    JOIN domains ON domains.hostname = site_hostnames.hostname
-    JOIN services ON services.id = domains.service_id
+    SELECT 1 FROM sites
+    JOIN services ON services.id = sites.service_id
     JOIN environments ON environments.id = services.environment_id
-    WHERE site_hostnames.site_id = +? AND services.archived_at IS NULL AND services.stopped_at IS NULL
+    WHERE sites.id = +? AND services.archived_at IS NULL AND services.stopped_at IS NULL
       AND environments.asleep_at IS NULL
+      AND EXISTS (SELECT 1 FROM domains WHERE domains.service_id = services.id AND domains.redirect_to = '')
 ) AS BOOLEAN) AS serving;
 
 -- ListOrgSites returns an organization's live sites in live projects, by
@@ -206,28 +201,3 @@ JOIN environments ON environments.id = sites.environment_id
 JOIN projects ON projects.id = environments.project_id
 WHERE projects.org_id = +? AND projects.archived_at IS NULL AND sites.archived_at IS NULL
 ORDER BY projects.name, sites.name, sites.id;
-
--- name: SiteNameCandidate :one
--- The hostname an automatically named site takes its name from: its
--- hostnames that are still one of their service's domains (no redirect),
--- custom ones before generated ones.
-SELECT site_hostnames.hostname FROM site_hostnames
-JOIN domains ON domains.hostname = site_hostnames.hostname AND domains.service_id = site_hostnames.service_id
-WHERE site_hostnames.site_id = +? AND domains.redirect_to = ''
-ORDER BY domains.generated, site_hostnames.hostname LIMIT 1;
-
--- name: ListSitesNamedAfterGoneHostnames :many
--- Live sites named after one of their hostnames that is no longer a
--- domain, with the name to take instead (SiteNameCandidate's): renamed
--- when analytics starts. Sites are few; this reads them once.
-SELECT sites.id, environments.project_id, sites.name, CAST(coalesce((
-    SELECT sh.hostname FROM site_hostnames sh
-    JOIN domains d ON d.hostname = sh.hostname AND d.service_id = sh.service_id
-    WHERE sh.site_id = sites.id AND d.redirect_to = ''
-    ORDER BY d.generated, sh.hostname LIMIT 1
-), '') AS TEXT) AS better
-FROM sites
-JOIN environments ON environments.id = sites.environment_id
-JOIN site_hostnames ON site_hostnames.site_id = sites.id AND site_hostnames.hostname = sites.name
-WHERE sites.archived_at IS NULL
-  AND NOT EXISTS (SELECT 1 FROM domains WHERE domains.hostname = sites.name);
