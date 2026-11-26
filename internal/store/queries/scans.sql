@@ -35,10 +35,11 @@ WHERE id = +sqlc.arg(id);
 
 -- name: NextImageScan :one
 -- The next scan to run: queued, due, and one a builder there is may
--- scan (production ones only with a builder that accepts production).
+-- scan (production ones only with a builder that builds production, the
+-- rest with one that builds non-production).
 SELECT * FROM image_scans
 WHERE state = 'queued' AND (next_attempt_at IS NULL OR next_attempt_at <= +sqlc.arg(now))
-  AND (production = 0 OR +sqlc.arg(production_builder) = 1)
+  AND CASE production WHEN 0 THEN +sqlc.arg(non_production_builder) ELSE +sqlc.arg(production_builder) END = 1
 ORDER BY priority, id LIMIT 1;
 
 -- name: NextImageScanRetry :one
@@ -150,8 +151,9 @@ DELETE FROM image_scans WHERE id = +sqlc.arg(id);
 UPDATE releases SET image_scan_id = NULL WHERE id = +sqlc.arg(id) AND image_scan_id IS NOT NULL;
 
 -- name: CountImageScans :many
--- Scans by state, for the console. One row per image in use.
-SELECT state, count(*) AS n FROM image_scans GROUP BY state;
+-- Scans by state and whether production uses them, for the console. One
+-- row per image in use.
+SELECT state, production, count(*) AS n FROM image_scans GROUP BY state, production;
 
 -- name: SetServerScanDatabase :exec
 UPDATE servers SET scan_db_built_at = ?, scan_error = ? WHERE id = +sqlc.arg(id);

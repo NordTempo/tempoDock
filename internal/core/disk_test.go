@@ -197,7 +197,7 @@ func TestImagePruneSortsReleases(t *testing.T) {
 	p, _ := labPool(t)
 	p.opts.Config.Defaults.KeepReleases = 3
 	p.withRegistry(&fakeRegistry{})
-	p.acceptProduction("homelab")
+	p.buildsProduction("homelab")
 	web := p.createService("production", "web", apitypes.CreateServiceRequest{})
 	var rels []apitypes.Release
 	for range 5 {

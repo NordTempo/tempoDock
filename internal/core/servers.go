@@ -72,6 +72,7 @@ func (c *Core) listServers(ctx context.Context, usage bool) ([]apitypes.Server, 
 func joiningServer(t store.JoinToken) apitypes.Server {
 	return apitypes.Server{
 		Name: t.ServerName, Status: apitypes.ServerJoining, JoinExpiresAt: &t.ExpiresAt, Builder: t.Builder,
+		BuildsProduction: t.AcceptsProduction, BuildsNonProduction: true,
 		AcceptsProduction: t.AcceptsProduction, AcceptsNonProduction: t.AcceptsNonProduction,
 		Ingress: apitypes.IngressDirect, PublicIPs: []string{},
 	}
@@ -173,8 +174,8 @@ func (c *Core) serverServices(ctx context.Context, serverID int64, link serverLi
 }
 
 // UpdateServer renames a server, or changes which environment kinds it
-// accepts, whether it takes new placements, whether it builds and its base
-// domain. Environments already there stay; existing generated domains keep
+// accepts, whether it takes new placements, whether it builds (and for
+// which kinds, apart from what it accepts) and its base domain. Environments already there stay; existing generated domains keep
 // their hostnames. A rename changes only the name: everything refers to a
 // server by ID. The local server's builder setting follows [buildkit]
 // enabled on every start, and its base domain falls back to the config's
@@ -193,7 +194,10 @@ func (c *Core) UpdateServer(ctx context.Context, a Actor, name string, req apity
 			return apitypes.Server{}, err
 		}
 	}
-	settings := store.UpdateServerSettingsParams{BaseDomain: srv.BaseDomain, Builder: srv.Builder, ThroughTunnel: srv.ThroughTunnel, ID: srv.ID}
+	settings := store.UpdateServerSettingsParams{
+		BaseDomain: srv.BaseDomain, Builder: srv.Builder, ThroughTunnel: srv.ThroughTunnel,
+		BuildsProduction: srv.BuildsProduction, BuildsNonProduction: srv.BuildsNonProduction, ID: srv.ID,
+	}
 	if req.BaseDomain != nil {
 		base := strings.TrimPrefix(strings.TrimSpace(*req.BaseDomain), "*.")
 		if base != "" {
@@ -224,6 +228,11 @@ func (c *Core) UpdateServer(ctx context.Context, a Actor, name string, req apity
 	set(&params.DisabledForPlacement, req.DisabledForPlacement, "disabled for new placements", "enabled for new placements")
 	placement := len(changes) > 0
 	set(&settings.Builder, req.Builder, "builds", "no longer builds")
+	set(&settings.BuildsProduction, req.BuildsProduction, "builds production", "no longer builds production")
+	set(&settings.BuildsNonProduction, req.BuildsNonProduction, "builds non-production", "no longer builds non-production")
+	if settings.Builder && !settings.BuildsProduction && !settings.BuildsNonProduction {
+		return apitypes.Server{}, invalid("a builder builds production, non-production or both; to build nothing here, turn it off with `dock server update %s --no-builder`", srv.Name)
+	}
 	if settings.BaseDomain != srv.BaseDomain {
 		changes = append(changes, fmt.Sprintf("base domain %q", settings.BaseDomain))
 	}
@@ -292,6 +301,9 @@ func (c *Core) UpdateServer(ctx context.Context, a Actor, name string, req apity
 		}
 		if settings.Builder && !srv.Builder {
 			c.warmBuilder(ctx, srv.ID)
+		}
+		if settings.Builder != srv.Builder || settings.BuildsProduction != srv.BuildsProduction || settings.BuildsNonProduction != srv.BuildsNonProduction {
+			c.kickScans() // queued scans may have a scanner now, or another one
 		}
 		if srv.Local && settings.BaseDomain != srv.BaseDomain {
 			c.publicSitesChanged(ctx) // stats-<site>.<base domain> moved
@@ -674,6 +686,7 @@ func (c *Core) toServer(r store.ListServerLoadsRow, usage bool, tunnels map[int6
 		KeyFingerprint: deref(s.KeyFingerprint), Ingress: ing.mode, PublicIPs: ing.publicIPs, TunnelHostname: ing.tunnel,
 		DockerVersion: s.DockerVersion, BaseDomain: ing.baseDomain,
 		AcceptsProduction: s.AcceptsProduction, AcceptsNonProduction: s.AcceptsNonProduction,
+		BuildsProduction: s.BuildsProduction, BuildsNonProduction: s.BuildsNonProduction,
 		DisabledForPlacement: s.DisabledForPlacement, MemoryBytes: s.MemoryBytes, ReservedMemoryBytes: r.ReservedMb << 20,
 		Projects: int(r.Projects), Environments: int(r.Environments), ThroughTunnel: ing.listener,
 	}

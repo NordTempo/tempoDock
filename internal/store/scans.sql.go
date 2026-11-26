@@ -127,15 +127,17 @@ func (q *Queries) ClearTrimmedReleaseScan(ctx context.Context, id int64) error {
 }
 
 const countImageScans = `-- name: CountImageScans :many
-SELECT state, count(*) AS n FROM image_scans GROUP BY state
+SELECT state, production, count(*) AS n FROM image_scans GROUP BY state, production
 `
 
 type CountImageScansRow struct {
-	State string
-	N     int64
+	State      string
+	Production int64
+	N          int64
 }
 
-// Scans by state, for the console. One row per image in use.
+// Scans by state and whether production uses them, for the console. One
+// row per image in use.
 func (q *Queries) CountImageScans(ctx context.Context) ([]CountImageScansRow, error) {
 	rows, err := q.db.QueryContext(ctx, countImageScans)
 	if err != nil {
@@ -145,7 +147,7 @@ func (q *Queries) CountImageScans(ctx context.Context) ([]CountImageScansRow, er
 	var items []CountImageScansRow
 	for rows.Next() {
 		var i CountImageScansRow
-		if err := rows.Scan(&i.State, &i.N); err != nil {
+		if err := rows.Scan(&i.State, &i.Production, &i.N); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1421,19 +1423,21 @@ func (q *Queries) ListVulnIgnores(ctx context.Context, arg ListVulnIgnoresParams
 const nextImageScan = `-- name: NextImageScan :one
 SELECT id, image_key, pull_ref, local_ref, built_on_server_id, org_id, production, state, priority, attempts, next_attempt_at, server_id, distro, packages, sbom_bytes, sbom_at, matched_at, db_built_at, critical, high, medium, low, other, fixable, kev, truncated, worst_fix, error, created_at, base_image, base_digest, base_moved, base_checked_at, base_latest FROM image_scans
 WHERE state = 'queued' AND (next_attempt_at IS NULL OR next_attempt_at <= +?1)
-  AND (production = 0 OR +?2 = 1)
+  AND CASE production WHEN 0 THEN +?2 ELSE +?3 END = 1
 ORDER BY priority, id LIMIT 1
 `
 
 type NextImageScanParams struct {
-	Now               *int64
-	ProductionBuilder interface{}
+	Now                  *int64
+	NonProductionBuilder int64
+	ProductionBuilder    int64
 }
 
 // The next scan to run: queued, due, and one a builder there is may
-// scan (production ones only with a builder that accepts production).
+// scan (production ones only with a builder that builds production, the
+// rest with one that builds non-production).
 func (q *Queries) NextImageScan(ctx context.Context, arg NextImageScanParams) (ImageScan, error) {
-	row := q.db.QueryRowContext(ctx, nextImageScan, arg.Now, arg.ProductionBuilder)
+	row := q.db.QueryRowContext(ctx, nextImageScan, arg.Now, arg.NonProductionBuilder, arg.ProductionBuilder)
 	var i ImageScan
 	err := row.Scan(
 		&i.ID,

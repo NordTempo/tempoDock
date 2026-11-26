@@ -165,7 +165,7 @@ func scanRank(s *apitypes.ImageScan) int64 {
 }
 
 // scanWaitReason returns what queued scans wait for, given whether one
-// needs a builder that accepts production: one server list read once.
+// needs a builder that builds production: one server list read once.
 func (c *Core) scanWaitReason(ctx context.Context) func(production bool) string {
 	c.scans.mu.Lock()
 	enabled := c.scans.enabled
@@ -177,18 +177,29 @@ func (c *Core) scanWaitReason(ctx context.Context) func(production bool) string 
 	if err != nil {
 		return func(bool) string { return "" }
 	}
-	any, prod := false, false
+	return c.scanWaitFor(servers)
+}
+
+// scanWaitFor is scanWaitReason over servers already read: what a queued
+// scan of a production or non-production image waits for.
+func (c *Core) scanWaitFor(servers []store.Server) func(production bool) string {
+	any, prod, nonProd := false, false, false
 	for _, s := range servers {
 		if c.canBuild(s) {
-			any, prod = true, prod || s.AcceptsProduction
+			any, prod, nonProd = true, prod || s.BuildsProduction, nonProd || s.BuildsNonProduction
 		}
 	}
+	onlineProd, onlineNonProd := c.scanKinds(servers)
 	return func(production bool) string {
 		switch {
 		case !any:
 			return "No server builds images, and only builders scan; make one a builder with `dock server update NAME --builder`"
 		case production && !prod:
-			return "Production images are scanned only on builders that accept production, and none does; make a production server a builder with `dock server update NAME --builder`"
+			return "Production images are scanned only on builders that build production, and none does; let one with `dock server update NAME --builds all`"
+		case !production && !nonProd:
+			return "Non-production images are scanned only on builders that build non-production, and none does; let one with `dock server update NAME --builds all`"
+		case production && !onlineProd, !production && !onlineNonProd:
+			return "Waiting for a builder that scans these images to come back online, or for its disk to have room"
 		}
 		return "Waiting for a quiet minute: builds and deploys come first"
 	}
@@ -475,24 +486,33 @@ func (c *Core) ScanningStatus(ctx context.Context, a Actor) (apitypes.ScanningSt
 		Images: map[apitypes.ScanState]int{}, Builders: []apitypes.ScanningServer{}}
 	busy := c.scans.busy > 0 || time.Since(c.scans.lastBusy) < c.quietFor()
 	c.scans.mu.Unlock()
+	queuedProd, queuedNonProd := false, false
 	for _, n := range counts {
-		out.Images[apitypes.ScanState(n.State)] = int(n.N)
+		out.Images[apitypes.ScanState(n.State)] += int(n.N)
+		if n.State == string(apitypes.ScanQueued) && n.N > 0 {
+			queuedProd, queuedNonProd = queuedProd || n.Production != 0, queuedNonProd || n.Production == 0
+		}
 	}
 	for _, s := range servers {
 		if !c.canBuild(s) {
 			continue
 		}
-		b := apitypes.ScanningServer{Server: s.Name, Production: s.AcceptsProduction, Error: s.ScanError,
+		b := apitypes.ScanningServer{Server: s.Name, Production: s.BuildsProduction, Error: s.ScanError,
 			Imported: out.Imported != "" && s.ScanDbImport == out.Imported}
 		if s.ScanDbBuiltAt != nil {
 			b.DatabaseBuilt = ptr(time.Unix(*s.ScanDbBuiltAt, 0).UTC())
 		}
 		out.Builders = append(out.Builders, b)
 	}
+	prod, nonProd := c.scanKinds(servers)
 	switch {
 	case !out.Enabled:
 	case len(out.Builders) == 0:
 		out.Waiting = "No server builds images, and only builders scan"
+	case queuedProd && !prod:
+		out.Waiting = c.scanWaitFor(servers)(true)
+	case queuedNonProd && !nonProd:
+		out.Waiting = c.scanWaitFor(servers)(false)
 	case out.Images[apitypes.ScanQueued] > 0 && busy:
 		out.Waiting = "Waiting for a quiet minute: builds and deploys come first"
 	}

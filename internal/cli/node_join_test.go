@@ -81,7 +81,7 @@ func TestNodeJoinAndRun(t *testing.T) {
 		t.Fatalf("add: exit %d\n%s%s", code, stdout, stderr)
 	}
 	if code, list, stderr := exec(t, "server", "list"); code != 0 || !strings.Contains(list, "BUILDS") ||
-		!slices.ContainsFunc(strings.Split(list, "\n"), func(l string) bool { return strings.HasPrefix(l, "homelab") && strings.Contains(l, " yes ") }) {
+		!slices.ContainsFunc(strings.Split(list, "\n"), func(l string) bool { return strings.HasPrefix(l, "homelab") && strings.Count(l, "non-production") == 2 }) {
 		t.Fatalf("server list: exit %d\n%s%s", code, list, stderr)
 	}
 	var token string

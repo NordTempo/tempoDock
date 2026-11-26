@@ -202,26 +202,44 @@ func (c *Core) warmBuilder(ctx context.Context, serverID int64) {
 	})
 }
 
+// buildsKind reports whether an operator lets s build images for
+// environments of kind (ADR 0014 amendment): a production build gets
+// the environment's variables, so it runs only where that was chosen,
+// apart from where production is placed.
+func buildsKind(s store.Server, kind apitypes.EnvironmentKind) bool {
+	if kind == apitypes.KindProduction {
+		return s.BuildsProduction
+	}
+	return s.BuildsNonProduction
+}
+
 // builderFor picks the server that builds source for an environment of
-// kind on target (ADR 0010): target itself when it is an online builder,
-// else the oldest online builder, which pushes the image to the registry
-// for target to pull. Without a registry an image can't move between
-// servers, so target builds, as on single-server installs.
+// kind on target (ADR 0010): target itself when it is an online builder
+// for kind, else the oldest online builder for kind, which pushes the
+// image to the registry for target to pull. The control plane builds
+// last: only when no other builder for kind is online, so its server
+// keeps its CPU and memory for the platform and the apps on it. Without
+// a registry an image can't move between servers, so target builds, as
+// on single-server installs.
 //
 // A build receives the environment's variables (build args and secrets),
-// so a production build only runs on a builder that accepts production
-// environments: a non-production server never sees production secrets
-// (ADR 0014 amendment, compromised node).
+// so it only runs on a builder an operator lets build that kind
+// (buildsKind): a server that builds only non-production never sees
+// production secrets (ADR 0014 amendment, compromised node).
 func (c *Core) builderFor(ctx context.Context, target store.Server, kind apitypes.EnvironmentKind) (store.Server, node.Runtime, error) {
+	words := kindWords(kind)
 	if c.reg == nil {
 		rt, err := c.runtimeFor(target.ID)
-		if err == nil && !target.Local && !c.canBuild(target) {
+		switch {
+		case err != nil:
+		case !target.Local && !c.canBuild(target):
 			err = invalid("server %s doesn't build images, and without the registry ([registry] enabled on the control plane) they can't come from another server; deploy a prebuilt image (--image) or make %s a builder", target.Name, target.Name)
+		case !buildsKind(target, kind):
+			err = invalid("server %s doesn't build %s images, and without the registry ([registry] enabled on the control plane) they can't come from another server; let it with `dock server update %s --builds all`, or deploy a prebuilt image (--image)", target.Name, words, target.Name)
 		}
 		return target, rt, err
 	}
-	trusted := func(s store.Server) bool { return kind != apitypes.KindProduction || s.AcceptsProduction }
-	if c.canBuild(target) && trusted(target) {
+	if !target.Local && c.canBuild(target) && buildsKind(target, kind) {
 		if rt := c.connected(target.ID); rt != nil {
 			return target, rt, nil
 		}
@@ -230,13 +248,18 @@ func (c *Core) builderFor(ctx context.Context, target store.Server, kind apitype
 	if err != nil {
 		return store.Server{}, nil, err
 	}
-	var offline, untrusted []string
+	var offline, other []string
+	var local *store.Server
 	for _, s := range servers {
 		if !c.canBuild(s) {
 			continue
 		}
-		if !trusted(s) {
-			untrusted = append(untrusted, s.Name)
+		if !buildsKind(s, kind) {
+			other = append(other, s.Name)
+			continue
+		}
+		if s.Local {
+			local = &s
 			continue
 		}
 		if rt := c.connected(s.ID); rt != nil {
@@ -244,11 +267,19 @@ func (c *Core) builderFor(ctx context.Context, target store.Server, kind apitype
 		}
 		offline = append(offline, s.Name)
 	}
+	if local != nil {
+		if rt := c.connected(local.ID); rt != nil {
+			return *local, rt, nil
+		}
+		offline = append(offline, local.Name)
+	}
 	switch {
 	case len(offline) > 0:
-		return store.Server{}, nil, errf(apitypes.CodeServerOffline, "no builder is online (builders: %s); try again when one is back, or deploy a prebuilt image (--image)", strings.Join(offline, ", "))
-	case len(untrusted) > 0:
-		return store.Server{}, nil, invalid("production builds only run on servers that accept production environments, so production secrets never reach other servers, and no builder does (builders: %s); make a production server a builder with `dock server update <name> --builder`, or deploy an image built in CI (--image)", strings.Join(untrusted, ", "))
+		return store.Server{}, nil, errf(apitypes.CodeServerOffline, "no builder for %s is online (builders: %s); try again when one is back, or deploy a prebuilt image (--image)", words, strings.Join(offline, ", "))
+	case len(other) > 0 && kind == apitypes.KindProduction:
+		return store.Server{}, nil, invalid("production builds only run on servers that build production, so production secrets reach only servers you chose, and no builder does (builders: %s); let one with `dock server update <name> --builds all`, or deploy an image built in CI (--image)", strings.Join(other, ", "))
+	case len(other) > 0:
+		return store.Server{}, nil, invalid("no builder builds non-production images (builders: %s); let one with `dock server update <name> --builds all`, or deploy a prebuilt image (--image)", strings.Join(other, ", "))
 	}
 	return store.Server{}, nil, invalid("no server builds images; make one a builder with `dock server update <name> --builder`, or deploy a prebuilt image (--image)")
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -273,7 +274,7 @@ func (c *Core) scanPass() (more bool, retry time.Time) {
 		}
 		return c.scanPreempted(ctx), time.Time{}
 	}
-	builders, prod := c.scanBuilders(ctx)
+	builders, prod, nonProd := c.scanBuilders(ctx)
 	if len(builders) == 0 {
 		return false, time.Time{} // a builder coming online kicks
 	}
@@ -286,7 +287,7 @@ func (c *Core) scanPass() (more bool, retry time.Time) {
 		return true, time.Time{}
 	}
 	n := now()
-	row, err := c.store.NextImageScan(ctx, store.NextImageScanParams{Now: ptr(n.Unix()), ProductionBuilder: boolInt(prod)})
+	row, err := c.store.NextImageScan(ctx, store.NextImageScanParams{Now: ptr(n.Unix()), ProductionBuilder: boolInt(prod), NonProductionBuilder: boolInt(nonProd)})
 	if store.IsNotFound(err) {
 		due, err := c.store.NextImageScanRetry(ctx, ptr(n.Unix()))
 		if err != nil || due == 0 {
@@ -308,29 +309,65 @@ func (c *Core) scanPreempted(ctx context.Context) bool {
 	return ctx.Err() != nil && c.ctx.Err() == nil
 }
 
-// scanBuilders are the servers that may scan now: online builders whose
-// disk isn't past the prune threshold, the local one first. prod says
-// whether one accepts production, which production images need.
-func (c *Core) scanBuilders(ctx context.Context) ([]store.Server, bool) {
+// scanBuilders are the servers that may scan now (scanners), read once.
+func (c *Core) scanBuilders(ctx context.Context) (out []store.Server, prod, nonProd bool) {
 	servers, err := c.store.ListServers(ctx)
 	if err != nil {
 		c.log.Error("list servers for scans", "err", err)
-		return nil, false
+		return nil, false, false
 	}
-	var out []store.Server
-	prod := false
-	for _, s := range servers {
-		if !c.canBuild(s) || c.connected(s.ID) == nil || c.diskFull(s.ID) {
-			continue
-		}
-		if s.Local {
-			out = append([]store.Server{s}, out...)
-		} else {
-			out = append(out, s)
-		}
-		prod = prod || s.AcceptsProduction
+	return c.scanners(servers)
+}
+
+// scanners are the servers among servers that may scan now (scanning),
+// and whether any of them may scan production and non-production images.
+func (c *Core) scanners(servers []store.Server) (out []store.Server, prod, nonProd bool) {
+	for s := range c.scanning(servers) {
+		out = append(out, s)
+		prod, nonProd = prod || s.BuildsProduction, nonProd || s.BuildsNonProduction
 	}
-	return out, prod
+	return out, prod, nonProd
+}
+
+// scanKinds says whether any server among servers may scan production
+// and non-production images now, without collecting them.
+func (c *Core) scanKinds(servers []store.Server) (prod, nonProd bool) {
+	for s := range c.scanning(servers) {
+		prod, nonProd = prod || s.BuildsProduction, nonProd || s.BuildsNonProduction
+	}
+	return prod, nonProd
+}
+
+// scanning yields the servers among servers that may scan now: online
+// builders whose disk isn't past the prune threshold. Each comes with its
+// builds flags (buildsKind) saying which images it may scan: production
+// ones only on builders that build production. With the registry, the
+// control plane scans a kind only while no other server builds it, online
+// or not: a scan can wait, and every scanner keeps a database of
+// gigabytes. Without it images stay where they were built, so the control
+// plane scans its own.
+func (c *Core) scanning(servers []store.Server) iter.Seq[store.Server] {
+	return func(yield func(store.Server) bool) {
+		var remoteProd, remoteNonProd bool
+		for _, s := range servers {
+			if !s.Local && c.canBuild(s) && c.reg != nil {
+				remoteProd = remoteProd || s.BuildsProduction
+				remoteNonProd = remoteNonProd || s.BuildsNonProduction
+			}
+		}
+		for _, s := range servers {
+			if !c.canBuild(s) || c.connected(s.ID) == nil || c.diskFull(s.ID) {
+				continue
+			}
+			if s.Local {
+				s.BuildsProduction = s.BuildsProduction && !remoteProd
+				s.BuildsNonProduction = s.BuildsNonProduction && !remoteNonProd
+			}
+			if (s.BuildsProduction || s.BuildsNonProduction) && !yield(s) {
+				return
+			}
+		}
+	}
 }
 
 // syncScans gives every live release without a scan its image's scan,
@@ -509,12 +546,16 @@ func (c *Core) runScan(ctx context.Context, row store.ImageScan, builders []stor
 	}
 }
 
-// scanServer picks the builder for a scan: the one that built the image
-// when it can take it, else any that may (production images only on
-// builders that accept production). An image without a pull reference
-// can only be scanned where it was built.
+// scanServer picks the builder for a scan among scanBuilders': the one
+// that built the image when it can take it, else any that may (production
+// images only on builders that build production). An image without a
+// pull reference can only be scanned where it was built.
 func (c *Core) scanServer(row store.ImageScan, builders []store.Server) (store.Server, bool) {
-	may := func(s store.Server) bool { return row.Production == 0 || s.AcceptsProduction }
+	kind := apitypes.KindNonProduction
+	if row.Production != 0 {
+		kind = apitypes.KindProduction
+	}
+	may := func(s store.Server) bool { return buildsKind(s, kind) }
 	for _, s := range builders {
 		if row.BuiltOnServerID != nil && s.ID == *row.BuiltOnServerID && may(s) {
 			return s, true

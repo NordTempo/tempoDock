@@ -17,7 +17,7 @@ func TestBuildStopsTheRegistrysGarbageCollection(t *testing.T) {
 	p, _ := labPool(t)
 	reg := &fakeRegistry{pruned: 1, gcHangs: true}
 	p.withRegistry(reg)
-	p.acceptProduction("homelab")
+	p.buildsProduction("homelab")
 	web := p.createService("production", "web", apitypes.CreateServiceRequest{})
 	p.deploySource(web) // its prune deletes a manifest and collects, for ever
 
@@ -55,7 +55,7 @@ func TestBuildStopsTheRegistrysGarbageCollection(t *testing.T) {
 func TestDeployGivesUpOnABusyRegistry(t *testing.T) {
 	p, _ := labPool(t)
 	p.withRegistry(&fakeRegistry{})
-	p.acceptProduction("homelab")
+	p.buildsProduction("homelab")
 	web := p.createService("production", "web", apitypes.CreateServiceRequest{})
 	release, err := p.c.holdRegistry()
 	if err != nil {

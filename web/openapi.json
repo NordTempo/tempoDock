@@ -14510,7 +14510,7 @@
             "type": "boolean"
           },
           "production": {
-            "description": "It accepts production, so it may scan production images",
+            "description": "It builds production, so it may scan production images",
             "type": "boolean"
           },
           "server": {
@@ -14644,6 +14644,12 @@
             "description": "Source builds may run here",
             "type": "boolean"
           },
+          "builds_non_production": {
+            "type": "boolean"
+          },
+          "builds_production": {
+            "type": "boolean"
+          },
           "connected_at": {
             "format": "date-time",
             "type": "string"
@@ -14773,6 +14779,8 @@
           "accepts_production",
           "accepts_non_production",
           "disabled_for_placement",
+          "builds_production",
+          "builds_non_production",
           "memory_bytes",
           "reserved_memory_bytes",
           "projects",
@@ -19992,6 +20000,12 @@
             "type": "string"
           },
           "builder": {
+            "type": "boolean"
+          },
+          "builds_non_production": {
+            "type": "boolean"
+          },
+          "builds_production": {
             "type": "boolean"
           },
           "disabled_for_placement": {

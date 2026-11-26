@@ -123,7 +123,7 @@ func TestCancelNeedsDeploy(t *testing.T) {
 func TestCancelWhileWaitingForTheRegistry(t *testing.T) {
 	p, _ := labPool(t)
 	p.withRegistry(&fakeRegistry{})
-	p.acceptProduction("homelab")
+	p.buildsProduction("homelab")
 	web := p.createService("production", "web", apitypes.CreateServiceRequest{})
 	release, err := p.c.holdRegistry()
 	if err != nil {

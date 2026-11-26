@@ -154,6 +154,9 @@ stay open.
 - Each server accepts production, non-production or both. With production
   servers that accept only production, a runaway staging app or build can't
   starve production. (A lone server accepts both until a second one joins.)
+- A production build gets the environment's variables, so it runs only on
+  builders an operator lets build production, which by default are the
+  servers that accept production.
 - Server and account administration (accepted kinds, pins, statistics,
   password resets) is for operators only; members see their environment's
   server status, not the servers.

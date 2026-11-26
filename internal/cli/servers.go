@@ -42,11 +42,7 @@ func newServerListCmd(g *globals) *cobra.Command {
 			return g.io.Print(servers, func() error {
 				t := g.io.Table("name", "status", "version", "ingress", "accepts", "builds", "memory reserved", "projects", "environments")
 				for _, sv := range servers {
-					builds := ""
-					if sv.Builder {
-						builds = "yes"
-					}
-					t.Row(sv.Name, serverStatus(sv), dash(sv.Version), dash(ingressWords(sv.Ingress)), accepts(sv), dash(builds), reserved(sv),
+					t.Row(sv.Name, serverStatus(sv), dash(sv.Version), dash(ingressWords(sv.Ingress)), accepts(sv), dash(builds(sv)), reserved(sv),
 						strconv.Itoa(sv.Projects), strconv.Itoa(sv.Environments))
 				}
 				return t.Flush()
@@ -341,6 +337,22 @@ func newServerRemoveCmd(g *globals) *cobra.Command {
 	return cmd
 }
 
+// builds describes which kinds' images a server builds, for tables;
+// "" when it isn't a builder.
+func builds(s apitypes.Server) string {
+	if !s.Builder {
+		return ""
+	}
+	var kinds []string
+	if s.BuildsProduction {
+		kinds = append(kinds, "production")
+	}
+	if s.BuildsNonProduction {
+		kinds = append(kinds, "non-production")
+	}
+	return strings.Join(kinds, ", ")
+}
+
 // accepts describes which kinds a server takes, for tables.
 func accepts(s apitypes.Server) string {
 	var kinds []string
@@ -392,8 +404,8 @@ func newServerShowCmd(g *globals) *cobra.Command {
 				if sv.Tunnel != nil {
 					_, _ = fmt.Fprintf(g.io.Out, "tunnel managed by Dock: %s\n", tunnelWords(sv.Tunnel))
 				}
-				if sv.Builder {
-					_, _ = fmt.Fprintln(g.io.Out, "builds images")
+				if b := builds(sv); b != "" {
+					_, _ = fmt.Fprintf(g.io.Out, "builds %s images\n", b)
 				}
 				if u := sv.Usage; u != nil {
 					_, _ = fmt.Fprintf(g.io.Out, "cpu %.1f%% of %d cores, memory %s of %s, load %.2f\n",
@@ -423,14 +435,21 @@ func newServerShowCmd(g *globals) *cobra.Command {
 
 func newServerUpdateCmd(g *globals) *cobra.Command {
 	var prod, noProd, nonProd, noNonProd, disable, enable, builder, noBuilder, tunnel, noTunnel bool
-	var baseDomain string
+	var baseDomain, buildKinds string
 	cmd := &cobra.Command{
 		Use:   "update <name>",
-		Short: "Change what a server accepts, whether it builds, its base domain and ingress (admin)",
+		Short: "Change what a server accepts, what it builds, its base domain and ingress (admin)",
 		Long: `Change which environment kinds a server accepts, whether it takes new
-placements, whether it builds images, and the base domain of the hostnames
-generated for services on it (` + "`--base-domain \"\"`" + ` turns them off). Environments
-already on the server stay where they are.
+placements, whether it builds images and for which kinds, and the base
+domain of the hostnames generated for services on it (` + "`--base-domain \"\"`" + `
+turns them off). Environments already on the server stay where they are.
+
+What a server builds is apart from what it accepts: a homelab that hosts
+only staging can build production's images too (--builds all). A
+production build gets the environment's variables, so only let servers
+you trust with production's secrets build it. The control plane builds
+only when no other builder is online, and scans only when no other server
+builds.
 
 --tunnel sends a server installed direct through the Cloudflare tunnel Dock
 runs for it (` + "`dock server tunnel create`" + `), with no new install: its generated
@@ -439,7 +458,7 @@ domain and need no wildcard DNS, and new domains are told to point at the
 tunnel. Domains whose DNS Dock doesn't manage keep working on its public IP
 until they point there too. --no-tunnel goes back.`,
 		Example: `  dock server update homelab --non-production --no-production
-  dock server update homelab --builder --base-domain example-apps.dev
+  dock server update homelab --builds all --base-domain example-apps.dev
   dock server update homelab --tunnel
   dock server update vps-2 --disable-placement`,
 		Args: cobra.ExactArgs(1),
@@ -461,11 +480,22 @@ until they point there too. --no-tunnel goes back.`,
 			if req.Tunnel, err = switchFlag(tunnel, noTunnel, "tunnel"); err != nil {
 				return err
 			}
+			if cmd.Flags().Changed("builds") {
+				if noBuilder {
+					return usageError("conflicting flags --builds and --no-builder", "Pass --no-builder alone to stop building here.")
+				}
+				p, np := buildKinds == "all" || buildKinds == "production", buildKinds == "all" || buildKinds == "non-production"
+				if !p && !np {
+					return usageError("unknown --builds "+buildKinds, "Pass --builds all, production or non-production.")
+				}
+				on := true
+				req.Builder, req.BuildsProduction, req.BuildsNonProduction = &on, &p, &np
+			}
 			if cmd.Flags().Changed("base-domain") {
 				req.BaseDomain = &baseDomain
 			}
 			if req == (apitypes.UpdateServerRequest{}) {
-				return usageError("nothing to change", "Pass --production, --no-production, --non-production, --no-non-production, --disable-placement, --enable-placement, --builder, --no-builder, --base-domain, --tunnel or --no-tunnel.")
+				return usageError("nothing to change", "Pass --production, --no-production, --non-production, --no-non-production, --disable-placement, --enable-placement, --builder, --no-builder, --builds, --base-domain, --tunnel or --no-tunnel.")
 			}
 			s, err := g.connect()
 			if err != nil {
@@ -476,14 +506,14 @@ until they point there too. --no-tunnel goes back.`,
 				return err
 			}
 			return g.io.Print(sv, func() error {
-				builds, base := "doesn't build", "no base domain"
-				if sv.Builder {
-					builds = "builds images"
+				built, base := "doesn't build", "no base domain"
+				if b := builds(sv); b != "" {
+					built = "builds " + b
 				}
 				if sv.BaseDomain != "" {
 					base = "base domain " + sv.BaseDomain
 				}
-				g.io.Successf("Server %s accepts %s; %s; %s; %s ingress", sv.Name, accepts(sv), builds, base, ingressWords(sv.Ingress))
+				g.io.Successf("Server %s accepts %s; %s; %s; %s ingress", sv.Name, accepts(sv), built, base, ingressWords(sv.Ingress))
 				return nil
 			})
 		},
@@ -497,6 +527,7 @@ until they point there too. --no-tunnel goes back.`,
 	f.BoolVar(&enable, "enable-placement", false, "take new placements again")
 	f.BoolVar(&builder, "builder", false, "build images here")
 	f.BoolVar(&noBuilder, "no-builder", false, "stop building images here")
+	f.StringVar(&buildKinds, "builds", "", "build images here for all, production or non-production environments")
 	f.StringVar(&baseDomain, "base-domain", "", "base of generated hostnames, <service>-<project>[-<env>]-<random>.<base>; needs wildcard DNS to this server, or a tunnel")
 	f.BoolVar(&tunnel, "tunnel", false, "send everything through the Cloudflare tunnel Dock runs for it")
 	f.BoolVar(&noTunnel, "no-tunnel", false, "serve on its public IP again (domains added from Cloudflare stay on the tunnel)")
