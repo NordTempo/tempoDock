@@ -554,3 +554,65 @@ func TestServerThroughTunnel(t *testing.T) {
 		t.Fatalf("back: server = %+v", sv)
 	}
 }
+
+// TestStatusPagesThroughTunnel sends the control plane through its
+// tunnel: a page made before gets a record for its address, one made
+// after too, and so does a custom hostname under the base domain, which
+// shows as Dock's record. Removing the hostname deletes its record only.
+func TestStatusPagesThroughTunnel(t *testing.T) {
+	p, _ := cfPool(t, "tempo.run")
+	local, err := p.store.GetLocalServer(p.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := "apps.tempo.run"
+	if _, err := p.c.UpdateServer(p.ctx, testSystem, local.Name, apitypes.UpdateServerRequest{BaseDomain: &base}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := p.c.CreateStatusPage(p.ctx, testSystem, apitypes.CreateStatusPageRequest{Slug: "before"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.c.SetServerTunnel(p.ctx, testSystem, local.Name, apitypes.ServerTunnelRequest{Action: "create"}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return p.c.managedTunnel(local.ID) != "" })
+	if _, err := p.c.UpdateServer(p.ctx, testSystem, local.Name, apitypes.UpdateServerRequest{Tunnel: new(true)}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := p.c.CreateStatusPage(p.ctx, testSystem, apitypes.CreateStatusPageRequest{Slug: "after"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, host := range []string{before.Address, after.Address} {
+		if r := p.record(host); r.Status != apitypes.DNSReady || r.Server != local.Name {
+			t.Fatalf("record of %s = %+v", host, r)
+		}
+	}
+
+	const custom = "status.apps.tempo.run"
+	page, err := p.c.UpdateStatusPage(p.ctx, testSystem, "after", apitypes.UpdateStatusPageRequest{Hostname: new(custom)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := p.record(custom); r.Status != apitypes.DNSReady {
+		t.Fatalf("record of %s = %+v", custom, r)
+	}
+	if page, err = p.c.GetStatusPage(p.ctx, testSystem, "after"); err != nil || page.Hostname == nil || page.Hostname.DNS == nil || len(page.Hostname.Records) > 0 {
+		t.Fatalf("hostname = %+v, %v; want Dock's record and none to add", page.Hostname, err)
+	}
+
+	if _, err := p.c.UpdateStatusPage(p.ctx, testSystem, "after", apitypes.UpdateStatusPageRequest{Hostname: new("")}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		list, err := p.c.ListCloudflareRecords(p.ctx, testSystem)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return !slices.ContainsFunc(list, func(r apitypes.CloudflareRecord) bool { return r.Hostname == custom })
+	})
+	if r := p.record(after.Address); r.Status != apitypes.DNSReady {
+		t.Fatalf("the page's own record went with its hostname: %+v", r)
+	}
+}

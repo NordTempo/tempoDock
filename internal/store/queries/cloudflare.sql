@@ -141,12 +141,24 @@ WHERE cloudflare_records.want = 'absent' OR cloudflare_records.status_page_id = 
    OR (cloudflare_records.domain_id IS NULL AND cloudflare_records.status_page_id IS NULL);
 
 -- name: SetStatusPageRecordAbsent :exec
--- The page's hostname goes: delete the record Dock made for it.
+-- The page goes: delete the records Dock made for its addresses.
 UPDATE cloudflare_records SET want = 'absent', status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
 WHERE status_page_id = +?;
 
+-- name: SetStatusHostRecordAbsent :exec
+-- One of a page's addresses goes (its custom hostname, an old name's
+-- address): delete the record Dock made for it.
+UPDATE cloudflare_records SET want = 'absent', status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
+WHERE hostname = +? AND status_page_id = +?;
+
 -- name: GetStatusPageRecord :one
-SELECT * FROM cloudflare_records WHERE status_page_id = +? AND want = 'present';
+-- The record of one of a page's addresses (its custom hostname).
+SELECT * FROM cloudflare_records WHERE hostname = +? AND status_page_id = +? AND want = 'present';
+
+-- name: ListStatusPageRecords :many
+-- The addresses Dock routes through the control plane's tunnel for
+-- status pages, for syncStatusRecords.
+SELECT hostname, status_page_id FROM cloudflare_records WHERE status_page_id IS NOT NULL AND want = 'present';
 
 -- name: GetCloudflareRecord :one
 SELECT * FROM cloudflare_records WHERE hostname = +?;

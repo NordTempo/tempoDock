@@ -494,11 +494,17 @@ func (q *Queries) GetCloudflareTunnelByServer(ctx context.Context, serverID *int
 }
 
 const getStatusPageRecord = `-- name: GetStatusPageRecord :one
-SELECT id, hostname, domain_id, server_id, connection_id, zone_id, record_id, content, route_tunnel, want, status, reason, attempts, retry_at, gen, updated_at, status_page_id FROM cloudflare_records WHERE status_page_id = +? AND want = 'present'
+SELECT id, hostname, domain_id, server_id, connection_id, zone_id, record_id, content, route_tunnel, want, status, reason, attempts, retry_at, gen, updated_at, status_page_id FROM cloudflare_records WHERE hostname = +? AND status_page_id = +? AND want = 'present'
 `
 
-func (q *Queries) GetStatusPageRecord(ctx context.Context, statusPageID *int64) (CloudflareRecord, error) {
-	row := q.db.QueryRowContext(ctx, getStatusPageRecord, statusPageID)
+type GetStatusPageRecordParams struct {
+	Hostname     string
+	StatusPageID *int64
+}
+
+// The record of one of a page's addresses (its custom hostname).
+func (q *Queries) GetStatusPageRecord(ctx context.Context, arg GetStatusPageRecordParams) (CloudflareRecord, error) {
+	row := q.db.QueryRowContext(ctx, getStatusPageRecord, arg.Hostname, arg.StatusPageID)
 	var i CloudflareRecord
 	err := row.Scan(
 		&i.ID,
@@ -1114,6 +1120,40 @@ func (q *Queries) ListServiceCloudflareRecords(ctx context.Context, serviceID in
 			&i.UpdatedAt,
 			&i.StatusPageID,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStatusPageRecords = `-- name: ListStatusPageRecords :many
+SELECT hostname, status_page_id FROM cloudflare_records WHERE status_page_id IS NOT NULL AND want = 'present'
+`
+
+type ListStatusPageRecordsRow struct {
+	Hostname     string
+	StatusPageID *int64
+}
+
+// The addresses Dock routes through the control plane's tunnel for
+// status pages, for syncStatusRecords.
+func (q *Queries) ListStatusPageRecords(ctx context.Context) ([]ListStatusPageRecordsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listStatusPageRecords)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStatusPageRecordsRow
+	for rows.Next() {
+		var i ListStatusPageRecordsRow
+		if err := rows.Scan(&i.Hostname, &i.StatusPageID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1768,6 +1808,24 @@ func (q *Queries) SetServiceRecordsAbsent(ctx context.Context, arg SetServiceRec
 	return err
 }
 
+const setStatusHostRecordAbsent = `-- name: SetStatusHostRecordAbsent :exec
+UPDATE cloudflare_records SET want = 'absent', status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
+WHERE hostname = +? AND status_page_id = +?
+`
+
+type SetStatusHostRecordAbsentParams struct {
+	UpdatedAt    time.Time
+	Hostname     string
+	StatusPageID *int64
+}
+
+// One of a page's addresses goes (its custom hostname, an old name's
+// address): delete the record Dock made for it.
+func (q *Queries) SetStatusHostRecordAbsent(ctx context.Context, arg SetStatusHostRecordAbsentParams) error {
+	_, err := q.db.ExecContext(ctx, setStatusHostRecordAbsent, arg.UpdatedAt, arg.Hostname, arg.StatusPageID)
+	return err
+}
+
 const setStatusPageRecordAbsent = `-- name: SetStatusPageRecordAbsent :exec
 UPDATE cloudflare_records SET want = 'absent', status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
 WHERE status_page_id = +?
@@ -1778,7 +1836,7 @@ type SetStatusPageRecordAbsentParams struct {
 	StatusPageID *int64
 }
 
-// The page's hostname goes: delete the record Dock made for it.
+// The page goes: delete the records Dock made for its addresses.
 func (q *Queries) SetStatusPageRecordAbsent(ctx context.Context, arg SetStatusPageRecordAbsentParams) error {
 	_, err := q.db.ExecContext(ctx, setStatusPageRecordAbsent, arg.UpdatedAt, arg.StatusPageID)
 	return err

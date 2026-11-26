@@ -104,6 +104,7 @@ func (c *Core) statusPagesChanged(ctx context.Context) {
 		return
 	}
 	old := c.statusPages.hosts.Swap(&hosts)
+	c.syncStatusRecords(ctx)
 	if old != nil && maps.Equal(*old, hosts) {
 		return
 	}
