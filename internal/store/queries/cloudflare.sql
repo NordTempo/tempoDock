@@ -110,14 +110,15 @@ ORDER BY cloudflare_tunnels.retry_at LIMIT 1;
 
 -- name: SaveCloudflareRecord :execrows
 -- Routes hostname through its server's tunnel, pending. A row being
--- deleted (absent, or its domain gone) comes back; what it made is kept
--- when the zone is the same. A live domain's row stays with its
+-- deleted (absent, or its domain gone) comes back, the domain's alone
+-- (a status page's it was is dropped); what it made is kept when the
+-- zone is the same. A live domain's row stays with its
 -- connection: another connection's save affects no row, so one org's
 -- connection never takes over another's record.
 INSERT INTO cloudflare_records (hostname, domain_id, server_id, connection_id, zone_id, updated_at)
 VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT (hostname) DO UPDATE SET
-    domain_id = excluded.domain_id, server_id = excluded.server_id,
+    domain_id = excluded.domain_id, status_page_id = NULL, server_id = excluded.server_id,
     record_id = CASE WHEN cloudflare_records.zone_id = excluded.zone_id THEN cloudflare_records.record_id ELSE '' END,
     connection_id = excluded.connection_id, zone_id = excluded.zone_id,
     want = 'present', status = 'pending', reason = '',

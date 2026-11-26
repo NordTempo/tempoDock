@@ -6,6 +6,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -45,6 +46,9 @@ const (
 // hostname is which page.
 type statusState struct {
 	hosts atomic.Pointer[map[string]statusHost]
+	// syncMu serializes syncStatusRecords: a pass reads hosts and the
+	// records under it, so one never deletes what a later one added.
+	syncMu sync.Mutex
 }
 
 // statusHost is a page a hostname belongs to. moved is set for an old
@@ -498,9 +502,7 @@ func (c *Core) DeleteStatusPage(ctx context.Context, a Actor, slug string) error
 	if err != nil {
 		return err
 	}
-	if p.Hostname != nil {
-		c.kickCloudflare()
-	}
+	c.kickCloudflare() // its records go, its own address's too
 	c.audit(ctx, a, "status_page.delete", nil, nil, "status page "+p.Slug, "removed status page "+p.Slug)
 	c.statusPagesChanged(ctx)
 	return nil

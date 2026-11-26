@@ -245,8 +245,11 @@ func (c *Core) statusHostnameView(ctx context.Context, p store.StatusPage, base 
 // tunnel server whose tunnel Dock runs, as generated hostnames get
 // theirs (GenerateDomain, routeGeneratedDomains). With no wildcard
 // record, nothing else sends them there. Records of addresses no page
-// has any more are deleted. Otherwise records stay as they are, as for a
-// server sent back to its public IP (ADR 0036). Called when the pages'
+// has any more are deleted: pages' addresses only (status-*, which no
+// custom hostname under the base may be), since a custom hostname's
+// record is added and deleted with it (setStatusHostname) and may be
+// saved before the hosts map has it. Otherwise records stay as they
+// are, as for a server sent back to its public IP (ADR 0036). Called when the pages'
 // addresses change, on start and when the control plane switches; one
 // query when nothing is missing.
 func (c *Core) syncStatusRecords(ctx context.Context) {
@@ -256,6 +259,10 @@ func (c *Core) syncStatusRecords(ctx context.Context) {
 		return
 	}
 	ing := c.ingressOf(srv)
+	// Read hosts under the lock: every change of it is followed by a
+	// pass, so the last pass sees the last map.
+	c.statusPages.syncMu.Lock()
+	defer c.statusPages.syncMu.Unlock()
 	m := c.statusPages.hosts.Load()
 	if ing.mode != apitypes.IngressCloudflareTunnel || ing.baseDomain == "" || c.managedTunnel(srv.ID) == "" || m == nil {
 		return
@@ -271,7 +278,7 @@ func (c *Core) syncStatusRecords(ctx context.Context) {
 	have := make(map[string]bool, len(rows))
 	for _, r := range rows {
 		have[r.Hostname] = true
-		if _, ok := hosts[r.Hostname]; ok {
+		if _, ok := hosts[r.Hostname]; ok || !strings.HasPrefix(r.Hostname, "status-") || !atOrUnderBase(r.Hostname, ing.baseDomain) {
 			continue
 		}
 		if err := c.store.SetStatusHostRecordAbsent(ctx, store.SetStatusHostRecordAbsentParams{UpdatedAt: t, Hostname: r.Hostname, StatusPageID: r.StatusPageID}); err != nil {
