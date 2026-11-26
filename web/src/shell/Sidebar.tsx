@@ -15,12 +15,7 @@ import {
   useSeesPlatform,
   useSession,
 } from "../data/queries";
-import type {
-  Environment,
-  EnvironmentView,
-  Org,
-  ServiceView,
-} from "../data/types";
+import type { Org, ServiceView } from "../data/types";
 import {
   type Alert,
   useOrgOpenAlerts,
@@ -40,7 +35,7 @@ import { closeHelp, openHelp, useHelpOpen } from "../features/help/open";
 import { useUpdateNote } from "../features/update/data";
 import { plural } from "../ui/format";
 import { Icon } from "../ui/icons";
-import { Glyph, LockMark, Menu, menuItem } from "../ui/kit";
+import { Glyph, Menu, menuItem } from "../ui/kit";
 import { serviceState, toneText } from "../ui/status";
 import { modKey, useShortcuts } from "./keys";
 import { useCurrentContext, useOrg } from "./location";
@@ -667,11 +662,9 @@ function OpenAlertCount({ open, bare }: { open: Alert[]; bare?: boolean }) {
 }
 
 /**
- * Projects, each with the services of one environment. The current
- * project shows the environment in the URL (a service's, or the project
- * page's #env-<name>); others the one picked in the menu under them, else
- * production. Picking another environment of the current project moves
- * the page there too (useSwitchEnvironment).
+ * Projects, each with the services of one environment: the current
+ * project the one in the URL, others production. Switching environments
+ * is the project header's job.
  * The current project is open; others open on demand. A project whose
  * services haven't loaded (or failed to) still gets its row. "New
  * project" sits under the last one for those who may create one.
@@ -683,11 +676,6 @@ function ProjectTree() {
     useProjectTree().map((o) => [o.project.name, o.environments]),
   );
   const here = useCurrentContext();
-  const urlEnvironment = useUrlEnvironment();
-  const switchEnvironment = useSwitchEnvironment();
-  const onEnvPage = useMatches({
-    select: (m) => m.at(-1)?.routeId === "/_app/$org/$project/$environment/",
-  });
   const session = useSession();
   const newProject = canCreateProject(session) && (
     <button
@@ -706,8 +694,6 @@ function ProjectTree() {
   const [folds, setFolds] = useState<ReadonlyMap<string, boolean>>(new Map());
   const setFold = (name: string, expanded: boolean) =>
     setFolds((prev) => new Map(prev).set(name, expanded));
-  // The environment picked in a project's menu, by project.
-  const [picked, setPicked] = useState<ReadonlyMap<string, string>>(new Map());
   if (projects.length === 0) {
     return (
       <>
@@ -722,9 +708,11 @@ function ProjectTree() {
         const environments = overviews.get(project.name);
         const current = project.name === here.project;
         const expanded = folds.get(project.name) ?? current;
-        const choice = (current && urlEnvironment) || picked.get(project.name);
         const env =
-          environments?.find((e) => e.environment.name === choice) ||
+          (current &&
+            environments?.find(
+              (e) => e.environment.name === here.environment,
+            )) ||
           environments?.find((e) => e.environment.kind === "production") ||
           environments?.[0];
         return (
@@ -772,22 +760,6 @@ function ProjectTree() {
             )}
             {expanded && env && environments && (
               <ul className="flex flex-col gap-px pb-1">
-                {(environments.length > 1 || env.environment.lock) && (
-                  <li className="pl-[24px]">
-                    <EnvironmentMenu
-                      project={project.name}
-                      here={current && onEnvPage}
-                      shown={env.environment}
-                      environments={environments.map((e) => e.environment)}
-                      onPick={(name) => {
-                        setPicked((prev) =>
-                          new Map(prev).set(project.name, name),
-                        );
-                        if (current) switchEnvironment(name, environments);
-                      }}
-                    />
-                  </li>
-                )}
                 {env.services.map((s) => (
                   <li key={s.service.id}>
                     <ServiceLink view={s} />
@@ -805,138 +777,6 @@ function ProjectTree() {
       })}
       {newProject && <li>{newProject}</li>}
     </ul>
-  );
-}
-
-/** The environment the URL is in, a route's $environment. */
-function useUrlEnvironment(): string | undefined {
-  return useCurrentContext().environment;
-}
-
-/**
- * Moves the page to another environment of the current project, on the
- * equivalent page where there is one: the same service tab (a release
- * opens the service, release numbers differ), the project's Settings for
- * that environment, else that environment's page. Compare stays where it
- * is.
- */
-function useSwitchEnvironment() {
-  const navigate = useNavigate();
-  const org = useOrg();
-  const { project, service, release } = useCurrentContext();
-  const leaf = useMatches({ select: (m) => m.at(-1)?.routeId });
-  return (environment: string, environments: EnvironmentView[]) => {
-    if (!project) return;
-    const there = environments.find((e) => e.environment.name === environment);
-    const hasService =
-      service && there?.services.some((s) => s.service.name === service);
-    if (hasService && release) {
-      navigate({
-        to: "/$org/$project/$environment/$service",
-        params: { org, project, environment, service },
-      });
-    } else if (hasService) {
-      navigate({
-        to: ".",
-        params: (prev) => ({ ...prev, environment }),
-        search: true,
-      });
-    } else if (leaf?.startsWith("/_app/$org/$project/settings")) {
-      // The project's Settings show one environment's sections (?env=).
-      navigate({
-        to: "/$org/$project/settings",
-        params: { org, project },
-        search: { env: environment },
-        hash: true,
-      });
-    } else if (
-      service ||
-      leaf === "/_app/$org/$project/" ||
-      leaf === "/_app/$org/$project/$environment/"
-    ) {
-      navigate({
-        to: "/$org/$project/$environment",
-        params: { org, project, environment },
-      });
-    }
-  };
-}
-
-/**
- * The environment under a project in the tree, as a small menu: the
- * project's other environments (picking one shows its services here)
- * and Compare.
- */
-function EnvironmentMenu({
-  project,
-  here,
-  shown,
-  environments,
-  onPick,
-}: {
-  project: string;
-  /** On this environment's own page: drawn as the current row. */
-  here: boolean;
-  shown: Environment;
-  environments: Environment[];
-  onPick: (name: string) => void;
-}) {
-  const org = useOrg();
-  if (environments.length < 2) {
-    return (
-      <span className="flex min-h-[24px] items-center gap-1 px-1.5 text-2xs text-mut">
-        {shown.name} <LockMark lock={shown.lock} />
-      </span>
-    );
-  }
-  // A control, not a label: a box on hover, the chevron always.
-  const label = (
-    <span
-      className={`flex min-h-[24px] items-center gap-1 rounded-ctl border px-1.5 text-xs hover:border-edge hover:bg-panel hover:text-fg ${here ? "border-edge bg-chip text-fg" : "border-line text-sec"}`}
-    >
-      {shown.name} <LockMark lock={shown.lock} />
-      <Icon name="chevronDown" size={12} className="text-mut" />
-    </span>
-  );
-  return (
-    <Menu
-      label={`Environment shown for ${project}: ${shown.name}`}
-      button={label}
-    >
-      {(close) => (
-        <>
-          {environments.map((e) => (
-            <button
-              key={e.id}
-              type="button"
-              className={menuItem}
-              role="menuitem"
-              aria-current={e.name === shown.name ? "true" : undefined}
-              onClick={() => {
-                close();
-                onPick(e.name);
-              }}
-            >
-              <span className="flex-1">{e.name}</span>
-              <LockMark lock={e.lock} />
-              <span className="w-3 text-fg">
-                {e.name === shown.name ? "✓" : ""}
-              </span>
-            </button>
-          ))}
-          <hr className="my-1 border-0 border-t border-line" />
-          <Link
-            to="/$org/$project/compare"
-            params={{ org, project }}
-            className={menuItem}
-            role="menuitem"
-            onClick={close}
-          >
-            Compare environments
-          </Link>
-        </>
-      )}
-    </Menu>
   );
 }
 
