@@ -6,6 +6,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -50,6 +51,10 @@ type statusState struct {
 	// pass holding it for another. Flags, not a mutex: passes write to
 	// the store.
 	syncing, rerun atomic.Bool
+	// loadMu makes reading the pages and publishing hosts one step, so
+	// a map read earlier is never published over a newer one. Held over
+	// a read only, no store write.
+	loadMu sync.Mutex
 }
 
 // statusHost is a page a hostname belongs to. moved is set for an old
@@ -103,12 +108,15 @@ func (c *Core) StatusPageMoved(host string) (string, bool) {
 // also makes every rendered page stale.
 func (c *Core) statusPagesChanged(ctx context.Context) {
 	c.bus.statusGen.Add(1)
+	c.statusPages.loadMu.Lock()
 	hosts, err := c.loadStatusHosts(ctx)
 	if err != nil {
+		c.statusPages.loadMu.Unlock()
 		c.log.Error("status pages: read the pages; their addresses stay as they were", "err", err)
 		return
 	}
 	old := c.statusPages.hosts.Swap(&hosts)
+	c.statusPages.loadMu.Unlock()
 	c.syncStatusRecords()
 	if old != nil && maps.Equal(*old, hosts) {
 		return
