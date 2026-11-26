@@ -117,6 +117,10 @@ shape":
   row shows only when no repository is connected or an image is set.
 - Last push moved to History; Deploy now is gone, since the header's
   Deploy already deploys a commit, branch or tag.
+- Follow-up: on/off settings (snapshot volumes first) are a checkbox in
+  their row's form, the database engine is a row whose form picks it,
+  and on phones a label sits over its value. A recorded push goes out
+  as a `git` event, so History's last push updates in place.
 - Blind reviews earlier scored tab-only changes lower (0076's trials).
   This changes placement, not just tabs, and should be measured with
   "find X" tasks on the review kit.

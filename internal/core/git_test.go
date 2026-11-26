@@ -850,3 +850,24 @@ func TestBadSignaturesLeaveSignedDeliveriesAlone(t *testing.T) {
 		t.Fatalf("signed delivery after them: %q, %v", msg, err)
 	}
 }
+
+// A push the connection doesn't deploy changes nothing but its last
+// event, so the connection goes out on the bus for open pages to show.
+func TestGitEventPublishesConnection(t *testing.T) {
+	h, _ := gitHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	k := h.connect(web, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main"})
+	sub := h.c.bus.subscribe(func(e busEvent) bool { return e.ev.Type == apitypes.EventGit })
+	defer sub.close()
+	if msg, err := h.push(k, pushBody("refs/heads/dev", shaA)); err != nil || !strings.Contains(msg, "ignored") {
+		t.Fatalf("push: %q, %v", msg, err)
+	}
+	select {
+	case ev := <-sub.ch:
+		if ev.Service != "web" || ev.Git == nil || !strings.Contains(ev.Git.LastEvent, "ignored") || ev.Git.LastEventAt == nil {
+			t.Fatalf("event: %+v", ev.Event)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no git event")
+	}
+}

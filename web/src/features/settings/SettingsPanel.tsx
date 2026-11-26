@@ -30,10 +30,10 @@ import type {
 } from "../../data/types";
 import { modKey } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
-import { CliHint } from "../../ui/CliHint";
 import { Act, Button, Check, ErrorText } from "../../ui/kit";
 import { SettingsSection } from "../../ui/sections";
 import { BackupsPanel } from "../backups/BackupsPanel";
+import { autofocus } from "../create/form";
 import { SourceSection } from "../git/SourceSection";
 import { EnvServer } from "../servers/parts";
 import { ArchiveConfirm } from "../service/ArchiveConfirm";
@@ -46,6 +46,7 @@ import { OpenValue } from "./OpenValue";
 import {
   editPlaceholder,
   editText,
+  type FlagSettingKey,
   formatSetting,
   isSettingKey,
   parseSetting,
@@ -109,6 +110,7 @@ export function SettingsPanel({
     parts: Part[],
     extra?: ReactNode,
     suggest?: Suggestion,
+    flag?: Flag,
   ) => (
     <SettingRow
       key={label}
@@ -122,9 +124,9 @@ export function SettingsPanel({
       staged={pending.count > 0}
       extra={extra}
       suggest={suggest}
+      flag={flag}
     />
   );
-  const snapshot = change("pre_deploy_snapshot");
 
   return (
     <div className="flex max-w-[860px] flex-col gap-10">
@@ -211,18 +213,14 @@ export function SettingsPanel({
               { key: "pre_deploy_command", word: "command" },
               { key: "pre_deploy_timeout_seconds", word: "timeout" },
             ],
-            // A snapshot is taken before the command, so it's offered
-            // once there is one (or while it is on).
-            (service.pre_deploy_command ||
-              change("pre_deploy_command") ||
-              service.pre_deploy_snapshot ||
-              snapshot) && (
-              <PreDeploySnapshot
-                serviceRef={ref}
-                live={service.pre_deploy_snapshot}
-                change={snapshot}
-              />
-            ),
+            undefined,
+            undefined,
+            {
+              key: "pre_deploy_snapshot",
+              word: "snapshot volumes first",
+              title:
+                "Snapshot the environment's stateful services before the command runs",
+            },
           )}
         </dl>
       </SettingsSection>
@@ -463,64 +461,6 @@ function Item({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/**
- * pre_deploy_snapshot as a checkbox, staged like the other settings: on,
- * the environment's stateful services are snapshotted before the
- * pre-deploy command runs.
- */
-function PreDeploySnapshot({
-  serviceRef: ref,
-  live,
-  change,
-}: {
-  serviceRef: ServiceRef;
-  live: boolean;
-  change: KeyedChange | undefined;
-}) {
-  const stage = useStageSettings();
-  const discard = useDiscardChanges();
-  const on = change ? change.new === "true" : live;
-  return (
-    <span className="inline-flex items-baseline gap-2">
-      <CliHint
-        cli={`dock service update ${ref.service} --pre-deploy-snapshot=${!on} -e ${ref.environment}`}
-        className="act"
-      >
-        <Check
-          label="Snapshot volumes first"
-          title="Snapshot the environment's stateful services before the command runs"
-          checked={on}
-          disabled={stage.isPending}
-          onChange={(checked) =>
-            stage.mutate({ ref, patch: { pre_deploy_snapshot: checked } })
-          }
-        />
-      </CliHint>
-      {change && (
-        <>
-          <span className="text-warn">staged</span>
-          <button
-            type="button"
-            className="lnk"
-            disabled={discard.isPending}
-            onClick={() =>
-              discard.mutate({
-                env: envPath(ref),
-                selection: {
-                  settings: [{ service: ref.service, field: change.key }],
-                },
-              })
-            }
-          >
-            Discard
-          </button>
-        </>
-      )}
-      <ErrorText error={stage.error ?? discard.error} />
-    </span>
-  );
-}
-
 /** A formatted setting with its "(default)" part quiet, so set values stand out. */
 function Shown({ text }: { text: string }) {
   if (!text.endsWith(" (default)")) return text;
@@ -567,6 +507,9 @@ function ImageNote({ serviceRef: ref }: { serviceRef: ServiceRef }) {
 /** One field in a settings row: its key, the word before it, and how to show it. */
 type Part = { key: TextSettingKey; word?: string; shown?: string };
 
+/** An on/off setting in a row's form, a checkbox: `word` is its label. */
+type Flag = { key: FlagSettingKey; word: string; title: string };
+
 /** A value the evidence suggests for a row's field, with why: "Use 8080". */
 type Suggestion = { key: TextSettingKey; value: string; why: string };
 
@@ -606,7 +549,8 @@ function usePortFix(
  * applied, with Discard. `open` starts in the form (?edit=port). The
  * form names Apply only once the environment has staged changes
  * (`staged`), when the header shows it. `suggest`, open or not, stages
- * a value the evidence suggests in one click.
+ * a value the evidence suggests in one click. `flag` adds an on/off
+ * setting to the form, shown in the row while it is on.
  */
 function SettingRow({
   serviceRef: ref,
@@ -619,6 +563,7 @@ function SettingRow({
   staged,
   extra,
   suggest,
+  flag,
 }: {
   serviceRef: ServiceRef;
   label: string;
@@ -630,6 +575,7 @@ function SettingRow({
   staged: boolean;
   extra?: ReactNode;
   suggest?: Suggestion;
+  flag?: Flag;
 }) {
   const stage = useStageSettings();
   const discard = useDiscardChanges();
@@ -644,16 +590,35 @@ function SettingRow({
   const [draft, setDraft] = useState<Record<TextSettingKey, string> | null>(
     () => (open ? start() : null),
   );
+  // The flag as it will be once applied: staged ("true"), or live.
+  const flagStart = () => {
+    if (!flag) return false;
+    const c = change(flag.key);
+    return c ? c.new === "true" : service[flag.key];
+  };
+  const [flagOn, setFlagOn] = useState(flagStart);
+  // What the open editor started from: a save sends only what differs
+  // from it, so a change staged elsewhere meanwhile isn't overwritten.
+  const [opened, setOpened] = useState(() =>
+    open ? { text: start(), flag: flagStart() } : null,
+  );
+  const close = () => {
+    setDraft(null);
+    setOpened(null);
+  };
   const [error, setError] = useState<Error | null>(null);
-  const saved = parts.filter(({ key }) => change(key));
+  const saved: SettingKey[] = [
+    ...parts.filter(({ key }) => change(key)).map(({ key }) => key),
+    ...(flag && change(flag.key) ? [flag.key] : []),
+  ];
 
   const cancel = () => {
     setError(null);
     stage.reset();
-    setDraft(null);
+    close();
   };
   const submit = (values: Record<TextSettingKey, string>) => {
-    const before = start();
+    const before = opened?.text ?? start();
     let patch: SettingsPatch = {};
     for (const { key } of parts) {
       if (values[key] === before[key]) continue;
@@ -661,12 +626,14 @@ function SettingRow({
       if (one instanceof Error) return setError(one);
       patch = { ...patch, ...one };
     }
+    if (flag && opened && flagOn !== opened.flag)
+      patch = { ...patch, [flag.key]: flagOn };
     setError(null);
-    if (Object.keys(patch).length === 0) return setDraft(null);
-    stage.mutate({ ref, patch }, { onSuccess: () => setDraft(null) });
+    if (Object.keys(patch).length === 0) return close();
+    stage.mutate({ ref, patch }, { onSuccess: close });
   };
 
-  const value = ({ key, shown }: Part) => {
+  const value = ({ key, shown }: { key: SettingKey; shown?: string }) => {
     const c = change(key);
     if (c) {
       return (
@@ -730,6 +697,16 @@ function SettingRow({
                 />
               </label>
             ))}
+            {flag && (
+              <span className="flex min-h-[30px] items-center">
+                <Check
+                  label={flag.word}
+                  title={flag.title}
+                  checked={flagOn}
+                  onChange={setFlagOn}
+                />
+              </span>
+            )}
             <span className="flex gap-2">
               <Button small primary type="submit" disabled={stage.isPending}>
                 Save
@@ -753,7 +730,11 @@ function SettingRow({
             label={`Edit ${label.toLowerCase()}`}
             onOpen={() => {
               setError(null);
-              setDraft(start());
+              const text = start();
+              const on = flagStart();
+              setFlagOn(on);
+              setDraft(text);
+              setOpened({ text, flag: on });
             }}
           >
             <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1 font-mono break-all">
@@ -765,6 +746,12 @@ function SettingRow({
                   {value(part)}
                 </span>
               ))}
+              {flag && (flagStart() || change(flag.key)) && (
+                <span>
+                  <span className="font-sans text-mut">{flag.word} </span>
+                  {value({ key: flag.key })}
+                </span>
+              )}
             </span>
           </OpenValue>
           {saved.length > 0 && (
@@ -778,7 +765,7 @@ function SettingRow({
                   discard.mutate({
                     env: envPath(ref),
                     selection: {
-                      settings: saved.map(({ key }) => ({
+                      settings: saved.map((key) => ({
                         service: ref.service,
                         field: key,
                       })),
@@ -828,9 +815,10 @@ function detectedText(service: Service) {
 
 /**
  * Dock-side database settings (ADR 0016 section 1), as rows under
- * Running: the detection override and the variable with the connection
- * URL. They apply at once, never staged and never a release. Changing
- * them needs scope deploy; others see them read-only.
+ * Running: the database it is (detected, or picked in its form) and the
+ * variable with the connection URL. They apply at once, never staged and
+ * never a release. Changing them needs scope deploy; others see them
+ * read-only.
  */
 function DatabaseSettings({
   serviceRef: ref,
@@ -853,6 +841,7 @@ function DatabaseSettings({
     () => [keys.overview(ref.project), keys.data(ref), ["audit"]],
   );
   const [draft, setDraft] = useState<string | null>(null);
+  const [pickingEngine, setPickingEngine] = useState(false);
   const urlVariable = service.database_url_variable;
   const cli = [
     `dock db settings --database ${service.database || "detect"}`,
@@ -864,31 +853,54 @@ function DatabaseSettings({
 
   return (
     <div className="flex flex-col">
-      <dl className="props border-t-0 [grid-template-columns:200px_minmax(0,1fr)]">
+      <dl className="props border-t-0">
         <Item label="Database">
-          <span className="inline-flex flex-wrap items-baseline gap-3">
-            {canEdit ? (
-              <span className="seg">
-                {databaseChoices.map((c) => (
-                  <button
-                    key={c.label}
-                    type="button"
-                    aria-pressed={service.database === c.value}
-                    disabled={save.isPending}
-                    onClick={() =>
-                      service.database !== c.value &&
-                      save.mutate({ database: c.value })
-                    }
-                  >
-                    {c.label}
-                  </button>
-                ))}
+          {pickingEngine ? (
+            <form
+              aria-label="Edit database"
+              className="flex flex-col gap-2"
+              onSubmit={(e) => e.preventDefault()}
+              onKeyDown={(e) => e.key === "Escape" && setPickingEngine(false)}
+            >
+              <span className="text-xs text-mut">
+                Which database it is decides its Data tab. Applies at once.
               </span>
-            ) : (
-              <span className="font-mono">{service.database || "detect"}</span>
-            )}
-            <span className="text-mut">{detectedText(service)}</span>
-          </span>
+              <span className="flex flex-wrap items-center gap-2">
+                <span className="seg">
+                  {databaseChoices.map((c) => (
+                    <button
+                      key={c.label}
+                      type="button"
+                      // Focus starts on the current one, so Esc cancels.
+                      ref={service.database === c.value ? autofocus : undefined}
+                      aria-pressed={service.database === c.value}
+                      disabled={save.isPending}
+                      onClick={() =>
+                        service.database === c.value
+                          ? setPickingEngine(false)
+                          : save.mutate(
+                              { database: c.value },
+                              { onSuccess: () => setPickingEngine(false) },
+                            )
+                      }
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </span>
+                <Button small onClick={() => setPickingEngine(false)}>
+                  Cancel <kbd>Esc</kbd>
+                </Button>
+              </span>
+            </form>
+          ) : (
+            <OpenValue
+              label="Edit the database"
+              onOpen={canEdit ? () => setPickingEngine(true) : undefined}
+            >
+              {detectedText(service)}
+            </OpenValue>
+          )}
         </Item>
         <Item label="URL variable">
           {draft !== null ? (

@@ -62,8 +62,9 @@ UPDATE git_connections
 SET pending_sha = '', pending_message = '', pending_author = '', pending_by = '', pending_force = 0, pending_approved = 0
 WHERE id = +sqlc.arg(id) AND pending_sha = CAST(sqlc.arg(pending_sha) AS TEXT);
 
--- name: SetGitLastEvent :exec
-UPDATE git_connections SET last_event = ?, last_event_at = ? WHERE id = +?;
+-- name: SetGitLastEvent :one
+UPDATE git_connections SET last_event = ?, last_event_at = ? WHERE id = +?
+RETURNING *;
 
 -- name: ListGitPendingServices :many
 SELECT service_id FROM git_connections WHERE pending_sha > '';

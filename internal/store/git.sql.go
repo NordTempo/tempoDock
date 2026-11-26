@@ -369,8 +369,9 @@ func (q *Queries) PruneGitDeliveries(ctx context.Context, createdAt time.Time) e
 	return err
 }
 
-const setGitLastEvent = `-- name: SetGitLastEvent :exec
+const setGitLastEvent = `-- name: SetGitLastEvent :one
 UPDATE git_connections SET last_event = ?, last_event_at = ? WHERE id = +?
+RETURNING id, service_id, hook_id, repo, branch, dir, secret, token, post_status, pending_sha, pending_message, pending_author, pending_by, pending_force, last_event, last_event_at, created_by, created_at, installation_id, repo_id, pending_approved
 `
 
 type SetGitLastEventParams struct {
@@ -379,9 +380,33 @@ type SetGitLastEventParams struct {
 	ID          int64
 }
 
-func (q *Queries) SetGitLastEvent(ctx context.Context, arg SetGitLastEventParams) error {
-	_, err := q.db.ExecContext(ctx, setGitLastEvent, arg.LastEvent, arg.LastEventAt, arg.ID)
-	return err
+func (q *Queries) SetGitLastEvent(ctx context.Context, arg SetGitLastEventParams) (GitConnection, error) {
+	row := q.db.QueryRowContext(ctx, setGitLastEvent, arg.LastEvent, arg.LastEventAt, arg.ID)
+	var i GitConnection
+	err := row.Scan(
+		&i.ID,
+		&i.ServiceID,
+		&i.HookID,
+		&i.Repo,
+		&i.Branch,
+		&i.Dir,
+		&i.Secret,
+		&i.Token,
+		&i.PostStatus,
+		&i.PendingSha,
+		&i.PendingMessage,
+		&i.PendingAuthor,
+		&i.PendingBy,
+		&i.PendingForce,
+		&i.LastEvent,
+		&i.LastEventAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.InstallationID,
+		&i.RepoID,
+		&i.PendingApproved,
+	)
+	return i, err
 }
 
 const setGitPending = `-- name: SetGitPending :exec

@@ -128,6 +128,7 @@ data: {"type":"release","time":"2026-10-21T09:12:03Z","project":"shop","environm
 | `run`, `job`, `uptime` | `run`, `job`, `uptime` | A one-off command started or ended, a job was set or removed, an uptime check changed state |
 | `environment_lock`, `access_request` | `lock`, `access_request` | An environment was locked or unlocked; an access request was filed, decided or ran |
 | `environment_move` | `move` | A move went a step further or ended |
+| `git` | `git` | A push or a deploy from GitHub was recorded on a service's connection (`last_event`, `pending`) |
 | `server`, `alert`, `update`, `disk`, `analytics`, `server_drain`, `cloudflare_redirect` | `server`, `alert`, `update`, `disk`, (none), `drain`, `redirect` | Platform events, for operators and admins |
 | `lagged` | (none) | The client was too slow and missed events. Refetch |
 

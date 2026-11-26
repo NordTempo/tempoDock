@@ -47,6 +47,11 @@ type gitState struct {
 	// starts after shutdown began.
 	mu      sync.Mutex
 	workers map[int64]*gitWorker // by service ID, while one runs
+	// eventMu orders gitEventIn's write and publish, so two deliveries
+	// for one connection reach the bus in the order the store took them
+	// and a page never ends on the older last event. Only gitEventIn
+	// takes it.
+	eventMu sync.Mutex
 	// limit throttles webhook deliveries per hook; appLimit the App's,
 	// which carry every App connection's pushes. Both count only
 	// deliveries whose signature checked out, so ones with a wrong
@@ -544,13 +549,34 @@ func (c *Core) gitToken(conn store.GitConnection) (string, error) {
 
 // gitEvent records what happened to a connection's latest push, without
 // control characters: a failed push's reason can quote the repository
-// (a dock.toml parse error), and the line is shown in terminals. Failures
-// are logged: the event is informational.
-func (c *Core) gitEvent(connID int64, msg string) {
+// (a dock.toml parse error), and the line is shown in terminals. The
+// connection then goes out on the bus (EventGit), so an open Settings or
+// History shows it: an ignored push changes nothing else. Failures are
+// logged: the event is informational.
+func (c *Core) gitEvent(connID int64, msg string) { c.gitEventIn(nil, connID, msg) }
+
+// gitEventIn is gitEvent for a caller that has the connection's service
+// scope already (an App delivery's loop over its connections); nil looks
+// it up.
+func (c *Core) gitEventIn(ss *svcScope, connID int64, msg string) {
+	c.git.eventMu.Lock()
+	defer c.git.eventMu.Unlock()
 	t := now()
-	if err := c.store.SetGitLastEvent(c.ctx, store.SetGitLastEventParams{LastEvent: cleanLine(msg, 500), LastEventAt: &t, ID: connID}); err != nil {
+	conn, err := c.store.SetGitLastEvent(c.ctx, store.SetGitLastEventParams{LastEvent: cleanLine(msg, 500), LastEventAt: &t, ID: connID})
+	if err != nil {
 		c.log.Error("record git event", "err", err)
+		return
 	}
+	if ss == nil {
+		s, err := c.scopeOf(c.ctx, conn.ServiceID)
+		if err != nil {
+			c.log.Error("publish git event", "err", err)
+			return
+		}
+		ss = &s
+	}
+	gc := c.toGitConnection(conn)
+	c.publish(*ss, apitypes.Event{Type: apitypes.EventGit, Git: &gc})
 }
 
 // shortSHA is the 7-character form of a commit SHA.
