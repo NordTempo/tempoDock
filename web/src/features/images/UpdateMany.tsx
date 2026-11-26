@@ -101,7 +101,16 @@ export function UpdateMany({
   };
   return (
     <>
-      <Act small={small} cli={cli} onClick={() => setAsking(true)}>
+      <Act
+        small={small}
+        cli={cli}
+        onClick={() => {
+          // A new Confirm starts over; only a retry within one skips.
+          setStarted(new Set());
+          setError(null);
+          setAsking(true);
+        }}
+      >
         {label}
       </Act>
       {asking && (

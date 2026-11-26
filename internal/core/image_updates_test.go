@@ -98,6 +98,19 @@ func TestAutoUpdate(t *testing.T) {
 	if _, err := h.c.UnlockEnvironment(h.ctx, testSystem, EnvRef{"shop", "production"}, apitypes.UnlockEnvironmentRequest{}); err != nil {
 		t.Fatal(err)
 	}
+	// A staged change waits for someone to apply it: no update meanwhile.
+	mem := 640
+	if _, err := h.c.UpdateService(h.ctx, testSystem, db, apitypes.UpdateServiceRequest{MemoryMB: &mem}); err != nil {
+		t.Fatal(err)
+	}
+	h.dueTagCheck()
+	h.waitTagCheck()
+	if rels, _ := h.c.ListReleases(h.ctx, testSystem, db, 5); len(rels) != 2 {
+		t.Fatalf("updated with a staged change: %d releases", len(rels))
+	}
+	if _, err := h.c.DiscardChanges(h.ctx, testSystem, EnvRef{"shop", "production"}, apitypes.DiscardChangesRequest{}); err != nil {
+		t.Fatal(err)
+	}
 	h.dueTagCheck()
 	h.waitTagCheck()
 	h.waitStatus(db, 3, apitypes.ReleaseActive)

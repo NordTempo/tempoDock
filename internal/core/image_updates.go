@@ -123,7 +123,8 @@ func (c *Core) SetAutoUpdate(ctx context.Context, a Actor, ref ServiceRef, req a
 // end of the daily check (checkTags). A service is left as it is
 // when its environment is frozen (locked for people too), while it
 // deploys or has staged changes, when its last release already tried
-// this image and failed, or when the snapshot fails. It starts the
+// this image and failed, when the snapshot fails, or when it was turned
+// off or deployed again meanwhile. It starts the
 // deploys and returns; each snapshot is waited for.
 func (c *Core) autoUpdateImages(ctx context.Context) {
 	rows, err := c.store.ListImageAutoUpdates(ctx)
@@ -173,7 +174,13 @@ func (c *Core) autoUpdate(ctx context.Context, serviceID int64, image string) {
 	}
 	// An image deploy takes the service's staged changes live with it;
 	// nobody asked for that here, so it waits until they are applied.
+	// createRelease checks again in its transaction.
 	if pc, err := c.pendingChanges(ctx, c.store.Queries, ss.envScope, false); err != nil || pc.CountFor(ss.svc.Name) > 0 {
+		return
+	}
+	// What runs now: the release goes ahead only while it still does.
+	live, err := c.store.GetActiveRelease(ctx, ss.svc.ID)
+	if err != nil || imageTag(live.ImageRef) != imageTag(image) || live.ImageRef == image {
 		return
 	}
 	actor := Actor{Kind: "system", Name: autoUpdateActor, Scope: apitypes.ScopeDeploy}.InOrg(ss.project.OrgID)
@@ -183,12 +190,10 @@ func (c *Core) autoUpdate(ctx context.Context, serviceID int64, image string) {
 			fmt.Sprintf("didn't update to %s: the snapshot before it failed: %s", short, c.errorLine(err)))
 		return
 	}
-	// The snapshot may have waited on a backup: someone may have deployed
-	// another tag meanwhile, which this must not take back.
-	if live, err := c.store.GetActiveRelease(ctx, ss.svc.ID); err != nil || imageTag(live.ImageRef) != imageTag(image) || live.ImageRef == image {
-		return
-	}
-	rel, err := c.startRelease(ctx, actor, ss, releaseSpec{source: apitypes.SourceImage, imageRef: image})
+	// The snapshot may have waited on a backup. createRelease checks again,
+	// in its transaction, that updates are still on, live.ImageRef still
+	// runs and nothing is staged (autoFrom).
+	rel, err := c.startRelease(ctx, actor, ss, releaseSpec{source: apitypes.SourceImage, imageRef: image, autoFrom: live.ImageRef})
 	if err != nil {
 		c.audit(ctx, actor, "service.auto_update_skipped", &ss.project, &ss.env, ss.String(),
 			fmt.Sprintf("didn't update to %s: %s", short, c.errorLine(err)))
