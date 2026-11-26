@@ -61,10 +61,17 @@ func TestDeleteEnvironment(t *testing.T) {
 	_, err = h.c.DeleteEnvironment(h.ctx, stale.a, staging, confirm)
 	wantCode(t, "a stale session", err, apitypes.CodeReauthRequired)
 
+	// A token limited to it goes with it, and what it follows ends;
+	// another token's stream stays.
+	limited := h.followAs(h.token(testSystem, apitypes.CreateTokenRequest{Name: "staging-ci", Scope: apitypes.ScopeRead, Project: "shop", Environment: "staging"}))
+	orgWide := h.followAs(h.token(testSystem, apitypes.CreateTokenRequest{Name: "ci", Scope: apitypes.ScopeRead}))
+
 	got, err := h.c.DeleteEnvironment(h.ctx, testSystem, staging, confirm)
 	if err != nil {
 		t.Fatal(err)
 	}
+	endsWithAccess(t, "a token limited to the deleted environment", limited)
+	staysOpen(t, "an org-wide token", orgWide)
 	if got.Environment != "staging" || got.Services != 1 || got.Volumes != 1 || got.Previews != 0 {
 		t.Errorf("deleted = %+v", got)
 	}

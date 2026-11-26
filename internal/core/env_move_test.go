@@ -176,7 +176,7 @@ func (p *pool) envPrefix(ref ServiceRef) string {
 }
 
 // No move starts while an environment of its project is being deleted:
-// the delete would miss what the move made.
+// the delete would miss what the move made. A drain waits it out.
 func TestMoveWaitsForEnvironmentDelete(t *testing.T) {
 	p, _, _, _, _ := movePool(t)
 	staging := EnvRef{"shop", "staging"}
@@ -187,6 +187,9 @@ func TestMoveWaitsForEnvironmentDelete(t *testing.T) {
 	p.c.envDeletes.Store(es.project.ID, true)
 	_, err = p.c.MoveEnvironment(p.ctx, testSystem, staging, apitypes.MoveEnvironmentRequest{To: p.ids2name("cp")})
 	wantCode(t, "a move during a delete", err, apitypes.CodeConflict)
+	if !isBusy(err) {
+		t.Errorf("a drain pauses on %v instead of waiting it out", err)
+	}
 	p.c.envDeletes.Delete(es.project.ID)
 	if _, err := p.c.MoveEnvironment(p.ctx, testSystem, staging, apitypes.MoveEnvironmentRequest{To: p.ids2name("cp")}); err != nil {
 		t.Fatal(err)

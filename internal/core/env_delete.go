@@ -104,6 +104,11 @@ func (c *Core) DeleteEnvironment(ctx context.Context, a Actor, ref EnvRef, req a
 		}
 		claimed = append(claimed, s.ID)
 	}
+	// Snapshots are read again under the claims, which no new one
+	// passes: one that finished since loadDeletion has files to remove.
+	if err := c.reloadSnapshots(ctx, &d); err != nil {
+		return apitypes.EnvironmentDeleted{}, err
+	}
 	if err := c.serversOnline(ctx, a, d); err != nil {
 		return apitypes.EnvironmentDeleted{}, err
 	}
@@ -126,9 +131,14 @@ func (c *Core) DeleteEnvironment(ctx context.Context, a Actor, ref EnvRef, req a
 		}
 	}
 	notes = append(notes, c.deleteProjectAnalytics(ctx, d.sites)...)
+	gone, err := c.readDeletedAccess(ctx, d)
+	if err != nil {
+		return apitypes.EnvironmentDeleted{}, err
+	}
 	if err := c.deleteEnvironmentRows(ctx, es, d); err != nil {
 		return apitypes.EnvironmentDeleted{}, err
 	}
+	c.afterDelete(ctx, d, gone)
 	notes = append(notes, keptBackupNotes(d.backups)...)
 	for _, s := range d.svcs {
 		c.kickGit(s.ID, true) // stops a fetch in progress
@@ -169,6 +179,20 @@ func remainingEnvs(envs []store.Environment, pvs []store.ListProjectPreviewEnvir
 		}
 	}
 	return n
+}
+
+// reloadSnapshots reads d's services' volume snapshots again.
+func (c *Core) reloadSnapshots(ctx context.Context, d *deletion) error {
+	snaps, err := c.store.ListProjectSnapshots(ctx, d.project.ID)
+	if err != nil {
+		return err
+	}
+	svcs := map[int64]bool{}
+	for _, s := range d.svcs {
+		svcs[s.ID] = true
+	}
+	d.snaps = slices.DeleteFunc(snaps, func(s store.VolumeSnapshot) bool { return !svcs[s.ServiceID] })
+	return nil
 }
 
 // archiveForDelete archives the deletion's live services and waits for

@@ -90,9 +90,14 @@ func (c *Core) DeleteProject(ctx context.Context, a Actor, name string, req apit
 	}
 	notes := c.deleteProjectAnalytics(ctx, d.sites)
 	previews := c.previewsToTell(ctx, d)
+	gone, err := c.readDeletedAccess(ctx, d)
+	if err != nil {
+		return apitypes.ProjectDeleted{}, err
+	}
 	if err := c.deleteProjectRows(ctx, p, d); err != nil {
 		return apitypes.ProjectDeleted{}, err
 	}
+	c.afterDelete(ctx, d, gone)
 	notes = append(notes, keptBackupNotes(d.backups)...)
 	c.tellPreviewsDeleted(p, previews)
 	c.kickCloudflare() // records of its domains still to remove
@@ -339,9 +344,12 @@ func (c *Core) awaitRemovals(ctx context.Context, ctrs []node.Container) error {
 // that can't be reached keeps the events; the note says so. Nothing
 // reads them once the sites are gone.
 func (c *Core) deleteProjectAnalytics(ctx context.Context, sites []int64) []string {
-	cl, _ := c.analyticsClient()
-	if cl == nil || len(sites) == 0 {
+	if len(sites) == 0 {
 		return nil
+	}
+	cl, _ := c.analyticsClient()
+	if cl == nil {
+		return []string{"Dock Analytics is off: any events of its sites stay in the analytics store, where nothing reads them"}
 	}
 	ctx, cancel := context.WithTimeout(ctx, analyticsDeleteTimeout)
 	defer cancel()
@@ -409,6 +417,63 @@ func (c *Core) forgetDeleted(d deletion) {
 		delete(c.status, id)
 	}
 	c.statusMu.Unlock()
+}
+
+// deletedAccess is the access a deletion's rows take with them, read
+// before they go, for afterDelete: the tokens limited to the project
+// (when it goes whole) or to one of its deleted environments, and
+// whether a grant of people or groups there goes.
+type deletedAccess struct {
+	tokens []int64
+	grants bool
+}
+
+// readDeletedAccess reads d's deletedAccess: two queries, the org's tokens
+// and its grants.
+func (c *Core) readDeletedAccess(ctx context.Context, d deletion) (deletedAccess, error) {
+	var out deletedAccess
+	envs := map[int64]bool{}
+	for _, e := range d.envs {
+		envs[e.ID] = true
+	}
+	goes := func(project, env *int64) bool {
+		return d.only == nil && project != nil && *project == d.project.ID || env != nil && envs[*env]
+	}
+	tokens, err := c.store.ListOrgTokens(ctx, &d.project.OrgID)
+	if err != nil {
+		return out, err
+	}
+	for _, r := range tokens {
+		if goes(r.Token.ProjectID, r.Token.EnvironmentID) {
+			out.tokens = append(out.tokens, r.Token.ID)
+		}
+	}
+	grants, err := c.store.ListOrgGrants(ctx, store.ListOrgGrantsParams{OrgID: d.project.OrgID, Now: ptr(now().Unix())})
+	if err != nil {
+		return out, err
+	}
+	// A token's own grant ends with the token; people's and groups' end
+	// what the org's people hold.
+	out.grants = slices.ContainsFunc(grants, func(g store.ListOrgGrantsRow) bool {
+		return g.TokenID == nil && goes(g.ProjectID, g.EnvironmentID)
+	})
+	return out, nil
+}
+
+// afterDelete runs once a deletion's rows are gone: what the deleted
+// tokens hold open ends, and what the org's people do when grants there
+// went (access_watch.go); the sites' public addresses are free in the
+// index that checks new ones (analyticsSitesChanged).
+func (c *Core) afterDelete(ctx context.Context, d deletion, gone deletedAccess) {
+	for _, id := range gone.tokens {
+		c.accessChanged(accessChange{tokenID: id})
+	}
+	if gone.grants {
+		c.accessChanged(accessChange{orgID: d.project.OrgID})
+	}
+	if len(d.sites) > 0 {
+		c.analyticsSitesChanged(ctx)
+	}
 }
 
 // keptBackupNotes says where the deleted services' backups stay, one note

@@ -261,11 +261,23 @@ func (c *Core) checkDrainItem(ctx context.Context, es envScope, from, to store.S
 	return c.checkMove(ctx, es, from, to, src, dst, svcs)
 }
 
-// isBusy reports whether err is a move refused for a backup, snapshot or
-// restore that runs, which a drain waits out.
-func isBusy(err error) bool {
-	return err != nil && CodeOf(err) == apitypes.CodeConflict && strings.Contains(err.Error(), "move the environment once that finishes")
-}
+// errWaitable marks a move refusal (busy) for something that ends by
+// itself: a backup, snapshot or restore that runs, an environment delete
+// in the project. A drain waits it out (isBusy) instead of pausing.
+var errWaitable = errors.New("waits")
+
+// busyErr is a conflict marked errWaitable.
+type busyErr struct{ error }
+
+// Unwrap gives the conflict (its code, CodeOf) and the mark (errors.Is).
+func (e busyErr) Unwrap() []error { return []error{e.error, errWaitable} }
+
+// busy is a conflict refusing a move for something that ends by itself,
+// which a drain waits out.
+func busy(format string, args ...any) error { return busyErr{conflict(format, args...)} }
+
+// isBusy reports whether err refused a move for a while only (busy).
+func isBusy(err error) bool { return errors.Is(err, errWaitable) }
 
 // ServerDrainStatus returns a server's running or latest drain, with the
 // ports it forwards. A server that never drained has a drain with ID 0
