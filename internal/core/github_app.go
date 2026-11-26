@@ -629,9 +629,20 @@ func (c *Core) RemoveGitHubApp(ctx context.Context, a Actor, slug string) error 
 		return err
 	}
 	c.git.app.forgetTokens(0)
-	in := a
-	in.OrgID = appOrg(app)
-	c.audit(ctx, cfAudit(in, appOrg(app)), "github.app_remove", nil, nil, app.Slug, "removed the GitHub App "+app.Slug)
+	summary := "removed the GitHub App " + app.Slug
+	switch org := appOrg(app); {
+	case org == 0:
+		c.audit(ctx, a.platform(), "github.app_remove", nil, nil, app.Slug, summary)
+	case a.Operator && a.OrgID != org:
+		// An operator removing an org's own App: both logs (ADR 0062).
+		o, err := c.store.GetOrg(ctx, org)
+		if err != nil {
+			return err
+		}
+		c.auditBoth(ctx, a, o, "github.app_remove", summary)
+	default:
+		c.audit(ctx, a, "github.app_remove", nil, nil, app.Slug, summary)
+	}
 	c.connectionWorks(ctx, githubAppAlertKey(app.ID))
 	return nil
 }
