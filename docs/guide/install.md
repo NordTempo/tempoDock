@@ -737,9 +737,11 @@ else.
    curl -fsSL https://dock.nordtempo.com/install.sh | sudo --preserve-env=NODE_JOIN_TOKEN DOCK_VERSION=v0.72.0 bash -s -- --yes
    ```
 
-   A server that can't reach github.com installs from a copy of the
-   control plane's release instead: copy the `dock` binary and `deploy/`
-   over (as in [Install](#install)) and, with Docker installed, run:
+   To install from a copy of the control plane's release instead (a build
+   of your own, say), copy the `dock` binary and `deploy/` over (as in
+   [Install](#install)) and, with Docker installed, run the command below.
+   It still downloads Caddy from github.com unless `/usr/local/bin/caddy`
+   already is the release's version.
 
    ```sh
    read -rs NODE_JOIN_TOKEN && export NODE_JOIN_TOKEN
