@@ -953,3 +953,13 @@ func TestWarmBuilders(t *testing.T) {
 	p.withRegistry(&fakeRegistry{}) // homelab becomes the only builder
 	waitOps(t, lab, "warm builder")
 }
+
+// A node installs the control plane's own release; a dev build pins none.
+func TestNodeInstallCommandPinsRelease(t *testing.T) {
+	if got := nodeInstallCommand("tok", "", "v1.2.3"); !strings.Contains(got, " DOCK_VERSION=v1.2.3 bash -s -- --yes") {
+		t.Errorf("release: %s", got)
+	}
+	if got := nodeInstallCommand("tok", "INGRESS=cloudflare_tunnel ", "dev"); strings.Contains(got, "DOCK_VERSION") || !strings.Contains(got, "NODE_JOIN_TOKEN INGRESS=cloudflare_tunnel bash") {
+		t.Errorf("dev: %s", got)
+	}
+}

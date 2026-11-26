@@ -77,7 +77,7 @@ func TestNodeJoinAndRun(t *testing.T) {
 		t.Fatalf("add without a kind: exit %d %s", code, stderr)
 	}
 	code, stdout, stderr := exec(t, "server", "add", "homelab", "--non-production", "--builder")
-	if code != 0 || !strings.Contains(stdout, "install.sh --node") || !strings.Contains(stdout+stderr, "accepts non-production and builds images") {
+	if code != 0 || !strings.Contains(stdout, "install.sh | sudo --preserve-env=NODE_JOIN_TOKEN") || !strings.Contains(stdout+stderr, "accepts non-production and builds images") {
 		t.Fatalf("add: exit %d\n%s%s", code, stdout, stderr)
 	}
 	if code, list, stderr := exec(t, "server", "list"); code != 0 || !strings.Contains(list, "BUILDS") ||
