@@ -476,7 +476,7 @@ func (c *Core) scanLimits(timeout time.Duration) node.ScanLimits {
 }
 
 func (c *Core) scanImages() node.ScanImages {
-	return node.ScanImages{Syft: c.cfg.Scan.SyftImage, Grype: c.cfg.Scan.GrypeImage}
+	return node.ScanImages{Syft: c.cfg.Scan.SyftImage, Grype: c.cfg.Scan.GrypeImage, Tool: c.cfg.Backup.ResticImage}
 }
 
 // runScan runs one queued scan on a builder: its database first (once),

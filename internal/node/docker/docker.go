@@ -67,6 +67,10 @@ type Runtime struct {
 	// without end runs into its own limit instead of the server's. Zero
 	// is DefaultPidsLimit; negative is no limit (noPidsLimit).
 	PidsLimit int64
+	// PruneGrace is how old an image must be before PruneImages removes
+	// it unasked (a build may not have recorded it on its release yet);
+	// zero is an hour. Tests shorten it.
+	PruneGrace time.Duration
 
 	scan scanState
 }
@@ -291,52 +295,6 @@ func (r *Runtime) RemoveImage(ctx context.Context, ref string) error {
 		return fmt.Errorf("remove image %s: %w", ref, err)
 	}
 	return nil
-}
-
-// PruneImages implements node.Containers. Docker's own `image prune`
-// can't be told what to keep or whose images are whose, so this lists
-// dangling images and removes the platform's (ownedImage) one by one,
-// without force: one a container uses is refused and skipped.
-func (r *Runtime) PruneImages(ctx context.Context, req node.PruneImagesRequest) (node.PruneResult, error) {
-	res, err := r.cli.ImageList(ctx, client.ImageListOptions{Filters: client.Filters{}.Add("dangling", "true")})
-	if err != nil {
-		return node.PruneResult{}, fmt.Errorf("list dangling images: %w", err)
-	}
-	var out node.PruneResult
-	for _, img := range res.Items {
-		if slices.Contains(req.Keep, img.ID) || !ownedImage(img.Labels, img.RepoDigests, req.Repos) {
-			continue
-		}
-		_, err := r.cli.ImageRemove(ctx, img.ID, client.ImageRemoveOptions{PruneChildren: true})
-		switch {
-		case err == nil:
-			out.Removed++
-			out.ReclaimedBytes += img.Size
-		case cerrdefs.IsConflict(err) || cerrdefs.IsNotFound(err):
-		case ctx.Err() != nil:
-			return out, ctx.Err()
-		default:
-			return out, fmt.Errorf("remove image %s: %w", img.ID, err)
-		}
-	}
-	return out, nil
-}
-
-// ownedImage reports whether the platform made an image with these labels
-// and digest references (repo@sha256:...): it built it (node.LabelImage),
-// or pulled it from a repository under one of repos (the platform
-// registry's). An image it can't tell is never its own.
-func ownedImage(labels map[string]string, repoDigests, repos []string) bool {
-	if labels[node.LabelImage] == "true" {
-		return true
-	}
-	for _, d := range repoDigests {
-		repo, _, ok := strings.Cut(d, "@")
-		if ok && slices.ContainsFunc(repos, func(p string) bool { return p != "" && strings.HasPrefix(repo, p) }) {
-			return true
-		}
-	}
-	return false
 }
 
 // RemoveNetwork implements node.Containers.

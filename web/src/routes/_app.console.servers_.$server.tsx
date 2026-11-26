@@ -10,11 +10,7 @@ import type {
   ServerUsage,
   StatsRange,
 } from "../data/types";
-import {
-  DiskBreakdown,
-  DiskSummary,
-  PruneAction,
-} from "../features/servers/DiskBreakdown";
+import { DiskBreakdown, DiskSummary } from "../features/servers/DiskBreakdown";
 import { DrainSection } from "../features/servers/DrainSection";
 import { drainQuery } from "../features/servers/drain";
 import { Fold } from "../features/servers/Fold";
@@ -274,7 +270,6 @@ function ServerPage() {
               id="disk"
               label="Disk"
               summary={<DiskSummary server={name} />}
-              action={<PruneAction server={name} />}
               open={open.has("disk")}
               onToggle={() => toggle("disk")}
             >

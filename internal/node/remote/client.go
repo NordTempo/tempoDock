@@ -136,7 +136,7 @@ func (c *Client) PruneImages(ctx context.Context, req node.PruneImagesRequest) (
 	if err := c.needProtocol(ctx, ownImagesProtocol, "prune only its own images"); err != nil {
 		return node.PruneResult{}, err
 	}
-	r, err := callWithLogs[pruneResult](ctx, c, opPruneImages, pruneTimeout, pruneImagesRequest{Keep: req.Keep, Repos: req.Repos}, nil, nil)
+	r, err := callWithLogs[pruneResult](ctx, c, opPruneImages, pruneTimeout, toWirePrune(req), nil, nil)
 	return node.PruneResult(r), err
 }
 
@@ -594,7 +594,7 @@ func (c *Client) DiskUsage(ctx context.Context, req node.PruneImagesRequest) (no
 	if err := c.needProtocol(ctx, DiskProtocol, "report its disk usage"); err != nil {
 		return node.DiskUsage{}, err
 	}
-	r, err := callWithLogs[wireDiskUsage](ctx, c, opDiskUsage, diskUsageTimeout, pruneImagesRequest{Keep: req.Keep, Repos: req.Repos}, nil, nil)
+	r, err := callWithLogs[wireDiskUsage](ctx, c, opDiskUsage, diskUsageTimeout, toWirePrune(req), nil, nil)
 	return fromWireDiskUsage(r), err
 }
 

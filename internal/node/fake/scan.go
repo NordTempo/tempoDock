@@ -278,3 +278,22 @@ func demoFindings() []node.Finding {
 	}
 	return out
 }
+
+// PruneScanDatabase implements node.Scanner, recorded as
+// "scan-database prune" with " all" when the whole database goes, which
+// leaves the fake without one.
+func (r *Runtime) PruneScanDatabase(_ context.Context, req node.ScanDatabasePrune) (node.PruneResult, error) {
+	r.mu.Lock()
+	if req.All {
+		r.op("scan-database prune all")
+	} else {
+		r.op("scan-database prune")
+	}
+	r.mu.Unlock()
+	if req.All {
+		r.scans.mu.Lock()
+		r.scans.built = time.Time{}
+		r.scans.mu.Unlock()
+	}
+	return node.PruneResult{}, nil
+}

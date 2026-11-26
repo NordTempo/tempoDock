@@ -395,7 +395,8 @@ func archiveTx(ctx context.Context, q *store.Queries, ss svcScope) (archivedServ
 // and applies its routes (sweepRetired, reconnected). A revoked server
 // only gets there if it joins again. The notes it returns say so, one per
 // such server with containers to stop, for the archive's answer. stopped
-// is done when the background stops are.
+// is done when the background stops are; then the archived services'
+// images are pruned (pruneArchived).
 func (c *Core) finishArchive(ctx context.Context, done []archivedService) (notes []string, stopped *sync.WaitGroup) {
 	stopped = &sync.WaitGroup{}
 	c.kickCloudflare() // archiveTx gave up their DNS records
@@ -465,6 +466,14 @@ func (c *Core) finishArchive(ctx context.Context, done []archivedService) (notes
 			c.releaseEvent(ctx, ss, rel, fmt.Sprintf("Stopped release %d; volumes are kept", rel.Number))
 		})
 	}
+	// Their images go once their containers have (ADR 0035 amendment 2).
+	var online []int64
+	for id, link := range links {
+		if link.status == apitypes.ServerOnline {
+			online = append(online, id)
+		}
+	}
+	c.pruneArchived(online, stopped)
 	return notes, stopped
 }
 

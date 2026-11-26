@@ -339,7 +339,7 @@ running).
 | `[retention] audit_days` | `365` | Audit events older than this are deleted |
 | `[retention] audit_max_events` | `0` | Also cap the audit log at this many events; `0` no cap |
 | `[retention] alert_days` | `90` | Resolved alerts older than this are deleted |
-| `[retention] prune_disk_percent` | `80` | When Docker's disk on a server is this full, dangling images dock made (built, or pulled from its registry; not ones a rollback needs) and dock's own BuildKit cache are pruned, at most hourly. Other images and build caches on the server are never touched. `0` never |
+| `[retention] prune_disk_percent` | `80` | When Docker's disk on a server is this full, what nothing needs is pruned, at most hourly: images no release keeps (archived services', out of rollback windows, older versions of Dock's own), what cut-off downloads left beside the vulnerability database, and dock's own BuildKit cache above `build_cache_keep_mb`. Images other work pulled and other build caches are never touched. `0` never |
 | `[retention] build_cache_keep_mb` | `2048` | BuildKit cache left after such a prune |
 | `[logs] keep_mb_per_service` | `64` | When dock removes a container, its output is kept on its server (`<data dir>/logs/`) so `dock logs --release N` can read it. Each service keeps at most this much, compressed; the oldest releases' logs go first. Applies to every server. At least `1` |
 | `[logs] keep_mb_per_server` | `2048` | All services' kept output on one server together, compressed; the oldest go first, whatever their service. Nothing is kept while the disk has less than 1 GB or 5% free. At least `1` |
@@ -910,13 +910,21 @@ rest. Docker sizes every image and volume for it, which takes a few
 seconds, so it is only read when someone asks: the page shows the last
 reading at once and, when it is over a minute old, reads it again in the
 background and updates in place.
-**Prune** frees what is reclaimable now instead of waiting for
-`[retention] prune_disk_percent`; running apps, rollback images and
+Under it, **Prune** lists what each prune frees. **Prune all** runs the
+safe ones now instead of waiting for `[retention] prune_disk_percent`:
+images nothing needs (archived services', out of rollback windows, older
+versions of Dock's own), the vulnerability database's leftovers and build
+cache above `build_cache_keep_mb`. Each row prunes on its own, and the
+rows below them each cost something later: older rollbacks (with the
+registry, rolling back past the release before pulls them again), all of
+the build cache (the next builds start cold) and the whole vulnerability
+database (downloaded again before the next scan). Running apps and
 volumes are never touched.
 
 ```sh
-dock server disk ubuntu-4gb-nbg1-1     # the same breakdown
-dock server prune ubuntu-4gb-nbg1-1    # unused images, build cache above build_cache_keep_mb
+dock server disk ubuntu-4gb-nbg1-1                     # the same breakdown, and what each prune frees
+dock server prune ubuntu-4gb-nbg1-1                    # everything nothing needs
+dock server prune ubuntu-4gb-nbg1-1 --only scanner     # one part
 ```
 
 ## Upgrading

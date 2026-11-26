@@ -142,7 +142,7 @@ func (c *Core) readDisk(ctx context.Context, srv store.Server) (apitypes.ServerD
 	if rt == nil {
 		return apitypes.ServerDisk{}, nil, errf(apitypes.CodeServerOffline, "server %s is offline; its disk can be read once it is back", srv.Name)
 	}
-	req, err := c.pruneRequest(ctx, srv.ID)
+	req, err := c.imagePrune(ctx, srv)
 	if err != nil {
 		return apitypes.ServerDisk{}, nil, err
 	}
@@ -197,17 +197,25 @@ func (c *Core) diskParts(srv store.Server, du node.DiskUsage, host node.HostStat
 		}
 	}
 
-	var backups, snapshots, dockVolumes, cacheBytes, otherVolumes int64
+	var backups, snapshots, dockVolumes, cacheBytes, otherVolumes, scanDB, restic int64
 	for _, v := range du.Volumes {
 		switch {
 		case v.ControlPlane != "" && v.ControlPlane != c.install:
 			otherVolumes += v.Bytes // another install's, on a shared Docker host
 		case v.Name == node.BuildCacheVolume:
 			cacheBytes += v.Bytes
+		case v.Role == node.VolumeScanDB:
+			scanDB += v.Bytes
+		case v.Role == node.VolumeAnalytics:
+			add(apitypes.DiskDock, "analytics store", "Dock Analytics' events and replays, volume "+v.Name, v.Bytes, 0)
+		case v.Role == node.VolumeTraces:
+			add(apitypes.DiskDock, "trace store", "spans and app metrics, volume "+v.Name, v.Bytes, 0)
 		case strings.HasPrefix(v.Name, backup.LocalVolumePrefix):
 			backups += v.Bytes
 		case strings.HasPrefix(v.Name, snapshotVolumePrefix):
 			snapshots += v.Bytes
+		case strings.HasPrefix(v.Name, resticVolumePrefix):
+			restic += v.Bytes
 		case v.Service != "":
 			name, ok := names[v.Service]
 			if !ok {
@@ -222,15 +230,18 @@ func (c *Core) diskParts(srv store.Server, du node.DiskUsage, host node.HostStat
 
 	add(apitypes.DiskImages, "running", "images containers use", du.ImagesRunning, 0)
 	add(apitypes.DiskImages, "for rollbacks", "images Dock keeps for its releases", du.ImagesKept, 0)
+	add(apitypes.DiskImages, "older rollbacks", "rollback images the registry has too: rolling back that far pulls them again", du.ImagesRollbacks, 0)
 	add(apitypes.DiskImages, "shared layers", "layers several images use, counted once", du.ImagesShared, 0)
 	add(apitypes.DiskImages, "not Dock's", "images other work on the server pulled", du.ImagesOther, 0)
-	add(apitypes.DiskReclaimable, "unused images", "dangling images Dock made that no release needs", du.ImagesReclaimable, du.ImagesReclaimable)
+	add(apitypes.DiskReclaimable, "unused images", "of archived services, out of rollback windows, and Dock's replaced images", du.ImagesReclaimable, du.ImagesReclaimable)
+	leftovers := min(du.ScanLeftovers, scanDB)
+	add(apitypes.DiskReclaimable, "scanner leftovers", "cut-off downloads of the vulnerability database", leftovers, leftovers)
+	var cacheFree int64
 	if cacheBytes > 0 {
-		var free int64
 		if srv.Builder {
-			free = max(cacheBytes-c.buildCacheKeep(), 0)
+			cacheFree = max(cacheBytes-c.buildCacheKeep(), 0)
 		}
-		add(apitypes.DiskBuild, "BuildKit cache", fmt.Sprintf("a prune keeps %d MB", c.cfg.Retention.BuildCacheKeepMB), cacheBytes, free)
+		add(apitypes.DiskBuild, "BuildKit cache", fmt.Sprintf("a prune keeps %d MB", c.cfg.Retention.BuildCacheKeepMB), cacheBytes, cacheFree)
 	}
 	// With dock's data dir on the root filesystem, the registry's dir
 	// (under /var/lib too) most likely is; on a split layout neither is
@@ -239,15 +250,34 @@ func (c *Core) diskParts(srv store.Server, du node.DiskUsage, host node.HostStat
 		add(apitypes.DiskDock, "data dir", "database, keys, build logs, tool caches", du.DataDir, 0)
 		add(apitypes.DiskDock, "registry", "the image registry's storage dir", registry, 0)
 	}
+	add(apitypes.DiskDock, "vulnerability database", "Grype's database for image scans; downloaded again if removed", scanDB-leftovers, 0)
 	add(apitypes.DiskDock, "local backups", "restic repository on this server, not off-box", backups, 0)
 	add(apitypes.DiskDock, "volume snapshots", "copies of volumes kept on this server (dock volume snapshot)", snapshots, 0)
+	add(apitypes.DiskDock, "backup tool", "the restic binary backups run", restic, 0)
 	add(apitypes.DiskDock, "other volumes", "Dock's other volumes", dockVolumes, 0)
 	add(apitypes.DiskOther, "volumes not Dock's", "", du.OtherVolumes+otherVolumes, 0)
+
+	// What each prune frees, as pruneTargets runs them on this server.
+	frees := map[apitypes.PruneTarget]int64{
+		apitypes.PruneImages: du.ImagesReclaimable, apitypes.PruneRollbacks: du.ImagesRollbacks,
+	}
+	if srv.Builder {
+		frees[apitypes.PruneScanner], frees[apitypes.PruneScanDB] = leftovers, scanDB
+		frees[apitypes.PruneCache], frees[apitypes.PruneAllCache] = cacheFree, cacheBytes
+	}
+	out.Prunes = []apitypes.DiskPrune{}
+	for _, t := range apitypes.PruneTargets {
+		if n := frees[t]; n > 0 {
+			out.Prunes = append(out.Prunes, apitypes.DiskPrune{Target: t, Bytes: n, Safe: t.Safe()})
+			if t.Safe() {
+				out.ReclaimableBytes += n
+			}
+		}
+	}
 
 	var known int64
 	for _, p := range out.Parts {
 		known += p.Bytes
-		out.ReclaimableBytes += p.Reclaimable
 	}
 	add(apitypes.DiskOther, "rest of the filesystem", "logs, the system, files Dock doesn't own", out.UsedBytes-known, 0)
 
@@ -259,55 +289,6 @@ func (c *Core) diskParts(srv store.Server, du node.DiskUsage, host node.HostStat
 		out.Parts = []apitypes.DiskPart{}
 	}
 	return out
-}
-
-// PruneServer frees what a full disk's prune frees, now: images Dock made
-// that no release needs, and on a builder BuildKit's cache above what is
-// kept. Running apps and rollback images are never touched. It runs to
-// the end even if the caller goes away. A prune that partly failed
-// answers with what it freed and the error in the result. Refused while
-// the server is being pruned. Operators only.
-func (c *Core) PruneServer(ctx context.Context, a Actor, name string) (apitypes.ServerPruneResult, error) {
-	if err := a.requirePlatform(ServersManage, "managing servers"); err != nil {
-		return apitypes.ServerPruneResult{}, err
-	}
-	srv, err := c.loadServer(ctx, name)
-	if err != nil {
-		return apitypes.ServerPruneResult{}, err
-	}
-	r := c.retention
-	r.mu.Lock()
-	busy := r.pruning[srv.ID]
-	r.pruning[srv.ID] = true
-	r.mu.Unlock()
-	if busy {
-		return apitypes.ServerPruneResult{}, conflict("server %s is being pruned already; wait for it to finish", srv.Name)
-	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), pruneTimeout)
-	defer cancel()
-	images, cache, err := c.pruneServer(ctx, srv)
-	// What the prune freed shows on the server page once read again.
-	c.refreshDisk(srv)
-	r.mu.Lock()
-	r.pruning[srv.ID] = false
-	if err == nil {
-		// A failed prune doesn't hold back the automatic one.
-		r.pruned[srv.ID] = time.Now()
-	}
-	r.mu.Unlock()
-	if err != nil && images.Removed == 0 && cache.ReclaimedBytes == 0 {
-		return apitypes.ServerPruneResult{}, err
-	}
-	out := apitypes.ServerPruneResult{
-		Server: srv.Name, ImagesRemoved: images.Removed, ImageBytes: images.ReclaimedBytes, CacheBytes: cache.ReclaimedBytes,
-	}
-	summary := fmt.Sprintf("pruned server %s: %d images (%s), %s of build cache", srv.Name, images.Removed, humanBytes(images.ReclaimedBytes), humanBytes(cache.ReclaimedBytes))
-	if err != nil {
-		out.Error = err.Error()
-		summary += fmt.Sprintf("; %v", err)
-	}
-	c.audit(ctx, a.platform(), "server.prune", nil, nil, "server "+srv.Name, summary)
-	return out, nil
 }
 
 // pruneTimeout bounds a prune someone started.

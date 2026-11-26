@@ -34,14 +34,15 @@ DELETE FROM audit_events WHERE id <= ?;
 DELETE FROM audit_details WHERE audit_details.id <= sqlc.arg(through)
   AND audit_details.id NOT IN (SELECT kept.detail_id FROM audit_events kept WHERE kept.detail_id IS NOT NULL AND kept.detail_id <= +sqlc.arg(through));
 
--- name: ListKeptImageIDs :many
--- The image IDs on one server a rollback may still need: its services'
--- rollback windows and active and in-flight releases. Image pruning
--- keeps them. Archived services are never rolled back, so theirs go.
-SELECT DISTINCT releases.image_id FROM environments
-JOIN services ON services.environment_id = environments.id AND services.archived_at IS NULL
+-- name: ListServerReleaseImages :many
+-- The images of every release on one server, with what decides whether
+-- a rollback may still need them: the service archived or not, the
+-- release's number and status, and its registry digest. Image pruning
+-- (core imagePrune) sorts them into kept, older rollbacks and unneeded.
+-- In no particular order.
+SELECT releases.service_id, CAST(services.archived_at IS NOT NULL AS INTEGER) AS archived,
+       releases.number, releases.status, releases.image_id, releases.image_digest
+FROM environments
+JOIN services ON services.environment_id = environments.id
 JOIN releases ON releases.service_id = services.id
-WHERE environments.server_id = +sqlc.arg(server_id) AND releases.image_id != ''
-  AND (releases.status IN ('active', 'queued', 'building', 'starting', 'health_checking')
-       OR releases.number > (SELECT max(newest.number) FROM releases newest WHERE newest.service_id = releases.service_id)
-                            - CAST(sqlc.arg(keep) AS INTEGER));
+WHERE environments.server_id = +sqlc.arg(server_id) AND releases.image_id != '';

@@ -2,7 +2,14 @@ import { Fragment, useMemo, useState } from "react";
 import { ago, pct, plural, size } from "../../ui/format";
 import { Act, Button, ErrorText, Panel } from "../../ui/kit";
 import { notify } from "../../ui/notice";
-import { type DiskPart, usePruneServer, useServerDisk } from "./disk";
+import {
+  type DiskPart,
+  type DiskPrune,
+  type PruneTarget,
+  type ServerDisk,
+  usePruneServer,
+  useServerDisk,
+} from "./disk";
 
 type Group = DiskPart["group"];
 
@@ -15,56 +22,6 @@ const groups: { group: Group; label: string; dot: string }[] = [
   { group: "dock", label: "Dock", dot: "bg-disk-dock" },
   { group: "other", label: "Other", dot: "bg-disk-other" },
 ];
-
-/**
- * The Prune button on the server page's Disk row, when part of the disk
- * can be freed: asks once ("Prune 1.4G now" or Cancel), then says what
- * was freed in a notice. `dock server prune`.
- */
-export function PruneAction({ server }: { server: string }) {
-  const d = useServerDisk(server).data;
-  const prune = usePruneServer(server);
-  const [confirming, setConfirming] = useState(false);
-  if (!d || d.reclaimable_bytes <= 0) return null;
-  const cli = `dock server prune ${server}`;
-  if (!confirming) {
-    return (
-      <Button small onClick={() => setConfirming(true)}>
-        Prune {size(d.reclaimable_bytes)}
-      </Button>
-    );
-  }
-  return (
-    <span className="flex items-center gap-2">
-      <Act
-        small
-        danger
-        cli={cli}
-        disabled={prune.isPending}
-        onClick={() =>
-          prune.mutate(undefined, {
-            onSuccess: (done) =>
-              notify(
-                done.image_bytes + done.cache_bytes > 0
-                  ? `Freed ${size(done.image_bytes + done.cache_bytes)}: ${plural(done.images_removed, "image")} (${size(done.image_bytes)}), ${size(done.cache_bytes)} of build cache.${done.error ? ` Part of it failed: ${done.error}` : ""}`
-                  : "Nothing was freed: no image or cache could go.",
-                done.error ? "fail" : "ok",
-              ),
-            onError: (e) => notify(e.message, "fail"),
-            onSettled: () => setConfirming(false),
-          })
-        }
-      >
-        {prune.isPending
-          ? "Pruning…"
-          : `Prune ${size(d.reclaimable_bytes)} now`}
-      </Act>
-      <Button small onClick={() => setConfirming(false)}>
-        Cancel
-      </Button>
-    </span>
-  );
-}
 
 /**
  * The Disk row's few words: "11G of 40G · 1.4G reclaimable", from the
@@ -90,8 +47,8 @@ export function DiskSummary({ server }: { server: string }) {
 /**
  * Where a server's disk goes (ADR 0035), the Disk row opened: one bar
  * split by group, a table of the groups that open to show their parts,
- * and when it was read. Prune is on the row (PruneAction). Read when the
- * page opens, not with it: the read takes seconds.
+ * when it was read, and below it what each prune frees (PruneList). Read
+ * when the page opens, not with it: the read takes seconds.
  */
 export function DiskBreakdown({ server }: { server: string }) {
   const disk = useServerDisk(server);
@@ -234,8 +191,137 @@ export function DiskBreakdown({ server }: { server: string }) {
               </tbody>
             </table>
           </Panel>
+          <PruneList server={server} disk={d} />
         </>
       )}
+    </div>
+  );
+}
+
+/** What each prune target is called and frees, and what it costs later. */
+const pruneTargets: Record<PruneTarget, { label: string; detail: string }> = {
+  images: {
+    label: "Images nothing needs",
+    detail:
+      "archived services, out of rollback windows, Dock's replaced images",
+  },
+  scanner: {
+    label: "Scanner leftovers",
+    detail: "cut-off downloads of the vulnerability database",
+  },
+  cache: {
+    label: "Build cache above what is kept",
+    detail: "BuildKit keeps the rest",
+  },
+  rollbacks: {
+    label: "Older rollbacks",
+    detail:
+      "the registry keeps them; rolling back past the release before pulls them",
+  },
+  "all-cache": {
+    label: "All build cache",
+    detail: "the next builds start cold",
+  },
+  "scan-db": {
+    label: "Vulnerability database",
+    detail: "downloaded again before the next scan",
+  },
+};
+
+/**
+ * What a server's prunes free, under its disk breakdown: the safe ones,
+ * which Prune all runs (and Dock by itself on a full disk), then those
+ * that each cost something later. Every row prunes on its own; each asks
+ * once. `dock server prune [--only]`.
+ */
+function PruneList({ server, disk }: { server: string; disk: ServerDisk }) {
+  const prune = usePruneServer(server);
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const prunes = disk.prunes ?? [];
+  if (!prunes.length) return null;
+  const safe = prunes.filter((p) => p.safe);
+  const costly = prunes.filter((p) => !p.safe);
+  const run = (key: string, targets: PruneTarget[]) =>
+    prune.mutate(targets, {
+      onSuccess: (done) => {
+        const parts = done.freed ?? [];
+        const freed = parts.reduce((n, f) => n + f.bytes, 0);
+        notify(
+          `${freed > 0 ? `Freed ${size(freed)}` : "Nothing was freed"}${
+            parts.length > 1
+              ? `: ${parts.map((f) => `${pruneTargets[f.target].label.toLowerCase()} ${size(f.bytes)}`).join(", ")}`
+              : ""
+          }.${done.error ? ` Part of it failed: ${done.error}` : ""}`,
+          done.error ? "fail" : "ok",
+        );
+      },
+      onError: (e) => notify(e.message, "fail"),
+      onSettled: () => setConfirming((k) => (k === key ? null : k)),
+    });
+  const action = (key: string, targets: PruneTarget[], bytes: number) => {
+    const cli = `dock server prune ${server}${targets.length ? ` --only ${targets.join(",")}` : ""}`;
+    if (confirming !== key) {
+      return (
+        <Button
+          small
+          disabled={prune.isPending}
+          onClick={() => setConfirming(key)}
+        >
+          {key === "all" ? `Prune all ${size(bytes)}` : "Prune"}
+        </Button>
+      );
+    }
+    return (
+      <span className="flex items-center justify-end gap-2">
+        <Act
+          small
+          danger
+          cli={cli}
+          disabled={prune.isPending}
+          onClick={() => run(key, targets)}
+        >
+          {prune.isPending ? "Pruning…" : `Prune ${size(bytes)} now`}
+        </Act>
+        <Button small onClick={() => setConfirming(null)}>
+          Cancel
+        </Button>
+      </span>
+    );
+  };
+  const row = (p: DiskPrune) => (
+    <tr key={p.target}>
+      <td className="whitespace-nowrap">{pruneTargets[p.target].label}</td>
+      <td className="text-right font-mono">
+        <span className={p.safe ? "text-warn-text" : undefined}>
+          {size(p.bytes)}
+        </span>
+      </td>
+      <td className="w-full text-mut">{pruneTargets[p.target].detail}</td>
+      <td className="text-right">{action(p.target, [p.target], p.bytes)}</td>
+    </tr>
+  );
+  return (
+    <div className="mt-5">
+      <div className="mb-2 flex items-center gap-3">
+        <span className="font-medium">Prune</span>
+        <span className="flex-1" />
+        {safe.length > 0 && action("all", [], disk.reclaimable_bytes)}
+      </div>
+      <Panel>
+        <table>
+          <tbody>
+            {safe.map(row)}
+            {costly.length > 0 && (
+              <tr>
+                <td colSpan={4} className="pt-3 text-xs text-mut">
+                  Not in Prune all: each costs something later
+                </td>
+              </tr>
+            )}
+            {costly.map(row)}
+          </tbody>
+        </table>
+      </Panel>
     </div>
   );
 }

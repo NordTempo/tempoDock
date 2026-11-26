@@ -213,15 +213,24 @@ func TestCalls(t *testing.T) {
 	}
 
 	du := node.DiskUsage{
-		ImagesRunning: 1, ImagesKept: 2, ImagesReclaimable: 3, ImagesOther: 4, ImagesShared: 5,
-		Volumes: []node.VolumeUsage{{Name: "dock_v1", Service: "7", Bytes: 6}}, OtherVolumes: 8, Containers: 9, DataDir: 10,
+		ImagesRunning: 1, ImagesKept: 2, ImagesReclaimable: 3, ImagesRollbacks: 11, ImagesOther: 4, ImagesShared: 5, ScanLeftovers: 12,
+		Volumes:      []node.VolumeUsage{{Name: "dock_v1", Service: "7", Bytes: 6}, {Name: "dock_scan_db_x", Role: node.VolumeScanDB, Bytes: 13}},
+		OtherVolumes: 8, Containers: 9, DataDir: 10,
 	}
 	h.rt.SetDiskUsage(du)
-	if got, err := h.client.DiskUsage(ctx, node.PruneImagesRequest{Keep: []string{"sha256:k"}, Repos: []string{"r"}}); err != nil || !equalJSON(got, du) {
+	req := node.PruneImagesRequest{Keep: []string{"sha256:k"}, Repos: []string{"r"}, Unneeded: []string{"sha256:u"}, Rollbacks: []string{"sha256:b"}, Pinned: []string{"p@sha256:1"}, Tool: "alpine"}
+	if got, err := h.client.DiskUsage(ctx, req); err != nil || !equalJSON(got, du) {
 		t.Fatalf("disk usage = %+v, %v", got, err)
 	}
-	if ops := h.rt.Ops(); ops[len(ops)-1] != "disk usage keep=sha256:k repos=r" {
+	if ops := h.rt.Ops(); ops[len(ops)-1] != "disk usage keep=sha256:k repos=r unneeded=sha256:u rollbacks=sha256:b pinned=p@sha256:1 tool=alpine" {
 		t.Fatalf("the prune filter didn't reach the node: %v", ops[len(ops)-1])
+	}
+	req.OnlyRollbacks = true
+	if _, err := h.client.PruneImages(ctx, req); err != nil || !strings.HasSuffix(h.rt.Ops()[len(h.rt.Ops())-1], " only-rollbacks tool=alpine") {
+		t.Fatalf("prune rollbacks: %v, %v", err, h.rt.Ops())
+	}
+	if _, err := h.client.PruneScanDatabase(ctx, node.ScanDatabasePrune{All: true}); err != nil || h.rt.Ops()[len(h.rt.Ops())-1] != "scan-database prune all" {
+		t.Fatalf("prune the scan database: %v, %v", err, h.rt.Ops())
 	}
 
 	down := node.ProbeResult{Status: 502, Latency: 40 * time.Millisecond, Error: "answered 502, expected 200"}

@@ -324,7 +324,8 @@ func TestArchiveOnUnreachableServer(t *testing.T) {
 
 // Archived services keep no release a rollback or restore could need, so
 // their images leave the registry's and the servers' keep sets, and the
-// archive starts a registry prune: a test project can be removed for good.
+// archive starts a registry prune and a prune of the server's images
+// that names them: a test project can be removed for good.
 func TestArchiveReleasesImages(t *testing.T) {
 	p, _ := labPool(t)
 	reg := &fakeRegistry{}
@@ -333,19 +334,22 @@ func TestArchiveReleasesImages(t *testing.T) {
 	web := p.createService("production", "web", apitypes.CreateServiceRequest{})
 	api := p.createService("production", "api", apitypes.CreateServiceRequest{})
 	webRel, apiRel := p.deploySource(web), p.deploySource(api)
-	server := p.ids["cp"]
+	server, err := p.c.store.GetServer(p.ctx, p.ids["cp"])
+	if err != nil {
+		t.Fatal(err)
+	}
 	kept := func() (digests, ids []string) {
 		t.Helper()
 		digests, err := p.c.store.ListKeptDigests(p.ctx, 5)
 		if err != nil {
 			t.Fatal(err)
 		}
-		ids, err = p.c.store.ListKeptImageIDs(p.ctx, store.ListKeptImageIDsParams{ServerID: server, Keep: 5})
+		req, err := p.c.imagePrune(p.ctx, server)
 		if err != nil {
 			t.Fatal(err)
 		}
 		slices.Sort(digests)
-		return digests, ids
+		return digests, req.Keep
 	}
 	if digests, ids := kept(); len(digests) != 2 || len(ids) != 2 {
 		t.Fatalf("before the archive: digests %v, image IDs %v", digests, ids)
@@ -361,6 +365,7 @@ func TestArchiveReleasesImages(t *testing.T) {
 	if !slices.Equal(digests, []string{apiRel.ImageDigest}) || len(ids) != 1 {
 		t.Fatalf("after archiving web: digests %v (web %s, api %s), image IDs %v", digests, webRel.ImageDigest, apiRel.ImageDigest, ids)
 	}
+	waitOps(t, p.rt, "prune images keep="+apiRel.ImageID+" repos="+p.c.reg.Host()+"/dock/p unneeded="+webRel.ImageID)
 	// The archive prunes the registry, keeping only api's image. A deploy's
 	// own background prune can take the hourly slot first; then prune again
 	// (anything from now on keeps only api).

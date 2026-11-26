@@ -6896,6 +6896,35 @@
         ],
         "type": "object"
       },
+      "DiskPrune": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "safe": {
+            "type": "boolean"
+          },
+          "target": {
+            "enum": [
+              "images",
+              "scanner",
+              "cache",
+              "rollbacks",
+              "all-cache",
+              "scan-db"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "bytes",
+          "safe"
+        ],
+        "type": "object"
+      },
       "DiskUsage": {
         "additionalProperties": false,
         "properties": {
@@ -12731,6 +12760,36 @@
         ],
         "type": "object"
       },
+      "PruneFreed": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "removed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "target": {
+            "enum": [
+              "images",
+              "scanner",
+              "cache",
+              "rollbacks",
+              "all-cache",
+              "scan-db"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "removed",
+          "bytes"
+        ],
+        "type": "object"
+      },
       "PublicAddress": {
         "additionalProperties": false,
         "properties": {
@@ -14666,6 +14725,15 @@
               "null"
             ]
           },
+          "prunes": {
+            "items": {
+              "$ref": "#/components/schemas/DiskPrune"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "read_at": {
             "format": "date-time",
             "type": "string"
@@ -14695,6 +14763,7 @@
           "total_bytes",
           "parts",
           "reclaimable_bytes",
+          "prunes",
           "read_at"
         ],
         "type": "object"
@@ -14850,6 +14919,29 @@
         ],
         "type": "object"
       },
+      "ServerPruneRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "targets": {
+            "items": {
+              "enum": [
+                "images",
+                "scanner",
+                "cache",
+                "rollbacks",
+                "all-cache",
+                "scan-db"
+              ],
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "ServerPruneResult": {
         "additionalProperties": false,
         "properties": {
@@ -14859,6 +14951,15 @@
           },
           "error": {
             "type": "string"
+          },
+          "freed": {
+            "items": {
+              "$ref": "#/components/schemas/PruneFreed"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "image_bytes": {
             "format": "int64",
@@ -14874,6 +14975,7 @@
         },
         "required": [
           "server",
+          "freed",
           "images_removed",
           "image_bytes",
           "cache_bytes"
@@ -74974,7 +75076,7 @@
     },
     "/api/v1/servers/{server}/prune": {
       "post": {
-        "description": "Removes images Dock made that no release needs and, on a builder, BuildKit's cache above [retention] build_cache_keep_mb: what Dock does by itself once the disk passes prune_disk_percent. Running apps, rollback images and volumes are never touched. A prune that partly failed answers with what it freed and its error. 409 while the server is being pruned. Operators only.",
+        "description": "Frees disk on a server (ADR 0035 amendment 2), one target at a time or several. Safe ones, run without targets and by Dock itself once the disk passes prune_disk_percent: `images` (images of archived services, out of rollback windows, and Dock's replaced images), `scanner` (cut-off downloads left in the vulnerability database) and `cache` (BuildKit's cache above [retention] build_cache_keep_mb). Asked for by name: `rollbacks` (rollback images the registry has too, but the active release's and the one before), `all-cache` (all of BuildKit's cache) and `scan-db` (the whole vulnerability database, downloaded again before the next scan). Running apps and volumes are never touched. A prune that partly failed answers with what it freed and its error. 409 while the server is being pruned. Operators only.",
         "operationId": "prune-server",
         "parameters": [
           {
@@ -74996,6 +75098,15 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServerPruneRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {

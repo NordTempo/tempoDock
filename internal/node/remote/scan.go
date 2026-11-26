@@ -24,6 +24,9 @@ import (
 const (
 	ScanProtocol = 23
 	BaseProtocol = 27
+	// PruneProtocol is the first with scan-database-prune, and with the
+	// scanner's tool image (ADR 0035 amendment 2).
+	PruneProtocol = 34
 )
 
 const (
@@ -33,12 +36,19 @@ const (
 	opImageDigest        = "image-digest"
 	opRemoteDigest       = "remote-digest"
 	opScanDatabaseImport = "scan-database-import"
+	opScanDatabasePrune  = "scan-database-prune"
 )
 
 type (
 	wireScanImages struct {
 		Syft  string `json:"syft"`
 		Grype string `json:"grype"`
+		Tool  string `json:"tool,omitempty"` // protocol 34
+	}
+	scanPruneRequest struct {
+		Tool   string     `json:"tool,omitempty"`
+		All    bool       `json:"all,omitempty"`
+		Labels wireLabels `json:"labels"`
 	}
 	wireScanLimits struct {
 		MemoryBytes int64 `json:"memory_bytes,omitempty"`
@@ -105,9 +115,11 @@ type (
 )
 
 func toWireScanImages(i node.ScanImages) wireScanImages {
-	return wireScanImages{Syft: i.Syft, Grype: i.Grype}
+	return wireScanImages{Syft: i.Syft, Grype: i.Grype, Tool: i.Tool}
 }
-func (w wireScanImages) node() node.ScanImages { return node.ScanImages{Syft: w.Syft, Grype: w.Grype} }
+func (w wireScanImages) node() node.ScanImages {
+	return node.ScanImages{Syft: w.Syft, Grype: w.Grype, Tool: w.Tool}
+}
 
 func toWireScanLimits(l node.ScanLimits) wireScanLimits {
 	return wireScanLimits{MemoryBytes: l.MemoryBytes, TimeoutMS: l.Timeout.Milliseconds()}
@@ -169,6 +181,16 @@ func (c *Client) ScanDatabase(ctx context.Context, req node.ScanDatabaseRequest)
 	return node.ScanDatabase(r), err
 }
 
+// PruneScanDatabase implements node.Scanner. An older node can't: its
+// database stays as it is.
+func (c *Client) PruneScanDatabase(ctx context.Context, req node.ScanDatabasePrune) (node.PruneResult, error) {
+	if err := c.needProtocol(ctx, PruneProtocol, "free its vulnerability database"); err != nil {
+		return node.PruneResult{}, err
+	}
+	r, err := callWithLogs[pruneResult](ctx, c, opScanDatabasePrune, 0, scanPruneRequest{Tool: req.Tool, All: req.All, Labels: toWireLabels(req.Labels)}, nil, nil)
+	return node.PruneResult(r), err
+}
+
 // ImageDigest implements node.Scanner.
 func (c *Client) ImageDigest(ctx context.Context, ref string) (string, error) {
 	if err := c.needProtocol(ctx, ScanProtocol, "report image digests"); err != nil {
@@ -226,6 +248,10 @@ func scanRoutes(h func(string, http.HandlerFunc), rt node.Scanner) {
 	h(opScanDatabase, unary(func(ctx context.Context, a scanDatabaseRequest) (scanDatabaseResult, error) {
 		r, err := rt.ScanDatabase(ctx, node.ScanDatabaseRequest{Images: a.Images.node(), Update: a.Update, Labels: a.Labels.node()})
 		return scanDatabaseResult(r), err
+	}))
+	h(opScanDatabasePrune, unary(func(ctx context.Context, a scanPruneRequest) (pruneResult, error) {
+		r, err := rt.PruneScanDatabase(ctx, node.ScanDatabasePrune{Tool: a.Tool, All: a.All, Labels: a.Labels.node()})
+		return pruneResult(r), err
 	}))
 	h(opImageDigest, unary(func(ctx context.Context, a imageRequest) (imageDigestResult, error) {
 		d, err := rt.ImageDigest(ctx, a.Ref)

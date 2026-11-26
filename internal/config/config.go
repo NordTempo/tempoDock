@@ -281,9 +281,10 @@ type Retention struct {
 	// AlertDays keeps resolved alerts this many days.
 	AlertDays int `toml:"alert_days"`
 	// PruneDiskPercent: when the filesystem holding Docker's data passes
-	// it on a server, its BuildKit cache is pruned down to BuildCacheKeepMB
-	// and its dangling images outside the rollback window are removed, at
-	// most once an hour. 0 turns pruning off.
+	// it on a server, what nothing needs is pruned there at most once an
+	// hour (the safe prune targets, ADR 0035 amendment 2): images no
+	// release keeps, the vulnerability database's leftovers, and BuildKit
+	// cache above BuildCacheKeepMB. 0 turns pruning off.
 	PruneDiskPercent int `toml:"prune_disk_percent"`
 	BuildCacheKeepMB int `toml:"build_cache_keep_mb"`
 }

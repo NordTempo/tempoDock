@@ -11,6 +11,8 @@ import { useAction } from "../../data/action";
 
 export type ServerDisk = components["schemas"]["ServerDisk"];
 export type DiskPart = components["schemas"]["DiskPart"];
+export type DiskPrune = components["schemas"]["DiskPrune"];
+export type PruneTarget = DiskPrune["target"];
 
 export const diskKey = (server: string) => ["servers", server, "disk"] as const;
 
@@ -28,13 +30,17 @@ export const diskQuery = (server: string) =>
 
 export const useServerDisk = (server: string) => useQuery(diskQuery(server));
 
-/** Prunes a server now; the disk is read again afterwards. */
+/**
+ * Prunes a server now: the given targets, or without any the safe ones
+ * (ADR 0035 amendment 2). The disk is read again afterwards.
+ */
 export const usePruneServer = (server: string) =>
   useAction(
-    () =>
+    (targets: PruneTarget[]) =>
       body(
         api.POST("/api/v1/servers/{server}/prune", {
           params: { path: { server } },
+          body: { targets },
         }),
       ),
     () => [diskKey(server), ["audit"]],

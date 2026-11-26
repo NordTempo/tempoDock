@@ -125,18 +125,24 @@ type Containers interface {
 	// An image a container uses is never removed (an error). A ref that
 	// isn't there is ErrNotFound (wrapped).
 	RemoveImage(ctx context.Context, ref string) error
-	// PruneImages removes dangling images (no tag left) that the platform
-	// made, no container uses and whose ID isn't in req.Keep. Made by the
-	// platform means built (LabelImage) or pulled from the platform
-	// registry (req.Repos); no other image on the host is ever touched,
-	// so a server shared with other work keeps its own. Images in use are
-	// skipped, never forced.
+	// PruneImages removes the images no release needs (ADR 0035
+	// amendment 2): with req.OnlyRollbacks just req.Rollbacks, otherwise
+	// every image whose ID isn't in req.Keep that the platform made
+	// (built, LabelImage, or pulled from its registry, req.Repos), that a
+	// release used (req.Unneeded), or that is another version of one of
+	// the platform's own images (req.Pinned), tagged or not. An image a
+	// container uses (running or stopped) is never removed, nor one made
+	// in the last hour (a build may not have recorded it yet), and no
+	// other image on the host is ever touched, so a server shared with
+	// other work keeps its own. Nothing is forced.
 	PruneImages(ctx context.Context, req PruneImagesRequest) (PruneResult, error)
 	// DiskUsage says where Docker's data root and dock's data dir go on
-	// this server (ADR 0035). Images under req's prune filter count as
-	// reclaimable, as PruneImages would remove them. It asks Docker to
-	// size every image and volume, which takes seconds: call it when
-	// someone asks, never on a timer.
+	// this server (ADR 0035). Images PruneImages would remove with req
+	// count as reclaimable, req.Rollbacks on their own. With req.Tool it
+	// also sizes what cut-off downloads left in the vulnerability
+	// database's volume (a job in that image). It asks Docker to size
+	// every image and volume, which takes seconds: call it when someone
+	// asks, never on a timer.
 	DiskUsage(ctx context.Context, req PruneImagesRequest) (DiskUsage, error)
 
 	// EnsureNetwork creates the bridge network, labelled with labels'
@@ -476,16 +482,33 @@ type Builder interface {
 	WarmBuilder(ctx context.Context) error
 }
 
-// PruneImagesRequest says which dangling images Containers.PruneImages may
-// remove.
+// PruneImagesRequest says which images Containers.PruneImages may remove.
 type PruneImagesRequest struct {
 	// Keep are image IDs a rollback may still need.
 	Keep []string
 	// Repos are repository prefixes of the platform registry
-	// ("127.0.0.1:5000/dock/p"): a dangling image with a digest reference
-	// under one was pulled from there by the platform. Docker's classic
-	// image store lists images pulled by digest as dangling.
+	// ("127.0.0.1:5000/dock/p"): an image with a digest reference under
+	// one was pulled from there by the platform.
 	Repos []string
+	// Unneeded are image IDs releases on this server used that no
+	// rollback needs any more: out of their service's rollback window, or
+	// of an archived service. Images from other registries are only
+	// known this way.
+	Unneeded []string
+	// Pinned are the images the platform runs its own work in, by
+	// reference with a digest (BuildKit, the scanners, restic, ...):
+	// other versions of their repositories, left by updates, go.
+	Pinned []string
+	// Rollbacks are image IDs of releases in a rollback window that the
+	// platform registry has too, other than the active release and the
+	// one before it: a rollback to one pulls it again. DiskUsage sizes
+	// them; PruneImages removes them only with OnlyRollbacks, and then
+	// nothing else.
+	Rollbacks     []string
+	OnlyRollbacks bool
+	// Tool is a small image with a shell (busybox's sh, du and rm) for
+	// DiskUsage to size the vulnerability database's leftovers with.
+	Tool string
 }
 
 // BuildCacheVolume holds BuildKit's state and build cache on a builder
@@ -497,10 +520,14 @@ const BuildCacheVolume = "dock-buildkit-cache"
 // shares with others); shared layers are counted once, in ImagesShared,
 // so the image fields add up to what images take.
 type DiskUsage struct {
-	// ImagesRunning are images containers use; ImagesKept other images
-	// the platform made; ImagesReclaimable those PruneImages would
-	// remove; ImagesOther images the platform didn't make.
-	ImagesRunning, ImagesKept, ImagesReclaimable, ImagesOther, ImagesShared int64
+	// ImagesRunning are images containers use; ImagesKept other images a
+	// release keeps or the platform made; ImagesReclaimable those
+	// PruneImages would remove; ImagesRollbacks the request's Rollbacks;
+	// ImagesOther images the platform didn't make.
+	ImagesRunning, ImagesKept, ImagesReclaimable, ImagesRollbacks, ImagesOther, ImagesShared int64
+	// ScanLeftovers is what downloads of the vulnerability database that
+	// were cut off left in its volume (sized with the request's Tool).
+	ScanLeftovers int64
 	// Volumes are the platform's volumes, BuildCacheVolume included.
 	Volumes []VolumeUsage
 	// OtherVolumes are volumes the platform didn't make.
@@ -520,8 +547,18 @@ type VolumeUsage struct {
 	// ControlPlane is its LabelControlPlane: on a Docker host shared by
 	// two installs, the other's volumes aren't this one's.
 	ControlPlane string
-	Bytes        int64
+	// Role names the runtime's own volumes: VolumeScanDB, VolumeAnalytics
+	// or VolumeTraces; empty for the rest.
+	Role  string
+	Bytes int64
 }
+
+// The roles of the runtime's own volumes (VolumeUsage.Role).
+const (
+	VolumeScanDB    = "scan-db"
+	VolumeAnalytics = "analytics"
+	VolumeTraces    = "traces"
+)
 
 // PruneResult is what a prune removed.
 type PruneResult struct {

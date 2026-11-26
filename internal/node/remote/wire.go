@@ -224,6 +224,13 @@ type (
 	pruneImagesRequest struct {
 		Keep  []string `json:"keep"`
 		Repos []string `json:"repos,omitempty"` // protocol 3
+		// Protocol 34 (PruneProtocol); older nodes prune only dangling
+		// images of the platform's.
+		Unneeded      []string `json:"unneeded,omitempty"`
+		Pinned        []string `json:"pinned,omitempty"`
+		Rollbacks     []string `json:"rollbacks,omitempty"`
+		OnlyRollbacks bool     `json:"only_rollbacks,omitempty"`
+		Tool          string   `json:"tool,omitempty"`
 	}
 	// archiveLogsRequest is ArchiveLogs' container and limits.
 	archiveLogsRequest struct {
@@ -272,6 +279,8 @@ type (
 		ImagesRunning     int64                   `json:"images_running"`
 		ImagesKept        int64                   `json:"images_kept"`
 		ImagesReclaimable int64                   `json:"images_reclaimable"`
+		ImagesRollbacks   int64                   `json:"images_rollbacks,omitempty"` // protocol 34
+		ScanLeftovers     int64                   `json:"scan_leftovers,omitempty"`   // protocol 34
 		ImagesOther       int64                   `json:"images_other"`
 		ImagesShared      int64                   `json:"images_shared"`
 		Volumes           capped[wireVolumeUsage] `json:"volumes"`
@@ -283,6 +292,7 @@ type (
 		Name         string `json:"name"`
 		Service      string `json:"service,omitempty"`
 		ControlPlane string `json:"control_plane,omitempty"`
+		Role         string `json:"role,omitempty"` // protocol 34
 		Bytes        int64  `json:"bytes"`
 	}
 	dialRequest struct {
@@ -892,6 +902,7 @@ func fromWireContainerStats(ws []wireContainerStats) []node.ContainerStats {
 func toWireDiskUsage(d node.DiskUsage) wireDiskUsage {
 	w := wireDiskUsage{
 		ImagesRunning: d.ImagesRunning, ImagesKept: d.ImagesKept, ImagesReclaimable: d.ImagesReclaimable,
+		ImagesRollbacks: d.ImagesRollbacks, ScanLeftovers: d.ScanLeftovers,
 		ImagesOther: d.ImagesOther, ImagesShared: d.ImagesShared, OtherVolumes: d.OtherVolumes,
 		Containers: d.Containers, DataDir: d.DataDir, Volumes: make(capped[wireVolumeUsage], len(d.Volumes)),
 	}
@@ -904,6 +915,7 @@ func toWireDiskUsage(d node.DiskUsage) wireDiskUsage {
 func fromWireDiskUsage(w wireDiskUsage) node.DiskUsage {
 	d := node.DiskUsage{
 		ImagesRunning: w.ImagesRunning, ImagesKept: w.ImagesKept, ImagesReclaimable: w.ImagesReclaimable,
+		ImagesRollbacks: w.ImagesRollbacks, ScanLeftovers: w.ScanLeftovers,
 		ImagesOther: w.ImagesOther, ImagesShared: w.ImagesShared, OtherVolumes: w.OtherVolumes,
 		Containers: w.Containers, DataDir: w.DataDir, Volumes: make([]node.VolumeUsage, len(w.Volumes)),
 	}
@@ -1005,4 +1017,20 @@ type storeKindRequest struct {
 type putAnalyticsBinaryRequest struct {
 	SHA256 string `json:"sha256"`
 	Size   int64  `json:"size"`
+}
+
+// toWirePrune is a prune request on the wire.
+func toWirePrune(req node.PruneImagesRequest) pruneImagesRequest {
+	return pruneImagesRequest{
+		Keep: req.Keep, Repos: req.Repos, Unneeded: req.Unneeded, Pinned: req.Pinned,
+		Rollbacks: req.Rollbacks, OnlyRollbacks: req.OnlyRollbacks, Tool: req.Tool,
+	}
+}
+
+// node is the request a node's runtime gets.
+func (a pruneImagesRequest) node() node.PruneImagesRequest {
+	return node.PruneImagesRequest{
+		Keep: a.Keep, Repos: a.Repos, Unneeded: a.Unneeded, Pinned: a.Pinned,
+		Rollbacks: a.Rollbacks, OnlyRollbacks: a.OnlyRollbacks, Tool: a.Tool,
+	}
 }
