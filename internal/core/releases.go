@@ -571,8 +571,9 @@ type releaseSpec struct {
 	pitrOff bool
 	// autoFrom marks an automatic image update (image_updates.go): the
 	// image the service ran when it was decided. createRelease refuses it
-	// once updates are off, another image runs, or the service has staged
-	// changes, which an image deploy would take live unasked.
+	// once updates are off, the service is stopped, its environment is
+	// frozen, another image runs, or it has staged changes, which an image
+	// deploy would take live unasked.
 	autoFrom string
 }
 
@@ -717,8 +718,18 @@ func (c *Core) createRelease(ctx context.Context, q *store.Queries, a Actor, ss 
 		return ss, rel, invalid("service %s is archived", ss)
 	}
 	if spec.autoFrom != "" {
-		if svc.AutoUpdate == 0 {
+		// Everything autoUpdate decided from, again under the write lock.
+		env, err := q.GetEnvironment(ctx, ss.env.ID)
+		if err != nil {
+			return ss, rel, err
+		}
+		switch {
+		case svc.AutoUpdate == 0:
 			return ss, rel, conflict("automatic image updates of %s were turned off", ss)
+		case svc.StoppedAt != nil:
+			return ss, rel, conflict("%s was stopped; it isn't updated while stopped", ss)
+		case lockHolds(env, now()) && env.LockPeople:
+			return ss, rel, conflict("%s was frozen; it isn't updated while frozen", ss.envScope)
 		}
 		if active, err := q.GetActiveRelease(ctx, svc.ID); err != nil || active.ImageRef != spec.autoFrom {
 			return ss, rel, conflict("%s was deployed again since the update was decided; the next daily check looks again", ss)
