@@ -119,6 +119,14 @@ func (c *Core) DeleteEnvironment(ctx context.Context, a Actor, ref EnvRef, req a
 	if err != nil {
 		return apitypes.EnvironmentDeleted{}, err
 	}
+	// A wake (or sleep) that read the services before the archive may
+	// still start (or stop) their containers: it ends before anything is
+	// removed. One starting now finds no live service to wake.
+	for _, x := range d.envs {
+		if err := c.sleepSettled(ctx, x.ID); err != nil {
+			return apitypes.EnvironmentDeleted{}, err
+		}
+	}
 	if err := c.removeProjectResources(ctx, d); err != nil {
 		return apitypes.EnvironmentDeleted{}, fmt.Errorf("%w; its services are archived but nothing was deleted from Dock yet, so deleting again picks up where this stopped", err)
 	}

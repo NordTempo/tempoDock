@@ -565,6 +565,11 @@ func (c *Core) addDrainLeftovers(ctx context.Context, d store.ServerDrain, items
 func (c *Core) startDrainMove(ctx context.Context, d store.ServerDrain, row store.ListServerDrainItemsRow) error {
 	it := row.ServerDrainItem
 	es, err := c.envByID(ctx, it.EnvironmentID)
+	if store.IsNotFound(err) {
+		// Deleted since the plan (ADR 0103), its item with it: the
+		// driver reads its queue again.
+		return nil
+	}
 	if err != nil {
 		return err
 	}

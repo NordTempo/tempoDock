@@ -206,7 +206,9 @@ func TestMoveWaitsForEnvironmentDelete(t *testing.T) {
 	if _, held := p.c.envDeletes.Load(es.project.ID); held {
 		t.Error("a refused delete kept its hold")
 	}
-	p.waitMove(staging)
+	if m := p.waitMove(staging); m.Status != apitypes.MoveSucceeded {
+		t.Fatalf("the move after the delete's hold cleared: %s %s", m.Status, m.Error)
+	}
 }
 
 func TestMoveEnvironment(t *testing.T) {
