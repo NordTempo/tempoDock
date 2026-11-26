@@ -166,8 +166,8 @@ func (c *Core) DeleteEnvironment(ctx context.Context, a Actor, ref EnvRef, req a
 	return out, nil
 }
 
-// holdEnvDelete takes the project's envDeletes hold and checks that es
-// isn't moving, in one write transaction. beginMove checks the hold and
+// holdEnvDelete takes the project's envDeletes hold and checks that no
+// environment of the project is moving, in one write transaction. beginMove checks the hold and
 // creates its move in one too, and the store takes the write lock up
 // front, so one of them sees the other: a move that passed its check
 // before the hold is open here, and one after it is refused. On an error
@@ -179,14 +179,25 @@ func (c *Core) holdEnvDelete(ctx context.Context, es envScope) error {
 			return conflict("another environment of project %s is being deleted; delete %s once that finishes", es.project.Name, es.env.Name)
 		}
 		held = true
-		_, err := q.GetOpenEnvironmentMove(ctx, es.env.ID)
-		switch {
-		case err == nil:
-			return conflict("%s is moving to another server; delete the environment once the move ends (`dock env move %s --status`)", es, es.env.Name)
-		case store.IsNotFound(err):
-			return nil
+		// Any environment of the project: the delete takes closed
+		// previews of es along, which it hasn't read yet.
+		moves, err := q.ListOpenEnvironmentMoves(ctx)
+		if err != nil || len(moves) == 0 {
+			return err
 		}
-		return err
+		envs, err := q.ListAllProjectEnvironments(ctx, es.project.ID)
+		if err != nil {
+			return err
+		}
+		for _, m := range moves {
+			i := slices.IndexFunc(envs, func(e store.Environment) bool { return e.ID == m.EnvironmentID })
+			if i < 0 {
+				continue
+			}
+			return conflict("%s/%s is moving to another server; delete %s once the move ends (`dock env move %s --status -p %s`)",
+				es.project.Name, envs[i].Name, es.env.Name, envs[i].Name, es.project.Name)
+		}
+		return nil
 	})
 	if err != nil && held {
 		c.envDeletes.Delete(es.project.ID)
