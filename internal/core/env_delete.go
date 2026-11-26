@@ -40,7 +40,8 @@ func (c *Core) DeleteEnvironment(ctx context.Context, a Actor, ref EnvRef, req a
 	// One delete per project at a time, from the checks below until its
 	// rows are gone: two deletes of its last two environments would both
 	// pass them, and the second would remove its resources before its
-	// final check refused it.
+	// final check refused it. No move starts in the project meanwhile
+	// either (beginMove).
 	if _, busy := c.envDeletes.LoadOrStore(p.ID, true); busy {
 		return apitypes.EnvironmentDeleted{}, conflict("another environment of project %s is being deleted; delete %s once that finishes", p.Name, e.Name)
 	}
@@ -228,7 +229,7 @@ func (c *Core) deleteEnvironmentRows(ctx context.Context, es envScope, d deletio
 		}
 		// What was removed was on the server it was on then: a move that
 		// started or ended since leaves resources elsewhere.
-		if now.ServerID != es.env.ServerID {
+		if now.ServerID != d.env(es.env.ID).ServerID {
 			return conflict("environment %s moved to another server meanwhile; delete it again", es)
 		}
 		if _, err := q.GetOpenEnvironmentMove(ctx, es.env.ID); err == nil {

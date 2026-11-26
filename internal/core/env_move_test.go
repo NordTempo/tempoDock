@@ -175,6 +175,25 @@ func (p *pool) envPrefix(ref ServiceRef) string {
 	return fmt.Sprintf("dock_p%d_e%d_", ss.project.ID, ss.env.ID)
 }
 
+// No move starts while an environment of its project is being deleted:
+// the delete would miss what the move made.
+func TestMoveWaitsForEnvironmentDelete(t *testing.T) {
+	p, _, _, _, _ := movePool(t)
+	staging := EnvRef{"shop", "staging"}
+	es, err := p.c.loadEnv(p.ctx, 1, staging)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.c.envDeletes.Store(es.project.ID, true)
+	_, err = p.c.MoveEnvironment(p.ctx, testSystem, staging, apitypes.MoveEnvironmentRequest{To: p.ids2name("cp")})
+	wantCode(t, "a move during a delete", err, apitypes.CodeConflict)
+	p.c.envDeletes.Delete(es.project.ID)
+	if _, err := p.c.MoveEnvironment(p.ctx, testSystem, staging, apitypes.MoveEnvironmentRequest{To: p.ids2name("cp")}); err != nil {
+		t.Fatal(err)
+	}
+	p.waitMove(staging)
+}
+
 func TestMoveEnvironment(t *testing.T) {
 	p, lab, db, web, data := movePool(t)
 	staging := EnvRef{"shop", "staging"}
