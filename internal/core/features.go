@@ -128,6 +128,10 @@ func (c *Core) SetAnalytics(ctx context.Context, a Actor, req apitypes.Analytics
 				return apitypes.AnalyticsStatus{}, err
 			}
 			c.audit(ctx, a.platform(), "analytics.on", nil, nil, "analytics", "turned Dock Analytics on")
+		} else {
+			// On already: the servers get their salts and rules again, in
+			// case an earlier turn on couldn't reach them all.
+			c.pushAnalyticsToAll(ctx)
 		}
 		return c.AnalyticsStatus(ctx, a)
 	}
@@ -142,6 +146,11 @@ func (c *Core) SetAnalytics(ctx context.Context, a Actor, req apitypes.Analytics
 				return apitypes.AnalyticsStatus{}, err
 			}
 			c.audit(ctx, a.platform(), "analytics.off", nil, nil, "analytics", "turned Dock Analytics off before it ran")
+		}
+		if req.RemoveData {
+			if err := c.removeKeptAnalytics(ctx, a); err != nil {
+				return apitypes.AnalyticsStatus{}, err
+			}
 		}
 		return c.AnalyticsStatus(ctx, a)
 	}
@@ -186,6 +195,31 @@ func (c *Core) SetAnalytics(ctx context.Context, a Actor, req apitypes.Analytics
 	c.audit(ctx, a.platform(), "analytics.off", nil, nil, "analytics", "turned Dock Analytics off; "+what)
 	c.publishAnalytics()
 	return c.AnalyticsStatus(ctx, a)
+}
+
+// removeKeptAnalytics removes the data a store turned off kept, on its
+// server, which must be online: off with RemoveData after an off that kept
+// it. Removing a store that isn't there is no error. The caller holds
+// analytics.switching.
+func (c *Core) removeKeptAnalytics(ctx context.Context, a Actor) error {
+	st, err := c.store.GetAnalyticsSettings(ctx)
+	if store.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	serverID := c.settingsServer(st)
+	if !c.online(serverID) {
+		return errf(apitypes.CodeServerOffline, "the analytics server is offline; remove the data once it is back (`dock analytics off --remove-data`)")
+	}
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), storeStartTimeout)
+	defer cancel()
+	if err := c.runtime(serverID).RemoveAnalyticsStore(rctx, node.StoreAnalytics); err != nil {
+		return fmt.Errorf("remove the analytics store's data: %w", c.nodeErr(serverID, err))
+	}
+	c.audit(ctx, a.platform(), "analytics.off", nil, nil, "analytics", "removed the turned-off analytics store's data")
+	return nil
 }
 
 // resumeAnalytics runs analytics again from its settings, after turning

@@ -676,6 +676,12 @@ func (c *Core) EnableAnalytics(ctx context.Context, a Actor) error {
 func (c *Core) enableAnalytics(ctx context.Context, by string, serverID *int64, bySite bool) error {
 	c.analytics.switching.Lock()
 	defer c.analytics.switching.Unlock()
+	return c.enableAnalyticsLocked(ctx, by, serverID, bySite)
+}
+
+// enableAnalyticsLocked is enableAnalytics for a caller that holds
+// analytics.switching.
+func (c *Core) enableAnalyticsLocked(ctx context.Context, by string, serverID *int64, bySite bool) error {
 	if cl, _ := c.analyticsClient(); cl != nil {
 		return nil
 	}

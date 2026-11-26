@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"encoding/json/v2"
 	"net/netip"
 	"slices"
@@ -472,8 +473,14 @@ func (c *Core) EnableHostnameAnalytics(ctx context.Context, a Actor, hostname st
 		return apitypes.Site{}, err
 	}
 	// Checked again under the switch: an operator may have turned it off
-	// since.
+	// since. Then the hostname leaves its site again, so a retry once
+	// analytics is on goes the whole way.
 	if err := c.enableAnalytics(ctx, a.Name, nil, true); err != nil {
+		if errors.Is(err, errAnalyticsTurnedOff) {
+			if rerr := c.DisableHostnameAnalytics(context.WithoutCancel(ctx), a, d.Hostname); rerr != nil {
+				c.log.Error("analytics: take back a hostname analytics turned off for", "domain", d.Hostname, "err", rerr)
+			}
+		}
 		return apitypes.Site{}, err
 	}
 	c.analyticsSitesChanged(ctx)

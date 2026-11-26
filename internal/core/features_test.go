@@ -165,3 +165,27 @@ func TestAnalyticsServerWhileOff(t *testing.T) {
 	}
 	waitStoreStarted(t, p.c, p.c.localName())
 }
+
+// Off with its data kept, then off again with RemoveData: the kept data
+// goes, and on again starts the store anew.
+func TestAnalyticsOffThenRemoveData(t *testing.T) {
+	h := newHarness(t)
+	h.rt.AppendSpool(pageview(1))
+	if err := h.c.EnableAnalytics(h.ctx, testSystem); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the store has the event", func() bool { return storeEvents(h) == 1 })
+	if _, err := h.c.SetAnalytics(h.ctx, testSystem, apitypes.AnalyticsSwitch{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.SetAnalytics(h.ctx, testSystem, apitypes.AnalyticsSwitch{RemoveData: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(h.rt.Ops(), "remove-analytics-store") {
+		t.Fatalf("the kept data stayed: %v", h.rt.Ops())
+	}
+	if _, err := h.c.SetAnalytics(h.ctx, testSystem, apitypes.AnalyticsSwitch{Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	waitStoreStarted(t, h.c, h.c.localName())
+}
