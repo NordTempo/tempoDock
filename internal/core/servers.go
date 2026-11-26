@@ -318,6 +318,9 @@ func (c *Core) UpdateServer(ctx context.Context, a Actor, name string, req apity
 		if _, err := c.routeGeneratedDomains(ctx, next); err != nil {
 			return apitypes.Server{}, err
 		}
+		if srv.Local {
+			c.syncStatusRecords() // and the status pages' addresses
+		}
 	}
 	return c.serverDetail(ctx, srv.ID)
 }

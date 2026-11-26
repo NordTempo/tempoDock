@@ -494,11 +494,17 @@ func (q *Queries) GetCloudflareTunnelByServer(ctx context.Context, serverID *int
 }
 
 const getStatusPageRecord = `-- name: GetStatusPageRecord :one
-SELECT id, hostname, domain_id, server_id, connection_id, zone_id, record_id, content, route_tunnel, want, status, reason, attempts, retry_at, gen, updated_at, status_page_id FROM cloudflare_records WHERE status_page_id = +? AND want = 'present'
+SELECT id, hostname, domain_id, server_id, connection_id, zone_id, record_id, content, route_tunnel, want, status, reason, attempts, retry_at, gen, updated_at, status_page_id FROM cloudflare_records WHERE hostname = +? AND status_page_id = +? AND want = 'present'
 `
 
-func (q *Queries) GetStatusPageRecord(ctx context.Context, statusPageID *int64) (CloudflareRecord, error) {
-	row := q.db.QueryRowContext(ctx, getStatusPageRecord, statusPageID)
+type GetStatusPageRecordParams struct {
+	Hostname     string
+	StatusPageID *int64
+}
+
+// The record of one of a page's addresses (its custom hostname).
+func (q *Queries) GetStatusPageRecord(ctx context.Context, arg GetStatusPageRecordParams) (CloudflareRecord, error) {
+	row := q.db.QueryRowContext(ctx, getStatusPageRecord, arg.Hostname, arg.StatusPageID)
 	var i CloudflareRecord
 	err := row.Scan(
 		&i.ID,
@@ -1127,6 +1133,40 @@ func (q *Queries) ListServiceCloudflareRecords(ctx context.Context, serviceID in
 	return items, nil
 }
 
+const listStatusPageRecords = `-- name: ListStatusPageRecords :many
+SELECT hostname, status_page_id FROM cloudflare_records WHERE status_page_id IS NOT NULL AND want = 'present'
+`
+
+type ListStatusPageRecordsRow struct {
+	Hostname     string
+	StatusPageID *int64
+}
+
+// The addresses Dock routes through the control plane's tunnel for
+// status pages, for syncStatusRecords.
+func (q *Queries) ListStatusPageRecords(ctx context.Context) ([]ListStatusPageRecordsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listStatusPageRecords)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStatusPageRecordsRow
+	for rows.Next() {
+		var i ListStatusPageRecordsRow
+		if err := rows.Scan(&i.Hostname, &i.StatusPageID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStrandedCloudflareRecords = `-- name: ListStrandedCloudflareRecords :many
 SELECT cloudflare_records.id, cloudflare_records.hostname, cloudflare_records.domain_id, cloudflare_records.server_id, cloudflare_records.connection_id, cloudflare_records.zone_id, cloudflare_records.record_id, cloudflare_records.content, cloudflare_records.route_tunnel, cloudflare_records.want, cloudflare_records.status, cloudflare_records.reason, cloudflare_records.attempts, cloudflare_records.retry_at, cloudflare_records.gen, cloudflare_records.updated_at, cloudflare_records.status_page_id,
     CAST(coalesce(projects.org_id, cloudflare_connections.org_id, 0) AS INTEGER) AS org_id
@@ -1483,7 +1523,7 @@ const saveCloudflareRecord = `-- name: SaveCloudflareRecord :execrows
 INSERT INTO cloudflare_records (hostname, domain_id, server_id, connection_id, zone_id, updated_at)
 VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT (hostname) DO UPDATE SET
-    domain_id = excluded.domain_id, server_id = excluded.server_id,
+    domain_id = excluded.domain_id, status_page_id = NULL, server_id = excluded.server_id,
     record_id = CASE WHEN cloudflare_records.zone_id = excluded.zone_id THEN cloudflare_records.record_id ELSE '' END,
     connection_id = excluded.connection_id, zone_id = excluded.zone_id,
     want = 'present', status = 'pending', reason = '',
@@ -1502,8 +1542,9 @@ type SaveCloudflareRecordParams struct {
 }
 
 // Routes hostname through its server's tunnel, pending. A row being
-// deleted (absent, or its domain gone) comes back; what it made is kept
-// when the zone is the same. A live domain's row stays with its
+// deleted (absent, or its domain gone) comes back, the domain's alone
+// (a status page's it was is dropped); what it made is kept when the
+// zone is the same. A live domain's row stays with its
 // connection: another connection's save affects no row, so one org's
 // connection never takes over another's record.
 func (q *Queries) SaveCloudflareRecord(ctx context.Context, arg SaveCloudflareRecordParams) (int64, error) {
@@ -1768,6 +1809,24 @@ func (q *Queries) SetServiceRecordsAbsent(ctx context.Context, arg SetServiceRec
 	return err
 }
 
+const setStatusHostRecordAbsent = `-- name: SetStatusHostRecordAbsent :exec
+UPDATE cloudflare_records SET want = 'absent', status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
+WHERE hostname = +? AND status_page_id = +?
+`
+
+type SetStatusHostRecordAbsentParams struct {
+	UpdatedAt    time.Time
+	Hostname     string
+	StatusPageID *int64
+}
+
+// One of a page's addresses goes (its custom hostname, an old name's
+// address): delete the record Dock made for it.
+func (q *Queries) SetStatusHostRecordAbsent(ctx context.Context, arg SetStatusHostRecordAbsentParams) error {
+	_, err := q.db.ExecContext(ctx, setStatusHostRecordAbsent, arg.UpdatedAt, arg.Hostname, arg.StatusPageID)
+	return err
+}
+
 const setStatusPageRecordAbsent = `-- name: SetStatusPageRecordAbsent :exec
 UPDATE cloudflare_records SET want = 'absent', status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
 WHERE status_page_id = +?
@@ -1778,10 +1837,56 @@ type SetStatusPageRecordAbsentParams struct {
 	StatusPageID *int64
 }
 
-// The page's hostname goes: delete the record Dock made for it.
+// The page goes: delete the records Dock made for its addresses.
 func (q *Queries) SetStatusPageRecordAbsent(ctx context.Context, arg SetStatusPageRecordAbsentParams) error {
 	_, err := q.db.ExecContext(ctx, setStatusPageRecordAbsent, arg.UpdatedAt, arg.StatusPageID)
 	return err
+}
+
+const syncStatusPageRecord = `-- name: SyncStatusPageRecord :execrows
+INSERT INTO cloudflare_records (hostname, status_page_id, server_id, connection_id, zone_id, updated_at)
+SELECT ?1, status_pages.id, ?2, ?3, ?4, ?5
+FROM status_pages
+WHERE status_pages.id = +?6
+  AND (NOT CAST(?7 AS BOOLEAN) OR (status_pages.hostname = +?1 AND status_pages.verified_at IS NOT NULL))
+ON CONFLICT (hostname) DO UPDATE SET
+    status_page_id = excluded.status_page_id, domain_id = NULL, server_id = excluded.server_id,
+    record_id = CASE WHEN cloudflare_records.zone_id = excluded.zone_id THEN cloudflare_records.record_id ELSE '' END,
+    connection_id = excluded.connection_id, zone_id = excluded.zone_id,
+    want = 'present', status = 'pending', reason = '',
+    attempts = 0, retry_at = NULL, gen = cloudflare_records.gen + 1, updated_at = excluded.updated_at
+WHERE cloudflare_records.want = 'absent' OR cloudflare_records.status_page_id = excluded.status_page_id
+   OR (cloudflare_records.domain_id IS NULL AND cloudflare_records.status_page_id IS NULL)
+`
+
+type SyncStatusPageRecordParams struct {
+	Hostname     string
+	ServerID     *int64
+	ConnectionID int64
+	ZoneID       string
+	UpdatedAt    time.Time
+	PageID       int64
+	Custom       bool
+}
+
+// SaveStatusPageRecord for syncStatusRecords, which works from a hosts
+// map that may be older than the database: only while the page exists
+// and, for a custom hostname (custom), still holds it verified, so a
+// pass never restores a record its page has let go.
+func (q *Queries) SyncStatusPageRecord(ctx context.Context, arg SyncStatusPageRecordParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, syncStatusPageRecord,
+		arg.Hostname,
+		arg.ServerID,
+		arg.ConnectionID,
+		arg.ZoneID,
+		arg.UpdatedAt,
+		arg.PageID,
+		arg.Custom,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const updateCloudflareConnection = `-- name: UpdateCloudflareConnection :one

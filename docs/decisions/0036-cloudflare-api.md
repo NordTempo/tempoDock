@@ -157,7 +157,10 @@ one base domain, without reinstalling.
   (`GenerateDomain`). The ones it already had get theirs when it switches,
   and an environment moved onto it gets them for the names it keeps
   (`routeGeneratedDomains`). Servers then share a base domain with no
-  wildcard record.
+  wildcard record. On the control plane, status pages' addresses under
+  its base domain (a page's own, its old names', a custom hostname
+  there) get theirs the same way (`syncStatusRecords`), when it switches,
+  on start and whenever the pages' addresses change.
 - **Its Caddy is still the direct one.** Hostnames with records are served
   on its tunnel listener only, as for domains from Cloudflare; others
   (typed domains whose DNS Dock doesn't manage, Dock's own address) stay

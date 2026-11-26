@@ -110,14 +110,15 @@ ORDER BY cloudflare_tunnels.retry_at LIMIT 1;
 
 -- name: SaveCloudflareRecord :execrows
 -- Routes hostname through its server's tunnel, pending. A row being
--- deleted (absent, or its domain gone) comes back; what it made is kept
--- when the zone is the same. A live domain's row stays with its
+-- deleted (absent, or its domain gone) comes back, the domain's alone
+-- (a status page's it was is dropped); what it made is kept when the
+-- zone is the same. A live domain's row stays with its
 -- connection: another connection's save affects no row, so one org's
 -- connection never takes over another's record.
 INSERT INTO cloudflare_records (hostname, domain_id, server_id, connection_id, zone_id, updated_at)
 VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT (hostname) DO UPDATE SET
-    domain_id = excluded.domain_id, server_id = excluded.server_id,
+    domain_id = excluded.domain_id, status_page_id = NULL, server_id = excluded.server_id,
     record_id = CASE WHEN cloudflare_records.zone_id = excluded.zone_id THEN cloudflare_records.record_id ELSE '' END,
     connection_id = excluded.connection_id, zone_id = excluded.zone_id,
     want = 'present', status = 'pending', reason = '',
@@ -140,13 +141,44 @@ ON CONFLICT (hostname) DO UPDATE SET
 WHERE cloudflare_records.want = 'absent' OR cloudflare_records.status_page_id = excluded.status_page_id
    OR (cloudflare_records.domain_id IS NULL AND cloudflare_records.status_page_id IS NULL);
 
+-- name: SyncStatusPageRecord :execrows
+-- SaveStatusPageRecord for syncStatusRecords, which works from a hosts
+-- map that may be older than the database: only while the page exists
+-- and, for a custom hostname (custom), still holds it verified, so a
+-- pass never restores a record its page has let go.
+INSERT INTO cloudflare_records (hostname, status_page_id, server_id, connection_id, zone_id, updated_at)
+SELECT sqlc.arg(hostname), status_pages.id, sqlc.arg(server_id), sqlc.arg(connection_id), sqlc.arg(zone_id), sqlc.arg(updated_at)
+FROM status_pages
+WHERE status_pages.id = +sqlc.arg(page_id)
+  AND (NOT CAST(sqlc.arg(custom) AS BOOLEAN) OR (status_pages.hostname = +sqlc.arg(hostname) AND status_pages.verified_at IS NOT NULL))
+ON CONFLICT (hostname) DO UPDATE SET
+    status_page_id = excluded.status_page_id, domain_id = NULL, server_id = excluded.server_id,
+    record_id = CASE WHEN cloudflare_records.zone_id = excluded.zone_id THEN cloudflare_records.record_id ELSE '' END,
+    connection_id = excluded.connection_id, zone_id = excluded.zone_id,
+    want = 'present', status = 'pending', reason = '',
+    attempts = 0, retry_at = NULL, gen = cloudflare_records.gen + 1, updated_at = excluded.updated_at
+WHERE cloudflare_records.want = 'absent' OR cloudflare_records.status_page_id = excluded.status_page_id
+   OR (cloudflare_records.domain_id IS NULL AND cloudflare_records.status_page_id IS NULL);
+
 -- name: SetStatusPageRecordAbsent :exec
--- The page's hostname goes: delete the record Dock made for it.
+-- The page goes: delete the records Dock made for its addresses.
 UPDATE cloudflare_records SET want = 'absent', status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
 WHERE status_page_id = +?;
 
+-- name: SetStatusHostRecordAbsent :exec
+-- One of a page's addresses goes (its custom hostname, an old name's
+-- address): delete the record Dock made for it.
+UPDATE cloudflare_records SET want = 'absent', status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
+WHERE hostname = +? AND status_page_id = +?;
+
 -- name: GetStatusPageRecord :one
-SELECT * FROM cloudflare_records WHERE status_page_id = +? AND want = 'present';
+-- The record of one of a page's addresses (its custom hostname).
+SELECT * FROM cloudflare_records WHERE hostname = +? AND status_page_id = +? AND want = 'present';
+
+-- name: ListStatusPageRecords :many
+-- The addresses Dock routes through the control plane's tunnel for
+-- status pages, for syncStatusRecords.
+SELECT hostname, status_page_id FROM cloudflare_records WHERE status_page_id IS NOT NULL AND want = 'present';
 
 -- name: GetCloudflareRecord :one
 SELECT * FROM cloudflare_records WHERE hostname = +?;

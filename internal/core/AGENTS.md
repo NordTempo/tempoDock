@@ -119,6 +119,14 @@ func (c *Core) DoThing(ctx context.Context, a Actor, req apitypes.DoThingRequest
   `resumeServerDrains`): it reads its row again and returns when the
   work has ended (`driveMove`, `driveServerDrain`). The row was open
   when it was listed, not necessarily when the driver runs.
+- A hostname Dock serves under a base domain (a service's generated
+  domain, a status page's address) needs a Cloudflare record of its own
+  on a tunnel server, a direct one sent through its tunnel included:
+  there may be no wildcard record (ADR 0036, 2026-11-26 amendment). Give
+  a new kind of such hostname its record when it is made, when its
+  server switches (`UpdateServer`) and on start, as `routeGeneratedDomains`
+  and `syncStatusRecords` do. Public analytics dashboards (`stats-*`)
+  don't have theirs yet.
 
 ## Tests
 
