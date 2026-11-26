@@ -97,7 +97,9 @@ export function DeleteEnvironment({
             })
           }
           onCancel={() => {
-            remove.reset();
+            // A request still running keeps its pending state, so the
+            // dialog opened again can't send a second one.
+            if (!remove.isPending) remove.reset();
             setConfirming(false);
           }}
         >

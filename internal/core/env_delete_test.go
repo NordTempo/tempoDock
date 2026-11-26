@@ -51,6 +51,11 @@ func TestDeleteEnvironment(t *testing.T) {
 	wantCode(t, "a mistyped name", err, apitypes.CodeValidation)
 	_, err = h.c.DeleteEnvironment(h.ctx, testSystem, staging, apitypes.DeleteEnvironmentRequest{Confirm: "staging", ID: env.ID + 1})
 	wantCode(t, "another environment's ID", err, apitypes.CodeConflict)
+	// One delete per project at a time.
+	h.c.envDeletes.Store(projectID(t, h), true)
+	_, err = h.c.DeleteEnvironment(h.ctx, testSystem, staging, confirm)
+	wantCode(t, "while another delete runs", err, apitypes.CodeConflict)
+	h.c.envDeletes.Delete(projectID(t, h))
 	stale := age(t, h, adaSession(t, h))
 	_, err = h.c.DeleteEnvironment(h.ctx, stale.a, staging, confirm)
 	wantCode(t, "a stale session", err, apitypes.CodeReauthRequired)

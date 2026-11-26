@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/store"
@@ -36,6 +37,14 @@ func (c *Core) DeleteEnvironment(ctx context.Context, a Actor, ref EnvRef, req a
 		return apitypes.EnvironmentDeleted{}, err
 	}
 	p, e := es.project, es.env
+	// One delete per project at a time, from the checks below until its
+	// rows are gone: two deletes of its last two environments would both
+	// pass them, and the second would remove its resources before its
+	// final check refused it.
+	if _, busy := c.envDeletes.LoadOrStore(p.ID, true); busy {
+		return apitypes.EnvironmentDeleted{}, conflict("another environment of project %s is being deleted; delete %s once that finishes", p.Name, e.Name)
+	}
+	defer c.envDeletes.Delete(p.ID)
 	if req.ID != 0 && req.ID != e.ID {
 		return apitypes.EnvironmentDeleted{}, conflict("environment %s is another environment now; refresh it before deleting", es)
 	}
@@ -210,15 +219,13 @@ func (c *Core) deleteEnvironmentRows(ctx context.Context, es envScope, d deletio
 		if n > 0 {
 			return conflict("a preview of %s opened meanwhile; close it, then delete again", es)
 		}
-		for _, id := range ids {
-			svcs, err := q.ListServices(ctx, id)
-			if err != nil {
-				return err
-			}
-			for _, s := range svcs {
-				if s.ArchivedAt == nil {
-					return conflict("service %s was added to %s meanwhile; delete the environment again", s.Name, es)
-				}
+		svcs, err := q.ListProjectServices(ctx, es.project.ID)
+		if err != nil {
+			return err
+		}
+		for _, s := range svcs {
+			if s.ArchivedAt == nil && slices.Contains(ids, s.EnvironmentID) {
+				return conflict("service %s was added to %s meanwhile; delete the environment again", s.Name, es)
 			}
 		}
 		envs, err := q.ListEnvironments(ctx, es.project.ID)
