@@ -30,7 +30,7 @@ import { recordLiveEvent } from "./feed";
 import { setLiveStatus, useLiveAttempt } from "./liveStatus";
 import { signedOut } from "./mutations";
 import { followProjectRename, reconcileProjectNames } from "./projectRename";
-import { findService, keys, queries } from "./queries";
+import { findService, forgetEnvironment, keys, queries } from "./queries";
 import type {
   Environment,
   LiveEvent,
@@ -802,6 +802,16 @@ function invalidateForAudit(
   if (audit.action === "variables.set" && audit.environment) {
     const env = { project: audit.project, environment: audit.environment };
     for (const queryKey of keys.staged(env)) invalidate(queryKey);
+    invalidate(keys.overview(audit.project));
+    return;
+  }
+  // A deleted environment's queries go (forgetEnvironment): refetching
+  // them would answer 404.
+  if (audit.action === "environment.delete" && audit.environment) {
+    forgetEnvironment(queryClient, {
+      project: audit.project,
+      environment: audit.environment,
+    });
     invalidate(keys.overview(audit.project));
     return;
   }

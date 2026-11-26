@@ -32,3 +32,22 @@ func TestProjectDelete(t *testing.T) {
 	}
 	ok[apitypes.Project](t, "project", "create", "shop")
 }
+
+// environment delete needs the name typed again (--confirm without a
+// terminal) and frees the name.
+func TestEnvironmentDelete(t *testing.T) {
+	setup(t)
+	srv := newTestServer(t)
+	t.Setenv(clientconfig.EnvURL, srv.url)
+	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeAdmin])
+	ok[apitypes.Project](t, "project", "create", "shop")
+	ok[apitypes.Environment](t, "environment", "create", "staging", "-p", "shop")
+	if code, _, stderr := exec(t, "environment", "delete", "staging", "-p", "shop"); code == 0 || !strings.Contains(stderr, "--confirm") {
+		t.Fatalf("no confirmation: %d %s", code, stderr)
+	}
+	got := ok[apitypes.EnvironmentDeleted](t, "environment", "delete", "staging", "-p", "shop", "--confirm", "staging")
+	if got.Project != "shop" || got.Environment != "staging" {
+		t.Fatalf("deleted = %+v", got)
+	}
+	ok[apitypes.Environment](t, "environment", "create", "staging", "-p", "shop")
+}

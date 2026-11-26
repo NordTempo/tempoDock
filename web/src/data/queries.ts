@@ -1,5 +1,6 @@
 import {
   hashKey,
+  type QueryClient,
   type QueryFunctionContext,
   type QueryKey,
   queryOptions,
@@ -503,7 +504,31 @@ export const queries = {
 // Suspense hooks: data is always defined. Route loaders prefetch, so these
 // rarely suspend in practice.
 export const useSession = () => useSuspenseQuery(queries.session()).data;
+/**
+ * Drops a deleted environment's cached queries: its own tree, and the
+ * statistics, traffic and data panel pages kept outside it, which an
+ * environment made with the same name must not show.
+ */
+export function forgetEnvironment(client: QueryClient, env: EnvRef) {
+  for (const queryKey of [
+    keys.env(env),
+    ["stats", "service", env.project, env.environment],
+    ["stats", "traffic", env.project, env.environment],
+    ["data", env.project, env.environment],
+  ])
+    client.removeQueries({ queryKey });
+}
+
 export const useIsAdmin = () => useSession()?.scope === "admin";
+
+/**
+ * Whether the session is an admin of the whole org, not limited to a
+ * project or environment: who may delete projects and environments.
+ */
+export function useOrgAdmin() {
+  const session = useSession();
+  return session?.scope === "admin" && !session.project && !session.environment;
+}
 /** Platform operators run the console: servers, backups, accounts (ADR 0027). */
 export const useIsOperator = () => useSession()?.operator === true;
 /**

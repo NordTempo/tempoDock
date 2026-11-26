@@ -116,6 +116,7 @@ line means a later record added to it without changing what it decided.
 | [0100](0100-public-demo.md) | The public demo: `dock serve` on the fake runtime behind `[demo] user`, every visitor signed in to one shared operator account, account and outbound changes refused, seeded by `dock-demo` and reset every hour | accepted |
 | [0101](0101-features-on-and-off.md) | Features on and off: one console page for scanning, analytics and tracing with what each takes; off keeps or removes their data, analytics can be turned off | accepted |
 | [0102](0102-nodes-over-any-network.md) | Nodes over any network: the node port on every interface, tokens and hellos carry the Tailscale then public address, nodes fall through in order and keep the list current, the console shows the path, a reachability check before install | accepted |
+| [0103](0103-deleting-environments.md) | Deleting an environment: one step from its Settings tab or `dock environment delete`, the gates of a project delete, its services archived then everything of it removed; not the only environment, a preview or one with open previews | accepted |
 | [0104](0104-analytics-belong-to-the-service.md) | Analytics belong to the service: one site per service, every non-redirect domain counted, domain changes never touch a site, history moves later with `dock analytics move` | accepted |
 
 ## Template

@@ -985,21 +985,23 @@ func (q *Queries) ListProjectPreviewData(ctx context.Context, projectID int64) (
 }
 
 const listProjectPreviewEnvironments = `-- name: ListProjectPreviewEnvironments :many
-SELECT environment_id, repo, number, title, author, html_url, closed_at FROM previews WHERE project_id = +?
+SELECT environment_id, base_environment_id, repo, number, title, author, html_url, closed_at FROM previews WHERE project_id = +?
 `
 
 type ListProjectPreviewEnvironmentsRow struct {
-	EnvironmentID int64
-	Repo          string
-	Number        int64
-	Title         string
-	Author        string
-	HtmlUrl       string
-	ClosedAt      *time.Time
+	EnvironmentID     int64
+	BaseEnvironmentID int64
+	Repo              string
+	Number            int64
+	Title             string
+	Author            string
+	HtmlUrl           string
+	ClosedAt          *time.Time
 }
 
 // The pull request behind each of a project's preview environments, open
-// or closed, for annotating environments.
+// or closed, for annotating environments, and the environment each was
+// cloned from, for deleting that one with them.
 func (q *Queries) ListProjectPreviewEnvironments(ctx context.Context, projectID int64) ([]ListProjectPreviewEnvironmentsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listProjectPreviewEnvironments, projectID)
 	if err != nil {
@@ -1011,6 +1013,7 @@ func (q *Queries) ListProjectPreviewEnvironments(ctx context.Context, projectID 
 		var i ListProjectPreviewEnvironmentsRow
 		if err := rows.Scan(
 			&i.EnvironmentID,
+			&i.BaseEnvironmentID,
 			&i.Repo,
 			&i.Number,
 			&i.Title,

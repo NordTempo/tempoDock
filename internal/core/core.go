@@ -299,6 +299,11 @@ type Core struct {
 	uploadsMu sync.Mutex
 	uploads   map[int64]int64
 
+	// envDeletes holds the projects with an environment delete running
+	// (DeleteEnvironment): one at a time per project, so its "not the
+	// only environment" check holds until its rows are gone.
+	envDeletes sync.Map
+
 	// git is GitHub push-to-deploy's state (git.go).
 	git gitState
 	// previews is the state of preview environments (previews.go).

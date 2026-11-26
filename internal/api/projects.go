@@ -147,6 +147,19 @@ func registerProjects(s *Server, a huma.API) {
 		return reply(s.core.GetEnvironment(ctx, actor, in.ref()))
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "delete-environment", Method: http.MethodDelete, Path: envPathT,
+		Summary: "Delete an environment", Tags: tags,
+		Description: "Deletes an environment for good (ADR 0103): its services are archived, then its containers, network, volumes and volume snapshots on its server, its sites' analytics events " +
+			"and everything Dock knows of it go, which frees its name and its domains. Closed previews cloned from it go too. Its activity stays in the audit log; its backups stay in their restic repositories (`notes` says where). " +
+			"`confirm` is the environment's name. Refused for the project's only environment, a preview (close it instead) and an environment with open previews. Every server it has something on must be online. " +
+			"Scope: admin, unlimited; a session needs a recent sign-in.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		EnvPath
+		Body apitypes.DeleteEnvironmentRequest
+	}) (*out[apitypes.EnvironmentDeleted], error) {
+		return reply(s.core.DeleteEnvironment(ctx, actor, in.ref(), in.Body))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "clone-environment", Method: http.MethodPost, Path: envPathT + "/clone",
 		Summary: "Clone an environment", Tags: tags, DefaultStatus: http.StatusCreated, Errors: withOffline,
 		Description: "Creates a new environment with this one's services, settings, variables and (new, empty) volumes, placed like any new environment of its kind. " +

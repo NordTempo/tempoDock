@@ -278,6 +278,28 @@ func (c *Core) beginOp(envID, serverID int64, waking bool) *sleepOp {
 	}
 }
 
+// sleepSettled waits for a sleep or wake of environment envID in flight
+// to end, or for ctx; it starts none. DeleteEnvironment waits so that
+// no container comes back after it removed them.
+func (c *Core) sleepSettled(ctx context.Context, envID int64) error {
+	s := &c.sleep
+	s.mu.Lock()
+	var done chan struct{}
+	if e := s.envs[envID]; e != nil && e.op != nil {
+		done = e.op.done
+	}
+	s.mu.Unlock()
+	if done == nil {
+		return nil
+	}
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // endOp ends an op: the environment's state is what it left.
 func (c *Core) endOp(envID int64, op *sleepOp, asleep bool, err error) {
 	s := &c.sleep

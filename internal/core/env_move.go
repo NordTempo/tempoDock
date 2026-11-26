@@ -241,6 +241,12 @@ func (c *Core) beginMove(ctx context.Context, es envScope, to store.Server, o mo
 
 	var row store.EnvironmentMove
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		// An environment delete in the project checks the server it
+		// cleaned once more at its end; a move meanwhile (there and back
+		// even) would leave what it made behind.
+		if _, deleting := c.envDeletes.Load(es.project.ID); deleting {
+			return busy("an environment of project %s is being deleted; move %s once that finishes", es.project.Name, es.env.Name)
+		}
 		var err error
 		row, err = q.CreateEnvironmentMove(ctx, store.CreateEnvironmentMoveParams{
 			EnvironmentID: es.env.ID, FromServerID: from.ID, ToServerID: to.ID, MaxHoldS: int64(o.maxHold),
@@ -381,7 +387,7 @@ func (c *Core) moveServices(ctx context.Context, es envScope) ([]movingService, 
 			return nil, deployInProgress(ss, r)
 		}
 		if c.serviceBusy(s.ID) {
-			return nil, conflict("a backup, snapshot or restore of %s is running, or the backups are moving; move the environment once that finishes", ss)
+			return nil, busy("a backup, snapshot or restore of %s is running, or the backups are moving; move the environment once that finishes", ss)
 		}
 		m := movingService{ss: ss}
 		if rel, err := c.store.GetActiveRelease(ctx, s.ID); err == nil {

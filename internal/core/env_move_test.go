@@ -175,6 +175,42 @@ func (p *pool) envPrefix(ref ServiceRef) string {
 	return fmt.Sprintf("dock_p%d_e%d_", ss.project.ID, ss.env.ID)
 }
 
+// No move starts while an environment of its project is being deleted:
+// the delete would miss what the move made. A drain waits it out. A
+// delete started during a move is refused.
+func TestMoveWaitsForEnvironmentDelete(t *testing.T) {
+	p, _, _, _, _ := movePool(t)
+	staging := EnvRef{"shop", "staging"}
+	es, err := p.c.loadEnv(p.ctx, 1, staging)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.c.envDeletes.Store(es.project.ID, true)
+	_, err = p.c.MoveEnvironment(p.ctx, testSystem, staging, apitypes.MoveEnvironmentRequest{To: p.ids2name("cp")})
+	wantCode(t, "a move during a delete", err, apitypes.CodeConflict)
+	if !isBusy(err) {
+		t.Errorf("a drain pauses on %v instead of waiting it out", err)
+	}
+	p.c.envDeletes.Delete(es.project.ID)
+	if _, err := p.c.MoveEnvironment(p.ctx, testSystem, staging, apitypes.MoveEnvironmentRequest{To: p.ids2name("cp")}); err != nil {
+		t.Fatal(err)
+	}
+	// The other way round: a delete started during the move is refused,
+	// and leaves no hold behind.
+	// (Another ID: should the move have ended, it still deletes nothing.)
+	_, err = p.c.DeleteEnvironment(p.ctx, testSystem, staging, apitypes.DeleteEnvironmentRequest{Confirm: "staging", ID: es.env.ID + 1000})
+	wantCode(t, "a delete during a move", err, apitypes.CodeConflict)
+	if open, _ := p.c.store.GetOpenEnvironmentMove(p.ctx, es.env.ID); open.ID != 0 && !strings.Contains(err.Error(), "is moving") {
+		t.Errorf("a delete during a move: %v", err)
+	}
+	if _, held := p.c.envDeletes.Load(es.project.ID); held {
+		t.Error("a refused delete kept its hold")
+	}
+	if m := p.waitMove(staging); m.Status != apitypes.MoveSucceeded {
+		t.Fatalf("the move after the delete's hold cleared: %s %s", m.Status, m.Error)
+	}
+}
+
 func TestMoveEnvironment(t *testing.T) {
 	p, lab, db, web, data := movePool(t)
 	staging := EnvRef{"shop", "staging"}

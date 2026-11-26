@@ -105,6 +105,9 @@ func TestFlappingAlertSettles(t *testing.T) {
 	h.openAlert(sig.Key, true)
 
 	h.c.resolveAlert(h.ctx, sig.Key, at(31))
+	// The opening's delivery has come through before the restart: one cut
+	// short by it is sent again after, as it should be.
+	h.outboxSent()
 	h.restart()
 	h.c.AllowLoopbackAlertChannels(true)
 	if b := h.openAlert(sig.Key, true); b.ID != a.ID || b.ClearedAt == nil || b.Count != 2 {
