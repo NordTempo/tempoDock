@@ -7,8 +7,8 @@ import { clampPitch, facing, landDots, turn, type View, vec } from "./sphere";
 
 // Where a site's visitors are, as dots on a globe (Saile's pick,
 // 2026-11-13): the land as a field of dots, a dot per country sized by
-// its visitors. Canvas 2D and no library, loaded with the Globe tab
-// (lazy). It never animates: it draws when its data or highlight change
+// its visitors. Canvas 2D and no library, loaded with the site's Globe
+// view. It never animates: it draws when its data or highlight change
 // and while dragged or turned with the arrow keys, once per frame at most.
 
 const dots = landDots(land);
@@ -135,12 +135,12 @@ export default function Globe({
   useEffect(later);
   useEffect(() => () => cancelAnimationFrame(queued.current), []);
 
-  // The canvas is as wide as its column, up to 340px: no listener while
+  // The canvas is as wide as its column, up to 560px: no listener while
   // the size holds still.
   useEffect(() => {
     const el = canvas.current?.parentElement;
     if (!el) return;
-    const fit = () => setSize(Math.min(340, Math.floor(el.clientWidth)));
+    const fit = () => setSize(Math.min(560, Math.floor(el.clientWidth)));
     fit();
     const watch = new ResizeObserver(fit);
     watch.observe(el);
@@ -172,7 +172,7 @@ export default function Globe({
   const shown = hover ? points.find((p) => p.row.value === hover) : undefined;
 
   return (
-    <div className="flex w-full max-w-[340px] flex-col gap-1.5">
+    <div className="flex w-full max-w-[560px] flex-col gap-1.5">
       <canvas
         ref={canvas}
         tabIndex={0}
