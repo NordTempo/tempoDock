@@ -83,7 +83,10 @@ const words: Record<string, readonly [label: string, past: string]> = {
   "changes.restage": ["restage changes", "restaged changes for"],
   "changes.stage_file": ["stage project file", "staged a project file in"],
   "compose.follow": ["follow Compose file", "followed a Compose file in"],
-  "compose.unfollow": ["stop following Compose", "stopped following a Compose file in"],
+  "compose.unfollow": [
+    "stop following Compose",
+    "stopped following a Compose file in",
+  ],
   "compose.sync": ["sync Compose file", "synced the Compose file of"],
   "cloudflare.connection_add": [
     "add Cloudflare connection",

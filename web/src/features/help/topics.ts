@@ -145,6 +145,11 @@ export const topics: Record<TopicId, Topic> = {
         cli: "dock import compose -p {project} -e {env} --stage",
         at: { p: "compose" },
       },
+      {
+        what: "Stage each push's docker-compose.yml for review",
+        cli: "dock compose follow acme/shop -p {project} -e {env}",
+        at: { p: "compose" },
+      },
     ],
     watch: [
       "A release gets traffic once its health check answers; a failed one leaves the old one serving.",

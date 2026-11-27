@@ -8,6 +8,7 @@ import {
 } from "../data/queries";
 import type { Environment } from "../data/types";
 import { ComposeRow } from "../features/compose/ComposeRow";
+import { composeQueries } from "../features/compose/data";
 import { logDrainQueries } from "../features/logdrains/data";
 import { LogDrains } from "../features/logdrains/LogDrains";
 import { DeleteEnvironment } from "../features/overview/DeleteEnvironment";
@@ -48,6 +49,7 @@ export const Route = createFileRoute("/_app/$org/$project/settings/")({
     if (!environment) return;
     const env = { project: params.project, environment };
     queryClient.prefetchQuery(logDrainQueries.list(env));
+    queryClient.prefetchQuery(composeQueries.source(env));
     await Promise.all([
       queryClient.ensureQueryData(queries.variables(env, null)),
       queryClient.ensureQueryData(queries.changes(env)),
@@ -111,7 +113,9 @@ function Settings() {
         </SettingRow>
         {!view.environment.preview && (
           <SettingRow id="compose" label="Compose">
-            <ComposeRow key={envKey} env={env} canChange={canChange} />
+            <Suspense fallback={null}>
+              <ComposeRow key={envKey} env={env} canChange={canChange} />
+            </Suspense>
           </SettingRow>
         )}
         <SettingRow id="log-drains" label="Log drains">
