@@ -11343,7 +11343,9 @@ export interface components {
             database_built?: string;
             error?: string;
             imported?: boolean;
-            /** @description It builds production, so it may scan production images */
+            /** @description It scans non-production images */
+            non_production: boolean;
+            /** @description It scans production images */
             production: boolean;
             server: string;
         };
@@ -11429,6 +11431,8 @@ export interface components {
             reserved_memory_bytes: number;
             /** Format: date-time */
             revoked_at?: string;
+            scans_non_production: boolean;
+            scans_production: boolean;
             /** @enum {string} */
             status: "online" | "offline" | "incompatible" | "joining" | "revoked";
             through_tunnel?: boolean;
@@ -13015,6 +13019,8 @@ export interface components {
             builds_production?: boolean;
             disabled_for_placement?: boolean;
             name?: string;
+            scans_non_production?: boolean;
+            scans_production?: boolean;
             tunnel?: boolean;
         };
         UpdateServiceRequest: {

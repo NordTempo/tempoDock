@@ -998,6 +998,8 @@ type Server struct {
 	ThroughTunnel        bool
 	BuildsProduction     bool
 	BuildsNonProduction  bool
+	ScansProduction      bool
+	ScansNonProduction   bool
 }
 
 type ServerDrain struct {

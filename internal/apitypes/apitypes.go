@@ -1305,6 +1305,11 @@ type Server struct {
 	// production build gets the environment's variables.
 	BuildsProduction    bool `json:"builds_production"`
 	BuildsNonProduction bool `json:"builds_non_production"`
+	// ScansProduction and ScansNonProduction say which kinds' images a
+	// builder scans for vulnerabilities, apart from which it builds:
+	// each scanner keeps a database of gigabytes.
+	ScansProduction    bool `json:"scans_production"`
+	ScansNonProduction bool `json:"scans_non_production"`
 	// MemoryBytes is the server's total memory (0 until it reported it).
 	MemoryBytes int64 `json:"memory_bytes"`
 	// ReservedMemoryBytes is the sum of the memory limits of the services
@@ -1341,9 +1346,8 @@ type EffectiveLimits struct {
 }
 
 // UpdateServerRequest changes a server's settings: its name, what may be
-// placed on it, whether it builds and for which kinds, and its base
-// domain. Only fields that
-// are set change.
+// placed on it, whether it builds and for which kinds, which kinds it
+// scans, and its base domain. Only fields that are set change.
 type UpdateServerRequest struct {
 	// Name renames the server. Its environments, link and history stay;
 	// only the name it is shown and addressed by changes.
@@ -1356,6 +1360,10 @@ type UpdateServerRequest struct {
 	// a builder builds; a builder builds at least one.
 	BuildsProduction    *bool `json:"builds_production,omitempty"`
 	BuildsNonProduction *bool `json:"builds_non_production,omitempty"`
+	// ScansProduction and ScansNonProduction choose which kinds' images
+	// a builder scans; both off scans nothing there.
+	ScansProduction    *bool `json:"scans_production,omitempty"`
+	ScansNonProduction *bool `json:"scans_non_production,omitempty"`
 	// BaseDomain is a domain like up.example.dev with a wildcard DNS
 	// record pointing at the server (or its tunnel); "" removes it.
 	BaseDomain *string `json:"base_domain,omitempty" maxLength:"253"`

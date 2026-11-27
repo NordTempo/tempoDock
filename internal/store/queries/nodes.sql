@@ -37,9 +37,9 @@ DELETE FROM join_tokens WHERE id = +sqlc.arg(id) AND used_at IS NULL;
 -- key. A revoked remote server of the same name is re-keyed instead and
 -- keeps its settings and environments. sql.ErrNoRows: the name belongs to
 -- a server that isn't revoked (or the local one).
-INSERT INTO servers (name, accepts_production, accepts_non_production, builder, local, status, key_fingerprint, builds_production)
+INSERT INTO servers (name, accepts_production, accepts_non_production, builder, local, status, key_fingerprint, builds_production, scans_production)
 VALUES (sqlc.arg(name), sqlc.arg(accepts_production), sqlc.arg(accepts_non_production), sqlc.arg(builder), 0, 'offline', CAST(sqlc.arg(key_fingerprint) AS TEXT),
-    sqlc.arg(accepts_production))
+    sqlc.arg(accepts_production), sqlc.arg(accepts_production))
 ON CONFLICT (name) DO UPDATE SET
     key_fingerprint = excluded.key_fingerprint, next_key_fingerprint = NULL, revoked_at = NULL
 WHERE servers.revoked_at IS NOT NULL AND servers.local = 0
@@ -68,11 +68,12 @@ UPDATE servers SET last_seen_at = sqlc.arg(now), disconnect_reason = sqlc.arg(re
 
 -- name: UpdateServerSettings :one
 -- The control plane's own settings for a server (`dock server update`):
--- its base domain, whether it builds and for which kinds, and whether it
--- serves through its tunnel.
+-- its base domain, whether it builds and for which kinds, which kinds it
+-- scans, and whether it serves through its tunnel.
 UPDATE servers SET base_domain = sqlc.arg(base_domain), builder = sqlc.arg(builder),
     through_tunnel = sqlc.arg(through_tunnel),
-    builds_production = sqlc.arg(builds_production), builds_non_production = sqlc.arg(builds_non_production)
+    builds_production = sqlc.arg(builds_production), builds_non_production = sqlc.arg(builds_non_production),
+    scans_production = sqlc.arg(scans_production), scans_non_production = sqlc.arg(scans_non_production)
 WHERE id = +sqlc.arg(id)
 RETURNING *;
 

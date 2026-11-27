@@ -41,7 +41,29 @@ function buildsOf(s: Server): Builds {
   return s.builds_production ? "production" : "non_production";
 }
 
+/**
+ * Whether another server still takes builds and scans: a revoked one
+ * keeps its switches but gets no calls (canBuild on the daemon).
+ */
+const builds = (s: Server) => s.builder && s.status !== "revoked";
+
 const buildsProduction = (b: Builds) => b === "production" || b === "all";
+
+const scansField = {
+  production: "scans_production",
+  non_production: "scans_non_production",
+} as const satisfies Record<EnvironmentKind, keyof Server>;
+
+/** Whether a Scans choice covers kind. */
+const scansKind = (b: Builds, kind: EnvironmentKind) =>
+  b === "all" || b === kind;
+
+/** Which kinds' images a builder scans: the same choices as Builds. */
+function scansOf(s: Server): Builds {
+  if (s.scans_production && s.scans_non_production) return "all";
+  if (s.scans_production) return "production";
+  return s.scans_non_production ? "non_production" : "off";
+}
 
 const acceptsField = {
   production: "accepts_production",
@@ -50,8 +72,10 @@ const acceptsField = {
 
 /**
  * An admin's switches for one server: which kinds it accepts, whether it
- * takes new placements and which kinds it builds images for (apart from
- * what it accepts: a staging homelab can build production's images). Every change asks
+ * takes new placements, which kinds it builds images for (apart from
+ * what it accepts: a staging homelab can build production's images) and,
+ * on a builder, which kinds' images it scans (apart from what it builds:
+ * each scanner keeps a vulnerability database of a few GB). Every change asks
  * first (the `confirm` node, which the caller places), naming its effect,
  * as a danger when no other server does that work. A switch that would
  * leave production environments nowhere to run is disabled, with why.
@@ -136,6 +160,34 @@ export function useServerSwitches(server: Server) {
     );
   };
 
+  // What this server stopping scanning kinds (scanning only to from
+  // now) leaves: the builders that take those scans, the kinds no other
+  // builder scans, and the warning for them.
+  const scanLoss = (to: Builds) => {
+    const was = server.builder ? scansOf(server) : "off";
+    const lost = (["production", "non_production"] as const)
+      .filter((k) => scansKind(was, k) && !scansKind(to, k))
+      .map((k) => ({
+        kind: k,
+        others: servers.filter(
+          (s) => s.name !== name && builds(s) && s[scansField[k]],
+        ),
+      }));
+    const others = [
+      ...new Set(lost.flatMap((l) => l.others.map((s) => s.name))),
+    ];
+    const orphaned = lost
+      .filter((l) => l.others.length === 0)
+      .map((l) => kindLabel[l.kind]);
+    const warning = orphaned.length > 0 && (
+      <span className="mt-2 block text-warn-text">
+        No other builder scans {orphaned.join(" or ")} images: they go unscanned
+        until one does.
+      </span>
+    );
+    return { others, orphaned, warning };
+  };
+
   // Production goes only where placement is open: closing the last open
   // server would leave new projects nowhere to run.
   const lastPlacement =
@@ -215,23 +267,28 @@ export function useServerSwitches(server: Server) {
               const was = buildsOf(server);
               // Builders left for production when this one stops.
               const prodOthers = servers.filter(
-                (s) => s.name !== name && s.builder && s.builds_production,
+                (s) => s.name !== name && builds(s) && s.builds_production,
               );
               const losesProduction =
                 buildsProduction(was) && !buildsProduction(to);
               if (to === "off") {
                 const others = servers.filter(
-                  (s) => s.name !== name && s.builder,
+                  (s) => s.name !== name && builds(s),
                 );
                 const noProduction =
                   losesProduction &&
                   prodOthers.length === 0 &&
                   others.length > 0;
+                // Only builders scan: stopping stops its scans too.
+                const scans = scanLoss("off");
                 return setAsk({
                   patch: { builder: false },
                   action: "Stop building",
                   cli: `dock server update ${name} --no-builder`,
-                  last: others.length === 0 || noProduction,
+                  last:
+                    others.length === 0 ||
+                    noProduction ||
+                    scans.orphaned.length > 0,
                   text: (
                     <>
                       Stop building images on{" "}
@@ -248,6 +305,7 @@ export function useServerSwitches(server: Server) {
                           deploys from source will fail until one does.
                         </span>
                       )}
+                      {scans.warning}
                     </>
                   ),
                 });
@@ -294,6 +352,71 @@ export function useServerSwitches(server: Server) {
           </select>
         </span>
         {saved("builder", "builds_production", "builds_non_production")}
+      </span>
+    ),
+    // Only builders scan: elsewhere there is nothing to choose.
+    scans: server.builder && (
+      <span className="inline-flex flex-wrap items-center gap-x-3">
+        <span>
+          <span className="text-mut">Scans</span>{" "}
+          <select
+            aria-label={`What ${name} scans`}
+            value={scansOf(server)}
+            disabled={update.isPending}
+            onChange={(e) => {
+              const to =
+                buildsOptions.find((b) => b === e.target.value) ?? "off";
+              const { others, orphaned, warning } = scanLoss(to);
+              setAsk({
+                patch: {
+                  scans_production: buildsProduction(to),
+                  scans_non_production: to === "non_production" || to === "all",
+                },
+                action:
+                  to === "off" ? "Stop scanning" : `Scan ${buildsLabel[to]}`,
+                cli: `dock server update ${name} --scans ${{ off: "none", non_production: "non-production", production: "production", all: "all" }[to]}`,
+                last: orphaned.length > 0,
+                text:
+                  to === "off" ? (
+                    <>
+                      Stop scanning images on{" "}
+                      <b className="font-mono font-medium">{name}</b>?{" "}
+                      <span className="text-mut">
+                        Its vulnerability database goes with the next prune (
+                        <span className="font-mono">
+                          dock server prune {name}
+                        </span>
+                        ).{" "}
+                        {others.length
+                          ? `Scans go to ${others.join(", ")}.`
+                          : ""}
+                      </span>
+                      {warning}
+                    </>
+                  ) : (
+                    <>
+                      Scan images of {buildsLabel[to]} on{" "}
+                      <b className="font-mono font-medium">{name}</b>?{" "}
+                      <span className="text-mut">
+                        It keeps a vulnerability database of a few GB.{" "}
+                        {!server.local &&
+                          "The control plane scans only what no other server does."}
+                      </span>
+                      {warning}
+                    </>
+                  ),
+              });
+            }}
+            className="field py-[3px]"
+          >
+            {buildsOptions.map((b) => (
+              <option key={b} value={b}>
+                {buildsLabel[b]}
+              </option>
+            ))}
+          </select>
+        </span>
+        {saved("scans_production", "scans_non_production")}
       </span>
     ),
     confirm: ask && (

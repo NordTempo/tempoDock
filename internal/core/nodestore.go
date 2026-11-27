@@ -141,7 +141,8 @@ func (s nodeStore) Join(ctx context.Context, req remote.JoinRequest) (remote.Ser
 		}
 		if base := joinBaseDomain(srv, req.Hello); base != "" {
 			if srv, err = q.UpdateServerSettings(ctx, store.UpdateServerSettingsParams{
-				BaseDomain: base, Builder: srv.Builder, ThroughTunnel: srv.ThroughTunnel, BuildsProduction: srv.BuildsProduction, BuildsNonProduction: srv.BuildsNonProduction, ID: srv.ID,
+				BaseDomain: base, Builder: srv.Builder, ThroughTunnel: srv.ThroughTunnel, BuildsProduction: srv.BuildsProduction, BuildsNonProduction: srv.BuildsNonProduction,
+				ScansProduction: srv.ScansProduction, ScansNonProduction: srv.ScansNonProduction, ID: srv.ID,
 			}); err != nil {
 				return err
 			}

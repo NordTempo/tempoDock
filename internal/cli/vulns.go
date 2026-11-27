@@ -735,8 +735,8 @@ func newScanningCmd(g *globals) *cobra.Command {
 		Short: "Image vulnerability scanning on the platform: on or off, each builder's database (operators)",
 		Long: `Whether Dock scans live images for vulnerabilities, how many images are in
 each state, and each builder's vulnerability database. Scans run only on
-builders (production images only on builders that build production),
-only once no build or deploy has run anywhere for a minute, and stop the
+builders that scan the image's kind, set apart from what they build
+(` + "`dock server update NAME --scans`" + `), only once no build or deploy has run anywhere for a minute, and stop the
 moment one starts.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return show(cmd, nil) },
@@ -816,7 +816,7 @@ func printScanning(g *globals, st apitypes.ScanningStatus) error {
 			counts = append(counts, fmt.Sprintf("%d %s", n, s))
 		}
 	}
-	database := "downloaded by each builder, refreshed daily"
+	database := "downloaded by each scanner, refreshed daily"
 	if st.Offline {
 		database = "offline: imported only (`dock scanning import FILE`)"
 	}
@@ -831,7 +831,7 @@ func printScanning(g *globals, st apitypes.ScanningStatus) error {
 		return nil
 	}
 	_, _ = fmt.Fprintln(g.io.Out)
-	tbl := g.io.Table("builder", "production", "database", "error")
+	tbl := g.io.Table("scanner", "scans", "database", "error")
 	for _, b := range st.Builders {
 		db := "none yet"
 		if b.DatabaseBuilt != nil {
@@ -840,11 +840,7 @@ func printScanning(g *globals, st apitypes.ScanningStatus) error {
 		if b.Imported {
 			db += " (imported)"
 		}
-		prod := "no"
-		if b.Production {
-			prod = "yes"
-		}
-		tbl.Row(b.Server, prod, db, b.Error)
+		tbl.Row(b.Server, kindList(b.Production, b.NonProduction), db, b.Error)
 	}
 	return tbl.Flush()
 }

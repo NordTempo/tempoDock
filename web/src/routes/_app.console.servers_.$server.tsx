@@ -112,7 +112,7 @@ function ServerPage() {
   const detail = useServer(name);
   const { server } = detail;
   const live = useLiveServer(name);
-  const { accepts, placement, builder, confirm, error } =
+  const { accepts, placement, builder, scans, confirm, error } =
     useServerSwitches(server);
   const [renaming, setRenaming] = useState(false);
   // The rows opened by hand; Drain opens from the bar's button too.
@@ -235,6 +235,7 @@ function ServerPage() {
               </span>
               {placement}
               {builder}
+              {scans}
             </div>
             {confirm}
             <ErrorText error={error} />

@@ -28,7 +28,9 @@ expect() {
 
 printf '\177ELF\002\001\001\000rest' >dock && git add dock && expect fail "an ELF binary at the root"
 printf '\317\372\355\376rest' >tool && git add tool && expect fail "a Mach-O binary"
-head -c 2048 /dev/urandom >blob.bin && git add blob.bin && expect fail "an unknown binary file"
+# git calls a file binary when it has a NUL byte: random bytes alone lack
+# one about once in 3,000 runs, so start with one.
+{ printf '\000'; head -c 2048 /dev/urandom; } >blob.bin && git add blob.bin && expect fail "an unknown binary file"
 head -c 2048 /dev/urandom >font.woff2 && git add font.woff2 && expect pass "a font"
 head -c 2048 /dev/urandom >shot.png && git add shot.png && expect pass "an image"
 head -c 1100000 /dev/zero | tr '\0' 'a' >big.txt && git add big.txt && expect fail "a text file over 1 MB"

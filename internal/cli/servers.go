@@ -343,11 +343,25 @@ func builds(s apitypes.Server) string {
 	if !s.Builder {
 		return ""
 	}
+	return kindList(s.BuildsProduction, s.BuildsNonProduction)
+}
+
+// scans describes which kinds' images a builder scans for
+// vulnerabilities; "" when it scans none.
+func scans(s apitypes.Server) string {
+	if !s.Builder {
+		return ""
+	}
+	return kindList(s.ScansProduction, s.ScansNonProduction)
+}
+
+// kindList names the kinds that are on: "production, non-production".
+func kindList(prod, nonProd bool) string {
 	var kinds []string
-	if s.BuildsProduction {
+	if prod {
 		kinds = append(kinds, "production")
 	}
-	if s.BuildsNonProduction {
+	if nonProd {
 		kinds = append(kinds, "non-production")
 	}
 	return strings.Join(kinds, ", ")
@@ -406,6 +420,7 @@ func newServerShowCmd(g *globals) *cobra.Command {
 				}
 				if b := builds(sv); b != "" {
 					_, _ = fmt.Fprintf(g.io.Out, "builds %s images\n", b)
+					_, _ = fmt.Fprintf(g.io.Out, "scans %s images\n", dash(scans(sv)))
 				}
 				if u := sv.Usage; u != nil {
 					_, _ = fmt.Fprintf(g.io.Out, "cpu %.1f%% of %d cores, memory %s of %s, load %.2f\n",
@@ -435,21 +450,27 @@ func newServerShowCmd(g *globals) *cobra.Command {
 
 func newServerUpdateCmd(g *globals) *cobra.Command {
 	var prod, noProd, nonProd, noNonProd, disable, enable, builder, noBuilder, tunnel, noTunnel bool
-	var baseDomain, buildKinds string
+	var baseDomain, buildKinds, scanKinds string
 	cmd := &cobra.Command{
 		Use:   "update <name>",
-		Short: "Change what a server accepts, what it builds, its base domain and ingress (admin)",
+		Short: "Change what a server accepts, builds and scans, its base domain and ingress (admin)",
 		Long: `Change which environment kinds a server accepts, whether it takes new
-placements, whether it builds images and for which kinds, and the base
-domain of the hostnames generated for services on it (` + "`--base-domain \"\"`" + `
+placements, whether it builds images and for which kinds, which kinds'
+images it scans for vulnerabilities, and the base domain of the hostnames generated for services on it (` + "`--base-domain \"\"`" + `
 turns them off). Environments already on the server stay where they are.
 
 What a server builds is apart from what it accepts: a homelab that hosts
 only staging can build production's images too (--builds all). A
 production build gets the environment's variables, so only let servers
 you trust with production's secrets build it. The control plane builds
-only when no other builder is online, and scans only when no other server
-builds.
+only when no other builder is online.
+
+What a builder scans is apart from what it builds: each scanner keeps a
+vulnerability database of a few GB, so the control plane can build
+production while a homelab scans everything (--scans all on the homelab,
+--scans none on the control plane). The control plane scans a kind only
+while no other server scans it. --scans none leaves the database for
+` + "`dock server prune`" + ` to remove.
 
 --tunnel sends a server installed direct through the Cloudflare tunnel Dock
 runs for it (` + "`dock server tunnel create`" + `), with no new install: its generated
@@ -459,6 +480,7 @@ tunnel. Domains whose DNS Dock doesn't manage keep working on its public IP
 until they point there too. --no-tunnel goes back.`,
 		Example: `  dock server update homelab --non-production --no-production
   dock server update homelab --builds all --base-domain example-apps.dev
+  dock server update homelab --scans all
   dock server update homelab --tunnel
   dock server update vps-2 --disable-placement`,
 		Args: cobra.ExactArgs(1),
@@ -491,11 +513,18 @@ until they point there too. --no-tunnel goes back.`,
 				on := true
 				req.Builder, req.BuildsProduction, req.BuildsNonProduction = &on, &p, &np
 			}
+			if cmd.Flags().Changed("scans") {
+				p, np := scanKinds == "all" || scanKinds == "production", scanKinds == "all" || scanKinds == "non-production"
+				if !p && !np && scanKinds != "none" {
+					return usageError("unknown --scans "+scanKinds, "Pass --scans all, production, non-production or none.")
+				}
+				req.ScansProduction, req.ScansNonProduction = &p, &np
+			}
 			if cmd.Flags().Changed("base-domain") {
 				req.BaseDomain = &baseDomain
 			}
 			if req == (apitypes.UpdateServerRequest{}) {
-				return usageError("nothing to change", "Pass --production, --no-production, --non-production, --no-non-production, --disable-placement, --enable-placement, --builder, --no-builder, --builds, --base-domain, --tunnel or --no-tunnel.")
+				return usageError("nothing to change", "Pass --production, --no-production, --non-production, --no-non-production, --disable-placement, --enable-placement, --builder, --no-builder, --builds, --scans, --base-domain, --tunnel or --no-tunnel.")
 			}
 			s, err := g.connect()
 			if err != nil {
@@ -508,7 +537,7 @@ until they point there too. --no-tunnel goes back.`,
 			return g.io.Print(sv, func() error {
 				built, base := "doesn't build", "no base domain"
 				if b := builds(sv); b != "" {
-					built = "builds " + b
+					built = "builds " + b + "; scans " + dash(scans(sv))
 				}
 				if sv.BaseDomain != "" {
 					base = "base domain " + sv.BaseDomain
@@ -528,6 +557,7 @@ until they point there too. --no-tunnel goes back.`,
 	f.BoolVar(&builder, "builder", false, "build images here")
 	f.BoolVar(&noBuilder, "no-builder", false, "stop building images here")
 	f.StringVar(&buildKinds, "builds", "", "build images here for all, production or non-production environments")
+	f.StringVar(&scanKinds, "scans", "", "scan images of all, production, non-production or no environments here (builders)")
 	f.StringVar(&baseDomain, "base-domain", "", "base of generated hostnames, <service>-<project>[-<env>]-<random>.<base>; needs wildcard DNS to this server, or a tunnel")
 	f.BoolVar(&tunnel, "tunnel", false, "send everything through the Cloudflare tunnel Dock runs for it")
 	f.BoolVar(&noTunnel, "no-tunnel", false, "serve on its public IP again (domains added from Cloudflare stay on the tunnel)")

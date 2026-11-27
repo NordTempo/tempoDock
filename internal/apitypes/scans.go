@@ -240,14 +240,16 @@ type ScanningStatus struct {
 	// Images counts scans by state.
 	Images map[ScanState]int `json:"images"`
 	// Waiting says why nothing is scanned right now, if that is so.
-	Waiting  string           `json:"waiting,omitempty"`
+	Waiting string `json:"waiting,omitempty"`
+	// Builders are the builders that scan some kind of image.
 	Builders []ScanningServer `json:"builders"`
 }
 
-// ScanningServer is one builder's part in scanning.
+// ScanningServer is one scanning builder's part in scanning.
 type ScanningServer struct {
 	Server        string     `json:"server"`
-	Production    bool       `json:"production" doc:"It builds production, so it may scan production images"`
+	Production    bool       `json:"production" doc:"It scans production images"`
+	NonProduction bool       `json:"non_production" doc:"It scans non-production images"`
 	DatabaseBuilt *time.Time `json:"database_built,omitempty"`
 	// Imported: it has imported the archive the status names.
 	Imported bool   `json:"imported,omitempty"`

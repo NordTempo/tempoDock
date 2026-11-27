@@ -14657,8 +14657,12 @@
           "imported": {
             "type": "boolean"
           },
+          "non_production": {
+            "description": "It scans non-production images",
+            "type": "boolean"
+          },
           "production": {
-            "description": "It builds production, so it may scan production images",
+            "description": "It scans production images",
             "type": "boolean"
           },
           "server": {
@@ -14667,7 +14671,8 @@
         },
         "required": [
           "server",
-          "production"
+          "production",
+          "non_production"
         ],
         "type": "object"
       },
@@ -14883,6 +14888,12 @@
             "format": "date-time",
             "type": "string"
           },
+          "scans_non_production": {
+            "type": "boolean"
+          },
+          "scans_production": {
+            "type": "boolean"
+          },
           "status": {
             "enum": [
               "online",
@@ -14929,6 +14940,8 @@
           "disabled_for_placement",
           "builds_production",
           "builds_non_production",
+          "scans_production",
+          "scans_non_production",
           "memory_bytes",
           "reserved_memory_bytes",
           "projects",
@@ -20175,6 +20188,12 @@
             "maxLength": 32,
             "minLength": 1,
             "type": "string"
+          },
+          "scans_non_production": {
+            "type": "boolean"
+          },
+          "scans_production": {
+            "type": "boolean"
           },
           "tunnel": {
             "type": "boolean"

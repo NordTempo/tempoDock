@@ -139,7 +139,7 @@ func labPool(t *testing.T) (*pool, *fake.Runtime) {
 func (p *pool) withRegistry(reg Registry) {
 	p.t.Helper()
 	lab := p.ids["homelab"]
-	if _, err := p.store.UpdateServerSettings(p.ctx, store.UpdateServerSettingsParams{Builder: true, BuildsNonProduction: true, ID: lab}); err != nil {
+	if _, err := p.store.UpdateServerSettings(p.ctx, store.UpdateServerSettingsParams{Builder: true, BuildsNonProduction: true, ScansNonProduction: true, ID: lab}); err != nil {
 		p.t.Fatal(err)
 	}
 	p.nodes.add(lab, p.rts[lab], remote.Hello{Facts: remote.Facts{Ingress: remote.IngressDirect, Builder: true}})
@@ -991,7 +991,7 @@ func TestNodeInstallCommandPinsRelease(t *testing.T) {
 	}
 }
 
-// The control plane scans a kind only while no other server builds it,
+// The control plane scans a kind only while no other server scans it,
 // online or not: scans wait for the homelab rather than download a
 // vulnerability database to the control plane.
 func TestControlPlaneScansLast(t *testing.T) {
@@ -999,26 +999,74 @@ func TestControlPlaneScansLast(t *testing.T) {
 	p.withRegistry(&fakeRegistry{})
 	p.opts.Config.BuildKit.Enabled = true
 	p.restart()
-	names := func() []string {
-		out, _, _ := p.c.scanBuilders(p.ctx)
-		var names []string
-		for _, s := range out {
-			names = append(names, s.Name)
-		}
-		return names
+	// homelab scans only non-production: cp still scans production.
+	if got, _, _ := p.c.scanBuilders(p.ctx); len(got) != 2 || !got[0].Local || got[0].ScansNonProduction || !got[0].ScansProduction {
+		t.Fatalf("scanners %v: want cp for production only, then homelab", p.scannerNames())
 	}
-	// homelab builds only non-production: cp still scans production.
-	if got, _, _ := p.c.scanBuilders(p.ctx); len(got) != 2 || !got[0].Local || got[0].BuildsNonProduction || !got[0].BuildsProduction {
-		t.Fatalf("scanners %v: want cp for production only, then homelab", names())
-	}
-	p.buildsProduction("homelab")
-	if got := names(); !slices.Equal(got, []string{"homelab"}) {
+	p.scans("homelab", true, true)
+	if got := p.scannerNames(); !slices.Equal(got, []string{"homelab"}) {
 		t.Fatalf("scanners %v, want homelab alone", got)
 	}
 	p.setOffline("homelab", true)
-	if got := names(); len(got) != 0 {
+	if got := p.scannerNames(); len(got) != 0 {
 		t.Fatalf("scanners %v with homelab offline, want none", got)
 	}
+}
+
+// What a builder scans is apart from what it builds: the control plane
+// builds production and scans nothing, while homelab, which builds only
+// non-production, scans production's images too.
+func TestScansApartFromBuilds(t *testing.T) {
+	p, _ := labPool(t)
+	p.withRegistry(&fakeRegistry{})
+	p.opts.Config.BuildKit.Enabled = true
+	p.restart()
+	cp, err := p.store.GetLocalServer(p.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.scans(cp.Name, false, false)
+	p.setOffline("homelab", true)
+	if got := p.scannerNames(); len(got) != 0 {
+		t.Fatalf("scanners %v with homelab offline, want none: cp scans nothing", got)
+	}
+	p.setOffline("homelab", false)
+	p.scans("homelab", true, true)
+	got, prod, nonProd := p.c.scanBuilders(p.ctx)
+	if len(got) != 1 || got[0].Name != "homelab" || !prod || !nonProd {
+		t.Fatalf("scanners %v (production %v, non-production %v): want homelab for both", p.scannerNames(), prod, nonProd)
+	}
+	built := store.ImageScan{Production: 1, PullRef: "registry/web@sha256:1", BuiltOnServerID: &cp.ID} // built on cp
+	if srv, ok := p.c.scanServer(built, got); !ok || srv.Name != "homelab" {
+		t.Fatalf("a production image scans on %q (%v), want homelab", srv.Name, ok)
+	}
+	off := false
+	if _, err := p.c.UpdateServer(p.ctx, testSystem, "homelab", apitypes.UpdateServerRequest{Builder: &off}); err != nil {
+		t.Fatal(err)
+	}
+	on := true
+	_, err = p.c.UpdateServer(p.ctx, testSystem, "homelab", apitypes.UpdateServerRequest{ScansProduction: &on})
+	if CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), "only builders scan") {
+		t.Fatalf("scans on a server that doesn't build: %v", err)
+	}
+}
+
+// scans sets which kinds' images a builder scans.
+func (p *pool) scans(name string, prod, nonProd bool) {
+	p.t.Helper()
+	if _, err := p.c.UpdateServer(p.ctx, testSystem, name, apitypes.UpdateServerRequest{ScansProduction: &prod, ScansNonProduction: &nonProd}); err != nil {
+		p.t.Fatal(err)
+	}
+}
+
+// scannerNames are the servers that may scan now, by name.
+func (p *pool) scannerNames() []string {
+	out, _, _ := p.c.scanBuilders(p.ctx)
+	var names []string
+	for _, s := range out {
+		names = append(names, s.Name)
+	}
+	return names
 }
 
 // Without the registry images stay where they were built: the control
@@ -1028,11 +1076,11 @@ func TestControlPlaneScansItsOwnWithoutRegistry(t *testing.T) {
 	p.opts.Config.BuildKit.Enabled = true
 	p.restart()
 	on := true
-	if _, err := p.c.UpdateServer(p.ctx, testSystem, "homelab", apitypes.UpdateServerRequest{Builder: &on, BuildsProduction: &on}); err != nil {
+	if _, err := p.c.UpdateServer(p.ctx, testSystem, "homelab", apitypes.UpdateServerRequest{Builder: &on, ScansProduction: &on, ScansNonProduction: &on}); err != nil {
 		t.Fatal(err)
 	}
 	got, _, _ := p.c.scanBuilders(p.ctx)
-	if !slices.ContainsFunc(got, func(s store.Server) bool { return s.Local && s.BuildsProduction && s.BuildsNonProduction }) {
+	if !slices.ContainsFunc(got, func(s store.Server) bool { return s.Local && s.ScansProduction && s.ScansNonProduction }) {
 		t.Fatalf("scanners %+v: want the control plane for both kinds", got)
 	}
 }

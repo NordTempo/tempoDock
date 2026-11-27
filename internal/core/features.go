@@ -43,11 +43,15 @@ func (c *Core) Features(ctx context.Context, a Actor) (apitypes.Features, error)
 	c.scans.mu.Lock()
 	scanning.Enabled = c.scans.enabled
 	c.scans.mu.Unlock()
+	// It runs on the scanners; its disk is every builder's, since one that
+	// stopped scanning keeps its database until a prune.
+	for s := range c.scanRoles(servers) {
+		scanning.Servers = append(scanning.Servers, s.Name)
+	}
 	var builders []store.Server
 	for _, s := range servers {
 		if s.Builder {
 			builders = append(builders, s)
-			scanning.Servers = append(scanning.Servers, s.Name)
 		}
 	}
 	scanning.DiskBytes = c.diskOf(builders, diskPartScanDB, diskPartScanLeftovers)

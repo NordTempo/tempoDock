@@ -35,12 +35,17 @@ WHERE id = +sqlc.arg(id);
 
 -- name: NextImageScan :one
 -- The next scan to run: queued, due, and one a builder there is may
--- scan (production ones only with a builder that builds production, the
--- rest with one that builds non-production).
+-- scan (production ones only with a builder that scans production, the
+-- rest with one that scans non-production).
 SELECT * FROM image_scans
 WHERE state = 'queued' AND (next_attempt_at IS NULL OR next_attempt_at <= +sqlc.arg(now))
   AND CASE production WHEN 0 THEN +sqlc.arg(non_production_builder) ELSE +sqlc.arg(production_builder) END = 1
 ORDER BY priority, id LIMIT 1;
+
+-- name: UnparkImageScans :exec
+-- Makes every queued scan due now: what a server scans changed, so a
+-- scan waiting for its image's server may have a scanner.
+UPDATE image_scans SET next_attempt_at = NULL WHERE state = 'queued' AND next_attempt_at IS NOT NULL;
 
 -- name: NextImageScanRetry :one
 -- When the earliest scan waiting to retry is due (0 for none).
