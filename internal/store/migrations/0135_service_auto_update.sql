@@ -3,6 +3,9 @@
 -- tag point at a newer image, Dock snapshots the service's volumes and
 -- deploys that image by digest. Off (0) unless someone turns it on.
 ALTER TABLE services ADD COLUMN auto_update INTEGER NOT NULL DEFAULT 0;
+-- The few services that update on their own, for the daily check
+-- (ListImageAutoUpdates).
+CREATE INDEX services_auto_update ON services (id) WHERE auto_update = 1;
 
 -- When the daily tag check last finished, its automatic updates
 -- started (unix seconds, 0 for never): the next is due a day later, also

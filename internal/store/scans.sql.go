@@ -417,11 +417,11 @@ func (q *Queries) ListActiveVulnIgnores(ctx context.Context, arg ListActiveVulnI
 
 const listImageAutoUpdates = `-- name: ListImageAutoUpdates :many
 SELECT r.service_id, r.image_ref, i.base_image, i.base_latest
-FROM image_scans i
-JOIN releases r ON r.image_scan_id = i.id AND r.status = 'active'
-JOIN services s ON s.id = r.service_id
-WHERE i.base_image != '' AND i.base_moved = 1 AND i.base_latest != '' AND i.base_digest = i.image_key
-  AND s.auto_update = 1 AND s.archived_at IS NULL AND s.stopped_at IS NULL
+FROM services s
+CROSS JOIN releases r ON r.service_id = s.id AND r.status = 'active'
+JOIN image_scans i ON i.id = r.image_scan_id
+WHERE s.auto_update = 1 AND s.archived_at IS NULL AND s.stopped_at IS NULL
+  AND i.base_image != '' AND i.base_moved = 1 AND i.base_latest != '' AND i.base_digest = i.image_key
 `
 
 type ListImageAutoUpdatesRow struct {
@@ -433,7 +433,9 @@ type ListImageAutoUpdatesRow struct {
 
 // The live releases of services with auto_update on whose image is its
 // tag's own (deployed by tag, not built on it) while the tag points at a
-// newer image: what the daily check updates.
+// newer image: what the daily check updates. CROSS JOIN keeps services
+// outermost, read through services_auto_update: the few that update on
+// their own, not every live release.
 func (q *Queries) ListImageAutoUpdates(ctx context.Context) ([]ListImageAutoUpdatesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listImageAutoUpdates)
 	if err != nil {
