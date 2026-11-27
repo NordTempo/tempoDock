@@ -794,6 +794,13 @@ function invalidateForAudit(
   // Servers count what is placed on them; previews are environments.
   if (kind === "server" || kind === "environment" || kind === "preview")
     invalidate(keys.servers);
+  // The Security page lists every server (ADR 0109): one joined or removed.
+  if (
+    audit.action === "server.add" ||
+    audit.action === "server.join" ||
+    audit.action === "server.remove"
+  )
+    invalidate(hostChecksKey);
   if (!audit.project) return;
   // The Images page shows which services update on their own.
   if (audit.action === "service.auto_update") invalidate(["images"]);
