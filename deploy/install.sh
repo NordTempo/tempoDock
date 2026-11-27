@@ -81,8 +81,8 @@
 #   DOCK_CADDY    path to Dock's Caddy (a release's dock-caddy-linux-<arch>, or make
 #                 caddy-binary): Caddy with Dock's handlers, which add the analytics
 #                 script to pages (ADR 0106). Default: the release's, downloaded with
-#                 its binary; a dock binary given without its release keeps the Caddy
-#                 there is, or gets Caddy's own build (CADDY_VERSION)
+#                 its binary; a dock binary given without its release keeps Dock's
+#                 Caddy if the server has it, else gets Caddy's own build (CADDY_VERSION)
 #   CADDY_VERSION, CADDY_SHA256  without Dock's Caddy: another Caddy release and the
 #                     SHA-256 of its caddy_<version>_linux_<arch>.tar.gz
 #   PUBLIC_IP         address users point DNS at (default: auto-detect; empty on tunnel servers)
@@ -994,6 +994,11 @@ main() {
     [[ -f "$DOCK_CADDY" ]] || die "$DOCK_CADDY is not a file"
     caddy_name="Dock's caddy"
     cmp -s "$DOCK_CADDY" /usr/local/bin/caddy || caddy_new="$DOCK_CADDY"
+  elif /usr/local/bin/caddy list-modules 2>/dev/null | grep -q '^http\.handlers\.dock_inject$'; then
+    # Dock's Caddy stays when this run has none to give (a dock binary
+    # without its release, or a download that failed): Caddy's own build
+    # would drop Dock's handlers.
+    caddy_name="Dock's caddy (kept)"
   elif ! /usr/local/bin/caddy version 2>/dev/null | grep -q "v$CADDY_VERSION"; then
     say "==> download caddy $CADDY_VERSION"
     base="https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}"
