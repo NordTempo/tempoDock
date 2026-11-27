@@ -340,7 +340,24 @@ func TestScanParksForItsServer(t *testing.T) {
 	if _, err := h.store.UpdateServerSettings(h.ctx, store.UpdateServerSettingsParams{BaseDomain: local.BaseDomain, Builder: true, BuildsNonProduction: true, ID: local.ID}); err != nil {
 		t.Fatal(err)
 	}
-	row, err := h.store.AddImageScan(h.ctx, store.AddImageScanParams{ImageKey: "local:sha256:1", LocalRef: "dock/web:1", BuiltOnServerID: &local.ID, OrgID: 1, CreatedAt: now().Unix()})
+	// A scan of an image only local has, which a live release refers to
+	// from the start, so the retention pass keeps it.
+	rel := h.deploy(h.service("web", apitypes.CreateServiceRequest{}), "web:1")
+	tx, err := h.store.DB.BeginTx(h.ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var id int64
+	if err := tx.QueryRowContext(h.ctx, "INSERT INTO image_scans (image_key, local_ref, built_on_server_id, org_id, created_at) VALUES ('local:sha256:1', 'dock/web:1', ?, 1, ?) RETURNING id", local.ID, now().Unix()).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.ExecContext(h.ctx, "UPDATE releases SET image_scan_id = ? WHERE id = ?", id, rel.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	row, err := h.store.GetImageScan(h.ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,9 +369,6 @@ func TestScanParksForItsServer(t *testing.T) {
 	if row.State != string(apitypes.ScanQueued) || row.Attempts != 0 || row.NextAttemptAt == nil || !strings.Contains(row.Error, "--scans all") {
 		t.Fatalf("parked scan = %s, %d attempts, next %v, %q", row.State, row.Attempts, row.NextAttemptAt, row.Error)
 	}
-	h.c.scans.mu.Lock()
-	h.c.scans.enabled = false // no pass takes the row before it is read
-	h.c.scans.mu.Unlock()
 	on := true
 	if _, err := h.c.UpdateServer(h.ctx, testSystem, local.Name, apitypes.UpdateServerRequest{ScansNonProduction: &on}); err != nil {
 		t.Fatal(err)
