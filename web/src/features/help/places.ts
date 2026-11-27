@@ -71,6 +71,11 @@ export const projectPlaces = {
     hash: "log-drains",
     label: "Log drains",
   },
+  compose: {
+    to: "/$org/$project/settings",
+    hash: "compose",
+    label: "Settings › Compose",
+  },
   shared: {
     to: "/$org/$project/settings",
     hash: "variables",

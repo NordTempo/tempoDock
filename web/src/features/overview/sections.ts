@@ -20,6 +20,12 @@ export const projectSettingSections = [
     words: ["server", "move", "which server", "placement"],
   },
   {
+    id: "compose",
+    label: "Compose",
+    scope: "environment",
+    words: ["compose", "docker-compose", "import", "update from compose"],
+  },
+  {
     id: "log-drains",
     label: "Log drains",
     scope: "environment",

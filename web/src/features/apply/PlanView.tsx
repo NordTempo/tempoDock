@@ -33,7 +33,7 @@ export function Plan({ plan, staged }: { plan: ApplyPlan; staged: boolean }) {
 }
 
 /** A titled block of plan rows, in the staged changes' row style. */
-function Rows({ title, rows }: { title: string; rows: PlanRow[] }) {
+export function Rows({ title, rows }: { title: string; rows: PlanRow[] }) {
   return (
     <section className="flex flex-col gap-1">
       <h3 className="text-xs font-semibold">{title}</h3>

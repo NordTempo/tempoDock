@@ -1,7 +1,13 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { lazy, Suspense, useState } from "react";
-import { queries, useProjectOverview, useSeesPlatform } from "../data/queries";
+import {
+  queries,
+  useProjectOverview,
+  useSeesPlatform,
+  useSession,
+} from "../data/queries";
 import type { Environment } from "../data/types";
+import { ComposeRow } from "../features/compose/ComposeRow";
 import { logDrainQueries } from "../features/logdrains/data";
 import { LogDrains } from "../features/logdrains/LogDrains";
 import { DeleteEnvironment } from "../features/overview/DeleteEnvironment";
@@ -54,6 +60,7 @@ function Settings() {
   const { project } = Route.useParams();
   const { env: asked } = Route.useSearch();
   const overview = useProjectOverview(project);
+  const session = useSession();
   const view =
     overview.environments.find((e) => e.environment.name === asked) ??
     overview.environments.find(
@@ -77,6 +84,13 @@ function Settings() {
     );
   }
   const env = { project, environment: view.environment.name };
+  // Staging needs deploy here: a read session, another project's token
+  // or another environment's sees the row without its actions.
+  const canChange =
+    !!session &&
+    session.scope !== "read" &&
+    (!session.project || session.project === project) &&
+    (!session.environment || session.environment === env.environment);
   return (
     <Page>
       <h2 className="flex flex-wrap items-baseline gap-x-3 text-lg font-semibold">
@@ -92,6 +106,11 @@ function Settings() {
         <SettingRow id="server" label="Server">
           <EnvironmentServer environment={view.environment} />
         </SettingRow>
+        {!view.environment.preview && (
+          <SettingRow id="compose" label="Compose">
+            <ComposeRow env={env} canChange={canChange} />
+          </SettingRow>
+        )}
         <SettingRow id="log-drains" label="Log drains">
           <Suspense fallback={null}>
             <LogDrains key={env.environment} env={env} />
