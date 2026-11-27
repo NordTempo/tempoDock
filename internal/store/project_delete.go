@@ -77,6 +77,7 @@ var projectDeletes = []rowDelete{
 	{"staged_domains", `service_id IN {services}`, ``},
 	{"domains", `service_id IN {services}`, ``},
 	{"git_connections", `service_id IN {services}`, ``},
+	{"compose_sources", `environment_id IN {envs}`, ``},
 	{"ensure_running", `service_id IN {services}`, ``},
 	{"uptime_checks", `service_id IN {services}`, ``},
 	{"status_sources", `service_id IN {services}`, ``},

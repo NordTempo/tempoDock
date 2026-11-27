@@ -340,6 +340,29 @@ type CloudflareZone struct {
 	Name         string
 }
 
+type ComposeSource struct {
+	ID             int64
+	EnvironmentID  int64
+	InstallationID int64
+	RepoID         int64
+	Repo           string
+	Branch         string
+	Path           string
+	Reads          string
+	Prune          bool
+	AutoApply      bool
+	PendingSha     string
+	PendingBy      string
+	LastSha        string
+	LastMessage    string
+	LastAuthor     string
+	LastAt         *time.Time
+	Outcome        string
+	Summary        string
+	CreatedBy      string
+	CreatedAt      time.Time
+}
+
 type ControlPlaneBackup struct {
 	ID          int64
 	Trigger     string

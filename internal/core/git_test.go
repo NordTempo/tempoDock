@@ -136,7 +136,11 @@ func newFakeGitHub(t *testing.T) *fakeGitHub {
 		p := r.PathValue("path")
 		g.mu.Lock()
 		defer g.mu.Unlock()
-		if _, ok := g.files[p]; ok {
+		if f, ok := g.files[p]; ok {
+			if strings.Contains(r.Header.Get("Accept"), "raw") {
+				_, _ = w.Write([]byte(f))
+				return
+			}
 			_, _ = w.Write([]byte(`{"type":"file"}`))
 			return
 		}

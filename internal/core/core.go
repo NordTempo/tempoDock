@@ -172,6 +172,10 @@ type Core struct {
 	// checking holds, by domain ID, the check of a domain running now,
 	// closed when it ends (holdDomainCheck); guarded by checksMu.
 	checking map[int64]chan struct{}
+	// composeSyncing holds, by Compose source ID, the sync running now,
+	// closed when it ends (holdComposeSync); guarded by composeMu.
+	composeMu      sync.Mutex
+	composeSyncing map[int64]chan struct{}
 	// lookupTXT is Options.LookupTXT, or the system resolver's.
 	lookupTXT func(ctx context.Context, name string) ([]string, error)
 	// lookupIP is Options.LookupIP, or the system resolver's.
@@ -394,6 +398,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		domainKick:      make(chan struct{}, 1),
 		checks:          map[int64]domainCheck{},
 		checking:        map[int64]chan struct{}{},
+		composeSyncing:  map[int64]chan struct{}{},
 		lookupTXT:       o.LookupTXT,
 		lookupIP:        o.LookupIP,
 		status:          map[int64]storedStatus{},
@@ -656,6 +661,9 @@ func (c *Core) Start(ctx context.Context) error {
 			c.syncServerRecords(c.ctx, srv)
 		}
 	})
+	if err := c.resumeComposeSyncs(ctx); err != nil {
+		return fmt.Errorf("resume queued Compose syncs: %w", err)
+	}
 	if err := c.resumeGit(ctx); err != nil {
 		return fmt.Errorf("resume queued pushes: %w", err)
 	}
