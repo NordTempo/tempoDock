@@ -1361,13 +1361,15 @@ CONF
   # (ADR 0106) and wouldn't start: it starts on caddy.json instead, and the
   # daemon loads the routes again. Judged from what is on disk, so a run
   # that failed after putting Caddy's own build in place is caught by the
-  # next. Stopped before the file goes, so the running Caddy can't save a
-  # route load in between; started just below.
+  # next. The running Caddy (Dock's, until it restarts) is stopped before
+  # the file is read, so it can't save a route load after; started below.
   autosave=/var/lib/dock-caddy/caddy/autosave.json
-  if grep -q '"dock_inject"' "$autosave" 2>/dev/null \
-    && ! /usr/local/bin/caddy list-modules 2>/dev/null | grep -q '^http\.handlers\.dock_inject$'; then
+  if ! /usr/local/bin/caddy list-modules 2>/dev/null | grep -q '^http\.handlers\.dock_inject$' \
+    && { [[ "$caddy_changed" == true ]] || grep -q '"dock_inject"' "$autosave" 2>/dev/null; }; then
     systemctl stop dock-caddy.service 2>/dev/null || true
-    rm -f "$autosave"
+    if grep -q '"dock_inject"' "$autosave" 2>/dev/null; then
+      rm -f "$autosave"
+    fi
   fi
   if [[ "$caddy_unit_changed" == true || "$caddy_changed" == true ]] && systemctl is-active -q dock-caddy.service; then
     # Picks up a new binary, and unit changes such as the dock-caddy

@@ -1019,8 +1019,13 @@ func TestIntegrationScriptInject(t *testing.T) {
 		t.Fatal(err)
 	}
 	docks := strings.Contains(string(mods), injectModule)
+	// Headers first, then the page: the proxy flushes them before a body
+	// of unknown length.
 	app := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		_ = http.NewResponseController(w).Flush()
+		time.Sleep(20 * time.Millisecond)
 		_, _ = io.WriteString(w, "<html><head><title>shop</title></head></html>")
 	}))
 	t.Cleanup(app.Close)

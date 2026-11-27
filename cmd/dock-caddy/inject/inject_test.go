@@ -252,6 +252,29 @@ func TestFlushBeforeHeadGivesUp(t *testing.T) {
 	}
 }
 
+// A flush of the headers alone, before any of the body, still gets the
+// tag in.
+func TestFlushBeforeBodyKeepsLooking(t *testing.T) {
+	h := &Handler{Hosts: []string{"example.com"}, Src: "/_dock/a/s.js"}
+	_ = h.Provision(caddyCtx())
+	rec := httptest.NewRecorder()
+	err := h.ServeHTTP(rec, visit("example.com"), caddyhttp.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) error {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		if err := http.NewResponseController(w).Flush(); err != nil {
+			return err
+		}
+		_, err := io.WriteString(w, page)
+		return err
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rec.Body.String(), tag) {
+		t.Fatalf("no tag: %s", rec.Body.String())
+	}
+}
+
 func TestCSP(t *testing.T) {
 	for _, c := range []struct {
 		headers []string

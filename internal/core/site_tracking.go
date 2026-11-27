@@ -326,7 +326,12 @@ func (c *Core) checkSiteHost(ctx context.Context, host string, siteHosts []strin
 			"no Dock script tag in the page's HTML. Dock adds it to a page with a <head> unless the site's auto_script is off, the page is marked no-transform or its Content-Security-Policy blocks the script, or the server's Caddy isn't Dock's (an update installs it); otherwise add it to the page's <head> (an app that adds it from JavaScript shows active once events arrive)")
 	}
 	if csp := resp.header.Get("Content-Security-Policy"); csp != "" {
-		if d := cspBlocks(csp, nonce); d != "" {
+		switch d, strict := cspBlocks(csp, nonce); {
+		case d == "":
+		case strict:
+			step(apitypes.CheckFail, apitypes.TrackingBlocked, "give the script tag the page's nonce (nonce=\"...\"), or take 'strict-dynamic' out of "+d,
+				"the page's Content-Security-Policy has 'strict-dynamic' in %s, which lets in only script tags with its nonce or hash", d)
+		default:
 			step(apitypes.CheckFail, apitypes.TrackingBlocked, "add 'self' to "+d,
 				"the page's Content-Security-Policy leaves 'self' out of %s, so the browser blocks the script", d)
 		}
@@ -388,10 +393,11 @@ func (c *Core) siteGet(ctx context.Context, target string, read bool) (sitePage,
 
 // cspBlocks returns the directive of a Content-Security-Policy that keeps
 // the script out (script-src-elem or script-src, or connect-src for its
-// events), falling back to default-src as browsers do; "" when it allows them. The script
-// tag's nonce lets the script in when script-src names it, never its
-// events.
-func cspBlocks(csp, nonce string) string {
+// events), falling back to default-src as browsers do; "" when it allows
+// them. The script tag's nonce lets the script in when script-src names
+// it, never its events. strict is whether 'strict-dynamic' is what keeps
+// the tag out.
+func cspBlocks(csp, nonce string) (directive string, strict bool) {
 	dirs := map[string][]string{}
 	for part := range strings.SplitSeq(csp, ";") {
 		f := strings.Fields(strings.TrimSpace(part))
@@ -401,7 +407,7 @@ func cspBlocks(csp, nonce string) string {
 	}
 	// allows: the tag's nonce first; then 'self', * or https:, which
 	// 'strict-dynamic' turns off for a script tag in the page's HTML.
-	allows := func(vals []string, nonce string, script bool) bool {
+	allows := func(vals []string, nonce string, script bool) (ok, byStrict bool) {
 		host, strict := false, false
 		for _, v := range vals {
 			switch strings.ToLower(v) {
@@ -411,10 +417,10 @@ func cspBlocks(csp, nonce string) string {
 				strict = script
 			}
 			if nonce != "" && v == "'nonce-"+nonce+"'" {
-				return true
+				return true, false
 			}
 		}
-		return host && !strict
+		return host && !strict, strict
 	}
 	// Each governs with the first of its directives the policy has:
 	// script-src-elem goes before script-src for a script tag.
@@ -428,12 +434,12 @@ func cspBlocks(csp, nonce string) string {
 				if c.script {
 					n = nonce
 				}
-				if !allows(vals, n, c.script) {
-					return name
+				if ok, byStrict := allows(vals, n, c.script); !ok {
+					return name, byStrict
 				}
 				break
 			}
 		}
 	}
-	return ""
+	return "", false
 }

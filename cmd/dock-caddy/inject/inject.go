@@ -282,10 +282,12 @@ func (w *writer) release(parts ...[]byte) error {
 	return nil
 }
 
-// FlushError sends what there is: a page that flushes before its <head>
-// tag goes out unchanged.
+// FlushError sends what there is: a page that flushes part of its body
+// before its <head> tag goes out unchanged.
 func (w *writer) FlushError() error {
-	if w.searching {
+	// A flush of the headers alone (Caddy's proxy flushes before a body of
+	// unknown length) keeps looking for the tag.
+	if w.searching && len(w.held) > 0 {
 		if err := w.release(w.held); err != nil {
 			return err
 		}
