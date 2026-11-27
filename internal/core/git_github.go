@@ -71,6 +71,11 @@ const (
 // else becomes an error that says what to fix. what names the object for
 // a 404 ("commit abc1234").
 func (g githubClient) do(ctx context.Context, method, path string, cred githubCred, what string, body any) (*http.Response, error) {
+	return g.doAccept(ctx, method, path, cred, what, body, "application/vnd.github+json")
+}
+
+// doAccept is do asking for the media type accept (a file's raw bytes).
+func (g githubClient) doAccept(ctx context.Context, method, path string, cred githubCred, what string, body any, accept string) (*http.Response, error) {
 	var rd io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -83,7 +88,7 @@ func (g githubClient) do(ctx context.Context, method, path string, cred githubCr
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Accept", accept)
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	req.Header.Set("User-Agent", "tempo-dock/"+version.Version)
 	if body != nil {
@@ -196,6 +201,27 @@ func (g githubClient) commit(ctx context.Context, repo, ref string, cred githubC
 		author = c.Author.Login
 	}
 	return apitypes.Commit{SHA: c.SHA, Message: firstLine(c.Commit.Message), Author: cleanLine(author, 100)}, nil
+}
+
+// file fetches one file of repo at ref, at most limit bytes: not_found
+// when there is no file at p, too_large past limit.
+func (g githubClient) file(ctx context.Context, repo, ref, p string, cred githubCred, limit int) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, githubCallTimeout)
+	defer cancel()
+	resp, err := g.doAccept(ctx, http.MethodGet, "/repos/"+repo+"/contents/"+escapePath(p)+"?ref="+url.QueryEscape(ref),
+		cred, p+" at "+shortSHA(ref)+" in "+repo, nil, "application/vnd.github.raw+json")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	b, err := io.ReadAll(io.LimitReader(resp.Body, int64(limit)+1))
+	if err != nil {
+		return nil, fmt.Errorf("read %s from GitHub: %w", p, err)
+	}
+	if len(b) > limit {
+		return nil, errf(apitypes.CodeTooLarge, "%s is larger than %d KB", p, limit>>10)
+	}
+	return b, nil
 }
 
 // tarball fetches a commit's source and returns it as a plain tar with

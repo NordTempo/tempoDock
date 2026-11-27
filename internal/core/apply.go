@@ -70,20 +70,24 @@ func (c *Core) planProject(ctx context.Context, a Actor, project string, req api
 // and sets the jobs of the services that created. Needs deploy; removing
 // services (prune) needs admin.
 func (c *Core) ApplyProject(ctx context.Context, a Actor, project string, req apitypes.ApplyRequest) (apitypes.ApplyResult, error) {
-	return c.applyProject(ctx, a, project, req, filePruning(req.Prune))
+	out, _, err := c.applyProject(ctx, a, project, req, filePruning(req.Prune))
+	return out, err
 }
 
 // applyProject is ApplyProject with what it removes given apart from
-// req.Prune (a Compose file's, composePruning).
-func (c *Core) applyProject(ctx context.Context, a Actor, project string, req apitypes.ApplyRequest, pr pruning) (apitypes.ApplyResult, error) {
-	out := apitypes.ApplyResult{Plan: newPlan(project), Staged: []apitypes.PendingChanges{}}
+// req.Prune (a Compose file's, composePruning). waiting is how many
+// changes each environment had staged before the file, read in the
+// transaction that staged it (a Compose sync's auto-apply needs none).
+func (c *Core) applyProject(ctx context.Context, a Actor, project string, req apitypes.ApplyRequest, pr pruning) (out apitypes.ApplyResult, waiting map[string]int, err error) {
+	out = apitypes.ApplyResult{Plan: newPlan(project), Staged: []apitypes.PendingChanges{}}
+	waiting = map[string]int{}
 	f, p, err := c.loadFile(ctx, a, project, req, apitypes.ScopeDeploy, pr)
 	if err != nil {
-		return out, err
+		return out, waiting, err
 	}
 	if p == nil {
 		if _, err := c.CreateProject(ctx, a, apitypes.CreateProjectRequest{Name: project}); err != nil {
-			return out, err
+			return out, waiting, err
 		}
 		out.Plan.Changes = append(out.Plan.Changes, apitypes.PlanChange{Kind: apitypes.PlanProject, Action: apitypes.ChangeAdd, Name: project})
 	}
@@ -98,13 +102,13 @@ func (c *Core) applyProject(ctx context.Context, a Actor, project string, req ap
 				kind = defaultKind(fe.Name)
 			}
 			if _, err := c.CreateEnvironment(ctx, a, project, apitypes.CreateEnvironmentRequest{Name: fe.Name, Kind: kind}); err != nil {
-				return out, err
+				return out, waiting, err
 			}
 			es, err = c.envFor(ctx, a, ref, apitypes.ScopeDeploy, "applying a project file")
 			created = true
 		}
 		if err != nil {
-			return out, err
+			return out, waiting, err
 		}
 		var ep envPlan
 		var jobs fileJobsDone
@@ -133,6 +137,7 @@ func (c *Core) applyProject(ctx context.Context, a Actor, project string, req ap
 			if err != nil {
 				return err
 			}
+			waiting[fe.Name] = before.Count
 			if err := c.stageEnv(ctx, q, &a, es, le, ep); err != nil {
 				return err
 			}
@@ -147,7 +152,7 @@ func (c *Core) applyProject(ctx context.Context, a Actor, project string, req ap
 			return err
 		})
 		if err != nil {
-			return out, err
+			return out, waiting, err
 		}
 		jobs.finish(ctx, c, a, es)
 		addPlan(&out.Plan, ep)
@@ -161,18 +166,18 @@ func (c *Core) applyProject(ctx context.Context, a Actor, project string, req ap
 	}
 	reg, err := c.planRegistry(ctx, a, f.registry)
 	if err != nil {
-		return out, err
+		return out, waiting, err
 	}
 	out.Plan.Manual = append(out.Plan.Manual, reg...)
 	for _, es := range touched {
 		pc, err := c.pendingChanges(ctx, c.store.Queries, es, false)
 		if err != nil {
-			return out, err
+			return out, waiting, err
 		}
 		out.Staged = append(out.Staged, pc)
 	}
 	if !req.Deploy {
-		return out, nil
+		return out, waiting, nil
 	}
 	for i, es := range touched {
 		if out.Staged[i].Count == 0 {
@@ -180,17 +185,17 @@ func (c *Core) applyProject(ctx context.Context, a Actor, project string, req ap
 		}
 		res, err := c.applyEnv(ctx, a, es, f.order[es.env.Name])
 		if err != nil {
-			return out, fmt.Errorf("staged the file, but applying %s failed: %w", es, err)
+			return out, waiting, fmt.Errorf("staged the file, but applying %s failed: %w", es, err)
 		}
 		out.Applied = append(out.Applied, apitypes.EnvironmentApplied{Environment: es.env.Name, AppliedChanges: res})
 		fe, _ := projectfile.Environment(apitypes.ProjectExport{Environments: f.envs}, es.env.Name)
 		chs, err := c.applyCreatedJobs(ctx, a, es, fe, pr)
 		if err != nil {
-			return out, fmt.Errorf("applied %s, but setting the jobs of its new services failed: %w", es, err)
+			return out, waiting, fmt.Errorf("applied %s, but setting the jobs of its new services failed: %w", es, err)
 		}
 		out.Plan.Changes = append(out.Plan.Changes, chs...)
 	}
-	return out, nil
+	return out, waiting, nil
 }
 
 // parsedFile is a checked project file with the environments to plan and
@@ -565,6 +570,10 @@ type pruning struct {
 	services, items bool
 	// compose: the file was converted from a Compose file.
 	compose bool
+	// initValues: values sent with the file only give a variable its
+	// first value, never replace one that is live or staged (a followed
+	// Compose file's secrets: one set in Dock since keeps its value).
+	initValues bool
 }
 
 // filePruning is a project file's pruning: everything with --prune.
@@ -832,6 +841,9 @@ func (ep *envPlan) planVars(line func(*[]apitypes.PlanChange, apitypes.PlanChang
 		}
 		v, live := live[k]
 		g, sent := given[k]
+		if pr.initValues && (live || staged[k] == "set") {
+			sent = false
+		}
 		switch {
 		case sent && !live:
 			stage(k, g, apitypes.ChangeAdd, "value sent with the file")

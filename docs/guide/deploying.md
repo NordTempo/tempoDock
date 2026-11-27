@@ -731,6 +731,25 @@ domains, jobs or variables added in Dock. `--stage` stages the update for
 review with `dock changes` instead of applying it, and `-e` picks the
 environment (default production).
 
+### Follow a Compose file in GitHub
+
+```sh
+dock compose follow acme/shop -p shop -e production --path deploy/compose.yaml
+dock compose status -p shop -e production
+```
+
+An environment can follow a Compose file in a repository the
+organization's GitHub App reads ([ADR 0108](../decisions/0108-following-a-compose-file.md)).
+Each push to its branch that changes the file (or its `.env`, or an
+`env_file` it reads) is converted and planned, and the changes are staged
+in the environment for review: nothing runs until someone applies them
+(`dock apply`, or Review and apply in the UI). Services the file drops are
+kept, unless an admin follows with `--prune`; then their archive is staged,
+and an admin applies it. `--auto-apply` applies a sync by itself when it
+only adds and changes, nothing else is staged and no secret needs a value.
+Services built from source still deploy as before. In the UI: the
+environment's Settings › Compose.
+
 | Compose | Dock |
 |---|---|
 | `image`, `build` | The service's image, or a source service (deploy it with `dock deploy <context>`) |
