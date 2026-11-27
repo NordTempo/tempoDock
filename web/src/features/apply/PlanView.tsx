@@ -32,13 +32,20 @@ export function Plan({ plan, staged }: { plan: ApplyPlan; staged: boolean }) {
   );
 }
 
-/** A titled block of plan rows, in the staged changes' row style. */
+/** The most rows one block shows; the CLI's --plan prints them all. */
+const maxRows = 200;
+
+/**
+ * A titled block of plan rows, in the staged changes' row style, at most
+ * maxRows of them with a count of the rest.
+ */
 export function Rows({ title, rows }: { title: string; rows: PlanRow[] }) {
+  const hidden = rows.length - maxRows;
   return (
     <section className="flex flex-col gap-1">
       <h3 className="text-xs font-semibold">{title}</h3>
       <div className="grid grid-cols-[1ch_auto_auto_minmax(0,1fr)] gap-x-3 overflow-x-auto font-mono text-xs leading-[1.9]">
-        {rows.map((r) => (
+        {rows.slice(0, maxRows).map((r) => (
           <Fragment key={r.id}>
             <span className="text-warn">{r.mark}</span>
             <span className="whitespace-nowrap text-faint">{r.where}</span>
@@ -50,6 +57,11 @@ export function Rows({ title, rows }: { title: string; rows: PlanRow[] }) {
           </Fragment>
         ))}
       </div>
+      {hidden > 0 && (
+        <p className="text-xs text-mut">
+          and {hidden} more; the CLI's plan lists them all
+        </p>
+      )}
     </section>
   );
 }

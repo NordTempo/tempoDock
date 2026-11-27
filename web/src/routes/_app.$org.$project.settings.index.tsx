@@ -108,7 +108,7 @@ function Settings() {
         </SettingRow>
         {!view.environment.preview && (
           <SettingRow id="compose" label="Compose">
-            <ComposeRow env={env} canChange={canChange} />
+            <ComposeRow key={env.environment} env={env} canChange={canChange} />
           </SettingRow>
         )}
         <SettingRow id="log-drains" label="Log drains">

@@ -110,12 +110,15 @@ export function ComposeInputs({
 export function ConversionNotes({
   shown,
   project,
+  environment,
   values,
   onValues,
   onAddFile,
 }: {
   shown: ComposeImport;
   project: string;
+  /** The environment the services go in, for the deploy command. */
+  environment: string;
   values: Record<string, string>;
   onValues: (values: Record<string, string>) => void;
   onAddFile: (path: string, text: string) => void;
@@ -185,7 +188,8 @@ export function ConversionNotes({
               <span className="font-mono">{b.service}</span> builds from{" "}
               <span className="font-mono">{b.context}</span>: deploy it with{" "}
               <code className="font-mono">
-                dock deploy {b.context} -p {project} -s {b.service}
+                dock deploy {b.context} -p {project} -e {environment} -s{" "}
+                {b.service}
               </code>{" "}
               once it exists.
             </p>

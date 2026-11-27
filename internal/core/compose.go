@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 
@@ -47,13 +48,11 @@ func (c *Core) ImportCompose(ctx context.Context, a Actor, project string, req a
 	if len(res.File.Environments) != 1 {
 		return out, fmt.Errorf("a converted Compose file has %d environments, not one", len(res.File.Environments))
 	}
-	env := res.File.Environments[0].Name
-	if req.Environment != "" && req.Environment != env {
-		// Another environment: its kind is its own (a new one's is the
-		// default for its name), so the file names none.
-		env = req.Environment
-		res.File.Environments[0].Name, res.File.Environments[0].Kind = env, ""
-	}
+	// A Compose file has no say in an environment's kind: an existing one
+	// keeps its own, a new one gets its name's default. So the file names
+	// none, whichever environment it goes in.
+	env := cmp.Or(req.Environment, res.File.Environments[0].Name)
+	res.File.Environments[0].Name, res.File.Environments[0].Kind = env, ""
 	b, err := res.File.TOMLWith("Tempo Dock project " + project + ", converted from a Docker Compose file with `dock import compose`.\n" +
 		"Secrets are names only (variables): their values are never written here.\n" +
 		"Apply it with `dock apply FILE --plan`, then without --plan to stage it.\n")

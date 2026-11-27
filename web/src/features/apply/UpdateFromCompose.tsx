@@ -170,6 +170,7 @@ export default function UpdateFromCompose({
               <ConversionNotes
                 shown={shown}
                 project={env.project}
+                environment={env.environment}
                 values={values}
                 onValues={setValues}
                 onAddFile={(path, text) => {

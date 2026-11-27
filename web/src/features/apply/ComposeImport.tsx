@@ -127,6 +127,7 @@ export default function ComposeImport({
           <ConversionNotes
             shown={shown}
             project={project}
+            environment="production"
             values={values}
             onValues={setValues}
             onAddFile={(path, text) => {
