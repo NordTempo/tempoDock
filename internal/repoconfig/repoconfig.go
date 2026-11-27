@@ -59,6 +59,8 @@ type Job struct {
 	Timeout time.Duration
 	// Overlap is "skip" or "allow"; empty is skip.
 	Overlap string
+	// Concurrency is the most runs at once; zero is overlap's default.
+	Concurrency int
 }
 
 // Build configures how source becomes an image.
@@ -140,16 +142,20 @@ type file struct {
 		Command  *string `toml:"command"`
 		Timeout  *string `toml:"timeout"`
 		Overlap  *string `toml:"overlap"`
+		// Concurrency is the most runs at once (ADR 0054, 2026-11-27).
+		Concurrency *int `toml:"concurrency"`
 	} `toml:"jobs"`
 }
 
 // jobName is a job's name, as the platform takes it.
 var jobName = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$`)
 
-// maxJobs and maxJobTimeout bound [[jobs]] like the platform does.
+// maxJobs, maxJobTimeout and maxJobConcurrency bound [[jobs]] like the
+// platform does (apitypes.MaxJobConcurrency).
 const (
-	maxJobs       = 50
-	maxJobTimeout = 24 * time.Hour
+	maxJobs           = 50
+	maxJobTimeout     = 24 * time.Hour
+	maxJobConcurrency = 16
 )
 
 // Bounds of the deploy section's health check keys; the platform's
@@ -277,6 +283,14 @@ func Parse(b []byte) (Config, error) {
 		}
 		if job.Overlap != "" && job.Overlap != "skip" && job.Overlap != "allow" {
 			bad(key+".overlap", "must be \"skip\" or \"allow\"")
+		}
+		if n := j.Concurrency; n != nil {
+			if *n < 1 || *n > maxJobConcurrency {
+				bad(key+".concurrency", "must be 1 to %d, got %d", maxJobConcurrency, *n)
+			} else if *n > 1 && job.Overlap == "skip" {
+				bad(key+".concurrency", "above 1 runs side by side, which overlap \"skip\" refuses; leave overlap out")
+			}
+			job.Concurrency = *n
 		}
 		cfg.Jobs = append(cfg.Jobs, job)
 	}

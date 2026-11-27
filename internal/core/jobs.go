@@ -33,13 +33,13 @@ func newJobState() jobState {
 }
 
 // holdJob counts a run of a job in flight; the returned func ends it.
-// A job with overlap skip that still runs is errStillRunning: the check
-// and the count are under one lock, so a run now and a scheduled run
-// racing each other can't both start.
+// A job already running its concurrency's runs (one with overlap skip)
+// is errStillRunning: the check and the count are under one lock, so a
+// run now and a scheduled run racing each other can't both start.
 func (c *Core) holdJob(job store.ServiceJob) (func(), error) {
 	id := job.ID
 	c.jobs.mu.Lock()
-	if apitypes.JobOverlap(job.Overlap) == apitypes.OverlapSkip && c.jobs.running[id] > 0 {
+	if c.jobs.running[id] >= max(int(job.Concurrency), 1) {
 		c.jobs.mu.Unlock()
 		return nil, errStillRunning
 	}
@@ -64,9 +64,18 @@ func (c *Core) jobRunning(id int64) bool {
 	return c.jobs.running[id] > 0
 }
 
-// errStillRunning is a job due (or run now) while it still runs and its
-// overlap is skip.
-var errStillRunning = errors.New("the run before it was still running")
+// errStillRunning is a job due (or run now) while it already runs as
+// many runs as its concurrency allows.
+var errStillRunning = errors.New("the runs before it were still running, as many as its concurrency allows")
+
+// defaultConcurrency is a job's runs at once when it doesn't set them:
+// one with overlap skip, AllowConcurrency with allow.
+func defaultConcurrency(o apitypes.JobOverlap) int {
+	if o == apitypes.OverlapAllow {
+		return apitypes.AllowConcurrency
+	}
+	return 1
+}
 
 // startJob starts a run of a job in the background and returns it as it
 // started, or why it couldn't start: still running (overlap skip), no active
@@ -203,11 +212,22 @@ func checkJob(name string, req *apitypes.SetJobRequest) error {
 	if _, _, err := parseJobSchedule(req.Schedule, req.Timezone); err != nil {
 		return invalid("schedule %q in %s: %v", req.Schedule, req.Timezone, err)
 	}
+	switch n := req.Concurrency; {
+	case n < 0 || n > apitypes.MaxJobConcurrency:
+		return invalid("concurrency is 1 to %d runs at once, got %d", apitypes.MaxJobConcurrency, n)
+	case n > 1 && req.Overlap == apitypes.OverlapSkip:
+		return invalid("concurrency %d runs side by side, which overlap skip refuses; leave overlap out or set it to allow", n)
+	case n > 1:
+		req.Overlap = apitypes.OverlapAllow
+	}
 	if req.Overlap == "" {
 		req.Overlap = apitypes.OverlapSkip
 	}
 	if req.Overlap != apitypes.OverlapSkip && req.Overlap != apitypes.OverlapAllow {
 		return invalid("overlap must be skip or allow")
+	}
+	if req.Concurrency == 0 {
+		req.Concurrency = defaultConcurrency(req.Overlap)
 	}
 	t, err := checkTimeout(req.TimeoutSeconds)
 	req.TimeoutSeconds = t
@@ -239,7 +259,7 @@ func (c *Core) SetJob(ctx context.Context, a Actor, ref ServiceRef, name string,
 	at := now()
 	row, err := c.store.UpsertServiceJob(ctx, store.UpsertServiceJobParams{
 		ServiceID: ss.svc.ID, Name: name, Schedule: strings.TrimSpace(req.Schedule), Timezone: req.Timezone, Command: req.Command,
-		TimeoutSeconds: int64(req.TimeoutSeconds), Overlap: string(req.Overlap), Enabled: enabled, Source: string(apitypes.JobFromAPI),
+		TimeoutSeconds: int64(req.TimeoutSeconds), Overlap: string(req.Overlap), Concurrency: int64(req.Concurrency), Enabled: enabled, Source: string(apitypes.JobFromAPI),
 		CreatedBy: a.Name, CreatedAt: at, UpdatedAt: at,
 	})
 	if err != nil {
@@ -317,7 +337,7 @@ func (c *Core) RunJobNow(ctx context.Context, a Actor, ref ServiceRef, name stri
 	}
 	info, err := c.startJob(ctx, job.ID, ss.svc.ID, apitypes.TriggerManual, a)
 	if errors.Is(err, errStillRunning) {
-		return apitypes.CommandRun{}, conflict("job %s is still running; wait for it to end", name)
+		return apitypes.CommandRun{}, conflict("job %s is still running %d %s; wait for one to end, or raise its concurrency", name, job.Concurrency, plural(int(job.Concurrency), "run"))
 	}
 	if err != nil {
 		return apitypes.CommandRun{}, err
@@ -406,7 +426,7 @@ func (c *Core) jobFor(ctx context.Context, a Actor, ref ServiceRef, name string,
 func (c *Core) toJob(ss svcScope, row store.ServiceJob) apitypes.Job {
 	j := apitypes.Job{
 		Name: row.Name, Schedule: row.Schedule, Timezone: row.Timezone, Command: row.Command,
-		TimeoutSeconds: int(row.TimeoutSeconds), Overlap: apitypes.JobOverlap(row.Overlap), Enabled: row.Enabled,
+		TimeoutSeconds: int(row.TimeoutSeconds), Overlap: apitypes.JobOverlap(row.Overlap), Concurrency: int(row.Concurrency), Enabled: row.Enabled,
 		Source: apitypes.JobSource(row.Source), CreatedBy: row.CreatedBy, UpdatedAt: row.UpdatedAt,
 	}
 	if row.Enabled && ss.svc.ArchivedAt == nil {

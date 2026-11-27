@@ -420,7 +420,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		backups:         newBackupState(),
 		volumes:         newVolumeWriters(),
 		uptime:          newUptimeState(),
-		runs:            runState{running: map[int64]int{}, ended: map[int64]chan struct{}{}},
+		runs:            runState{running: map[int64]int{}, oneOff: map[int64]int{}, ended: map[int64]chan struct{}{}},
 		jobs:            newJobState(),
 		scans:           newScanState(),
 		email:           newEmailState(),

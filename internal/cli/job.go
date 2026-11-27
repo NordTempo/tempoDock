@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,7 +32,8 @@ func newJobCmd(g *globals) *cobra.Command {
 		Long: `A service's scheduled jobs: each a cron expression in a timezone and a
 command that runs like ` + "`dock run`" + ` in the service's active image, with its
 variables and private network, without volumes. A job still running when it
-comes due again is skipped unless its overlap is allow. Jobs can also come
+comes due again is skipped unless its overlap is allow (up to its
+--concurrency runs at once, 4 by default). Jobs can also come
 from the service's dock.toml ([[jobs]]); those are changed there, and can
 still be turned off and run now here.`,
 	})
@@ -84,6 +86,7 @@ func newJobListCmd(g *globals) *cobra.Command {
 type jobSetOptions struct {
 	schedule, timezone, overlap string
 	timeout                     time.Duration
+	concurrency                 int
 	disabled                    bool
 }
 
@@ -109,7 +112,8 @@ argument as it is, several each quoted for the shell.
 Jobs from dock.toml are changed there. Needs deploy scope; audited as
 job.set.`,
 		Example: `  dock job set nightly-cleanup -s web --schedule "0 3 * * *" --timezone Europe/Oslo -- bin/rails cleanup
-  dock job set digest -s api --schedule @hourly --timeout 10m -- 'node digest.js && node notify.js'`,
+  dock job set digest -s api --schedule @hourly --timeout 10m -- 'node digest.js && node notify.js'
+  dock job set sweep -s worker --schedule "* * * * *" --concurrency 3 -- bin/sweep`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dash := cmd.ArgsLenAtDash()
@@ -128,13 +132,16 @@ job.set.`,
 			if o.overlap != "" && o.overlap != string(apitypes.OverlapSkip) && o.overlap != string(apitypes.OverlapAllow) {
 				return usageError(fmt.Sprintf("--overlap is skip or allow, not %q", o.overlap), "Leave it out to skip a run while the last one still runs.")
 			}
+			if o.concurrency < 0 || o.concurrency > apitypes.MaxJobConcurrency {
+				return usageError(fmt.Sprintf("--concurrency is 1 to %d, not %d", apitypes.MaxJobConcurrency, o.concurrency), "Leave it out for one run at a time.")
+			}
 			s, t, err := g.open(f, needService)
 			if err != nil {
 				return err
 			}
 			req := apitypes.SetJobRequest{
 				Schedule: o.schedule, Timezone: o.timezone, Command: shellJoin(args[dash:]),
-				TimeoutSeconds: timeoutSeconds(o.timeout), Overlap: apitypes.JobOverlap(o.overlap),
+				TimeoutSeconds: timeoutSeconds(o.timeout), Overlap: apitypes.JobOverlap(o.overlap), Concurrency: o.concurrency,
 			}
 			if o.disabled {
 				req.Enabled = new(false)
@@ -154,6 +161,7 @@ job.set.`,
 	cmd.Flags().StringVar(&o.timezone, "timezone", "", "IANA timezone the schedule is read in, e.g. Europe/Oslo (default UTC)")
 	cmd.Flags().DurationVar(&o.timeout, "timeout", 0, "stop a run after this long, at most 24h (default 1h)")
 	cmd.Flags().StringVar(&o.overlap, "overlap", "", "when it comes due while still running: skip or allow (default skip)")
+	cmd.Flags().IntVar(&o.concurrency, "concurrency", 0, fmt.Sprintf("most runs at once, 1 to %d; above 1 implies --overlap allow (default 1, or 4 with allow)", apitypes.MaxJobConcurrency))
 	cmd.Flags().BoolVar(&o.disabled, "disabled", false, "set it turned off (dock job enable turns it on)")
 	return cmd
 }
@@ -165,6 +173,7 @@ func printJob(g *globals, j apitypes.Job) error {
 		"command", j.Command,
 		"timeout", (time.Duration(j.TimeoutSeconds) * time.Second).String(),
 		"overlap", string(j.Overlap),
+		"at once", strconv.Itoa(j.Concurrency),
 		"enabled", yesNo(j.Enabled),
 		"source", jobSource(j.Source),
 		"next", jobNext(j.NextAt),

@@ -119,6 +119,7 @@ type repoJob struct {
 	Command        string `json:"command"`
 	TimeoutSeconds int    `json:"timeout_seconds,omitempty"`
 	Overlap        string `json:"overlap,omitempty"`
+	Concurrency    int    `json:"concurrency,omitempty"`
 }
 
 func repoDeployOf(rc *repoconfig.Config) *repoDeploy {
@@ -129,7 +130,7 @@ func repoDeployOf(rc *repoconfig.Config) *repoDeploy {
 	for _, j := range rc.Jobs {
 		jobs = append(jobs, repoJob{
 			Name: j.Name, Schedule: j.Schedule, Timezone: j.Timezone, Command: j.Command,
-			TimeoutSeconds: int(j.Timeout / time.Second), Overlap: j.Overlap,
+			TimeoutSeconds: int(j.Timeout / time.Second), Overlap: j.Overlap, Concurrency: j.Concurrency,
 		})
 	}
 	return &repoDeploy{

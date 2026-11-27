@@ -55,6 +55,7 @@ func (h *handler) addJobTools(s *mcpkit.Server[core.Actor]) {
 			Command        string `json:"command"`
 			TimeoutSeconds int    `json:"timeout_seconds,omitempty" doc:"Default 3600."`
 			Overlap        string `json:"overlap,omitempty" enum:"skip,allow"`
+			Concurrency    int    `json:"concurrency,omitempty" doc:"Most runs at once, 1-16. Default 1."`
 			Enabled        *bool  `json:"enabled,omitempty"`
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
@@ -63,7 +64,7 @@ func (h *handler) addJobTools(s *mcpkit.Server[core.Actor]) {
 			}
 			j, err := h.core.SetJob(ctx, c.Actor, ref, in.Job, apitypes.SetJobRequest{
 				Schedule: in.Schedule, Timezone: in.Timezone, Command: in.Command, TimeoutSeconds: in.TimeoutSeconds,
-				Overlap: apitypes.JobOverlap(in.Overlap), Enabled: in.Enabled,
+				Overlap: apitypes.JobOverlap(in.Overlap), Concurrency: in.Concurrency, Enabled: in.Enabled,
 			})
 			if err != nil {
 				return mcpkit.Reply{}, err

@@ -211,13 +211,14 @@ name = "sweep"
 schedule = "@hourly"
 command = "bin/sweep"
 overlap = "allow"
+concurrency = 3
 `))
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []Job{
 		{Name: "nightly", Schedule: "0 3 * * *", Timezone: "Europe/Oslo", Command: "bin/cleanup", Timeout: 30 * time.Minute},
-		{Name: "sweep", Schedule: "@hourly", Command: "bin/sweep", Overlap: "allow"},
+		{Name: "sweep", Schedule: "@hourly", Command: "bin/sweep", Overlap: "allow", Concurrency: 3},
 	}
 	if !reflect.DeepEqual(cfg.Jobs, want) {
 		t.Fatalf("jobs = %+v", cfg.Jobs)
@@ -229,11 +230,19 @@ schedule = "61 * * * *"
 timezone = "Mars/Olympus"
 command = "x"
 overlap = "queue"
+concurrency = 17
 
 [[jobs]]
 name = "x"
+
+[[jobs]]
+name = "y"
+schedule = "@daily"
+command = "y"
+overlap = "skip"
+concurrency = 2
 `))
-	for _, key := range []string{"jobs[0].name", "jobs[0].schedule", "jobs[0].timezone", "jobs[0].overlap", "jobs[1]: needs"} {
+	for _, key := range []string{"jobs[0].name", "jobs[0].schedule", "jobs[0].timezone", "jobs[0].overlap", "jobs[0].concurrency", "jobs[1]: needs", "jobs[2].concurrency"} {
 		if err == nil || !strings.Contains(err.Error(), key) {
 			t.Errorf("error %v doesn't name %s", err, key)
 		}

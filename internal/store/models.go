@@ -1141,6 +1141,7 @@ type ServiceJob struct {
 	CreatedBy      string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	Concurrency    int64
 }
 
 type ServicePreview struct {

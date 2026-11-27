@@ -545,7 +545,7 @@ read in the job's timezone (default UTC).
 
 | | |
 |---|---|
-| Overlap | A job still running when it comes due again is skipped (`--overlap allow` runs both) |
+| Overlap | A job still running when it comes due again is skipped; `--overlap allow` runs them side by side, up to `--concurrency` runs at once (default 4, at most 16) |
 | Downtime | A time missed while the control plane was down or the server offline runs once on recovery, however many were missed |
 | Skipped | No active release, or the service is stopped (`dock service stop`): the run is recorded as skipped with why |
 | Timeout | `--timeout`, default 1 hour, at most 24 hours |

@@ -124,6 +124,8 @@ type JobExport struct {
 	Command        string     `json:"command" toml:"command"`
 	TimeoutSeconds int        `json:"timeout_seconds,omitempty" toml:"timeout_seconds,omitempty"`
 	Overlap        JobOverlap `json:"overlap,omitempty" toml:"overlap,omitempty" enum:"skip,allow"`
+	// Concurrency is written only when it isn't overlap's default.
+	Concurrency int `json:"concurrency,omitempty" toml:"concurrency,omitempty" minimum:"0" maximum:"16"`
 	// Enabled is written only for a disabled job.
 	Enabled *bool `json:"enabled,omitempty" toml:"enabled,omitempty"`
 }

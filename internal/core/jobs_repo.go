@@ -43,7 +43,7 @@ func (c *Core) applyRepoJobs(ctx context.Context, ss svcScope, want []repoJob) (
 	at := now()
 	for _, j := range want {
 		inFile[j.Name] = true
-		req := apitypes.SetJobRequest{Schedule: j.Schedule, Timezone: j.Timezone, Command: j.Command, TimeoutSeconds: j.TimeoutSeconds, Overlap: apitypes.JobOverlap(j.Overlap)}
+		req := apitypes.SetJobRequest{Schedule: j.Schedule, Timezone: j.Timezone, Command: j.Command, TimeoutSeconds: j.TimeoutSeconds, Overlap: apitypes.JobOverlap(j.Overlap), Concurrency: j.Concurrency}
 		if err := checkJob(j.Name, &req); err != nil {
 			// dock.toml was checked when it was read; a timezone the host
 			// lost since.
@@ -53,12 +53,12 @@ func (c *Core) applyRepoJobs(ctx context.Context, ss svcScope, want []repoJob) (
 		cur, ok := byName[j.Name]
 		enabled := !ok || cur.Enabled
 		if ok && apitypes.JobSource(cur.Source) == apitypes.JobFromRepo && cur.Schedule == req.Schedule && cur.Timezone == req.Timezone &&
-			cur.Command == req.Command && int(cur.TimeoutSeconds) == req.TimeoutSeconds && cur.Overlap == string(req.Overlap) {
+			cur.Command == req.Command && int(cur.TimeoutSeconds) == req.TimeoutSeconds && cur.Overlap == string(req.Overlap) && int(cur.Concurrency) == req.Concurrency {
 			continue // unchanged: its due times go on from where they were
 		}
 		row, err := c.store.UpsertServiceJob(ctx, store.UpsertServiceJobParams{
 			ServiceID: ss.svc.ID, Name: j.Name, Schedule: req.Schedule, Timezone: req.Timezone, Command: req.Command,
-			TimeoutSeconds: int64(req.TimeoutSeconds), Overlap: string(req.Overlap), Enabled: enabled, Source: string(apitypes.JobFromRepo),
+			TimeoutSeconds: int64(req.TimeoutSeconds), Overlap: string(req.Overlap), Concurrency: int64(req.Concurrency), Enabled: enabled, Source: string(apitypes.JobFromRepo),
 			CreatedBy: "dock.toml", CreatedAt: at, UpdatedAt: at,
 		})
 		if err != nil {

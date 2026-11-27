@@ -258,7 +258,7 @@ name. Update older CLI clients before renaming projects they use.
 | `connect [service] [--port N] [--confirm ENV] [--show-url]` | Tunnel `127.0.0.1` (the service's port if free, else a free one) to the service's private port until Ctrl-C, for psql, TablePlus, redis-cli ([guide](guide/data.md#connecting-from-your-machine)). Needs data access level write with sensitive visible; production needs `--confirm`, and API tokens never get production. `--show-url` prints the connection URL with its password (audited). `--json` prints one object (`service`, `port`, `local`, `url`, ...) before serving. Exit 3 without access |
 | `run [service] [-i] [-t] [-d] [--timeout D] [--volumes none\|read\|write] [--no-snapshot] -- COMMAND...` | Run a one-off command in a new container from the service's active release, streamed; exits with the command's exit code ([below](#dock-run)) |
 | `runs [service]`, `runs show ID` | The service's latest one-off commands (the newest 50), newest first; one with the tail of its output (deploy scope) and, when it failed, its likely cause ([ADR 0071](decisions/0071-deploy-diagnosis.md)) |
-| `job list [service]\|set NAME --schedule CRON [--timezone TZ] [--timeout D] [--overlap skip\|allow] [--disabled] -- COMMAND...\|remove NAME\|enable NAME\|disable NAME\|run NAME [-d]\|history NAME` | A service's scheduled jobs ([`dock job`](#dock-job)): list them with their next and latest run; create or replace one; remove it with its history; turn it on or off; run it now and wait (exits with its code); its latest 20 runs |
+| `job list [service]\|set NAME --schedule CRON [--timezone TZ] [--timeout D] [--overlap skip\|allow] [--concurrency N] [--disabled] -- COMMAND...\|remove NAME\|enable NAME\|disable NAME\|run NAME [-d]\|history NAME` | A service's scheduled jobs ([`dock job`](#dock-job)): list them with their next and latest run; create or replace one; remove it with its history; turn it on or off; run it now and wait (exits with its code); its latest 20 runs |
 | `git connect OWNER/REPO [--mode app\|webhook] [--branch B] [--dir D] [--token-stdin\|--remove-token] [--status] [--rotate-secret]` | Deploy on every push to a GitHub branch ([guide](guide/deploying.md#deploy-on-git-push)). Through Dock's GitHub App when it is installed for the org (statuses on, no token), else, or with `--mode webhook`, with its own webhook: prints the webhook settings for GitHub and its secret, once (again only with `--rotate-secret`). Running it again changes the branch, directory, token, statuses or mode. The token is read from stdin only and never printed |
 | `git status`, `git deploy [--ref R]`, `git disconnect [-y]` | The GitHub source: the App or the webhook URL, token set or not, queued push, latest delivery; queue the branch's head (or a SHA, branch or tag) now, even if live; remove the connection and its token |
 | `github app create [--platform] [--owner ORG] [--public] [--open=false]`, `github app remove SLUG [-y]` | GitHub Apps ([ADR 0031](decisions/0031-github-app.md), [0066](decisions/0066-github-apps-for-many-orgs.md), [0105](decisions/0105-github-apps-per-org.md)). Admin: the organization's own App, always private, whose installations on its owner account are the organization's. `--platform` (operator): an App for every organization; `--public` lets any GitHub account install it. `app create` and `github install` print a link valid for an hour on stderr and open it in a browser; GitHub sends the browser back to Dock. With `--json` they write `{"url": "..."}` to stdout and open nothing |
@@ -429,7 +429,11 @@ environment (`environment_locked`, exit 5).
   UTC). The command after `--` is quoted as `dock run` quotes it.
   `--timeout` defaults to 1h, at most 24h; `--overlap skip` (the
   default) records a run that comes due while the last one still runs
-  as `skipped`, `allow` runs both. It prints the job with its next time.
+  as `skipped`, `allow` runs them side by side, up to `--concurrency`
+  runs at once (1 to 16, default 4 with `allow`; above 1 implies
+  `allow`). A job's runs don't take the service's 4 slots for `dock run`
+  commands; a service runs at most 16 commands and job runs at once. It
+  prints the job with its next time.
 - Jobs from the service's dock.toml (`source` `repo`, shown as
   `dock.toml`) are changed in the file: `set` and `remove` are a
   conflict (exit 5). `enable`, `disable` and `run` work on them too.
@@ -438,8 +442,8 @@ environment (`environment_locked`, exit 5).
   then prints its output's tail on stdout and how it ended on stderr.
   The exit code is the job's own, as with `dock run`; a run that ended
   without one (`timed_out`, `failed` because it couldn't start) is an
-  error with the status as its `code`, exit 1. A job still running with
-  overlap skip is a conflict (exit 5). `-d`/`--detach` prints the run as
+  error with the status as its `code`, exit 1. A job already running as
+  many runs as its concurrency allows is a conflict (exit 5). `-d`/`--detach` prints the run as
   it started. Ctrl-C stops waiting, not the run. With `--json` stdout is
   the run (`CommandRun`), with its output, once it ended.
 - `job history NAME` lists its newest 20 runs (scheduled, run now,

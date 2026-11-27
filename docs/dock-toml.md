@@ -58,6 +58,7 @@ timezone = "Europe/Oslo"
 command = "bin/rails cleanup"
 timeout = "30m"
 overlap = "skip"
+# concurrency = 3   # most runs at once; above 1 runs them side by side
 ```
 
 | Key | Type | Rules |
@@ -82,6 +83,7 @@ overlap = "skip"
 | `jobs[].command` | string | Required. Run with `sh -c` |
 | `jobs[].timeout` | duration string | 1s to 24h. Default 1h |
 | `jobs[].overlap` | `"skip"` or `"allow"` | Default `skip` |
+| `jobs[].concurrency` | integer | 1-16: most runs at once. Above 1 implies `"allow"` and is an error with `"skip"`. Default 1, or 4 with `"allow"` |
 
 Parsing is strict: unknown keys, wrong types and empty strings are errors
 (reported with line numbers where possible), so a typo never silently does
@@ -97,7 +99,8 @@ volumes. The schedule is five fields (minute, hour, day of month, month,
 day of week) with ranges, lists, steps and names, read in `timezone`. A run
 that goes past `timeout` is stopped (`timed_out`). With `overlap = "skip"`
 a job still running when it comes due again records that run as
-`skipped`; `"allow"` runs them side by side.
+`skipped`; `"allow"` runs them side by side, up to `concurrency` at once
+(4 if left out). A run due while that many still run is skipped.
 
 The file's jobs take effect when a release from it goes active: jobs are
 added or changed to match, and removed once the file drops them. A file
