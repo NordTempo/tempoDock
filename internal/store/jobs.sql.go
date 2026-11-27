@@ -29,7 +29,7 @@ func (q *Queries) DeleteServiceJobRuns(ctx context.Context, jobID *int64) error 
 }
 
 const getServiceJob = `-- name: GetServiceJob :one
-SELECT id, service_id, name, schedule, timezone, command, timeout_seconds, overlap, enabled, source, last_due_at, created_by, created_at, updated_at FROM service_jobs WHERE service_id = +? AND name = +?
+SELECT id, service_id, name, schedule, timezone, command, timeout_seconds, overlap, enabled, source, last_due_at, created_by, created_at, updated_at, concurrency FROM service_jobs WHERE service_id = +? AND name = +?
 `
 
 type GetServiceJobParams struct {
@@ -55,12 +55,13 @@ func (q *Queries) GetServiceJob(ctx context.Context, arg GetServiceJobParams) (S
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Concurrency,
 	)
 	return i, err
 }
 
 const getServiceJobByID = `-- name: GetServiceJobByID :one
-SELECT id, service_id, name, schedule, timezone, command, timeout_seconds, overlap, enabled, source, last_due_at, created_by, created_at, updated_at FROM service_jobs WHERE id = +?
+SELECT id, service_id, name, schedule, timezone, command, timeout_seconds, overlap, enabled, source, last_due_at, created_by, created_at, updated_at, concurrency FROM service_jobs WHERE id = +?
 `
 
 func (q *Queries) GetServiceJobByID(ctx context.Context, id int64) (ServiceJob, error) {
@@ -81,6 +82,7 @@ func (q *Queries) GetServiceJobByID(ctx context.Context, id int64) (ServiceJob, 
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Concurrency,
 	)
 	return i, err
 }
@@ -264,7 +266,7 @@ func (q *Queries) ListSchedulableJobs(ctx context.Context) ([]ListSchedulableJob
 }
 
 const listServiceJobs = `-- name: ListServiceJobs :many
-SELECT id, service_id, name, schedule, timezone, command, timeout_seconds, overlap, enabled, source, last_due_at, created_by, created_at, updated_at FROM service_jobs WHERE service_id = +? ORDER BY name
+SELECT id, service_id, name, schedule, timezone, command, timeout_seconds, overlap, enabled, source, last_due_at, created_by, created_at, updated_at, concurrency FROM service_jobs WHERE service_id = +? ORDER BY name
 `
 
 // A service's jobs by name.
@@ -292,6 +294,7 @@ func (q *Queries) ListServiceJobs(ctx context.Context, serviceID int64) ([]Servi
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Concurrency,
 		); err != nil {
 			return nil, err
 		}
@@ -356,13 +359,13 @@ func (q *Queries) TrimJobRuns(ctx context.Context, arg TrimJobRunsParams) error 
 }
 
 const upsertServiceJob = `-- name: UpsertServiceJob :one
-INSERT INTO service_jobs (service_id, name, schedule, timezone, command, timeout_seconds, overlap, enabled, source, created_by, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO service_jobs (service_id, name, schedule, timezone, command, timeout_seconds, overlap, concurrency, enabled, source, created_by, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (service_id, name) DO UPDATE SET
     schedule = excluded.schedule, timezone = excluded.timezone, command = excluded.command,
-    timeout_seconds = excluded.timeout_seconds, overlap = excluded.overlap, enabled = excluded.enabled,
+    timeout_seconds = excluded.timeout_seconds, overlap = excluded.overlap, concurrency = excluded.concurrency, enabled = excluded.enabled,
     source = excluded.source, updated_at = excluded.updated_at
-RETURNING id, service_id, name, schedule, timezone, command, timeout_seconds, overlap, enabled, source, last_due_at, created_by, created_at, updated_at
+RETURNING id, service_id, name, schedule, timezone, command, timeout_seconds, overlap, enabled, source, last_due_at, created_by, created_at, updated_at, concurrency
 `
 
 type UpsertServiceJobParams struct {
@@ -373,6 +376,7 @@ type UpsertServiceJobParams struct {
 	Command        string
 	TimeoutSeconds int64
 	Overlap        string
+	Concurrency    int64
 	Enabled        bool
 	Source         string
 	CreatedBy      string
@@ -391,6 +395,7 @@ func (q *Queries) UpsertServiceJob(ctx context.Context, arg UpsertServiceJobPara
 		arg.Command,
 		arg.TimeoutSeconds,
 		arg.Overlap,
+		arg.Concurrency,
 		arg.Enabled,
 		arg.Source,
 		arg.CreatedBy,
@@ -413,6 +418,7 @@ func (q *Queries) UpsertServiceJob(ctx context.Context, arg UpsertServiceJobPara
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Concurrency,
 	)
 	return i, err
 }

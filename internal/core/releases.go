@@ -119,6 +119,7 @@ type repoJob struct {
 	Command        string `json:"command"`
 	TimeoutSeconds int    `json:"timeout_seconds,omitempty"`
 	Overlap        string `json:"overlap,omitempty"`
+	Concurrency    int    `json:"concurrency,omitempty"`
 }
 
 func repoDeployOf(rc *repoconfig.Config) *repoDeploy {
@@ -129,7 +130,7 @@ func repoDeployOf(rc *repoconfig.Config) *repoDeploy {
 	for _, j := range rc.Jobs {
 		jobs = append(jobs, repoJob{
 			Name: j.Name, Schedule: j.Schedule, Timezone: j.Timezone, Command: j.Command,
-			TimeoutSeconds: int(j.Timeout / time.Second), Overlap: j.Overlap,
+			TimeoutSeconds: int(j.Timeout / time.Second), Overlap: j.Overlap, Concurrency: j.Concurrency,
 		})
 	}
 	return &repoDeploy{
@@ -1443,6 +1444,10 @@ func (c *Core) publishRelease(ctx context.Context, ss svcScope, r store.Release)
 		return
 	}
 	c.publish(ss, apitypes.Event{Type: apitypes.EventRelease, Release: &rel})
+	if !rel.Status.Done() || r.FinishedAt != nil && now().Sub(*r.FinishedAt) < time.Minute {
+		// The console's queue doesn't get an org's release events.
+		c.bus.publish(busEvent{ev: apitypes.Event{Type: apitypes.EventDeployQueue}})
+	}
 }
 
 // publish sends a service-scoped event.

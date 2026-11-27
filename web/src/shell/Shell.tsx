@@ -3,6 +3,7 @@ import { useLiveUpdates } from "../data/live";
 import { useLogout } from "../data/mutations";
 import { useSession } from "../data/queries";
 import { HelpHost } from "../features/help/open";
+import { QueueHost } from "../features/queue/open";
 import { DrainStrip } from "../features/servers/DrainStrip";
 import { Icon } from "../ui/icons";
 import { Notices } from "../ui/notice";
@@ -71,6 +72,7 @@ function OrgShell() {
         </main>
       </div>
       <HelpHost />
+      <QueueHost console={mode === "console"} />
       <Notices />
     </PaletteProvider>
   );

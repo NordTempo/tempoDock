@@ -6372,6 +6372,34 @@
         },
         "type": "object"
       },
+      "DeployQueue": {
+        "additionalProperties": false,
+        "properties": {
+          "builders": {
+            "items": {
+              "$ref": "#/components/schemas/QueueBuilder"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "deploying": {
+            "items": {
+              "$ref": "#/components/schemas/QueueItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "builders",
+          "deploying"
+        ],
+        "type": "object"
+      },
       "Diagnosis": {
         "additionalProperties": false,
         "properties": {
@@ -8894,7 +8922,8 @@
               "sleep",
               "scan",
               "email",
-              "git"
+              "git",
+              "deploy_queue"
             ],
             "type": "string"
           },
@@ -10963,6 +10992,10 @@
           "command": {
             "type": "string"
           },
+          "concurrency": {
+            "format": "int64",
+            "type": "integer"
+          },
           "created_by": {
             "type": "string"
           },
@@ -11017,6 +11050,7 @@
           "command",
           "timeout_seconds",
           "overlap",
+          "concurrency",
           "enabled",
           "source",
           "created_by",
@@ -11029,6 +11063,12 @@
         "properties": {
           "command": {
             "type": "string"
+          },
+          "concurrency": {
+            "format": "int64",
+            "maximum": 16,
+            "minimum": 0,
+            "type": "integer"
           },
           "enabled": {
             "type": "boolean"
@@ -13443,6 +13483,122 @@
           "title",
           "author",
           "url"
+        ],
+        "type": "object"
+      },
+      "QueueBuilder": {
+        "additionalProperties": false,
+        "properties": {
+          "building": {
+            "$ref": "#/components/schemas/QueueItem"
+          },
+          "builds": {
+            "enum": [
+              "all",
+              "production",
+              "non_production",
+              "none"
+            ],
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "name": {
+            "description": "The server's name; operators only",
+            "type": "string"
+          },
+          "waiting": {
+            "items": {
+              "$ref": "#/components/schemas/QueueItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "label",
+          "builds",
+          "waiting"
+        ],
+        "type": "object"
+      },
+      "QueueItem": {
+        "additionalProperties": false,
+        "properties": {
+          "commit": {
+            "$ref": "#/components/schemas/Commit"
+          },
+          "created_by": {
+            "description": "Who or what started it: a person, a token, git push, a preview",
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "from_release": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "hidden": {
+            "description": "Another org's release, or one you can't read: only its place and times",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "next": {
+            "$ref": "#/components/schemas/Commit"
+          },
+          "org": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "queued_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "release": {
+            "description": "The release's number in its service",
+            "format": "int64",
+            "type": "integer"
+          },
+          "service": {
+            "type": "string"
+          },
+          "since": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "upload",
+              "image",
+              "config",
+              "rollback",
+              "restart",
+              "promote"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "building",
+              "starting",
+              "health_checking"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "queued_at",
+          "since"
         ],
         "type": "object"
       },
@@ -17045,6 +17201,13 @@
             "maxLength": 16384,
             "minLength": 1,
             "type": "string"
+          },
+          "concurrency": {
+            "description": "Most runs at once, 1 to 16; a run due while that many run is skipped. Above 1 implies overlap allow. Default 1, or 4 with overlap allow",
+            "format": "int64",
+            "maximum": 16,
+            "minimum": 0,
+            "type": "integer"
           },
           "enabled": {
             "description": "Default true",
@@ -30157,6 +30320,106 @@
         ]
       }
     },
+    "/api/v1/console/deploy-queue": {
+      "get": {
+        "description": "The deploy queue of every organization, builders named, each release with its organization and ID. Commits show by SHA only. Platform viewers and operators.",
+        "operationId": "get-console-deploy-queue",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeployQueue"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Read every organization's deploy queue",
+        "tags": [
+          "releases"
+        ]
+      }
+    },
     "/api/v1/console/orgs": {
       "get": {
         "description": "Every organization with its owner and admins, members, projects and services, status and resource use (CPU, memory, volumes, backups, registry images, bandwidth), biggest first. Volumes come from the servers' last disk readings; with read_disks, servers not read in the last minute are read again in the background, and the result arrives as `disk` events. Operators only.",
@@ -32155,6 +32418,137 @@
         ]
       }
     },
+    "/api/v1/console/releases/{id}/cancel": {
+      "post": {
+        "description": "Cancels a deploy by release ID, as POST .../releases/{number}/cancel does, to free a builder without joining the organization. Recorded in the organization's log and the platform's. Operators only.",
+        "operationId": "cancel-console-release",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Release ID, from the console's deploy queue",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Release ID, from the console's deploy queue",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Release"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Cancel any organization's deploy",
+        "tags": [
+          "releases"
+        ]
+      }
+    },
     "/api/v1/console/tokens": {
       "get": {
         "description": "Platform tokens, platform logins (`dock login --platform`) and legacy tokens that are both an organization's and the platform's, newest first (ADR 0080). Needs platform.view.",
@@ -33852,6 +34246,106 @@
         "summary": "Set the default data policy",
         "tags": [
           "data"
+        ]
+      }
+    },
+    "/api/v1/deploy-queue": {
+      "get": {
+        "description": "Per builder, the release it builds and the ones waiting for it in order, then the releases deploying that aren't at a builder. Another organization's release, or one you can't read, shows as hidden in its place. Builders are labelled, not named. Cancel one with POST .../releases/{number}/cancel. Scope: read.",
+        "operationId": "get-deploy-queue",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeployQueue"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Read the deploy queue",
+        "tags": [
+          "releases"
         ]
       }
     },

@@ -443,6 +443,10 @@
     html.help-open #main {
       padding-right: 400px;
     }
+    /* The deploy queue's panel (features/queue) opens in the same place. */
+    html.queue-open #main {
+      padding-right: 440px;
+    }
   }
 }
 

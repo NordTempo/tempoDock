@@ -51,7 +51,7 @@ func (ep *envPlan) planJobs(line func(*[]apitypes.PlanChange, apitypes.PlanChang
 		inFile[fj.Name] = true
 		req := apitypes.SetJobRequest{
 			Schedule: strings.TrimSpace(fj.Schedule), Timezone: fj.Timezone, Command: fj.Command,
-			TimeoutSeconds: fj.TimeoutSeconds, Overlap: fj.Overlap, Enabled: fj.Enabled,
+			TimeoutSeconds: fj.TimeoutSeconds, Overlap: fj.Overlap, Concurrency: fj.Concurrency, Enabled: fj.Enabled,
 		}
 		if err := checkJob(fj.Name, &req); err != nil {
 			return invalid("job %s of service %s: %v", fj.Name, service, err)
@@ -62,7 +62,7 @@ func (ep *envPlan) planJobs(line func(*[]apitypes.PlanChange, apitypes.PlanChang
 			return invalid("job %s of service %s is in the project file and in %s's dock.toml; rename the project file's job or remove it from dock.toml", fj.Name, service, service)
 		}
 		c := ch(apitypes.ChangeAdd, fj.Name, "")
-		c.New = jobText(req.Schedule, req.Timezone, req.Command, req.TimeoutSeconds, req.Overlap, enabled)
+		c.New = jobText(req.Schedule, req.Timezone, req.Command, req.TimeoutSeconds, req.Overlap, req.Concurrency, enabled)
 		switch {
 		case pending:
 			c.Note = "set once the service is created: with --deploy, or by applying the file again after `dock changes apply`"
@@ -71,7 +71,7 @@ func (ep *envPlan) planJobs(line func(*[]apitypes.PlanChange, apitypes.PlanChang
 		case !ok:
 			c.Note = "set at once; jobs aren't staged"
 		default:
-			c.Old = jobText(cur.Schedule, cur.Timezone, cur.Command, int(cur.TimeoutSeconds), apitypes.JobOverlap(cur.Overlap), cur.Enabled)
+			c.Old = jobText(cur.Schedule, cur.Timezone, cur.Command, int(cur.TimeoutSeconds), apitypes.JobOverlap(cur.Overlap), int(cur.Concurrency), cur.Enabled)
 			if c.Old == c.New {
 				continue
 			}
@@ -86,7 +86,7 @@ func (ep *envPlan) planJobs(line func(*[]apitypes.PlanChange, apitypes.PlanChang
 			continue
 		}
 		c := ch(apitypes.ChangeRemove, j.Name, "")
-		c.Old = jobText(j.Schedule, j.Timezone, j.Command, int(j.TimeoutSeconds), apitypes.JobOverlap(j.Overlap), j.Enabled)
+		c.Old = jobText(j.Schedule, j.Timezone, j.Command, int(j.TimeoutSeconds), apitypes.JobOverlap(j.Overlap), int(j.Concurrency), j.Enabled)
 		switch {
 		case pr.items && running(j.ID):
 			c.Note = "running; apply the file again once its run ended"
@@ -112,8 +112,9 @@ func (ep *envPlan) planJobs(line func(*[]apitypes.PlanChange, apitypes.PlanChang
 }
 
 // jobText is a job's settings as one plan value: `0 3 * * * UTC: cmd`,
-// with its timeout, overlap and off when they aren't the defaults.
-func jobText(schedule, tz, command string, timeout int, overlap apitypes.JobOverlap, enabled bool) string {
+// with its timeout, overlap, concurrency and off when they aren't the
+// defaults.
+func jobText(schedule, tz, command string, timeout int, overlap apitypes.JobOverlap, concurrency int, enabled bool) string {
 	s := schedule + " " + tz + ": " + cleanLine(command, 80)
 	var extra []string
 	if timeout != apitypes.DefaultRunTimeoutSeconds {
@@ -121,6 +122,9 @@ func jobText(schedule, tz, command string, timeout int, overlap apitypes.JobOver
 	}
 	if overlap != apitypes.OverlapSkip {
 		extra = append(extra, "overlap "+string(overlap))
+	}
+	if concurrency != defaultConcurrency(overlap) {
+		extra = append(extra, fmt.Sprintf("%d at once", concurrency))
 	}
 	if !enabled {
 		extra = append(extra, "disabled")
@@ -162,7 +166,7 @@ func (c *Core) setFileJobs(ctx context.Context, q *store.Queries, a Actor, es en
 		}
 		row, err := q.UpsertServiceJob(ctx, store.UpsertServiceJobParams{
 			ServiceID: ss.svc.ID, Name: op.name, Schedule: op.req.Schedule, Timezone: op.req.Timezone, Command: op.req.Command,
-			TimeoutSeconds: int64(op.req.TimeoutSeconds), Overlap: string(op.req.Overlap), Enabled: op.req.Enabled == nil || *op.req.Enabled,
+			TimeoutSeconds: int64(op.req.TimeoutSeconds), Overlap: string(op.req.Overlap), Concurrency: int64(op.req.Concurrency), Enabled: op.req.Enabled == nil || *op.req.Enabled,
 			Source: string(apitypes.JobFromAPI), CreatedBy: a.Name, CreatedAt: at, UpdatedAt: at,
 		})
 		if err != nil {

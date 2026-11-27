@@ -275,6 +275,8 @@ type Core struct {
 	runs runState
 	// deploys holds the deploys running here, to cancel one (deploy_cancel.go).
 	deploys deployRuns
+	// builds is every builder's build slot and line (build_slots.go).
+	builds buildSlots
 	// uptime is the uptime checks' scheduler kick and state (uptime.go).
 	uptime uptimeState
 	// sleep holds the environments that sleep (sleep.go).
@@ -420,7 +422,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		backups:         newBackupState(),
 		volumes:         newVolumeWriters(),
 		uptime:          newUptimeState(),
-		runs:            runState{running: map[int64]int{}, ended: map[int64]chan struct{}{}},
+		runs:            runState{running: map[int64]int{}, oneOff: map[int64]int{}, ended: map[int64]chan struct{}{}},
 		jobs:            newJobState(),
 		scans:           newScanState(),
 		email:           newEmailState(),
@@ -458,6 +460,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		}
 	}
 	c.panel = newDataPanel(c)
+	c.builds.changed = c.queueChanged
 	if o.CutoverDrain > 0 {
 		c.drain = o.CutoverDrain
 	}

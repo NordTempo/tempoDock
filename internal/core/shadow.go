@@ -165,6 +165,7 @@ var actionPerms = map[actionKey]Perm{
 	{apitypes.ScopeDeploy, "listing a repository's branches"}:                            PermConfigWrite,
 	{apitypes.ScopeDeploy, "listing a repository's directories"}:                         PermConfigWrite,
 	{apitypes.ScopeRead, "listing a service's jobs"}:                                     PermEnvView,
+	{apitypes.ScopeRead, "reading the deploy queue"}:                                     PermEnvView,
 	{apitypes.ScopeRead, "listing a service's runs"}:                                     PermEnvView,
 	{apitypes.ScopeRead, "listing access requests"}:                                      PermRequestsRead,
 	{apitypes.ScopeRead, "listing backups"}:                                              PermEnvView,

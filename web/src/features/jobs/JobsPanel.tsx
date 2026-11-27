@@ -419,10 +419,14 @@ function zoned(at: Date, tz: string, weekday = false) {
 
 const DEFAULT_TIMEOUT = 3600;
 
+/** Runs at once that "run anyway" offers; overlap allow's default is 4. */
+const ALLOW_DEFAULT = 4;
+const CONCURRENCY = Array.from({ length: 15 }, (_, i) => i + 2);
+
 /**
  * The schedule editor: name (new jobs only), expression and timezone with
- * the schedule in words and its next three times, command, timeout and
- * overlap. A job from dock.toml shows read-only: it changes in the file.
+ * the schedule in words and its next three times, command, timeout,
+ * overlap and how many runs at once it allows. A job from dock.toml shows read-only: it changes in the file.
  */
 function Editor({
   serviceRef: ref,
@@ -447,6 +451,7 @@ function Editor({
   const [overlap, setOverlap] = useState<Job["overlap"]>(
     job?.overlap ?? "skip",
   );
+  const [concurrency, setConcurrency] = useState(job?.concurrency ?? 1);
 
   const fromFile = job?.source === "repo";
   const readOnly = fromFile || !canDeploy;
@@ -472,7 +477,8 @@ function Editor({
     tz !== job.timezone ||
     trimmed !== job.command ||
     timeout !== job.timeout_seconds ||
-    overlap !== job.overlap;
+    overlap !== job.overlap ||
+    concurrency !== job.concurrency;
   const valid =
     !!name && !nameError && !!trimmed && !!preview && !("error" in preview);
 
@@ -486,7 +492,10 @@ function Editor({
     `--schedule ${schedule.trim() ? quote(schedule.trim()) : "'0 3 * * *'"}`,
     tz !== "UTC" && `--timezone ${tz}`,
     timeout !== DEFAULT_TIMEOUT && `--timeout ${duration(timeout)}`,
-    overlap === "allow" && "--overlap allow",
+    overlap === "allow" &&
+      (concurrency === ALLOW_DEFAULT
+        ? "--overlap allow"
+        : `--concurrency ${concurrency}`),
     `-- ${trimmed ? quote(trimmed) : "<command>"}`,
   ]
     .filter(Boolean)
@@ -506,6 +515,7 @@ function Editor({
           command: trimmed,
           timeout_seconds: timeout,
           overlap,
+          concurrency,
           // A replaced job keeps its on or off.
           ...(job && { enabled: job.enabled }),
         };
@@ -615,14 +625,34 @@ function Editor({
             className="field"
             value={overlap}
             disabled={readOnly}
-            onChange={(e) =>
-              setOverlap(e.target.value === "allow" ? "allow" : "skip")
-            }
+            onChange={(e) => {
+              const allow = e.target.value === "allow";
+              setOverlap(allow ? "allow" : "skip");
+              setConcurrency(allow ? ALLOW_DEFAULT : 1);
+            }}
           >
             <option value="skip">skip</option>
             <option value="allow">run anyway</option>
           </select>
         </label>
+        {overlap === "allow" && (
+          <label className="flex items-center gap-2.5">
+            <span className="text-faint">up to</span>
+            <select
+              className="field font-mono"
+              value={concurrency}
+              disabled={readOnly}
+              onChange={(e) => setConcurrency(Number(e.target.value))}
+            >
+              {CONCURRENCY.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+            <span className="text-faint">at once</span>
+          </label>
+        )}
       </span>
       <span />
       <span className="flex flex-wrap items-center gap-2.5">

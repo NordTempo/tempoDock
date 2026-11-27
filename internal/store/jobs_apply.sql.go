@@ -10,7 +10,7 @@ import (
 )
 
 const listEnvironmentJobs = `-- name: ListEnvironmentJobs :many
-SELECT service_jobs.id, service_jobs.service_id, service_jobs.name, service_jobs.schedule, service_jobs.timezone, service_jobs.command, service_jobs.timeout_seconds, service_jobs.overlap, service_jobs.enabled, service_jobs.source, service_jobs.last_due_at, service_jobs.created_by, service_jobs.created_at, service_jobs.updated_at FROM service_jobs
+SELECT service_jobs.id, service_jobs.service_id, service_jobs.name, service_jobs.schedule, service_jobs.timezone, service_jobs.command, service_jobs.timeout_seconds, service_jobs.overlap, service_jobs.enabled, service_jobs.source, service_jobs.last_due_at, service_jobs.created_by, service_jobs.created_at, service_jobs.updated_at, service_jobs.concurrency FROM service_jobs
 JOIN services ON services.id = service_jobs.service_id
 WHERE services.environment_id = +?
 ORDER BY service_jobs.service_id, service_jobs.name
@@ -42,6 +42,7 @@ func (q *Queries) ListEnvironmentJobs(ctx context.Context, environmentID int64) 
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Concurrency,
 		); err != nil {
 			return nil, err
 		}
@@ -57,7 +58,7 @@ func (q *Queries) ListEnvironmentJobs(ctx context.Context, environmentID int64) 
 }
 
 const listProjectAPIJobs = `-- name: ListProjectAPIJobs :many
-SELECT service_jobs.id, service_jobs.service_id, service_jobs.name, service_jobs.schedule, service_jobs.timezone, service_jobs.command, service_jobs.timeout_seconds, service_jobs.overlap, service_jobs.enabled, service_jobs.source, service_jobs.last_due_at, service_jobs.created_by, service_jobs.created_at, service_jobs.updated_at FROM service_jobs
+SELECT service_jobs.id, service_jobs.service_id, service_jobs.name, service_jobs.schedule, service_jobs.timezone, service_jobs.command, service_jobs.timeout_seconds, service_jobs.overlap, service_jobs.enabled, service_jobs.source, service_jobs.last_due_at, service_jobs.created_by, service_jobs.created_at, service_jobs.updated_at, service_jobs.concurrency FROM service_jobs
 JOIN services ON services.id = service_jobs.service_id
 JOIN environments ON environments.id = services.environment_id
 WHERE environments.project_id = +? AND service_jobs.source = 'api'
@@ -90,6 +91,7 @@ func (q *Queries) ListProjectAPIJobs(ctx context.Context, projectID int64) ([]Se
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Concurrency,
 		); err != nil {
 			return nil, err
 		}

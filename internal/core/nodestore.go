@@ -28,8 +28,6 @@ const nodeStatusTimeout = 5 * time.Second
 // serverState is what core keeps in memory per server; entries are
 // created on first use and removed with the server (bounded by servers).
 type serverState struct {
-	// build allows one build at a time on a builder.
-	build chan struct{}
 	// kick asks the server's watcher to run the reconnect procedure;
 	// non-nil once the watcher runs. stop ends the watcher.
 	kick chan struct{}
@@ -63,18 +61,6 @@ func (c *Core) stateLocked(serverID int64) *serverState {
 		c.servers[serverID] = st
 	}
 	return st
-}
-
-// buildLock is a server's build semaphore: one build at a time per
-// builder.
-func (c *Core) buildLock(serverID int64) chan struct{} {
-	c.serversMu.Lock()
-	defer c.serversMu.Unlock()
-	st := c.stateLocked(serverID)
-	if st.build == nil {
-		st.build = make(chan struct{}, 1)
-	}
-	return st.build
 }
 
 // forgetServer stops a removed server's watcher and drops its state.

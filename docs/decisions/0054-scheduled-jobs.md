@@ -27,7 +27,7 @@ keeps its history; a scheduled job is the same run, started by the clock.
 | History | In `service_runs` with the job (ADR 0048): the newest 20 runs per job, trimmed as each run ends, each with its exit code, duration and the last 16 KB of output. Removing a job removes its runs |
 | Alerts | A scheduled or run-now run that fails or times out raises `job_failed` (warning) through the alert channels, one open alert per job, updated in place; the job's next successful run resolves it. Skips and interrupted runs don't alert |
 | Audit | `job.set`, `job.remove` and `job.run` (run now) name who and what. Scheduled runs aren't audited one by one, their history is the record: a job every minute would bury the log |
-| dock.toml | `[[jobs]]` with `name`, `schedule`, `timezone`, `command`, `timeout`, `overlap`. A release whose source has a dock.toml makes its jobs the service's file jobs when it goes active: added, changed, or removed when no longer in the file. A release without a file leaves them. File jobs are shown as such and changed in the file; the UI and CLI can disable them and run them now. A file job takes over a UI job of the same name |
+| dock.toml | `[[jobs]]` with `name`, `schedule`, `timezone`, `command`, `timeout`, `overlap`, `concurrency` (2026-11-27). A release whose source has a dock.toml makes its jobs the service's file jobs when it goes active: added, changed, or removed when no longer in the file. A release without a file leaves them. File jobs are shown as such and changed in the file; the UI and CLI can disable them and run them now. A file job takes over a UI job of the same name |
 | CLI | `dock job list`, `dock job set <name> --schedule ... [--timezone] [--timeout] [--overlap] -- <command>` (the command after `--`, as for `dock run`), `dock job remove`, `dock job enable/disable`, `dock job run <name>` (run now), `dock job history <name>` |
 | UI | The service's Jobs tab: the jobs with their schedule in words and next time, a schedule editor, each job's history with its output, and Run now |
 | Agents | MCP `list_jobs` (with `job`: its runs), `set_job`, `remove_job`, `run_job` (waits like `run_command`) |
@@ -41,3 +41,27 @@ keeps its history; a scheduled job is the same run, started by the clock.
 - The timer is a new periodic wake-up, listed in
   [performance](../performance.md): one per due job, and nothing at all
   without jobs.
+
+## Amended 2026-11-27: concurrency per job
+
+Overlap allow ran a job's runs side by side within the service's 4
+concurrent runs, shared with `dock run` commands and its other jobs. A
+queue sweep that should run three at once, beside a nightly job, had no
+way to say so. Now:
+
+- A job has `concurrency`, its most runs at once: 1 to 16
+  (`apitypes.MaxJobConcurrency`), in the API, `dock job set
+  --concurrency`, MCP `set_job`, dock.toml `[[jobs]]` and the Jobs tab.
+  A run due while that many run is skipped, as overlap skip did.
+- Overlap stays as the short form: skip is concurrency 1, allow
+  without a concurrency is 4, what it meant before. A concurrency above
+  1 implies allow, and is refused with an explicit skip. Existing jobs
+  got those values (migration 0140).
+- A job's runs count against its own concurrency, not against the
+  service's 4 slots for one-off commands (`dock run`), so an agent's
+  commands can't starve a schedule. Every run of a service, jobs and
+  commands together, is capped at 16, so a service's runs still can't
+  take its server's memory without bound.
+- Builds keep one at a time per builder: builds share the builder's
+  BuildKit memory cap, and a second builder is the way to build more at
+  once.

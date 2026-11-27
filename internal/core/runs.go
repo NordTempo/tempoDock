@@ -21,8 +21,10 @@ import (
 // and audited as service.run when it ends.
 
 const (
-	// maxRunsPerService caps a service's concurrent runs, so a loop of
-	// runs can't take its server's memory.
+	// maxRunsPerService caps a service's concurrent one-off runs (`dock
+	// run`), so a loop of runs can't take its server's memory. A job's
+	// runs count against its own concurrency instead, and every run of
+	// the service against apitypes.MaxJobConcurrency (ADR 0054).
 	maxRunsPerService = 4
 	// keepRuns is how many runs a service's history keeps.
 	keepRuns = 50
@@ -38,12 +40,13 @@ const (
 // a run out without waiting a second.
 var runSecond = time.Second
 
-// runState counts the runs in flight per service (by ID); the ones with
-// their volumes mounted for writing are in volumeWriters. Entries go when
-// their runs end.
+// runState counts the runs in flight per service (by ID), all of them
+// and the one-off ones (no job); the ones with their volumes mounted for
+// writing are in volumeWriters. Entries go when their runs end.
 type runState struct {
 	mu      sync.Mutex
 	running map[int64]int
+	oneOff  map[int64]int
 	// ended holds each run in flight's channel, closed when it ends, by
 	// run ID, for WaitRun.
 	ended map[int64]chan struct{}
@@ -159,7 +162,7 @@ func (c *Core) openRun(ctx context.Context, a Actor, ss svcScope, spec runSpec) 
 			return nil, err
 		}
 	}
-	endRun, err := c.holdRun(ss, volumes)
+	endRun, err := c.holdRun(ss, volumes, spec.job != nil)
 	if err != nil {
 		endJob()
 		return nil, err
@@ -266,13 +269,18 @@ func runVolumes(ss svcScope, cfg releaseConfig, want apitypes.RunVolumes) (apity
 
 // holdRun takes one of the service's run slots (and its one write slot
 // for a run mounting volumes for writing, holdWritingRun); the returned
-// func gives them back.
-func (c *Core) holdRun(ss svcScope, volumes apitypes.RunVolumes) (func(), error) {
+// func gives them back. A one-off run (not job's) also takes one of the
+// maxRunsPerService one-off slots; a job's runs are bounded by its
+// concurrency (holdJob) and, with every other run, by MaxJobConcurrency.
+func (c *Core) holdRun(ss svcScope, volumes apitypes.RunVolumes, job bool) (func(), error) {
 	id := ss.svc.ID
 	c.runs.mu.Lock()
 	defer c.runs.mu.Unlock()
-	if c.runs.running[id] >= maxRunsPerService {
+	if !job && c.runs.oneOff[id] >= maxRunsPerService {
 		return nil, conflict("%s already runs %d commands, the most at once; wait for one to end", ss.svc.Name, maxRunsPerService)
+	}
+	if c.runs.running[id] >= apitypes.MaxJobConcurrency {
+		return nil, conflict("%s already runs %d commands and job runs, the most at once; wait for one to end", ss.svc.Name, apitypes.MaxJobConcurrency)
 	}
 	endWrite := func() {}
 	if volumes == apitypes.VolumesWrite {
@@ -282,6 +290,9 @@ func (c *Core) holdRun(ss svcScope, volumes apitypes.RunVolumes) (func(), error)
 		}
 	}
 	c.runs.running[id]++
+	if !job {
+		c.runs.oneOff[id]++
+	}
 	var once sync.Once
 	return func() {
 		once.Do(func() {
@@ -290,6 +301,12 @@ func (c *Core) holdRun(ss svcScope, volumes apitypes.RunVolumes) (func(), error)
 			defer c.runs.mu.Unlock()
 			if c.runs.running[id]--; c.runs.running[id] <= 0 {
 				delete(c.runs.running, id)
+			}
+			if job {
+				return
+			}
+			if c.runs.oneOff[id]--; c.runs.oneOff[id] <= 0 {
+				delete(c.runs.oneOff, id)
 			}
 		})
 	}, nil

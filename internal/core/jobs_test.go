@@ -166,6 +166,24 @@ func TestJobOverlap(t *testing.T) {
 		if got := statuses(h.jobRuns(web, "slow")); got[0] != apitypes.RunRunning {
 			t.Fatalf("allow: %v", got)
 		}
+		// Two at once: with two running, the next due run is skipped.
+		if j := h.setJob(web, "slow", apitypes.SetJobRequest{Schedule: "* * * * *", Command: "slow", Concurrency: 2}); j.Overlap != apitypes.OverlapAllow || j.Concurrency != 2 {
+			t.Fatalf("concurrency 2 reads as %s, %d", j.Overlap, j.Concurrency)
+		}
+		time.Sleep(time.Minute)
+		settle(func() bool { return len(h.jobRuns(web, "slow")) >= 4 })
+		if got := statuses(h.jobRuns(web, "slow")); len(got) != 4 || got[0] != apitypes.RunSkipped {
+			t.Fatalf("concurrency 2: %v", got)
+		}
+		for _, bad := range []apitypes.SetJobRequest{
+			{Schedule: "@daily", Command: "x", Concurrency: apitypes.MaxJobConcurrency + 1},
+			{Schedule: "@daily", Command: "x", Concurrency: 2, Overlap: apitypes.OverlapSkip},
+			{Schedule: "@daily", Command: "x", Concurrency: 2, Overlap: "queue"},
+		} {
+			if _, err := h.c.SetJob(h.ctx, testSystem, web, "bad", bad); CodeOf(err) != apitypes.CodeValidation {
+				t.Errorf("%+v: %v", bad, err)
+			}
+		}
 		close(release)
 		synctest.Wait()
 	})

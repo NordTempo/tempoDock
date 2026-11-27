@@ -122,6 +122,9 @@ func (c *Core) ExportProject(ctx context.Context, a Actor, project string) (apit
 	for _, j := range jobs {
 		if se := bySvc[j.ServiceID]; se != nil {
 			je := apitypes.JobExport{Name: j.Name, Schedule: j.Schedule, Timezone: j.Timezone, Command: j.Command, TimeoutSeconds: int(j.TimeoutSeconds), Overlap: apitypes.JobOverlap(j.Overlap)}
+			if n := int(j.Concurrency); n != defaultConcurrency(je.Overlap) {
+				je.Concurrency = n
+			}
 			if !j.Enabled {
 				je.Enabled = ptr(false)
 			}

@@ -11,11 +11,11 @@ SELECT * FROM service_jobs WHERE id = +?;
 -- name: UpsertServiceJob :one
 -- Creates or replaces a job by name; a changed schedule counts its due
 -- times from now (updated_at), so it doesn't fire for the past.
-INSERT INTO service_jobs (service_id, name, schedule, timezone, command, timeout_seconds, overlap, enabled, source, created_by, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO service_jobs (service_id, name, schedule, timezone, command, timeout_seconds, overlap, concurrency, enabled, source, created_by, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (service_id, name) DO UPDATE SET
     schedule = excluded.schedule, timezone = excluded.timezone, command = excluded.command,
-    timeout_seconds = excluded.timeout_seconds, overlap = excluded.overlap, enabled = excluded.enabled,
+    timeout_seconds = excluded.timeout_seconds, overlap = excluded.overlap, concurrency = excluded.concurrency, enabled = excluded.enabled,
     source = excluded.source, updated_at = excluded.updated_at
 RETURNING *;
 

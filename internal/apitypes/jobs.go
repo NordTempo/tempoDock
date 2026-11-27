@@ -33,6 +33,12 @@ const (
 	KeepJobRuns = 20
 	// MaxJobsPerService caps a service's jobs.
 	MaxJobsPerService = 50
+	// MaxJobConcurrency caps a job's runs at once, and every run of a
+	// service at once: each run is a container with the service's limits.
+	MaxJobConcurrency = 16
+	// AllowConcurrency is the runs at once overlap allow gives a job that
+	// doesn't set its concurrency: the service's cap before concurrency.
+	AllowConcurrency = 4
 )
 
 // Job is a scheduled job.
@@ -44,8 +50,11 @@ type Job struct {
 	// TimeoutSeconds stops a run after this long.
 	TimeoutSeconds int        `json:"timeout_seconds"`
 	Overlap        JobOverlap `json:"overlap" enum:"skip,allow"`
-	Enabled        bool       `json:"enabled"`
-	Source         JobSource  `json:"source" enum:"api,repo"`
+	// Concurrency is how many of its runs may run at once; a run due
+	// while that many run is skipped. 1 with overlap skip.
+	Concurrency int       `json:"concurrency"`
+	Enabled     bool      `json:"enabled"`
+	Source      JobSource `json:"source" enum:"api,repo"`
 	// NextAt is when it runs next; absent while disabled.
 	NextAt *time.Time `json:"next_at,omitempty"`
 	// LastRun is its latest run, without output.
@@ -61,6 +70,7 @@ type SetJobRequest struct {
 	Command        string     `json:"command" minLength:"1" maxLength:"16384" doc:"Run with /bin/sh -c in the service's active image"`
 	TimeoutSeconds int        `json:"timeout_seconds,omitempty" minimum:"0" maximum:"86400" doc:"Default 3600"`
 	Overlap        JobOverlap `json:"overlap,omitempty" enum:"skip,allow" doc:"When it comes due while still running: skip (default) or allow"`
+	Concurrency    int        `json:"concurrency,omitempty" minimum:"0" maximum:"16" doc:"Most runs at once, 1 to 16; a run due while that many run is skipped. Above 1 implies overlap allow. Default 1, or 4 with overlap allow"`
 	Enabled        *bool      `json:"enabled,omitempty" doc:"Default true"`
 }
 

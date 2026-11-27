@@ -89,3 +89,28 @@ func TestReleaseServicesPlan(t *testing.T) {
 		t.Errorf("ListReleaseServices: %s", got)
 	}
 }
+
+// The deploy queue reads the releases in flight from their partial index,
+// which holds only them, and each one's service, environment, project,
+// org and git connection by key: nothing grows with the releases kept.
+func TestDeployQueuePlan(t *testing.T) {
+	f := newDataFixture(t)
+	rows, err := f.s.DB.Query("EXPLAIN QUERY PLAN " + listDeployQueue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	var plan []string
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		plan = append(plan, detail)
+	}
+	got := strings.Join(plan, "; ")
+	if !strings.HasPrefix(got, "SCAN r USING INDEX releases_one_in_flight;") || strings.Count(got, "SCAN") != 1 || strings.Contains(got, "TEMP B-TREE") {
+		t.Errorf("ListDeployQueue: %s", got)
+	}
+}
