@@ -124,6 +124,7 @@ line means a later record added to it without changing what it decided.
 | [0108](0108-following-a-compose-file.md) | An environment follows a Compose file in its GitHub repository through the GitHub App: each push that changes it is staged for review; removals only when an admin turns them on; opt-in auto-apply for syncs that remove nothing | accepted |
 | [0109](0109-host-security-checks.md) | Host security checks: each server reads its own host about daily and on Check now (SSH passwords and root, ports open that Dock didn't open, Docker's API on TCP, the Docker socket in containers, security updates, reboots, automatic updates, firewalls), read-only as the dock user; results in the console only, one calm platform alert per server, dismiss with a reason | accepted |
 | [0110](0110-mongodb.md) | MongoDB as a first-class database: the `mongodb` template (`mongo:8.0`, `MONGODB_URI`), mongodump backups, restores into a new service without `admin`, drills, unmasked preview copies, compose import; no point-in-time restore; the Data panel next | accepted |
+| [0111](0111-shells-in-running-containers.md) | Shells in running containers: `dock exec` in the active release's container, the new `shell` permission above deploy, audited, refused by the lock without a request, ended with its caller's access, what it started stopped after where Dock can (best effort); node protocol 39 | accepted |
 
 ## Template
 

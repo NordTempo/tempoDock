@@ -118,6 +118,22 @@ func (c *Core) releaseRedactor(rel store.Release) (*redactor, error) {
 	return newRedactor(cfg.Env), nil
 }
 
+// shownCommand is a command as text every reader sees quotes it (an
+// audit summary): rel's secret values masked first, so a value typed
+// into a command never reaches someone who can't reveal it, then cut to
+// max runes. Without rel's config the command is left out.
+func (c *Core) shownCommand(rel store.Release, cmd string, max int) string {
+	red, err := c.releaseRedactor(rel)
+	if err != nil {
+		c.log.Warn("mask a command", "release", rel.ID, "err", err)
+		return "(command not shown)"
+	}
+	if masked, ok := red.line(cmd); ok {
+		cmd = masked
+	}
+	return cleanLine(cmd, max)
+}
+
 // redactor masks a fixed set of secret values in log text. A nil
 // redactor masks nothing. The values are found with one automaton
 // (matcher), built once: a byte of text costs the same whether a service

@@ -505,6 +505,25 @@ The service's Run tab in the UI runs commands too (without a terminal),
 and agents have the MCP tool `run_command`. Design: [ADR
 0048](../decisions/0048-one-off-commands.md).
 
+## Open a shell in the running container
+
+```sh
+dock exec web                      # a shell in what serves web now
+dock exec web -- ls -la /app/tmp   # one command, run as it is
+```
+
+Opens a shell, or runs a command, inside the container of the service's
+active release: its files, processes and variables as they are now. Use
+it to look at what only the serving process knows; for anything else
+prefer `dock run`, which leaves it alone. It takes the `shell`
+permission on the environment (Full access, or the Deploy area's `shell`
+level; admin with a plain scope), a locked environment refuses
+tokens, and every session is in the audit log (`service.exec`) with the
+release it ran in. When a session ends, Dock stops what it started in the
+container where it can (the image needs `sh`, `tr` and `grep`); don't
+count on it to end background work. Design: [ADR
+0111](../decisions/0111-shells-in-running-containers.md).
+
 ## Stop and start
 
 ```sh

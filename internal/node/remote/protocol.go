@@ -105,8 +105,9 @@ const (
 	// with its data kept (ADR 0101, StopStoreProtocol). 36 takes Dock's
 	// Caddy with an update (ADR 0106, CaddyUpdateProtocol). 37 adds the
 	// routes' security headers (ADR 0107). 38 adds check-host: read-only
-	// security checks of the server's host (ADR 0109, HostCheckProtocol).
-	Protocol = 38
+	// security checks of the server's host (ADR 0109, HostCheckProtocol). 39
+	// adds exec: a shell in a running container (ADR 0111, ExecProtocol).
+	Protocol = 39
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1
@@ -215,6 +216,7 @@ const (
 	opPruneLogs    = "prune-logs"
 	opRunJob       = "run-job"        // protocol 2
 	opRunJobStream = "run-job-stream" // protocol 16, full duplex: see job_stream.go
+	opExec         = "exec"           // protocol 39, full duplex: see exec.go
 	opProbe        = "probe"          // protocol 19
 	opResume       = "resume"         // protocol 22
 	opOpenRequests = "open-requests"  // protocol 22

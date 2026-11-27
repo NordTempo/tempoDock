@@ -49,7 +49,7 @@ while the agents guide said deploy can't read them.
 | Part | Is |
 |---|---|
 | Permission | A fixed list in code (`deploy`, `logs.read`, `variables.read_secret`, `data.write`, `approve`, ...), about 40, each at environment, project or org level, marked when it reaches secret values. A feature adds its own; every check names one |
-| Area role | A built-in building block, the same in every org, one per area with levels: Deploy (view, operate, edit), Variables and secrets (view, edit, reveal), Logs, errors and traces (view, edit), Data panel (schema, read, propose, write, full), Domains, Analytics, Status pages (view, post, edit), Alerts and Inbox (view, resolve, edit), Projects, Org settings, Members and access, Usage and billing, Activity; plus Approver and Full access (every permission, also later ones) |
+| Area role | A built-in building block, the same in every org, one per area with levels: Deploy (view, operate, edit, shell: ADR 0111), Variables and secrets (view, edit, reveal), Logs, errors and traces (view, edit), Data panel (schema, read, propose, write, full), Domains, Analytics, Status pages (view, post, edit), Alerts and Inbox (view, resolve, edit), Projects, Org settings, Members and access, Usage and billing, Activity; plus Approver and Full access (every permission, also later ones) |
 | Custom role | Per org: permissions and other roles. Includes can't loop |
 | Group | Per org, a job function: a set of role grants, and members (people and org agents). Groups don't nest |
 | Grant | A role, a where (the org, a project, one environment) and optionally environment kinds (Production, Other, Previews); in a group, or directly on one person or org agent for a one-off, optionally ending at a time. Grants only add |

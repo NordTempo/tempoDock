@@ -614,6 +614,7 @@ func (n *Node) runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 	}))
 	h(opDial, serveDial(rt))
 	h(opRunJobStream, serveRunJobStream(rt))
+	h(opExec, serveExec(rt))
 	h(opSetAnalytics, unary(func(ctx context.Context, a setAnalyticsRequest) (empty, error) {
 		cfg := node.AnalyticsConfig{Salts: a.Salts, TraceKey: a.TraceKey}
 		if a.Sites != nil {

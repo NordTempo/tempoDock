@@ -251,6 +251,23 @@ type Containers interface {
 	// run`, ADR 0048; on a remote server since node protocol 16).
 	RunJob(ctx context.Context, spec JobSpec) (JobResult, error)
 
+	// Exec runs a command inside a running service container (`dock
+	// exec`, ADR 0111), connected to its caller through req.Stream, and
+	// returns its exit code once it ended. The target must be an app
+	// container (LabelManaged, a service label, no LabelRole) whose
+	// labels match req.Labels, and running: another is ErrNotFound
+	// (wrapped), a stopped one ErrNotRunning (wrapped). ctx ending ends
+	// the session, and the runtime then tries to stop what the command
+	// started (SIGHUP, then SIGKILL), since Docker keeps an exec running
+	// when its caller goes away. That is best effort: it needs sh, tr and
+	// grep in the image, and a process that leaves the session's marker
+	// behind escapes it, so Exec returning doesn't mean the processes
+	// are gone. A write to
+	// req.Stream in progress when ctx ends may finish after Exec returned,
+	// once the caller's end of the stream frees it. On a remote server
+	// since node protocol 39; an older node's error says to upgrade it.
+	Exec(ctx context.Context, req ExecRequest) (int, error)
+
 	// EnsureSidecar runs a container Dock owns next to a service (ADR
 	// 0093: a Postgres database's WAL archiver): spec's image and
 	// arguments, dock-probe (for spec.Health) and the server's own dock
@@ -401,7 +418,33 @@ type JobStream struct {
 	TTY    bool
 	Size   TermSize
 	Resize <-chan TermSize
+	// Cut, when set, frees a write to Stdout or Stderr that blocks
+	// because the caller stopped reading (the API sets a write deadline on
+	// its connection). Core calls it when a session or run ends before its
+	// command did (timeout, access changed): until that write returns,
+	// nothing upstream of it can.
+	Cut func()
 }
+
+// ExecRequest is a command to run in a running container (Exec).
+type ExecRequest struct {
+	// ContainerID is the full ID of a running app container, whose labels
+	// must match Labels (Labels.Matches): the release core expects there.
+	ContainerID string
+	Labels      Labels
+	// Cmd is the command and its arguments, run as they are (no shell),
+	// as the container's own user, in its working directory.
+	Cmd []string
+	// Session is a random token set as ExecSessionVar in the command's
+	// environment, so the processes it starts can be found and stopped
+	// when the session ends.
+	Session string
+	// Stream connects it to its caller; Stream.Stdout is required.
+	Stream *JobStream
+}
+
+// ExecSessionVar is the variable that marks an Exec session's processes.
+const ExecSessionVar = "DOCK_EXEC_SESSION"
 
 // TermSize is a terminal's size in characters.
 type TermSize struct{ Cols, Rows uint16 }

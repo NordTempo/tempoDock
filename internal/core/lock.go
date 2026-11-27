@@ -265,6 +265,9 @@ func (c *Core) setLock(ctx context.Context, a Actor, es envScope, params store.S
 		return apitypes.Environment{}, err
 	}
 	es.env = e
+	// What tokens hold open there (a run, a shell) is checked against
+	// the new lock.
+	c.accessChanged(accessChange{envID: e.ID})
 	c.audit(ctx, a, action, &es.project, &es.env, es.String(), summary)
 	c.bus.publish(busEvent{orgID: es.project.OrgID, projectID: es.project.ID, envID: e.ID, ev: apitypes.Event{
 		Type: apitypes.EventEnvironmentLock, Project: es.project.Name, Environment: e.Name, Lock: envLock(e),

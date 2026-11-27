@@ -162,6 +162,7 @@ func newAPI(mux *http.ServeMux, s *Server) huma.API {
 	registerSiteLive(s, a)
 	registerConnect(s, a, mux)
 	registerRuns(s, a, mux)
+	registerExec(s, mux)
 	registerJobs(s, a)
 	registerStatusPages(s, a)
 	registerIncidents(s, a)

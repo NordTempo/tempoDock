@@ -262,6 +262,7 @@ const words: Record<string, readonly [label: string, past: string]> = {
   "service.charts": ["pin charts", "changed the pinned charts of"],
   "service.create": ["create service", "created"],
   "service.database": ["set database", "set the database of"],
+  "service.exec": ["open shell", "opened a shell in"],
   "service.health_restart": ["restart unhealthy", "restarted unhealthy"],
   "service.previews": ["set previews", "set what previews do with"],
   "service.run": ["run command", "ran a command in"],

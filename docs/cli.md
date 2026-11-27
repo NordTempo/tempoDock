@@ -412,6 +412,35 @@ scope; every run is audited (`service.run`) and listed by `dock runs`.
   exits 130. Errors before it starts (no release, a locked environment,
   permissions) are the usual exit codes.
 
+### `dock exec`
+
+A shell in the service's running container ([ADR
+0111](decisions/0111-shells-in-running-containers.md)): the container of
+its active release, as it is now. `dock run` starts a new container
+instead. Needs the `shell` permission on the environment (Full access, or
+the Deploy area's `shell` level; admin with a plain scope); every
+session is audited (`service.exec`) and keeps no output.
+
+- Without a command it is a shell (bash where the image has one, sh
+  otherwise) with stdin and a terminal. A command after `--` runs as it
+  is, without a shell (`dock exec web -- sh -c 'ls | wc -l'` for shell
+  syntax), and only gets stdin with `-i` and a terminal with `-t` (when
+  stdin is one). Only the service may come before `--`.
+- A session ends with its command, Ctrl-C (unless `-it`, where it goes to
+  the command), a change to your access, or after 24 hours. Then what it
+  started in the container is stopped, as far as Dock can: the image
+  needs `sh`, `tr` and `grep` for that, and a process that changes its
+  own environment or user can escape it.
+- A locked environment refuses tokens, `dock login`'s included
+  (`environment_locked`, exit 5), without filing an access request: ask
+  an approver there to open the environment for a while. A session open
+  when the environment is locked ends.
+- Exit code: the command's own. A session that ended without one is an
+  error: exit 5 when the service has no running container (`conflict`),
+  7 when its server is offline, 3 when your access changed. With
+  `--json` the command's stdout goes to stderr and stdout is the
+  session's end (`ExecEnd`).
+
 ### `dock job`
 
 Scheduled jobs ([ADR 0054](decisions/0054-scheduled-jobs.md)): a cron

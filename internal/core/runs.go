@@ -344,9 +344,12 @@ func (r *Run) wait(ctx context.Context, stream *node.JobStream) apitypes.Command
 	c := r.c
 	timeout := time.Duration(r.row.TimeoutSeconds) * runSecond
 	if stream != nil {
-		// Attached to its caller: it ends when their access does.
+		// Attached to its caller: it ends when their access does. Not
+		// when the environment is locked meanwhile: the command was
+		// allowed when it started, and cutting a migration short does
+		// more harm than letting it end.
 		var unwatch func()
-		ctx, unwatch = c.watched(ctx, r.actor, func(_ context.Context, now Actor) error {
+		ctx, unwatch = c.watched(ctx, r.actor, 0, func(_ context.Context, now Actor) error {
 			if err := now.requireScope(apitypes.ScopeDeploy, "running a command"); err != nil {
 				return err
 			}
@@ -358,6 +361,11 @@ func (r *Run) wait(ctx context.Context, stream *node.JobStream) apitypes.Command
 	defer cancel()
 	stop := context.AfterFunc(c.ctx, cancel)
 	defer stop()
+	if stream != nil && stream.Cut != nil {
+		// As for a shell (Exec.wait): a run that ends early frees a write
+		// to a caller who stopped reading.
+		defer context.AfterFunc(jctx, stream.Cut)()
+	}
 
 	flush := func() error { return nil }
 	if red, rerr := c.logRedactor(r.actor, r.ss.envScope, r.rel); rerr == nil && red != nil && stream != nil {
@@ -466,7 +474,7 @@ func (r *Run) finish(ctx context.Context, status apitypes.RunStatus, exit *int, 
 		if err := c.store.TrimServiceRuns(ctx, store.TrimServiceRunsParams{ServiceID: r.ss.svc.ID, Keep: keepRuns}); err != nil {
 			c.log.Error("trim run history", "service", r.ss.String(), "err", err)
 		}
-		c.audit(ctx, r.actor, "service.run", &r.ss.project, &r.ss.env, r.ss.String(), runSummary(r.row))
+		c.audit(ctx, r.actor, "service.run", &r.ss.project, &r.ss.env, r.ss.String(), runSummary(r.row, c.shownCommand(r.rel, r.row.Command, runAuditCommand)))
 		c.publishRun(r.ss, r.rel, r.row, "")
 	}
 	out := c.toRun(r.ss, r.rel, r.row)
@@ -493,9 +501,9 @@ func (c *Core) maskRunOutput(a Actor, es envScope, rel store.Release, run *apity
 	run.Output, _ = red.line(run.Output)
 }
 
-// runSummary is a finished run's audit summary: the command and how it
-// ended.
-func runSummary(row store.ServiceRun) string {
+// runSummary is a finished run's audit summary: the command (as
+// shownCommand gives it) and how it ended.
+func runSummary(row store.ServiceRun, command string) string {
 	took := ""
 	if row.FinishedAt != nil {
 		took = " after " + row.FinishedAt.Sub(row.StartedAt).Round(time.Second).String()
@@ -515,7 +523,7 @@ func runSummary(row store.ServiceRun) string {
 	if row.Tty {
 		kind = "ran a terminal session:"
 	}
-	return fmt.Sprintf("%s `%s`: %s", kind, cleanLine(row.Command, runAuditCommand), end)
+	return fmt.Sprintf("%s `%s`: %s", kind, command, end)
 }
 
 // runTail keeps the last apitypes.MaxRunOutputBytes of a run's output, as
