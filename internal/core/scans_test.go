@@ -13,6 +13,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/sbom"
+	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 // scanHarness is a harness whose scans start after 20 ms of quiet.
@@ -324,5 +325,41 @@ func TestExportSBOM(t *testing.T) {
 	other := Actor{Kind: "token", OrgID: 2, Name: "x", TokenID: 3, Scope: apitypes.ScopeAdmin}
 	if _, err := h.c.ExportSBOM(h.ctx, other, ref, 0, sbom.SyftJSON); err == nil {
 		t.Fatal("another org read the SBOM")
+	}
+}
+
+// An image only a server that doesn't scan its kind has (no registry)
+// waits for an operator without using attempts, and is due again once
+// what a server scans changes.
+func TestScanParksForItsServer(t *testing.T) {
+	h := newHarness(t)
+	local, err := h.store.GetLocalServer(h.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.store.UpdateServerSettings(h.ctx, store.UpdateServerSettingsParams{BaseDomain: local.BaseDomain, Builder: true, BuildsNonProduction: true, ID: local.ID}); err != nil {
+		t.Fatal(err)
+	}
+	row, err := h.store.AddImageScan(h.ctx, store.AddImageScanParams{ImageKey: "local:sha256:1", LocalRef: "dock/web:1", BuiltOnServerID: &local.ID, OrgID: 1, CreatedAt: now().Unix()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.c.runScan(h.ctx, row, nil)
+	row, err = h.store.GetImageScan(h.ctx, row.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.State != string(apitypes.ScanQueued) || row.Attempts != 0 || row.NextAttemptAt == nil || !strings.Contains(row.Error, "--scans all") {
+		t.Fatalf("parked scan = %s, %d attempts, next %v, %q", row.State, row.Attempts, row.NextAttemptAt, row.Error)
+	}
+	h.c.scans.mu.Lock()
+	h.c.scans.enabled = false // no pass takes the row before it is read
+	h.c.scans.mu.Unlock()
+	on := true
+	if _, err := h.c.UpdateServer(h.ctx, testSystem, local.Name, apitypes.UpdateServerRequest{ScansNonProduction: &on}); err != nil {
+		t.Fatal(err)
+	}
+	if row, err = h.store.GetImageScan(h.ctx, row.ID); err != nil || row.NextAttemptAt != nil {
+		t.Fatalf("after scans changed: next %v (%v), want due now", row.NextAttemptAt, err)
 	}
 }

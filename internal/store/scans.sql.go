@@ -1569,8 +1569,8 @@ type NextImageScanParams struct {
 }
 
 // The next scan to run: queued, due, and one a builder there is may
-// scan (production ones only with a builder that builds production, the
-// rest with one that builds non-production).
+// scan (production ones only with a builder that scans production, the
+// rest with one that scans non-production).
 func (q *Queries) NextImageScan(ctx context.Context, arg NextImageScanParams) (ImageScan, error) {
 	row := q.db.QueryRowContext(ctx, nextImageScan, arg.Now, arg.NonProductionBuilder, arg.ProductionBuilder)
 	var i ImageScan
@@ -2054,6 +2054,17 @@ type SetTagsCheckedParams struct {
 // existing row keeps its updated_by and updated_at.
 func (q *Queries) SetTagsChecked(ctx context.Context, arg SetTagsCheckedParams) error {
 	_, err := q.db.ExecContext(ctx, setTagsChecked, arg.TagsCheckedAt, arg.UpdatedAt)
+	return err
+}
+
+const unparkImageScans = `-- name: UnparkImageScans :exec
+UPDATE image_scans SET next_attempt_at = NULL WHERE state = 'queued' AND next_attempt_at IS NOT NULL
+`
+
+// Makes every queued scan due now: what a server scans changed, so a
+// scan waiting for its image's server may have a scanner.
+func (q *Queries) UnparkImageScans(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, unparkImageScans)
 	return err
 }
 

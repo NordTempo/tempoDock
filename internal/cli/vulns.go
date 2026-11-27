@@ -735,8 +735,8 @@ func newScanningCmd(g *globals) *cobra.Command {
 		Short: "Image vulnerability scanning on the platform: on or off, each builder's database (operators)",
 		Long: `Whether Dock scans live images for vulnerabilities, how many images are in
 each state, and each builder's vulnerability database. Scans run only on
-builders (production images only on builders that build production),
-only once no build or deploy has run anywhere for a minute, and stop the
+builders that scan the image's kind, set apart from what they build
+(` + "`dock server update NAME --scans`" + `), only once no build or deploy has run anywhere for a minute, and stop the
 moment one starts.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return show(cmd, nil) },

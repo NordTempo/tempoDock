@@ -311,7 +311,12 @@ func (c *Core) UpdateServer(ctx context.Context, a Actor, name string, req apity
 			c.warmBuilder(ctx, srv.ID)
 		}
 		if settings.Builder != srv.Builder || settings.ScansProduction != srv.ScansProduction || settings.ScansNonProduction != srv.ScansNonProduction {
-			c.kickScans() // queued scans may have a scanner now, or another one
+			// Queued scans may have a scanner now, or another one, and
+			// those parked for their image's server are due again.
+			if err := c.store.UnparkImageScans(ctx); err != nil {
+				c.log.Warn("make queued scans due", "err", err)
+			}
+			c.kickScans()
 		}
 		if srv.Local && settings.BaseDomain != srv.BaseDomain {
 			c.publicSitesChanged(ctx) // stats-<site>.<base domain> moved

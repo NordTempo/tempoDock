@@ -43,6 +43,15 @@ function buildsOf(s: Server): Builds {
 
 const buildsProduction = (b: Builds) => b === "production" || b === "all";
 
+const scansField = {
+  production: "scans_production",
+  non_production: "scans_non_production",
+} as const satisfies Record<EnvironmentKind, keyof Server>;
+
+/** Whether a Scans choice covers kind. */
+const scansKind = (b: Builds, kind: EnvironmentKind) =>
+  b === "all" || b === kind;
+
 /** Which kinds' images a builder scans: the same choices as Builds. */
 function scansOf(s: Server): Builds {
   if (s.scans_production && s.scans_non_production) return "all";
@@ -317,11 +326,28 @@ export function useServerSwitches(server: Server) {
             onChange={(e) => {
               const to =
                 buildsOptions.find((b) => b === e.target.value) ?? "off";
-              const others = servers.filter(
-                (s) =>
-                  s.name !== name &&
-                  s.builder &&
-                  (s.scans_production || s.scans_non_production),
+              const was = scansOf(server);
+              // Each kind this server stops scanning, and the builders
+              // that still scan it.
+              const lost = (["production", "non_production"] as const)
+                .filter((k) => scansKind(was, k) && !scansKind(to, k))
+                .map((k) => ({
+                  kind: k,
+                  others: servers.filter(
+                    (s) => s.name !== name && s.builder && s[scansField[k]],
+                  ),
+                }));
+              const others = [
+                ...new Set(lost.flatMap((l) => l.others.map((s) => s.name))),
+              ];
+              const orphaned = lost
+                .filter((l) => l.others.length === 0)
+                .map((l) => kindLabel[l.kind]);
+              const warning = orphaned.length > 0 && (
+                <span className="mt-2 block text-warn-text">
+                  No other builder scans {orphaned.join(" or ")} images: they go
+                  unscanned until one does.
+                </span>
               );
               setAsk({
                 patch: {
@@ -331,7 +357,7 @@ export function useServerSwitches(server: Server) {
                 action:
                   to === "off" ? "Stop scanning" : `Scan ${buildsLabel[to]}`,
                 cli: `dock server update ${name} --scans ${{ off: "none", non_production: "non-production", production: "production", all: "all" }[to]}`,
-                last: to === "off" && others.length === 0,
+                last: orphaned.length > 0,
                 text:
                   to === "off" ? (
                     <>
@@ -344,15 +370,10 @@ export function useServerSwitches(server: Server) {
                         </span>
                         ).{" "}
                         {others.length
-                          ? `Scans go to ${others.map((s) => s.name).join(", ")}.`
+                          ? `Scans go to ${others.join(", ")}.`
                           : ""}
                       </span>
-                      {others.length === 0 && (
-                        <span className="mt-2 block text-warn-text">
-                          No other builder scans: images go unscanned until one
-                          does.
-                        </span>
-                      )}
+                      {warning}
                     </>
                   ) : (
                     <>
@@ -363,6 +384,7 @@ export function useServerSwitches(server: Server) {
                         {!server.local &&
                           "The control plane scans only what no other server does."}
                       </span>
+                      {warning}
                     </>
                   ),
               });

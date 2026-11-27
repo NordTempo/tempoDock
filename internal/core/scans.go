@@ -572,8 +572,17 @@ func (c *Core) scanImages() node.ScanImages {
 func (c *Core) runScan(ctx context.Context, row store.ImageScan, builders []store.Server) {
 	srv, ok := c.scanServer(row, builders)
 	if !ok {
+		if why := c.scanParked(ctx, row); why != "" {
+			// Its server doesn't scan this kind: wait a day, or until
+			// what a server scans changes (UnparkImageScans), without
+			// using an attempt.
+			parked := row
+			parked.NextAttemptAt = ptr(now().Add(scanRetryMax).Unix())
+			c.setScanState(ctx, parked, apitypes.ScanQueued, why)
+			return
+		}
 		// Only the server that has it can scan it, and it is offline or
-		// can't take production images: wait for it like a failure.
+		// its disk is full: wait for it like a failure.
 		c.scanFailed(ctx, row, errors.New("the server with this image can't scan it now"))
 		return
 	}
@@ -594,6 +603,27 @@ func (c *Core) runScan(ctx context.Context, row store.ImageScan, builders []stor
 	default:
 		c.scanFailed(ctx, row, c.nodeErr(srv.ID, err))
 	}
+}
+
+// scanParked says why an image only its own server has (no pull
+// reference) waits for an operator: that server doesn't scan the image's
+// kind. "" when it does, or when the image can be pulled elsewhere.
+func (c *Core) scanParked(ctx context.Context, row store.ImageScan) string {
+	if row.PullRef != "" || row.BuiltOnServerID == nil {
+		return ""
+	}
+	srv, err := c.store.GetServer(ctx, *row.BuiltOnServerID)
+	if err != nil {
+		return ""
+	}
+	kind := apitypes.KindNonProduction
+	if row.Production != 0 {
+		kind = apitypes.KindProduction
+	}
+	if srv.Builder && scansKind(srv, kind) {
+		return ""
+	}
+	return fmt.Sprintf("Only %s has this image, and it doesn't scan %s images; let it with `dock server update %s --scans all`", srv.Name, kindWords(kind), srv.Name)
 }
 
 // scanServer picks the builder for a scan among scanBuilders': the one
