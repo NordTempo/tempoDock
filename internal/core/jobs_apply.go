@@ -33,7 +33,7 @@ type jobOp struct {
 // they are set once it is created, by --deploy or by applying the file
 // again. running reports whether a job's run is in flight, which --prune
 // doesn't remove.
-func (ep *envPlan) planJobs(line func(*[]apitypes.PlanChange, apitypes.PlanChange), service string, fs apitypes.ServiceExport, ls *liveSvc, prune bool, running func(int64) bool) error {
+func (ep *envPlan) planJobs(line func(*[]apitypes.PlanChange, apitypes.PlanChange), service string, fs apitypes.ServiceExport, ls *liveSvc, pr pruning, running func(int64) bool) error {
 	ch := func(action apitypes.ChangeAction, name, note string) apitypes.PlanChange {
 		return apitypes.PlanChange{Service: service, Kind: apitypes.PlanJob, Action: action, Name: name, Note: note}
 	}
@@ -88,16 +88,19 @@ func (ep *envPlan) planJobs(line func(*[]apitypes.PlanChange, apitypes.PlanChang
 		c := ch(apitypes.ChangeRemove, j.Name, "")
 		c.Old = jobText(j.Schedule, j.Timezone, j.Command, int(j.TimeoutSeconds), apitypes.JobOverlap(j.Overlap), j.Enabled)
 		switch {
-		case prune && running(j.ID):
+		case pr.items && running(j.ID):
 			c.Note = "running; apply the file again once its run ended"
 			line(&ep.manual, c)
 			total++
-		case prune:
+		case pr.items:
 			c.Note = "removed at once, with its history"
 			line(&ep.changes, c)
 			ep.jobs = append(ep.jobs, jobOp{service: service, name: j.Name, remove: true, id: j.ID})
+		case pr.compose:
+			// A Compose file has no word for jobs: they aren't left out.
+			total++
 		default:
-			c.Note = "not in the file; kept (--prune removes it)"
+			c.Note = pr.keptNote("removes")
 			line(&ep.kept, c)
 			total++
 		}
@@ -204,7 +207,7 @@ func (d fileJobsDone) finish(ctx context.Context, c *Core, a Actor, es envScope)
 // applyCreatedJobs sets the file's jobs of services a --deploy apply just
 // created, which had none to set when it was staged. It replans only jobs,
 // so jobs set before are unchanged and add no lines.
-func (c *Core) applyCreatedJobs(ctx context.Context, a Actor, es envScope, fe apitypes.EnvironmentExport, prune bool) ([]apitypes.PlanChange, error) {
+func (c *Core) applyCreatedJobs(ctx context.Context, a Actor, es envScope, fe apitypes.EnvironmentExport, pr pruning) ([]apitypes.PlanChange, error) {
 	var ep envPlan
 	var done fileJobsDone
 	err := c.store.Tx(ctx, func(q *store.Queries) error {
@@ -221,7 +224,7 @@ func (c *Core) applyCreatedJobs(ctx context.Context, a Actor, es envScope, fe ap
 			if ls == nil || len(fs.Jobs) == 0 {
 				continue
 			}
-			if err := ep.planJobs(line, fs.Name, fs, ls, prune, c.jobRunning); err != nil {
+			if err := ep.planJobs(line, fs.Name, fs, ls, pr, c.jobRunning); err != nil {
 				return err
 			}
 		}

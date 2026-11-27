@@ -1,7 +1,9 @@
 package core
 
 import (
+	"cmp"
 	"context"
+	"fmt"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/compose"
@@ -12,11 +14,15 @@ import (
 const maxComposeSize = 1 << 20
 
 // ImportCompose converts a Docker Compose file into a project file and
-// plans it against project (ADR 0049); with req.Apply it stages it with
-// the detected secrets' values and applies each environment, as
-// ApplyProject with deploy. The secrets' values come from the Compose file
-// unless req.Values replaces them, and are never returned. Planning needs
-// read; applying what ApplyProject needs.
+// plans it against project (ADR 0049): its services go in req.Environment
+// (default production), so a project made from Compose is updated from
+// its next version the same way. With req.Apply it stages the file with
+// the detected secrets' values and, unless req.StageOnly, applies it, as
+// ApplyProject with deploy. req.Prune archives the services the file
+// leaves out, nothing else (composePruning). The secrets' values come from
+// the Compose file unless req.Values replaces them, and are never
+// returned. Planning needs read; applying what ApplyProject needs
+// (archiving admin).
 func (c *Core) ImportCompose(ctx context.Context, a Actor, project string, req apitypes.ComposeImportRequest) (apitypes.ComposeImport, error) {
 	out := apitypes.ComposeImport{Warnings: []apitypes.ComposeWarning{}, Secrets: []apitypes.ComposeSecret{}, Builds: []apitypes.ComposeBuild{}, MissingFiles: []string{}, Plan: newPlan(project)}
 	if len(req.Compose) > maxComposeSize {
@@ -31,13 +37,6 @@ func (c *Core) ImportCompose(ctx context.Context, a Actor, project string, req a
 	if err != nil {
 		return out, invalid("%v", err)
 	}
-	b, err := res.File.TOMLWith("Tempo Dock project " + project + ", converted from a Docker Compose file with `dock import compose`.\n" +
-		"Secrets are names only (variables): their values are never written here.\n" +
-		"Apply it with `dock apply FILE --plan`, then without --plan to stage it.\n")
-	if err != nil {
-		return out, err
-	}
-	out.File = string(b)
 	out.MissingFiles = append(out.MissingFiles, res.MissingFiles...)
 	for _, w := range res.Warnings {
 		out.Warnings = append(out.Warnings, apitypes.ComposeWarning{Service: w.Service, Key: w.Key, Message: w.Message})
@@ -46,11 +45,23 @@ func (c *Core) ImportCompose(ctx context.Context, a Actor, project string, req a
 		out.Builds = append(out.Builds, apitypes.ComposeBuild{Service: bd.Service, Context: bd.Context, Dockerfile: bd.Dockerfile})
 	}
 
-	// The secrets' values: the Compose file's, replaced or given by req.
-	env := "production"
-	if len(res.File.Environments) > 0 {
-		env = res.File.Environments[0].Name
+	if len(res.File.Environments) != 1 {
+		return out, fmt.Errorf("a converted Compose file has %d environments, not one", len(res.File.Environments))
 	}
+	// A Compose file has no say in an environment's kind: an existing one
+	// keeps its own, a new one gets its name's default. So the file names
+	// none, whichever environment it goes in.
+	env := cmp.Or(req.Environment, res.File.Environments[0].Name)
+	res.File.Environments[0].Name, res.File.Environments[0].Kind = env, ""
+	b, err := res.File.TOMLWith("Tempo Dock project " + project + ", converted from a Docker Compose file with `dock import compose`.\n" +
+		"Secrets are names only (variables): their values are never written here.\n" +
+		"Apply it with `dock apply FILE --plan`, then without --plan to stage it.\n")
+	if err != nil {
+		return out, err
+	}
+	out.File = string(b)
+
+	// The secrets' values: the Compose file's, replaced or given by req.
 	values := map[varKey]string{}
 	for _, s := range res.Secrets {
 		out.Secrets = append(out.Secrets, apitypes.ComposeSecret{Environment: env, Service: s.Service, Key: s.Key, HasValue: s.Value != ""})
@@ -61,16 +72,17 @@ func (c *Core) ImportCompose(ctx context.Context, a Actor, project string, req a
 	for _, v := range req.Values {
 		values[varKey{v.Environment, v.Service, v.Key}] = v.Value
 	}
-	ar := apitypes.ApplyRequest{File: out.File}
+	ar := apitypes.ApplyRequest{File: out.File, Environment: env}
 	for k, v := range values {
 		ar.Values = append(ar.Values, apitypes.VariableValue{Environment: k.env, Service: k.service, Key: k.key, Value: v})
 	}
+	pr := composePruning(req.Prune)
 	if !req.Apply {
-		out.Plan, err = c.PlanProject(ctx, a, project, ar)
+		out.Plan, err = c.planProject(ctx, a, project, ar, pr)
 		return out, err
 	}
-	ar.Deploy = true
-	applied, err := c.ApplyProject(ctx, a, project, ar)
+	ar.Deploy = !req.StageOnly
+	applied, err := c.applyProject(ctx, a, project, ar, pr)
 	if err != nil {
 		return out, err
 	}

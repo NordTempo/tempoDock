@@ -714,12 +714,22 @@ environment the file names that doesn't exist is created, empty.
 dock import compose                          # plan ./docker-compose.yml as project <directory name>
 dock import compose stack.yml -p shop -o dock.project.toml
 dock import compose -p shop --apply          # create it
+dock import compose -p shop --prune --stage  # later: update it, to review
 ```
 
 `dock import compose` converts a Compose file into a project file
 ([ADR 0049](../decisions/0049-apply-and-compose-import.md)) and shows its
-plan; nothing changes without `--apply`. In the UI: New project › From
-Compose.
+plan; nothing changes without `--apply` (or `--stage`). In the UI: New
+project › From Compose, and Update from Compose in an environment's
+Settings.
+
+Run it again on a changed Compose file to update the project: the plan
+lists the services it adds and changes, and the ones the file leaves out,
+which are kept. `--prune` archives those (an admin's; volumes and backups
+are kept, as with `dock service archive`). A Compose file never removes
+domains, jobs or variables added in Dock. `--stage` stages the update for
+review with `dock changes` instead of applying it, and `-e` picks the
+environment (default production).
 
 | Compose | Dock |
 |---|---|

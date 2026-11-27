@@ -351,7 +351,7 @@ func localValues(id *ast.Ident, fd *ast.FuncDecl, out []string) []string {
 // (checkEnv, checkEnvAccess, envFor, serviceFor) or add the function
 // here with its reason.
 var orgChecksOfEnvPerms = map[string]string{
-	"ApplyProject":        "pre-check; every environment of the file is checked with checkEnv",
+	"applyProject":        "pre-check; every environment of the file is checked with checkEnv",
 	"CheckRequest":        "pre-check; checkEnvAccess where the request is follows",
 	"DecideRequest":       "pre-check; checkEnvAccess where the request is follows",
 	"LockEnvironment":     "pre-check; checkEnvAccess where it locks follows",

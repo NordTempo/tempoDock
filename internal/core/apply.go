@@ -30,7 +30,13 @@ import (
 // PlanProject compares a project file with the live state. Needs read (on
 // the project, if it exists).
 func (c *Core) PlanProject(ctx context.Context, a Actor, project string, req apitypes.ApplyRequest) (apitypes.ApplyPlan, error) {
-	f, p, err := c.loadFile(ctx, a, project, req, apitypes.ScopeRead)
+	return c.planProject(ctx, a, project, req, filePruning(req.Prune))
+}
+
+// planProject is PlanProject with what the plan removes given apart
+// from req.Prune (a Compose file's, composePruning).
+func (c *Core) planProject(ctx context.Context, a Actor, project string, req apitypes.ApplyRequest, pr pruning) (apitypes.ApplyPlan, error) {
+	f, p, err := c.loadFile(ctx, a, project, req, apitypes.ScopeRead, pr)
 	if err != nil {
 		return apitypes.ApplyPlan{}, err
 	}
@@ -45,7 +51,7 @@ func (c *Core) PlanProject(ctx context.Context, a Actor, project string, req api
 				return plan, err
 			}
 		}
-		ep, err := c.planEnv(a, fe, le, f.values, req.Prune)
+		ep, err := c.planEnv(a, fe, le, f.values, pr)
 		if err != nil {
 			return plan, err
 		}
@@ -64,8 +70,14 @@ func (c *Core) PlanProject(ctx context.Context, a Actor, project string, req api
 // and sets the jobs of the services that created. Needs deploy; removing
 // services (prune) needs admin.
 func (c *Core) ApplyProject(ctx context.Context, a Actor, project string, req apitypes.ApplyRequest) (apitypes.ApplyResult, error) {
+	return c.applyProject(ctx, a, project, req, filePruning(req.Prune))
+}
+
+// applyProject is ApplyProject with what it removes given apart from
+// req.Prune (a Compose file's, composePruning).
+func (c *Core) applyProject(ctx context.Context, a Actor, project string, req apitypes.ApplyRequest, pr pruning) (apitypes.ApplyResult, error) {
 	out := apitypes.ApplyResult{Plan: newPlan(project), Staged: []apitypes.PendingChanges{}}
-	f, p, err := c.loadFile(ctx, a, project, req, apitypes.ScopeDeploy)
+	f, p, err := c.loadFile(ctx, a, project, req, apitypes.ScopeDeploy, pr)
 	if err != nil {
 		return out, err
 	}
@@ -101,7 +113,7 @@ func (c *Core) ApplyProject(ctx context.Context, a Actor, project string, req ap
 			if err != nil {
 				return err
 			}
-			if ep, err = c.planEnv(a, fe, le, f.values, req.Prune); err != nil {
+			if ep, err = c.planEnv(a, fe, le, f.values, pr); err != nil {
 				return err
 			}
 			if created {
@@ -143,7 +155,7 @@ func (c *Core) ApplyProject(ctx context.Context, a Actor, project string, req ap
 			out.Unchanged = append(out.Unchanged, fe.Name)
 		} else {
 			c.audit(ctx, a, "changes.stage_file", &es.project, &es.env, es.String(),
-				fmt.Sprintf("staged %s from a project file%s", count(ep.staged, "change"), map[bool]string{true: " (with --prune)"}[req.Prune]))
+				fmt.Sprintf("staged %s from a project file%s", count(ep.staged, "change"), map[bool]string{true: " (with --prune)"}[pr.any()]))
 		}
 		touched = append(touched, es)
 	}
@@ -172,7 +184,7 @@ func (c *Core) ApplyProject(ctx context.Context, a Actor, project string, req ap
 		}
 		out.Applied = append(out.Applied, apitypes.EnvironmentApplied{Environment: es.env.Name, AppliedChanges: res})
 		fe, _ := projectfile.Environment(apitypes.ProjectExport{Environments: f.envs}, es.env.Name)
-		chs, err := c.applyCreatedJobs(ctx, a, es, fe, req.Prune)
+		chs, err := c.applyCreatedJobs(ctx, a, es, fe, pr)
 		if err != nil {
 			return out, fmt.Errorf("applied %s, but setting the jobs of its new services failed: %w", es, err)
 		}
@@ -198,7 +210,7 @@ type varKey struct{ env, service, key string }
 // loadFile parses req.File, picks its environments and checks the actor
 // may plan (read) or apply (deploy) each of them. p is nil if the project
 // doesn't exist yet.
-func (c *Core) loadFile(ctx context.Context, a Actor, project string, req apitypes.ApplyRequest, need apitypes.Scope) (parsedFile, *store.Project, error) {
+func (c *Core) loadFile(ctx context.Context, a Actor, project string, req apitypes.ApplyRequest, need apitypes.Scope, pr pruning) (parsedFile, *store.Project, error) {
 	var out parsedFile
 	f, err := projectfile.Parse([]byte(req.File))
 	if err != nil {
@@ -292,7 +304,7 @@ func (c *Core) loadFile(ctx context.Context, a Actor, project string, req apityp
 			if _, locked := errors.AsType[*LockedError](err); locked {
 				// One refusal for the whole file, naming what it would
 				// change there, so an access request shows the plan.
-				return out, nil, c.lockedPlan(ctx, a, p, envs[i], fe, out.values, req.Prune)
+				return out, nil, c.lockedPlan(ctx, a, p, envs[i], fe, out.values, pr)
 			}
 			return out, nil, errf(apitypes.CodeForbidden, "%v; apply only the environments this token may change with --environment", err)
 		}
@@ -309,12 +321,12 @@ func (k varKey) String() string {
 
 // lockedPlan is the lock's refusal of a file for a locked environment,
 // with what the file would change there (at most planDigestLines lines).
-func (c *Core) lockedPlan(ctx context.Context, a Actor, p store.Project, e store.Environment, fe apitypes.EnvironmentExport, values map[varKey]string, prune bool) error {
+func (c *Core) lockedPlan(ctx context.Context, a Actor, p store.Project, e store.Environment, fe apitypes.EnvironmentExport, values map[varKey]string, pr pruning) error {
 	le, err := loadLiveEnv(ctx, c.store.Queries, c, e)
 	if err != nil {
 		return err
 	}
-	ep, err := c.planEnv(a, fe, le, values, prune)
+	ep, err := c.planEnv(a, fe, le, values, pr)
 	if err != nil {
 		return err
 	}
@@ -542,6 +554,40 @@ type domainStage struct {
 	cancel                  bool
 }
 
+// pruning is what a plan removes that its file leaves out, and how its
+// kept lines say so. A project file with --prune removes everything
+// removable (filePruning); a Compose file at most its services
+// (composePruning): it has no word for Dock's domains and jobs, and its
+// variables are often added to in Dock, so those are never removed by it.
+type pruning struct {
+	// services archives services the file leaves out; items removes
+	// variables, domains and jobs.
+	services, items bool
+	// compose: the file was converted from a Compose file.
+	compose bool
+}
+
+// filePruning is a project file's pruning: everything with --prune.
+func filePruning(prune bool) pruning { return pruning{services: prune, items: prune} }
+
+// composePruning is a Compose file's pruning: services with --prune.
+func composePruning(prune bool) pruning { return pruning{services: prune, compose: true} }
+
+func (p pruning) any() bool { return p.services || p.items }
+
+// keptNote is the note of a kept line, for something the file leaves out;
+// verb is what --prune does to it ("removes", "archives"), said only if
+// this kind of file can.
+func (p pruning) keptNote(verb string) string {
+	if !p.compose {
+		return "not in the file; kept (--prune " + verb + " it)"
+	}
+	if verb == "archives" {
+		return "not in the Compose file; kept (--prune archives it)"
+	}
+	return "not in the Compose file; kept"
+}
+
 func newPlan(project string) apitypes.ApplyPlan {
 	return apitypes.ApplyPlan{Project: project, Changes: []apitypes.PlanChange{}, Kept: []apitypes.PlanChange{}, Manual: []apitypes.PlanChange{}}
 }
@@ -555,7 +601,7 @@ func addPlan(p *apitypes.ApplyPlan, ep envPlan) {
 
 // planEnv compares a file environment with its live state (le nil: it
 // doesn't exist yet) for a. values are the values sent with the file.
-func (c *Core) planEnv(a Actor, fe apitypes.EnvironmentExport, le *liveEnv, values map[varKey]string, prune bool) (envPlan, error) {
+func (c *Core) planEnv(a Actor, fe apitypes.EnvironmentExport, le *liveEnv, values map[varKey]string, pr pruning) (envPlan, error) {
 	ep := envPlan{settings: map[string]*apitypes.ServiceSettings{}, blind: !a.revealsAt(0, 0, 0)}
 	if le != nil {
 		ep.blind = !a.revealsAt(le.row.ProjectID, le.row.ID, envKind(le.row))
@@ -578,7 +624,8 @@ func (c *Core) planEnv(a Actor, fe apitypes.EnvironmentExport, le *liveEnv, valu
 	if le == nil {
 		line(&ep.changes, apitypes.PlanChange{Kind: apitypes.PlanEnvironment, Action: apitypes.ChangeAdd, Name: env, New: string(kind)})
 		le = &liveEnv{shared: map[string]string{}, sharedStaged: map[string]string{}, svcs: map[string]*liveSvc{}, archived: map[string]bool{}, baseDomain: true}
-	} else if apitypes.EnvironmentKind(le.row.Kind) != kind {
+	} else if fe.Kind != "" && apitypes.EnvironmentKind(le.row.Kind) != kind {
+		// A file without a kind has no say in an existing environment's.
 		line(&ep.manual, apitypes.PlanChange{Kind: apitypes.PlanEnvironment, Action: apitypes.ChangeUpdate, Name: env, Old: le.row.Kind, New: string(kind),
 			Note: "an environment's kind doesn't change; clone it into a new environment of that kind instead"})
 	}
@@ -592,7 +639,7 @@ func (c *Core) planEnv(a Actor, fe apitypes.EnvironmentExport, le *liveEnv, valu
 		}
 		return out
 	}
-	if err := ep.planVars(line, "", fe.SharedValues, fe.SharedVariables, given(""), le.shared, le.sharedStaged, nil, prune); err != nil {
+	if err := ep.planVars(line, "", fe.SharedValues, fe.SharedVariables, given(""), le.shared, le.sharedStaged, nil, pr); err != nil {
 		return ep, err
 	}
 	ep.planDrains(line, env, fe.LogDrains, le.drains)
@@ -600,7 +647,7 @@ func (c *Core) planEnv(a Actor, fe apitypes.EnvironmentExport, le *liveEnv, valu
 	inFile := map[string]bool{}
 	for _, fs := range slices.SortedFunc(slices.Values(fe.Services), func(x, y apitypes.ServiceExport) int { return cmp.Compare(x.Name, y.Name) }) {
 		inFile[fs.Name] = true
-		if err := c.planService(&ep, line, fs, le, given(fs.Name), prune); err != nil {
+		if err := c.planService(&ep, line, fs, le, given(fs.Name), pr); err != nil {
 			return ep, err
 		}
 	}
@@ -611,18 +658,18 @@ func (c *Core) planEnv(a Actor, fe apitypes.EnvironmentExport, le *liveEnv, valu
 		}
 		ch := apitypes.PlanChange{Service: name, Kind: apitypes.PlanService, Action: apitypes.ChangeRemove, Name: name}
 		switch {
-		case prune && ls.row.Staged == "create":
+		case pr.services && ls.row.Staged == "create":
 			ch.Note = "discards its staged creation"
 			line(&ep.changes, ch)
 			ep.archive = append(ep.archive, name)
-		case prune && ls.row.Staged == "archive":
+		case pr.services && ls.row.Staged == "archive":
 			// Staged for archiving already.
-		case prune:
+		case pr.services:
 			ch.Note = "archived (volumes kept); needs an admin to stage and to apply"
 			line(&ep.changes, ch)
 			ep.archive = append(ep.archive, name)
 		default:
-			ch.Note = "not in the file; kept (--prune archives it)"
+			ch.Note = pr.keptNote("archives")
 			line(&ep.kept, ch)
 		}
 	}
@@ -630,7 +677,7 @@ func (c *Core) planEnv(a Actor, fe apitypes.EnvironmentExport, le *liveEnv, valu
 }
 
 // planService compares one file service with the live one, if any.
-func (c *Core) planService(ep *envPlan, line func(*[]apitypes.PlanChange, apitypes.PlanChange), fs apitypes.ServiceExport, le *liveEnv, given map[string]string, prune bool) error {
+func (c *Core) planService(ep *envPlan, line func(*[]apitypes.PlanChange, apitypes.PlanChange), fs apitypes.ServiceExport, le *liveEnv, given map[string]string, pr pruning) error {
 	name := fs.Name
 	if err := validName("service", name); err != nil {
 		return err
@@ -741,14 +788,14 @@ func (c *Core) planService(ep *envPlan, line func(*[]apitypes.PlanChange, apityp
 			Note: fmt.Sprintf("after applying, connect it with `dock git connect %s --branch %s -s %s`", fs.Git.Repository, fs.Git.Branch, name)}))
 	}
 
-	if err := ep.planVars(line, name, fs.Values, fs.Variables, given, ls.vars, ls.staged, implied, prune); err != nil {
+	if err := ep.planVars(line, name, fs.Values, fs.Variables, given, ls.vars, ls.staged, implied, pr); err != nil {
 		return err
 	}
 	ep.planVolumes(line, name, fs, ls, tmpl)
-	if err := ep.planDomains(line, name, fs, ls, le.baseDomain, prune); err != nil {
+	if err := ep.planDomains(line, name, fs, ls, le.baseDomain, pr); err != nil {
 		return err
 	}
-	return ep.planJobs(line, name, fs, ls, prune, c.jobRunning)
+	return ep.planJobs(line, name, fs, ls, pr, c.jobRunning)
 }
 
 // planVars compares one scope's variables (service "" for shared ones):
@@ -756,7 +803,7 @@ func (c *Core) planService(ep *envPlan, line func(*[]apitypes.PlanChange, apityp
 // (secrets, given ones sent with the file), and the live values. implied
 // are a template's own variables, which the template makes and prune
 // never removes.
-func (ep *envPlan) planVars(line func(*[]apitypes.PlanChange, apitypes.PlanChange), service string, values map[string]string, names []string, given, live, staged map[string]string, implied map[string]bool, prune bool) error {
+func (ep *envPlan) planVars(line func(*[]apitypes.PlanChange, apitypes.PlanChange), service string, values map[string]string, names []string, given, live, staged map[string]string, implied map[string]bool, pr pruning) error {
 	ch := func(action apitypes.ChangeAction, key, note string) apitypes.PlanChange {
 		return apitypes.PlanChange{Service: service, Kind: apitypes.PlanVariable, Action: action, Name: key, Note: note}
 	}
@@ -809,13 +856,13 @@ func (ep *envPlan) planVars(line func(*[]apitypes.PlanChange, apitypes.PlanChang
 			continue
 		}
 		switch {
-		case prune && staged[k] == "unset":
-		case prune:
+		case pr.items && staged[k] == "unset":
+		case pr.items:
 			line(&ep.changes, ch(apitypes.ChangeRemove, k, ""))
 			ep.set = append(ep.set, varSet{service: service, key: k, unset: true})
 			ep.staged++
 		default:
-			line(&ep.kept, ch(apitypes.ChangeRemove, k, "not in the file; kept (--prune removes it)"))
+			line(&ep.kept, ch(apitypes.ChangeRemove, k, pr.keptNote("removes")))
 		}
 	}
 	return nil
@@ -939,7 +986,7 @@ func (ep *envPlan) planTakenHosts(a Actor, le *liveEnv) error {
 
 // planDomains compares a service's domains. A generated domain in the file
 // matches any generated domain of the service.
-func (ep *envPlan) planDomains(line func(*[]apitypes.PlanChange, apitypes.PlanChange), service string, fs apitypes.ServiceExport, ls *liveSvc, baseDomain, prune bool) error {
+func (ep *envPlan) planDomains(line func(*[]apitypes.PlanChange, apitypes.PlanChange), service string, fs apitypes.ServiceExport, ls *liveSvc, baseDomain bool, pr pruning) error {
 	ch := func(action apitypes.ChangeAction, host, note string) apitypes.PlanChange {
 		return apitypes.PlanChange{Service: service, Kind: apitypes.PlanDomain, Action: action, Name: host, Note: note}
 	}
@@ -1010,12 +1057,14 @@ func (ep *envPlan) planDomains(line func(*[]apitypes.PlanChange, apitypes.PlanCh
 			continue
 		}
 		switch _, isStaged := ls.stagedDomains[d.Hostname]; {
-		case prune && isStaged:
-		case prune:
+		case pr.items && isStaged:
+		case pr.items:
 			line(&ep.changes, ch(apitypes.ChangeRemove, d.Hostname, ""))
 			stage(domainStage{service: service, host: d.Hostname, remove: true})
+		case pr.compose:
+			// A Compose file has no word for domains: they aren't left out.
 		default:
-			line(&ep.kept, ch(apitypes.ChangeRemove, d.Hostname, "not in the file; kept (--prune removes it)"))
+			line(&ep.kept, ch(apitypes.ChangeRemove, d.Hostname, pr.keptNote("removes")))
 		}
 	}
 	return nil

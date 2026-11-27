@@ -74,6 +74,7 @@ export type ApplyRequest = Schemas["ApplyRequest"];
 export type ApplyPlan = Schemas["ApplyPlan"];
 export type PlanChange = Schemas["PlanChange"];
 /** A Docker Compose file to convert, plan or create (ADR 0049). */
+export type ComposeImport = Schemas["ComposeImport"];
 export type ComposeImportRequest = Schemas["ComposeImportRequest"];
 export type ComposeSecret = Schemas["ComposeSecret"];
 

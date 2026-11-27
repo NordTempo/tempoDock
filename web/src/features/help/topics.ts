@@ -140,6 +140,11 @@ export const topics: Record<TopicId, Topic> = {
         cli: "dock promote staging production",
         at: { p: "compare" },
       },
+      {
+        what: "Update the services from a newer docker-compose.yml",
+        cli: "dock import compose -p {project} -e {env} --stage",
+        at: { p: "compose" },
+      },
     ],
     watch: [
       "A release gets traffic once its health check answers; a failed one leaves the old one serving.",
@@ -148,7 +153,7 @@ export const topics: Record<TopicId, Topic> = {
     related: ["services", "previews", "logs"],
     guide: "deploying#how-a-release-goes-live",
     words:
-      "release rollback restart cancel build github git push promote cutover",
+      "release rollback restart cancel build github git push promote cutover compose",
   },
 
   services: {

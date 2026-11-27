@@ -62,3 +62,37 @@ func TestImportCompose(t *testing.T) {
 		t.Fatalf("service list:\n%s", stdout)
 	}
 }
+
+// Updating a project from a Compose file that drops a service: the plan
+// keeps it; --prune --stage stages its archive for review (an admin's),
+// and a deploy token is refused the archive.
+func TestImportComposeUpdate(t *testing.T) {
+	setup(t)
+	srv := newTestServer(t)
+	t.Setenv(clientconfig.EnvURL, srv.url)
+	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeAdmin])
+	dir := t.TempDir()
+	compose := filepath.Join(dir, "compose.yaml")
+	write := func(content string) {
+		if err := os.WriteFile(compose, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("services:\n  web:\n    image: web:1\n  worker:\n    image: worker:1\n")
+	if code, _, stderr := exec(t, "import", "compose", compose, "-p", "shop", "--apply", "--yes"); code != 0 {
+		t.Fatalf("create: exit %d %s", code, stderr)
+	}
+	write("services:\n  web:\n    image: web:2\n")
+	if code, stdout, stderr := exec(t, "import", "compose", compose, "-p", "shop"); code != 0 || !strings.Contains(stdout, "worker") || !strings.Contains(stderr, "--apply") {
+		t.Fatalf("plan: exit %d\n%s%s", code, stdout, stderr)
+	}
+	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeDeploy])
+	if code, _, _ := exec(t, "import", "compose", compose, "-p", "shop", "--prune", "--stage", "--yes"); code == 0 {
+		t.Fatal("a deploy token staged an archive")
+	}
+	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeAdmin])
+	res := ok[apitypes.ComposeImport](t, "import", "compose", compose, "-p", "shop", "--prune", "--stage", "--yes")
+	if res.Result == nil || len(res.Result.Applied) != 0 || len(res.Result.Staged) != 1 || len(res.Result.Staged[0].Services) != 1 || res.Result.Staged[0].Services[0].Service != "worker" {
+		t.Fatalf("stage = %+v", res.Result)
+	}
+}
