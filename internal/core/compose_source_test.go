@@ -114,6 +114,9 @@ func TestComposeFollow(t *testing.T) {
 	if s, _ := h.c.GetService(h.ctx, testSystem, worker); s.ArchivedAt == nil {
 		t.Fatal("worker wasn't archived")
 	}
+	// Its release settles first: applying skips a service that is deploying.
+	rels := h.waitReleases(web, 1)
+	h.wait(web, rels[0].Number)
 
 	// Only additions and changes, nothing else waiting: applied.
 	setFile("services:\n  web:\n    image: web:3\n")

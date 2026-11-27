@@ -298,8 +298,15 @@ func (c *Core) runComposeSync(ctx context.Context, es envScope, row store.Compos
 		}
 		return commit, reads, apitypes.ComposeStaged, summary
 	}
-	if _, err := c.ApplyChanges(ctx, actor, EnvRef{es.project.Name, es.env.Name}); err != nil {
+	applied, err := c.ApplyChanges(ctx, actor, EnvRef{es.project.Name, es.env.Name})
+	if err != nil {
 		return commit, reads, apitypes.ComposeStaged, summary + "; applying failed: " + cleanLine(c.errorLine(err), 200)
+	}
+	if len(applied.Failed) > 0 {
+		summary += "; still staged: " + cleanLine(strings.Join(applied.Failed, "; "), 200)
+	}
+	if len(applied.Skipped) > 0 {
+		summary += "; " + strings.Join(applied.Skipped, ", ") + " picks it up with its next release (one was deploying)"
 	}
 	return commit, reads, apitypes.ComposeApplied, summary
 }
