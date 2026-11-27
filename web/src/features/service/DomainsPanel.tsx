@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, type ReactNode, Suspense, useEffect, useState } from "react";
 import { api, body } from "../../api/client";
 import {
   useAction,
@@ -55,7 +55,14 @@ function addedNotice(d: Domain, service: string) {
  * added here is marked in the list; its notice waits for Dock's first DNS
  * check, so it says what the row says.
  */
-export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+export function DomainsPanel({
+  serviceRef: ref,
+  headers,
+}: {
+  serviceRef: ServiceRef;
+  /** The Security headers row (SettingsPanel's), under the domains. */
+  headers?: ReactNode;
+}) {
   const { service, domains } = useService(ref);
   const port = listenPort(service);
   const [added, setAdded] = useState<string | null>(null);
@@ -130,6 +137,7 @@ export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
             </table>
           </Scroll>
         )}
+        {headers && <dl className="props">{headers}</dl>}
       </div>
     </SettingsSection>
   );

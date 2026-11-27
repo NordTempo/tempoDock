@@ -2,8 +2,8 @@
 SELECT CAST(coalesce(max(number), 0) + 1 AS INTEGER) AS next FROM releases WHERE service_id = +?;
 
 -- name: CreateRelease :one
-INSERT INTO releases (service_id, number, source, from_release, image_ref, image_id, image_digest, built_on_server_id, config, host_port, created_by, carried)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO releases (service_id, number, source, from_release, image_ref, image_id, image_digest, built_on_server_id, config, host_port, created_by, carried, security_headers)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetRelease :one

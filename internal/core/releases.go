@@ -78,6 +78,10 @@ type releaseConfig struct {
 	// PreDeploySnapshot snapshots the environment's stateful services
 	// before the pre-deploy command (ADR 0047).
 	PreDeploySnapshot bool `json:"pre_deploy_snapshot,omitempty"`
+	// SecurityHeaders has the proxy add security headers to the
+	// release's responses (ADR 0107); the release row has a copy for
+	// routing (ListRoutableDomains).
+	SecurityHeaders bool `json:"security_headers,omitempty"`
 	// Repo holds the deploy settings that came from dock.toml, so config
 	// releases built on this one keep them.
 	Repo *repoDeploy `json:"repo,omitempty"`
@@ -99,6 +103,8 @@ type repoDeploy struct {
 	PreDeployTimeoutSeconds        int    `json:"pre_deploy_timeout_seconds,omitempty"`
 	// PreDeploySnapshot is set (true or false) only when the file sets it.
 	PreDeploySnapshot *bool `json:"pre_deploy_snapshot,omitempty"`
+	// SecurityHeaders is set (true or false) only when the file sets it.
+	SecurityHeaders *bool `json:"security_headers,omitempty"`
 	// JobsFromFile says the source had a dock.toml, so Jobs are the
 	// service's file jobs (ADR 0054), none removing them.
 	JobsFromFile bool      `json:"jobs_from_file,omitempty"`
@@ -137,6 +143,7 @@ func repoDeployOf(rc *repoconfig.Config) *repoDeploy {
 		PreDeployCommand:               rc.Deploy.PreDeployCommand,
 		PreDeployTimeoutSeconds:        int(rc.Deploy.PreDeployTimeout / time.Second),
 		PreDeploySnapshot:              rc.Deploy.PreDeploySnapshot,
+		SecurityHeaders:                rc.Deploy.SecurityHeaders,
 	}
 }
 
@@ -187,6 +194,9 @@ func (r *repoDeploy) apply(s *store.Service) {
 	if r.PreDeploySnapshot != nil {
 		s.PreDeploySnapshot = *r.PreDeploySnapshot
 	}
+	if r.SecurityHeaders != nil {
+		s.SecurityHeaders = *r.SecurityHeaders
+	}
 }
 
 // fields lists the settings the file set, by API field name.
@@ -204,6 +214,7 @@ func (r *repoDeploy) fields() []string {
 		"health_check_start_period_seconds":  r.HealthCheckStartPeriodSeconds != 0,
 		"pre_deploy_command":                 r.PreDeployCommand != "", "pre_deploy_timeout_seconds": r.PreDeployTimeoutSeconds != 0,
 		"pre_deploy_snapshot": r.PreDeploySnapshot != nil,
+		"security_headers":    r.SecurityHeaders != nil,
 	} {
 		if set {
 			out = append(out, name)
@@ -314,6 +325,7 @@ func (c *Core) resolveConfig(ctx context.Context, q *store.Queries, ss svcScope,
 		PreDeploy:               target.PreDeployCommand,
 		PreDeployTimeout:        int(target.PreDeployTimeoutSeconds),
 		PreDeploySnapshot:       target.PreDeploySnapshot,
+		SecurityHeaders:         target.SecurityHeaders,
 	}
 	if cfg.HealthCheckTimeout == 0 {
 		cfg.HealthCheckTimeout = c.cfg.Defaults.HealthCheckTimeout
@@ -840,6 +852,7 @@ func (c *Core) createRelease(ctx context.Context, q *store.Queries, a Actor, ss 
 	} else if cfg, err = c.resolveConfig(ctx, q, ss, repo); err != nil {
 		return ss, rel, err
 	}
+	params.SecurityHeaders = cfg.SecurityHeaders
 	// Sealed for this release, a copy too: configs are bound to theirs.
 	if params.Config, err = c.sealConfig(cfg, params.ServiceID, params.Number); err != nil {
 		return ss, rel, err
@@ -854,6 +867,7 @@ func (c *Core) createRelease(ctx context.Context, q *store.Queries, a Actor, ss 
 			ServiceID: params.ServiceID, Number: params.Number, ImageRef: params.ImageRef, ImageID: params.ImageID,
 			ImageDigest: params.ImageDigest, BuiltOnServerID: params.BuiltOnServerID, PromotedFromReleaseID: spec.promote.from.ID,
 			Config: params.Config, HostPort: params.HostPort, CreatedBy: params.CreatedBy, Carried: params.Carried,
+			SecurityHeaders: params.SecurityHeaders,
 		})
 	} else {
 		rel, err = q.CreateRelease(ctx, params)
@@ -894,7 +908,8 @@ func setServiceImage(ctx context.Context, q *store.Queries, s store.Service, ima
 		MemoryMb: s.MemoryMb, Cpus: s.Cpus,
 		HealthCheckIntervalSeconds: s.HealthCheckIntervalSeconds, HealthCheckProbeTimeoutSeconds: s.HealthCheckProbeTimeoutSeconds,
 		HealthCheckRetries: s.HealthCheckRetries, HealthCheckStartPeriodSeconds: s.HealthCheckStartPeriodSeconds,
-		PreDeployCommand: s.PreDeployCommand, PreDeployTimeoutSeconds: s.PreDeployTimeoutSeconds, PreDeploySnapshot: s.PreDeploySnapshot, ID: s.ID,
+		PreDeployCommand: s.PreDeployCommand, PreDeployTimeoutSeconds: s.PreDeployTimeoutSeconds, PreDeploySnapshot: s.PreDeploySnapshot,
+		SecurityHeaders: s.SecurityHeaders, ID: s.ID,
 	})
 }
 
@@ -1367,7 +1382,7 @@ func (c *Core) toReleaseWith(ctx context.Context, ss svcScope, r store.Release, 
 	}
 	out.Config = apitypes.ReleaseConfig{
 		Port: cfg.Port, Published: cfg.Published, StartCommand: cfg.Cmd, HealthCheckPath: cfg.HealthCheckPath,
-		PreDeployCommand: cfg.PreDeploy, PreDeploySnapshot: cfg.PreDeploySnapshot,
+		PreDeployCommand: cfg.PreDeploy, PreDeploySnapshot: cfg.PreDeploySnapshot, SecurityHeaders: cfg.SecurityHeaders,
 		MemoryMB: cfg.MemoryMB, CPUs: cfg.CPUs, VariableKeys: slices.Sorted(maps.Keys(cfg.Env)),
 		Mounts: make([]apitypes.VolumeMount, 0, len(cfg.Mounts)), FromRepoFile: cfg.Repo.fields(),
 	}

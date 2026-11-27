@@ -1148,3 +1148,37 @@ func TestIntegrationWake(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
+// Security headers through a real Caddy (ADR 0107): the ones the app
+// leaves out are added, the one it sets keeps its value, and a route
+// without the flag gets none.
+func TestIntegrationSecurityHeaders(t *testing.T) {
+	ask := newAskServer(t, "app.test", "plain.test")
+	tc := startCaddy(t, ask.url, false)
+	app := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Frame-Options", "DENY")
+		_, _ = io.WriteString(w, "ok")
+	}))
+	t.Cleanup(app.Close)
+	upstream := strings.TrimPrefix(app.URL, "http://")
+	tc.applyRoutes(t, []node.Route{
+		{Hostnames: []string{"app.test"}, Upstream: upstream, SecurityHeaders: true},
+		{Hostnames: []string{"plain.test"}, Upstream: upstream},
+	})
+	tc.trustInternalCA(t)
+
+	_, h, _ := tc.get(t, tc.url("https", "app.test", "/"))
+	want := map[string]string{
+		"Strict-Transport-Security": "max-age=31536000", "X-Content-Type-Options": "nosniff",
+		"Referrer-Policy": "strict-origin-when-cross-origin", "X-Frame-Options": "DENY",
+	}
+	for name, v := range want {
+		if got := h.Values(name); len(got) != 1 || got[0] != v {
+			t.Errorf("%s = %v, want %q", name, got, v)
+		}
+	}
+	_, h, _ = tc.get(t, tc.url("https", "plain.test", "/"))
+	if got := h.Get("X-Content-Type-Options"); got != "" {
+		t.Errorf("a route without security headers got X-Content-Type-Options %q", got)
+	}
+}

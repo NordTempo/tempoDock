@@ -558,7 +558,7 @@ func (d *deployment) cutover(ctx context.Context) error {
 	// after this leaves them as the file says; the next deploy syncs again.
 	c.syncRepoJobs(ctx, d.ss, d.cfg)
 	c.routesMu.Lock()
-	routeErr := c.applyRoutesLocked(ctx, serverID, map[int64]routeOverride{d.ss.svc.ID: {port: d.rel.HostPort, release: d.rel.ID}})
+	routeErr := c.applyRoutesLocked(ctx, serverID, map[int64]routeOverride{d.ss.svc.ID: {port: d.rel.HostPort, release: d.rel.ID, headers: d.rel.SecurityHeaders}})
 	if routeErr != nil && canFallBack {
 		c.routesMu.Unlock()
 		// The old release never stopped serving and keeps doing so.

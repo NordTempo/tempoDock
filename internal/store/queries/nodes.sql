@@ -148,10 +148,10 @@ ORDER BY services.name;
 -- by digest, with the target's own config. image_id is set when the
 -- image is already on the target's server (same server, no registry).
 INSERT INTO releases (service_id, number, source, image_ref, image_id, image_digest, built_on_server_id,
-    promoted_from_release_id, config, host_port, created_by, carried)
+    promoted_from_release_id, config, host_port, created_by, carried, security_headers)
 VALUES (sqlc.arg(service_id), sqlc.arg(number), 'promote', sqlc.arg(image_ref), sqlc.arg(image_id), sqlc.arg(image_digest),
     sqlc.narg(built_on_server_id), CAST(sqlc.arg(promoted_from_release_id) AS INTEGER), sqlc.arg(config), sqlc.arg(host_port),
-    sqlc.arg(created_by), sqlc.arg(carried))
+    sqlc.arg(created_by), sqlc.arg(carried), sqlc.arg(security_headers))
 RETURNING *;
 
 -- name: ListKeptDigests :many

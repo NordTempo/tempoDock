@@ -641,6 +641,62 @@ func TestRenderEdgeTrace(t *testing.T) {
 	}
 }
 
+// TestRenderSecurityHeaders: a route with SecurityHeaders (ADR 0107) has
+// one deferred headers handler per header ahead of everything else, each
+// required absent from the response so the app's own wins; HSTS only on
+// HTTPS, and redirects and routes without the flag get none.
+func TestRenderSecurityHeaders(t *testing.T) {
+	routes := []node.Route{
+		{Hostnames: []string{"shop.example.com"}, Upstream: "127.0.0.1:9001", SecurityHeaders: true, Access: &node.Access{Username: "u", PasswordHash: "$2a$06$x"}},
+		{Hostnames: []string{"old.example.com"}, RedirectTo: "shop.example.com", SecurityHeaders: true},
+		{Hostnames: []string{"plain.example.com"}, Upstream: "127.0.0.1:9002"},
+	}
+	// added lists the headers a route's handlers add, in order.
+	added := func(r route) []string {
+		var out []string
+		for i, h := range r.Handle {
+			if h.Handler != "headers" || h.Response == nil {
+				continue
+			}
+			for name, v := range h.Response.Set {
+				req, ok := h.Response.Require.Headers[name]
+				if !h.Response.Deferred || !ok || req != nil || len(h.Response.Set) != 1 {
+					t.Errorf("%s handler %+v doesn't wait for the response or overwrites the app's", name, *h.Response)
+				}
+				if i >= len(node.SecurityHeaders) {
+					t.Errorf("%s set at handler %d, after the access check", name, i)
+				}
+				out = append(out, name+": "+v[0])
+			}
+		}
+		return out
+	}
+	all := []string{
+		"Strict-Transport-Security: max-age=31536000", "X-Content-Type-Options: nosniff",
+		"Referrer-Policy: strict-origin-when-cross-origin", "X-Frame-Options: SAMEORIGIN",
+	}
+
+	https := render(t, testOptions(), routes).Apps.HTTP.Servers["https"].Routes
+	if got := added(https[0]); !slices.Equal(got, all) {
+		t.Errorf("headers on https = %v, want %v", got, all)
+	}
+	if got := https[0].Handle[len(https[0].Handle)-1].Handler; got != "reverse_proxy" {
+		t.Errorf("last handler = %s, want the proxy", got)
+	}
+	for _, r := range https[1:3] {
+		if got := added(r); len(got) > 0 {
+			t.Errorf("%v gets %v", r.Match[0].Host, got)
+		}
+	}
+
+	opts := testOptions()
+	opts.DisableTLS, opts.AskURL = true, ""
+	plain := render(t, opts, routes).Apps.HTTP.Servers["http"].Routes
+	if got := added(plain[0]); !slices.Equal(got, all[1:]) {
+		t.Errorf("headers on plain HTTP = %v, want %v", got, all[1:])
+	}
+}
+
 // TestRenderCertificates: a loaded certificate (ADR 0090) is in the tls
 // app with a tag, and the https server's policy for its names selects it
 // ahead of the catch-all; bad names are refused.

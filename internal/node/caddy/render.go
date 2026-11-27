@@ -245,6 +245,14 @@ type headerOps struct {
 	// Deferred applies the change when the response is written, so it
 	// overrides the same header from an upstream. Response edits only.
 	Deferred bool `json:"deferred,omitempty"`
+	// Require applies a deferred change only to responses it matches.
+	Require *responseMatcher `json:"require,omitempty"`
+}
+
+// responseMatcher matches a response by its headers: a header listed
+// with no values (JSON null) matches only when the response lacks it.
+type responseMatcher struct {
+	Headers map[string][]string `json:"headers"`
 }
 
 type tlsApp struct {
@@ -520,11 +528,21 @@ func Render(opts Options, routes []node.Route, certs []node.Certificate) ([]byte
 				}
 			}
 		}
+		// Security headers wrap everything after them: the app's
+		// responses, and Dock's own (a login, a 503) too. Tunnel visitors
+		// are on HTTPS, whatever this server's own scheme.
+		var headers, headersVia []handler
+		if r.SecurityHeaders && r.RedirectTo == "" {
+			headers, headersVia = headersHTTP, headersHTTPS
+			if scheme == "https" {
+				headers = headersHTTPS
+			}
+		}
 		if public {
-			main = append(main, route{Match: []match{m}, Handle: append(slices.Clone(handle), h), Terminal: true})
+			main = append(main, route{Match: []match{m}, Handle: slices.Concat(headers, handle, []handler{h}), Terminal: true})
 		}
 		if tunnelListener {
-			viaTunnel = append(viaTunnel, route{Match: []match{m}, Handle: append(slices.Clone(handle), ht), Terminal: true})
+			viaTunnel = append(viaTunnel, route{Match: []match{m}, Handle: slices.Concat(headersVia, handle, []handler{ht}), Terminal: true})
 		}
 	}
 	// Apps' OTLP exports, plain HTTP from the server's own containers:
@@ -766,6 +784,30 @@ func scriptInject(opts Options, r node.Route) *handler {
 		return nil
 	}
 	return &handler{Handler: "dock_inject", Hosts: hosts, Src: ingest.ScriptPath}
+}
+
+// headersHTTPS and headersHTTP are the handlers of a route with
+// SecurityHeaders, for visitors on HTTPS and on plain HTTP. Built once:
+// Render only reads them.
+var headersHTTPS, headersHTTP = securityHeaders(true), securityHeaders(false)
+
+// securityHeaders are the headers handlers that add node.SecurityHeaders:
+// one per header, each set when the response is written and only if the
+// response lacks it, so the app's own header wins. HSTS only for
+// visitors on HTTPS: browsers ignore it over plain HTTP.
+func securityHeaders(https bool) []handler {
+	out := make([]handler, 0, len(node.SecurityHeaders))
+	for _, h := range node.SecurityHeaders {
+		if h.Name == "Strict-Transport-Security" && !https {
+			continue
+		}
+		out = append(out, handler{Handler: "headers", Response: &headerOps{
+			Set:      map[string][]string{h.Name: {h.Value}},
+			Deferred: true,
+			Require:  &responseMatcher{Headers: map[string][]string{h.Name: nil}},
+		}})
+	}
+	return out
 }
 
 // privateRanges are where apps' containers reach the server from: their

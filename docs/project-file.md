@@ -54,6 +54,7 @@ project = "shop"
 | `name` | service | Lower case letters, digits and dashes |
 | `template` | service | `postgres`, `pgvector`, `mysql`, `mariadb`, `redis` or `valkey`. Its settings, volume and credentials come from the template; a setting in the file overrides the template's |
 | `image`, `port`, `start_command`, `dockerfile_path`, `build_command`, `memory_mb`, `cpus`, `health_check_path`, `health_check_timeout_seconds`, `health_check_interval_seconds`, `health_check_probe_timeout_seconds`, `health_check_retries`, `health_check_start_period_seconds`, `pre_deploy_command`, `pre_deploy_timeout_seconds`, `pre_deploy_snapshot` | service | The service's settings, as `dock service update` names them. Left out means not set |
+| `security_headers` | service | `false` turns off [security headers](guide/domains.md#security-headers). Left out, a new service gets them and an existing one keeps its setting; an export writes it only when off |
 | `database`, `database_url_variable` | service | Data panel settings; compared, but changed with `dock db settings` |
 | `variables` | service | Names of the service's variables whose values are set separately (secrets) |
 | `values` | service | Variables with their value in the file: literals and references |

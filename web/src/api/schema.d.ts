@@ -8221,6 +8221,8 @@ export interface components {
             pre_deploy_snapshot?: boolean;
             /** Format: int64 */
             pre_deploy_timeout_seconds?: number;
+            /** @description Add security headers to responses that lack them (ADR 0107); on when omitted */
+            security_headers?: boolean;
             start_command?: string;
             /**
              * @description Create a database from a template; other settings are ignored
@@ -11054,6 +11056,7 @@ export interface components {
             pre_deploy_snapshot?: boolean;
             /** @description Port is published for routing */
             published: boolean;
+            security_headers?: boolean;
             start_command: string;
             variable_keys: string[] | null;
         };
@@ -11671,6 +11674,8 @@ export interface components {
              */
             pre_deploy_timeout_seconds: number;
             project: string;
+            /** @description Add Strict-Transport-Security, X-Content-Type-Options, Referrer-Policy and X-Frame-Options to responses that don't set them */
+            security_headers: boolean;
             /** @enum {string} */
             staged?: "create" | "archive";
             start_command: string;
@@ -11735,6 +11740,7 @@ export interface components {
             pre_deploy_snapshot?: boolean;
             /** Format: int64 */
             pre_deploy_timeout_seconds?: number;
+            security_headers?: boolean;
             start_command?: string;
             stopped?: boolean;
             template?: string;
@@ -13051,6 +13057,8 @@ export interface components {
             pre_deploy_snapshot?: boolean;
             /** Format: int64 */
             pre_deploy_timeout_seconds?: number;
+            /** @description Add security headers to responses that lack them (ADR 0107) */
+            security_headers?: boolean;
             start_command?: string;
         };
         UpdateSiteRequest: {

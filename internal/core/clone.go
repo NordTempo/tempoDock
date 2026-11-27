@@ -261,7 +261,7 @@ func copyService(ctx context.Context, q *store.Queries, dst envScope, s store.Se
 		HealthCheckIntervalSeconds: s.HealthCheckIntervalSeconds, HealthCheckProbeTimeoutSeconds: s.HealthCheckProbeTimeoutSeconds,
 		HealthCheckRetries: s.HealthCheckRetries, HealthCheckStartPeriodSeconds: s.HealthCheckStartPeriodSeconds,
 		PreDeployCommand: s.PreDeployCommand, PreDeployTimeoutSeconds: s.PreDeployTimeoutSeconds,
-		PreDeploySnapshot: s.PreDeploySnapshot,
+		PreDeploySnapshot: s.PreDeploySnapshot, SecurityHeaders: s.SecurityHeaders,
 	})
 	if err != nil {
 		return ns, err

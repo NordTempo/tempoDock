@@ -397,7 +397,7 @@ func (q *Queries) ListErrorIssueCounts(ctx context.Context, arg ListErrorIssueCo
 }
 
 const listFollowContainers = `-- name: ListFollowContainers :many
-SELECT releases.id, releases.service_id, releases.number, releases.status, releases.source, releases.from_release, releases.image_ref, releases.image_id, releases.config, releases.container_id, releases.host_port, releases.error, releases.error_code, releases.created_by, releases.created_at, releases.finished_at, releases.carried, releases.image_digest, releases.built_on_server_id, releases.promoted_from_release_id, releases.commit_sha, releases.commit_message, releases.commit_author, releases.history_trimmed, releases.logs_server_id, releases.image_scan_id, releases.pinned_ref, releases.base_image, releases.base_digest, services.name AS service, environments.id AS environment_id,
+SELECT releases.id, releases.service_id, releases.number, releases.status, releases.source, releases.from_release, releases.image_ref, releases.image_id, releases.config, releases.container_id, releases.host_port, releases.error, releases.error_code, releases.created_by, releases.created_at, releases.finished_at, releases.carried, releases.image_digest, releases.built_on_server_id, releases.promoted_from_release_id, releases.commit_sha, releases.commit_message, releases.commit_author, releases.history_trimmed, releases.logs_server_id, releases.image_scan_id, releases.pinned_ref, releases.base_image, releases.base_digest, releases.security_headers, services.name AS service, environments.id AS environment_id,
        environments.name AS environment, environments.server_id, projects.name AS project
 FROM environments
 JOIN services ON services.environment_id = environments.id
@@ -458,6 +458,7 @@ func (q *Queries) ListFollowContainers(ctx context.Context, serverID int64) ([]L
 			&i.Release.PinnedRef,
 			&i.Release.BaseImage,
 			&i.Release.BaseDigest,
+			&i.Release.SecurityHeaders,
 			&i.Service,
 			&i.EnvironmentID,
 			&i.Environment,

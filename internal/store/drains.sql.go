@@ -313,8 +313,8 @@ SELECT domains.hostname, domains.redirect_to, domains.service_id, domains.genera
        CAST(environments.asleep_at IS NOT NULL AS BOOLEAN) AS asleep,
        CAST(environments.sleep_after_minutes > 0 OR environments.asleep_at IS NOT NULL AS BOOLEAN) AS sleepable,
        server_forwards.host_port,
-       CAST(coalesce((SELECT releases.id FROM releases
-                      WHERE releases.service_id = services.id AND releases.status = 'active'), 0) AS INTEGER) AS release_id,
+       CAST(coalesce(active.id, 0) AS INTEGER) AS release_id,
+       CAST(coalesce(active.security_headers, 0) AS BOOLEAN) AS security_headers,
        CAST(coalesce(service_access.mode, '') AS TEXT) AS access_mode,
        CAST(coalesce(service_access.username, '') AS TEXT) AS access_username,
        CAST(coalesce(service_access.password_hash, '') AS TEXT) AS access_password_hash,
@@ -324,6 +324,7 @@ JOIN services ON services.id = server_forwards.service_id
 JOIN environments ON environments.id = services.environment_id
 JOIN projects ON projects.id = environments.project_id
 JOIN domains ON domains.service_id = services.id
+LEFT JOIN releases AS active ON active.service_id = services.id AND active.status = 'active'
 LEFT JOIN service_access ON service_access.service_id = services.id
 WHERE server_forwards.server_id = +? AND services.archived_at IS NULL AND domains.verified_at IS NOT NULL
 ORDER BY domains.service_id, domains.id
@@ -343,6 +344,7 @@ type ListForwardedDomainsRow struct {
 	Sleepable          bool
 	HostPort           int64
 	ReleaseID          int64
+	SecurityHeaders    bool
 	AccessMode         string
 	AccessUsername     string
 	AccessPasswordHash string
@@ -374,6 +376,7 @@ func (q *Queries) ListForwardedDomains(ctx context.Context, serverID int64) ([]L
 			&i.Sleepable,
 			&i.HostPort,
 			&i.ReleaseID,
+			&i.SecurityHeaders,
 			&i.AccessMode,
 			&i.AccessUsername,
 			&i.AccessPasswordHash,

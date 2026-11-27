@@ -668,7 +668,8 @@ func (c *Core) planService(ep *envPlan, line func(*[]apitypes.PlanChange, apityp
 	if ls == nil {
 		line(&ep.changes, svc(apitypes.PlanChange{Kind: apitypes.PlanService, Action: apitypes.ChangeAdd, Name: name, New: serviceSummary(fs, want)}))
 		if tmpl == nil {
-			for _, ch := range settingChanges(name, apitypes.ServiceSettings{}, want) {
+			// What differs from a new service's defaults.
+			for _, ch := range settingChanges(name, apitypes.ServiceSettings{SecurityHeaders: true}, want) {
 				line(&ep.changes, svc(apitypes.PlanChange{Kind: apitypes.PlanSetting, Action: apitypes.ChangeAdd, Name: ch.Field, New: ch.New}))
 			}
 		}
@@ -691,6 +692,9 @@ func (c *Core) planService(ep *envPlan, line func(*[]apitypes.PlanChange, apityp
 			ep.staged++
 		}
 		cur := settingsOf(ls.row)
+		if fs.SecurityHeaders == nil {
+			want.SecurityHeaders = cur.SecurityHeaders
+		}
 		if tag := imageTag(cur.Image); tmpl != nil && fs.Image == "" && tag != "" && tag == imageTag(tmpl.image) {
 			// A template's image is its tag: a database updated to a newer
 			// image of it (ADR 0074) is where the file wants it.
@@ -1029,6 +1033,10 @@ func desiredSettings(fs apitypes.ServiceExport, tmpl *dbTemplate) apitypes.Servi
 		HealthCheckIntervalSeconds: fs.HealthCheckIntervalSeconds, HealthCheckProbeTimeoutSeconds: fs.HealthCheckProbeTimeoutSeconds,
 		HealthCheckRetries: fs.HealthCheckRetries, HealthCheckStartPeriodSeconds: fs.HealthCheckStartPeriodSeconds,
 		PreDeployCommand: fs.PreDeployCommand, PreDeployTimeoutSeconds: fs.PreDeployTimeoutSeconds,
+		PreDeploySnapshot: fs.PreDeploySnapshot,
+		// Left out, a new service gets them; the plan keeps an existing
+		// service's setting (ADR 0107).
+		SecurityHeaders: fs.SecurityHeaders == nil || *fs.SecurityHeaders,
 	}
 	if tmpl != nil {
 		s.Image = cmp.Or(s.Image, tmpl.image)
@@ -1199,6 +1207,7 @@ func (c *Core) createStagedService(ctx context.Context, q *store.Queries, es env
 		HealthCheckIntervalSeconds: int64(set.HealthCheckIntervalSeconds), HealthCheckProbeTimeoutSeconds: int64(set.HealthCheckProbeTimeoutSeconds),
 		HealthCheckRetries: int64(set.HealthCheckRetries), HealthCheckStartPeriodSeconds: int64(set.HealthCheckStartPeriodSeconds),
 		PreDeployCommand: set.PreDeployCommand, PreDeployTimeoutSeconds: int64(set.PreDeployTimeoutSeconds),
+		PreDeploySnapshot: set.PreDeploySnapshot, SecurityHeaders: set.SecurityHeaders,
 	})
 	if store.IsUnique(err) {
 		return s, conflict("service %q already exists in %s", fs.Name, es)

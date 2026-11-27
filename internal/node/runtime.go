@@ -1200,6 +1200,21 @@ type Route struct {
 	// for the service and release this token names (a trace token,
 	// internal/traces). Redirect and stopped routes ignore it.
 	Trace string
+	// SecurityHeaders adds SecurityHeaders to the route's responses that
+	// don't have them already, the app's own winning (ADR 0107); HSTS
+	// only where visitors are on HTTPS. Redirect routes ignore it.
+	SecurityHeaders bool
+}
+
+// SecurityHeaders are the response headers a route with SecurityHeaders
+// set gets, in order. A safe set for any app: no includeSubDomains or
+// preload (other hosts under the name may not serve HTTPS) and no
+// Content-Security-Policy, which only an app's authors can write.
+var SecurityHeaders = []struct{ Name, Value string }{
+	{"Strict-Transport-Security", "max-age=31536000"},
+	{"X-Content-Type-Options", "nosniff"},
+	{"Referrer-Policy", "strict-origin-when-cross-origin"},
+	{"X-Frame-Options", "SAMEORIGIN"},
 }
 
 // HoldFor is how long a Hold route waits for its upstream.

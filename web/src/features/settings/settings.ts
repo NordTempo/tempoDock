@@ -29,6 +29,7 @@ export const settingLabel: Record<SettingKey, string> = {
   pre_deploy_command: "pre-deploy command",
   pre_deploy_timeout_seconds: "pre-deploy timeout",
   pre_deploy_snapshot: "pre-deploy snapshot",
+  security_headers: "security headers",
 };
 
 export const isSettingKey = (field: string): field is SettingKey =>
@@ -36,7 +37,12 @@ export const isSettingKey = (field: string): field is SettingKey =>
 
 /** A setting edited as text, e.g. from a link that opens its editor. */
 export const isTextSettingKey = (field: string): field is TextSettingKey =>
-  isSettingKey(field) && field !== "pre_deploy_snapshot";
+  isSettingKey(field) && !flagKeys.has(field);
+
+const flagKeys = new Set<string>([
+  "pre_deploy_snapshot",
+  "security_headers",
+] satisfies FlagSettingKey[]);
 
 const numeric = new Set<TextSettingKey>([
   "port",
@@ -91,6 +97,7 @@ export function formatSetting(
     case "pre_deploy_timeout_seconds":
       return n ? `${n}s` : "600s (default)";
     case "pre_deploy_snapshot":
+    case "security_headers":
       return String(value) === "true" ? "on" : "off";
   }
 }

@@ -94,7 +94,7 @@ func (q *Queries) ListReleaseServices(ctx context.Context, ids []int64) ([]ListR
 }
 
 const listReleasesByIDs = `-- name: ListReleasesByIDs :many
-SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried, image_digest, built_on_server_id, promoted_from_release_id, commit_sha, commit_message, commit_author, history_trimmed, logs_server_id, image_scan_id, pinned_ref, base_image, base_digest FROM releases WHERE id IN (/*SLICE:ids*/?)
+SELECT id, service_id, number, status, source, from_release, image_ref, image_id, config, container_id, host_port, error, error_code, created_by, created_at, finished_at, carried, image_digest, built_on_server_id, promoted_from_release_id, commit_sha, commit_message, commit_author, history_trimmed, logs_server_id, image_scan_id, pinned_ref, base_image, base_digest, security_headers FROM releases WHERE id IN (/*SLICE:ids*/?)
 `
 
 // ListReleasesByIDs is the releases a page of spans names: their numbers,
@@ -149,6 +149,7 @@ func (q *Queries) ListReleasesByIDs(ctx context.Context, ids []int64) ([]Release
 			&i.PinnedRef,
 			&i.BaseImage,
 			&i.BaseDigest,
+			&i.SecurityHeaders,
 		); err != nil {
 			return nil, err
 		}

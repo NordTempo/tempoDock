@@ -44,7 +44,15 @@ export const serviceSettingSections = [
   {
     id: "domains",
     label: "Domains",
-    words: ["domain", "hostname", "dns", "certificate", "access"],
+    words: [
+      "domain",
+      "hostname",
+      "dns",
+      "certificate",
+      "access",
+      "security headers",
+      "hsts",
+    ],
   },
   {
     id: "analytics",

@@ -290,6 +290,11 @@ export const topics: Record<TopicId, Topic> = {
         what: "Only members signed in to Dock",
         cli: "dock access login -s {service} -e {env}",
       },
+      {
+        what: "Stop adding security headers (another site frames the app)",
+        cli: "dock service update --security-headers=false -s {service} -e {env}",
+        at: { s: "domains" },
+      },
     ],
     watch: [
       "Until DNS points at the server, Domains shows the record to create.",
@@ -299,7 +304,7 @@ export const topics: Record<TopicId, Topic> = {
     related: ["services", "status-pages", "organizations"],
     guide: "domains",
     words:
-      "dns tls https certificate hostname redirect password access cloudflare",
+      "dns tls https certificate hostname redirect password access cloudflare security headers hsts",
   },
 
   previews: {

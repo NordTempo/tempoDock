@@ -377,8 +377,8 @@
     },
     "mcp.BenchmarkToolCall/tool=service_status": {
       "ns_op": 204636,
-      "bytes_op": 57082,
-      "allocs_op": 1202
+      "bytes_op": 57944,
+      "allocs_op": 1218
     },
     "mcp.BenchmarkToolCall/tool=whoami": {
       "ns_op": 46004,

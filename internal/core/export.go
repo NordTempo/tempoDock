@@ -173,7 +173,7 @@ func (c *Core) ExportProject(ctx context.Context, a Actor, project string) (apit
 
 // serviceExport is a service's live settings in an export.
 func serviceExport(s store.Service) *apitypes.ServiceExport {
-	return &apitypes.ServiceExport{
+	out := &apitypes.ServiceExport{
 		Name: s.Name, Template: apitypes.Template(s.Template), Stopped: s.StoppedAt != nil, Image: s.Image, Port: int(s.Port),
 		HealthCheckPath: s.HealthCheckPath, HealthCheckTimeoutSeconds: int(s.HealthCheckTimeoutSeconds),
 		StartCommand: s.StartCommand, DockerfilePath: s.DockerfilePath, BuildCommand: s.BuildCommand,
@@ -186,4 +186,9 @@ func serviceExport(s store.Service) *apitypes.ServiceExport {
 		PreDeployCommand: s.PreDeployCommand, PreDeployTimeoutSeconds: int(s.PreDeployTimeoutSeconds),
 		PreDeploySnapshot: s.PreDeploySnapshot,
 	}
+	if !s.SecurityHeaders {
+		// Only off is written: left out means on for a new service.
+		out.SecurityHeaders = new(false)
+	}
+	return out
 }

@@ -81,6 +81,7 @@ type settingsFlags struct {
 	preDeployCommand                                               string
 	preDeployTimeout                                               time.Duration
 	preDeploySnapshot                                              bool
+	securityHeaders                                                bool
 	cpus                                                           float64
 }
 
@@ -130,6 +131,7 @@ func (f *settingsFlags) add(fs *pflag.FlagSet) {
 	fs.StringVar(&f.preDeployCommand, "pre-deploy-command", "", "runs with each new image before it gets traffic, e.g. migrations (empty: none)")
 	fs.DurationVar(&f.preDeployTimeout, "pre-deploy-timeout", 0, "how long the pre-deploy command may run, e.g. 15m (0: 10m)")
 	fs.BoolVar(&f.preDeploySnapshot, "pre-deploy-snapshot", false, "snapshot the environment's stateful services before the pre-deploy command runs (=false: don't)")
+	fs.BoolVar(&f.securityHeaders, "security-headers", true, "add HSTS, nosniff, a referrer policy and SAMEORIGIN framing to responses that don't set them (=false: don't)")
 }
 
 func (f *settingsFlags) create(name string) apitypes.CreateServiceRequest {
@@ -142,7 +144,7 @@ func (f *settingsFlags) create(name string) apitypes.CreateServiceRequest {
 		HealthCheckRetries:             f.healthCheckRetries,
 		HealthCheckStartPeriodSeconds:  int(f.startPeriod.Seconds()),
 		PreDeployCommand:               f.preDeployCommand, PreDeployTimeoutSeconds: int(f.preDeployTimeout.Seconds()),
-		PreDeploySnapshot: f.preDeploySnapshot,
+		PreDeploySnapshot: f.preDeploySnapshot, SecurityHeaders: &f.securityHeaders,
 	}
 }
 
@@ -176,6 +178,7 @@ func (f *settingsFlags) update(fs *pflag.FlagSet) (apitypes.UpdateServiceRequest
 	set("pre-deploy-command", func() { req.PreDeployCommand = &f.preDeployCommand })
 	set("pre-deploy-timeout", func() { req.PreDeployTimeoutSeconds = &preTimeout })
 	set("pre-deploy-snapshot", func() { req.PreDeploySnapshot = &f.preDeploySnapshot })
+	set("security-headers", func() { req.SecurityHeaders = &f.securityHeaders })
 	return req, changed
 }
 
@@ -362,6 +365,7 @@ func printService(g *globals, svc apitypes.Service) error {
 		"dockerfile", svc.DockerfilePath,
 		"build command", svc.BuildCommand,
 		"pre-deploy", preDeployNote(svc.ServiceSettings),
+		"security headers", onOff(svc.SecurityHeaders),
 		"limits", limits,
 		"pending", pending,
 	)

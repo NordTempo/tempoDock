@@ -219,6 +219,7 @@ func setSettings(ctx context.Context, q *store.Queries, id int64, s apitypes.Ser
 		PreDeployCommand:               s.PreDeployCommand,
 		PreDeployTimeoutSeconds:        int64(s.PreDeployTimeoutSeconds),
 		PreDeploySnapshot:              s.PreDeploySnapshot,
+		SecurityHeaders:                s.SecurityHeaders,
 		ID:                             id,
 	})
 	return err

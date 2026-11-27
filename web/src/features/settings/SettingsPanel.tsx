@@ -262,7 +262,22 @@ export function SettingsPanel({
         <UptimeChecks serviceRef={ref} />
       </SettingsSection>
 
-      <DomainsPanel serviceRef={ref} />
+      <DomainsPanel
+        serviceRef={ref}
+        headers={row(
+          "Security headers",
+          "Added to responses that don't set them: HSTS, nosniff, a referrer policy and SAMEORIGIN framing.",
+          [],
+          undefined,
+          undefined,
+          {
+            key: "security_headers",
+            word: "add them",
+            title:
+              "Strict-Transport-Security, X-Content-Type-Options, Referrer-Policy and X-Frame-Options; turn off if another site frames the app",
+          },
+        )}
+      />
 
       <ServiceAnalyticsPanel serviceRef={ref} />
 
@@ -726,7 +741,7 @@ function SettingRow({
           <span className="text-xs text-mut">
             {staged &&
               `Saved changes wait for Apply in the header (${modKey.trim()} Enter), which puts them live together. `}
-            Empty means the default.
+            {parts.length > 0 && "Empty means the default."}
           </span>
           <ErrorText error={error ?? stage.error} />
         </form>
@@ -752,12 +767,15 @@ function SettingRow({
                   {value(part)}
                 </span>
               ))}
-              {flag && (flagStart() || change(flag.key)) && (
-                <span>
-                  <span className="font-sans text-mut">{flag.word} </span>
-                  {value({ key: flag.key })}
-                </span>
-              )}
+              {flag && parts.length === 0 && value({ key: flag.key })}
+              {flag &&
+                parts.length > 0 &&
+                (flagStart() || change(flag.key)) && (
+                  <span>
+                    <span className="font-sans text-mut">{flag.word} </span>
+                    {value({ key: flag.key })}
+                  </span>
+                )}
             </span>
           </OpenValue>
           {saved.length > 0 && (
