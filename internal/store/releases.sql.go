@@ -383,6 +383,98 @@ func (q *Queries) ListActiveReleases(ctx context.Context) ([]Release, error) {
 	return items, nil
 }
 
+const listDeployQueue = `-- name: ListDeployQueue :many
+SELECT r.id, r.number, r.status, r.source, r.from_release, r.created_by, r.created_at, r.commit_sha, r.commit_message, r.commit_author,
+       s.id AS service_id, s.name AS service, e.id AS environment_id, e.name AS environment, e.kind AS environment_kind,
+       p.id AS project_id, p.name AS project, o.id AS org_id, o.slug AS org,
+       COALESCE(g.pending_sha, '') AS pending_sha, COALESCE(g.pending_message, '') AS pending_message, COALESCE(g.pending_author, '') AS pending_author
+FROM releases r
+JOIN services s ON s.id = r.service_id
+JOIN environments e ON e.id = s.environment_id
+JOIN projects p ON p.id = e.project_id
+JOIN orgs o ON o.id = p.org_id
+LEFT JOIN git_connections g ON g.service_id = s.id
+WHERE r.status IN ('queued', 'building', 'starting', 'health_checking')
+`
+
+type ListDeployQueueRow struct {
+	ID              int64
+	Number          int64
+	Status          string
+	Source          string
+	FromRelease     int64
+	CreatedBy       string
+	CreatedAt       time.Time
+	CommitSha       string
+	CommitMessage   string
+	CommitAuthor    string
+	ServiceID       int64
+	Service         string
+	EnvironmentID   int64
+	Environment     string
+	EnvironmentKind string
+	ProjectID       int64
+	Project         string
+	OrgID           int64
+	Org             string
+	PendingSha      string
+	PendingMessage  string
+	PendingAuthor   string
+}
+
+// Every release deploying (queued through health checking) with its
+// service, environment, project and org, and the push waiting behind it
+// (pending_sha, ADR 0018): the deploy queue view's one read, every
+// org's, since another org's release can wait at the same builder. In
+// flight is a few releases, read from the partial index
+// releases_one_in_flight alone; unsorted, since ORDER BY id would scan
+// the table instead (the caller sorts).
+func (q *Queries) ListDeployQueue(ctx context.Context) ([]ListDeployQueueRow, error) {
+	rows, err := q.db.QueryContext(ctx, listDeployQueue)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDeployQueueRow
+	for rows.Next() {
+		var i ListDeployQueueRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Number,
+			&i.Status,
+			&i.Source,
+			&i.FromRelease,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.CommitSha,
+			&i.CommitMessage,
+			&i.CommitAuthor,
+			&i.ServiceID,
+			&i.Service,
+			&i.EnvironmentID,
+			&i.Environment,
+			&i.EnvironmentKind,
+			&i.ProjectID,
+			&i.Project,
+			&i.OrgID,
+			&i.Org,
+			&i.PendingSha,
+			&i.PendingMessage,
+			&i.PendingAuthor,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listEnvironmentActiveReleases = `-- name: ListEnvironmentActiveReleases :many
 SELECT releases.service_id, releases.number FROM services
 JOIN releases ON releases.service_id = services.id AND releases.status = 'active'

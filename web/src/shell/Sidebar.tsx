@@ -32,6 +32,7 @@ import {
 } from "../features/create/access";
 import { openCreate } from "../features/create/open";
 import { closeHelp, openHelp, useHelpOpen } from "../features/help/open";
+import { ConsoleDeploys, DeployCount } from "../features/queue/open";
 import { useUpdateNote } from "../features/update/data";
 import { plural } from "../ui/format";
 import { Icon } from "../ui/icons";
@@ -278,6 +279,7 @@ export function TopBar() {
         <span className="sr-only sm:not-sr-only">Search</span>
         <kbd className="hidden sm:inline">{modKey.trim()}K</kbd>
       </button>
+      <DeployCount />
       <TopLink to="/$org/inbox">
         Inbox <InboxCount />
       </TopLink>
@@ -955,6 +957,9 @@ function ConsoleNav() {
           )}
         </ConsoleLink>
       ))}
+      {/* Every org's deploy queue opens beside the page, as in the org's
+          top bar (there a count), so it is a button among the pages. */}
+      <ConsoleDeploys className="nav-row w-full aria-expanded:bg-sel aria-expanded:text-fg" />
       <div className="min-h-2 flex-1" />
       {/* Updates by the account: both are about this Dock itself. */}
       {updates && (

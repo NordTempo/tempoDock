@@ -1795,6 +1795,11 @@ const (
 	// EventUpdate carries the update status whenever an update moves on
 	// (ADR 0028), without the releases. Operators only.
 	EventUpdate EventType = "update"
+	// EventDeployQueue says the deploy queue moved: a build took or left
+	// a builder's slot, or a release waiting behind one moved up. No
+	// payload: read GET /deploy-queue (or the console's) again. Each org
+	// with a release at that builder gets one, operators one more.
+	EventDeployQueue EventType = "deploy_queue"
 	// EventDisk carries a server's disk reading once a refresh of it
 	// finished (ADR 0035). Operators only.
 	EventDisk EventType = "disk"
@@ -1845,7 +1850,7 @@ const (
 
 // Event is a live update. Exactly one payload field is set, matching Type.
 type Event struct {
-	Type           EventType           `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk,analytics,environment_lock,access_request,run,uptime,job,environment_move,server_drain,cloudflare_redirect,sleep,scan,email,git"`
+	Type           EventType           `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk,analytics,environment_lock,access_request,run,uptime,job,environment_move,server_drain,cloudflare_redirect,sleep,scan,email,git,deploy_queue"`
 	Time           time.Time           `json:"time"`
 	ProjectRenamed *ProjectRenamed     `json:"project_renamed,omitempty"`
 	Project        string              `json:"project,omitempty"`

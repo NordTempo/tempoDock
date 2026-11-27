@@ -154,11 +154,12 @@ export const topics: Record<TopicId, Topic> = {
     watch: [
       "A release gets traffic once its health check answers; a failed one leaves the old one serving.",
       "Services with a volume are down a few seconds per release: one copy can use a volume at a time.",
+      "A builder builds one release at a time; the top bar's count opens what builds and what waits.",
     ],
     related: ["services", "previews", "logs"],
     guide: "deploying#how-a-release-goes-live",
     words:
-      "release rollback restart cancel build github git push promote cutover compose",
+      "release rollback restart cancel build github git push promote cutover compose queue builder waiting",
   },
 
   services: {
@@ -390,6 +391,7 @@ export const topics: Record<TopicId, Topic> = {
     watch: [
       "A run uses the live release's image and variables.",
       "Schedules are read in UTC unless the job sets --timezone.",
+      "A job still running when it comes due again is skipped, unless --concurrency lets more run at once.",
     ],
     related: ["deploying", "logs", "data"],
     guide: "deploying#scheduled-jobs",

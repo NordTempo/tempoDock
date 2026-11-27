@@ -1444,6 +1444,10 @@ func (c *Core) publishRelease(ctx context.Context, ss svcScope, r store.Release)
 		return
 	}
 	c.publish(ss, apitypes.Event{Type: apitypes.EventRelease, Release: &rel})
+	if !rel.Status.Done() || r.FinishedAt != nil && now().Sub(*r.FinishedAt) < time.Minute {
+		// The console's queue doesn't get an org's release events.
+		c.bus.publish(busEvent{ev: apitypes.Event{Type: apitypes.EventDeployQueue}})
+	}
 }
 
 // publish sends a service-scoped event.

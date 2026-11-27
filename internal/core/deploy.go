@@ -424,28 +424,23 @@ func (d *deployment) build(ctx context.Context) (string, error) {
 		}
 		defer release()
 	}
-	sem := c.buildLock(builder.ID)
-	select {
-	case sem <- struct{}{}:
-	default:
-		d.event(ctx, "Waiting for another build on "+where+" to finish")
-		// The build holding the slot has its own deadlines, so this one
-		// waits at most about as long as a build may run.
-		wait := stalledPhase{what: "waiting for another build on " + where, limit: c.buildTimeout(), code: apitypes.CodeBuildFailed,
+	ticket, ahead := c.builds.join(builder.ID, d.rel.ID, d.ss.project.OrgID)
+	unlock := func() { c.builds.leave(ticket) }
+	defer unlock()
+	if ahead > 0 {
+		if ahead == 1 {
+			d.event(ctx, "Waiting for another build on "+where+" to finish")
+		} else {
+			d.event(ctx, fmt.Sprintf("Waiting for %d other builds on %s to finish", ahead, where))
+		}
+		// Each build ahead has its own deadlines, so this one waits at
+		// most about as long as they may run.
+		wait := stalledPhase{what: "waiting for other builds on " + where, limit: time.Duration(ahead) * c.buildTimeout(), code: apitypes.CodeBuildFailed,
 			hint: "the build before it didn't end"}
-		if err := d.within(ctx, wait, func(ctx context.Context) error {
-			select {
-			case sem <- struct{}{}:
-				return nil
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-		}); err != nil {
+		if err := d.within(ctx, wait, func(ctx context.Context) error { return c.builds.wait(ctx, ticket) }); err != nil {
 			return "", err
 		}
 	}
-	unlock := sync.OnceFunc(func() { <-sem })
-	defer unlock()
 	req := node.BuildRequest{
 		Source: f, Dockerfile: d.ss.svc.DockerfilePath, BuildCommand: d.ss.svc.BuildCommand,
 		StartCommand: d.cfg.Cmd, BuildArgs: d.cfg.Env, Tag: ref, Logs: d.log,

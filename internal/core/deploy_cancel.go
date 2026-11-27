@@ -142,13 +142,22 @@ func (c *Core) CancelRelease(ctx context.Context, a Actor, ref ServiceRef, numbe
 		if rel, err = c.store.GetInFlightRelease(ctx, ss.svc.ID); store.IsNotFound(err) {
 			return apitypes.Release{}, conflict("no deploy of %s is running; nothing to cancel", ss)
 		}
-		number = rel.Number
 	} else {
 		rel, err = c.releaseByNumber(ctx, ss, number)
 	}
 	if err != nil {
 		return apitypes.Release{}, err
 	}
+	return c.cancelRelease(ctx, a, ss, rel, func(summary string) {
+		c.audit(ctx, a, "release.cancel", &ss.project, &ss.env, ss.String(), summary)
+	})
+}
+
+// cancelRelease stops rel's deploy for a and records it with audit,
+// given what happened. It returns once the release is canceled, or with
+// the release as it is when ctx ends first.
+func (c *Core) cancelRelease(ctx context.Context, a Actor, ss svcScope, rel store.Release, audit func(summary string)) (apitypes.Release, error) {
+	number := rel.Number
 	if s := releaseStatus(rel); s.Done() {
 		hint := ""
 		if s == apitypes.ReleaseActive {
@@ -165,12 +174,13 @@ func (c *Core) CancelRelease(ctx context.Context, a Actor, ref ServiceRef, numbe
 	if err := run.stop(a.Name, ss, number); err != nil {
 		return apitypes.Release{}, err
 	}
-	c.audit(ctx, a, "release.cancel", &ss.project, &ss.env, ss.String(), fmt.Sprintf("release %d canceled while %s", number, rel.Status))
+	audit(fmt.Sprintf("release %d canceled while %s", number, rel.Status))
 	select {
 	case <-run.done:
 	case <-ctx.Done():
 	}
-	if rel, err = c.store.GetRelease(context.WithoutCancel(ctx), rel.ID); err != nil {
+	rel, err := c.store.GetRelease(context.WithoutCancel(ctx), rel.ID)
+	if err != nil {
 		return apitypes.Release{}, err
 	}
 	return c.toRelease(context.WithoutCancel(ctx), ss, rel, false)

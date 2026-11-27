@@ -1180,6 +1180,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/console/deploy-queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read every organization's deploy queue
+         * @description The deploy queue of every organization, builders named, each release with its organization and ID. Commits show by SHA only. Platform viewers and operators.
+         */
+        get: operations["get-console-deploy-queue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/console/orgs": {
         parameters: {
             query?: never;
@@ -1400,6 +1420,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/console/releases/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel any organization's deploy
+         * @description Cancels a deploy by release ID, as POST .../releases/{number}/cancel does, to free a builder without joining the organization. Recorded in the organization's log and the platform's. Operators only.
+         */
+        post: operations["cancel-console-release"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/console/tokens": {
         parameters: {
             query?: never;
@@ -1593,6 +1633,26 @@ export interface paths {
          * @description Replaces the default rules; subjects and kinds left out use the built-in defaults. Admin.
          */
         put: operations["set-default-data-policy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/deploy-queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the deploy queue
+         * @description Per builder, the release it builds and the ones waiting for it in order, then the releases deploying that aren't at a builder. Another organization's release, or one you can't read, shows as hidden in its place. Builders are labelled, not named. Cancel one with POST .../releases/{number}/cancel. Scope: read.
+         */
+        get: operations["get-deploy-queue"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -9054,6 +9114,10 @@ export interface components {
             /** @description Image reference; defaults to the service's image setting, which a deploy of another image updates */
             image?: string;
         };
+        DeployQueue: {
+            builders: components["schemas"]["QueueBuilder"][] | null;
+            deploying: components["schemas"]["QueueItem"][] | null;
+        };
         Diagnosis: {
             /** @description Rules that matched after the cause's */
             also_matched: string[] | null;
@@ -9810,7 +9874,7 @@ export interface components {
             time: string;
             traffic?: components["schemas"]["TrafficUpdate"];
             /** @enum {string} */
-            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "traffic" | "server" | "alert" | "update" | "project_renamed" | "disk" | "analytics" | "environment_lock" | "access_request" | "run" | "uptime" | "job" | "environment_move" | "server_drain" | "cloudflare_redirect" | "sleep" | "scan" | "email" | "git";
+            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "traffic" | "server" | "alert" | "update" | "project_renamed" | "disk" | "analytics" | "environment_lock" | "access_request" | "run" | "uptime" | "job" | "environment_move" | "server_drain" | "cloudflare_redirect" | "sleep" | "scan" | "email" | "git" | "deploy_queue";
             update?: components["schemas"]["UpdateStatus"];
             uptime?: components["schemas"]["UptimeUpdate"];
             usage?: components["schemas"]["UsageUpdate"];
@@ -10400,6 +10464,8 @@ export interface components {
         };
         Job: {
             command: string;
+            /** Format: int64 */
+            concurrency: number;
             created_by: string;
             enabled: boolean;
             last_run?: components["schemas"]["CommandRun"];
@@ -10421,6 +10487,8 @@ export interface components {
         };
         JobExport: {
             command: string;
+            /** Format: int64 */
+            concurrency?: number;
             enabled?: boolean;
             name: string;
             /** @enum {string} */
@@ -11111,6 +11179,44 @@ export interface components {
             title: string;
             /** @description The pull request on GitHub: https://github.com/<repo>/pull/<number> */
             url: string;
+        };
+        QueueBuilder: {
+            building?: components["schemas"]["QueueItem"];
+            /** @enum {string} */
+            builds: "all" | "production" | "non_production" | "none";
+            label: string;
+            /** @description The server's name; operators only */
+            name?: string;
+            waiting: components["schemas"]["QueueItem"][] | null;
+        };
+        QueueItem: {
+            commit?: components["schemas"]["Commit"];
+            /** @description Who or what started it: a person, a token, git push, a preview */
+            created_by?: string;
+            environment?: string;
+            /** Format: int64 */
+            from_release?: number;
+            /** @description Another org's release, or one you can't read: only its place and times */
+            hidden?: boolean;
+            /** Format: int64 */
+            id?: number;
+            next?: components["schemas"]["Commit"];
+            org?: string;
+            project?: string;
+            /** Format: date-time */
+            queued_at: string;
+            /**
+             * Format: int64
+             * @description The release's number in its service
+             */
+            release?: number;
+            service?: string;
+            /** Format: date-time */
+            since: string;
+            /** @enum {string} */
+            source?: "upload" | "image" | "config" | "rollback" | "restart" | "promote";
+            /** @enum {string} */
+            status?: "queued" | "building" | "starting" | "health_checking";
         };
         RecoveryCodes: {
             codes: string[] | null;
@@ -12233,6 +12339,11 @@ export interface components {
         SetJobRequest: {
             /** @description Run with /bin/sh -c in the service's active image */
             command: string;
+            /**
+             * Format: int64
+             * @description Most runs at once, 1 to 16; a run due while that many run is skipped. Above 1 implies overlap allow. Default 1, or 4 with overlap allow
+             */
+            concurrency?: number;
             /** @description Default true */
             enabled?: boolean;
             /**
@@ -19917,6 +20028,83 @@ export interface operations {
             };
         };
     };
+    "get-console-deploy-queue": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeployQueue"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "list-console-orgs": {
         parameters: {
             query?: {
@@ -21381,6 +21569,104 @@ export interface operations {
             };
         };
     };
+    "cancel-console-release": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Release ID, from the console's deploy queue */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Release"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "list-platform-tokens": {
         parameters: {
             query?: {
@@ -22640,6 +22926,83 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-deploy-queue": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeployQueue"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

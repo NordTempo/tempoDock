@@ -16,6 +16,7 @@ import { featuresKey } from "../features/console/features";
 import { applyScanEvent } from "../features/images/data";
 import { applyJobEvent, applyJobRunEvent } from "../features/jobs/data";
 import { applyMoveEvent } from "../features/move/data";
+import { applyQueueEvent, applyQueueRelease } from "../features/queue/data";
 import { registryKey } from "../features/registry/data";
 import { applyAccessRequestEvent } from "../features/requests/data";
 import { applyRunEvent } from "../features/runs/data";
@@ -83,6 +84,7 @@ const busEvents = [
   "scan",
   "email",
   "git",
+  "deploy_queue",
 ] as const satisfies readonly Exclude<LiveEvent["type"], "build_log">[];
 
 const refOf = (e: LiveEvent): ServiceRef | null =>
@@ -215,6 +217,7 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
         (old) => old && { ...release, events: old.events, scan: old.scan },
       );
       applyRelease(queryClient, ref, release);
+      applyQueueRelease(queryClient, ref, release);
       // A queued push leaves the git view as its release starts building
       // (after core.gitDeployStart), and the next one may start once a
       // deploy ends. Refetches only while the view is shown.
@@ -423,8 +426,13 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
         keys.git(ref),
         (old) => old && { ...old, connection },
       );
+      // The push waiting behind a deploy shows in the queue.
+      applyQueueEvent(queryClient);
       return;
     }
+    case "deploy_queue":
+      applyQueueEvent(queryClient);
+      return;
     case "project_renamed":
       return; // Navigation is handled by useLiveUpdates.
     case "build_log":

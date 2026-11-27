@@ -2,24 +2,34 @@ import { useEffect, useRef, useState } from "react";
 import type { ServiceRef } from "../../data/types";
 import { useShortcuts } from "../../shell/keys";
 import { Act, ErrorText } from "../../ui/kit";
-import { useCancelRelease } from "./data";
+import { useCancelRelease, useConsoleCancelRelease } from "./data";
 
 /**
  * Cancel for a release that is deploying (ADR 0086). "Cancel rN" turns
  * into "Cancel rN? Yes · No" where it is, in every environment; Yes stops
  * the deploy before traffic moves to it. The question goes away by
  * itself after a while. With `shortcut`, X asks too (the service header).
+ * With `releaseId` it cancels from the console, by ID, as an operator
+ * (the deploy queue), with no CLI beside it: the CLI cancels as a member.
  */
 export function CancelDeploy({
   serviceRef: ref,
   number,
   shortcut,
+  releaseId,
 }: {
   serviceRef: ServiceRef;
   number: number;
   shortcut?: boolean;
+  releaseId?: number;
 }) {
-  const cancel = useCancelRelease();
+  const member = useCancelRelease();
+  const operator = useConsoleCancelRelease();
+  const cancel = releaseId === undefined ? member : operator;
+  const stop = (onSettled: () => void) =>
+    releaseId === undefined
+      ? member.mutate({ ref, number }, { onSettled })
+      : operator.mutate({ id: releaseId, number }, { onSettled });
   const [asking, setAsking] = useState(false);
   const no = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -41,7 +51,10 @@ export function CancelDeploy({
       : [],
   );
   const r = `r${number}`;
-  const cli = `dock release cancel ${number} -s ${ref.service} -e ${ref.environment}`;
+  const cli =
+    releaseId === undefined
+      ? `dock release cancel ${number} -s ${ref.service} -e ${ref.environment}`
+      : undefined;
   const error = <ErrorText error={cancel.error} />;
 
   if (cancel.isPending)
@@ -81,9 +94,7 @@ export function CancelDeploy({
       <button
         type="button"
         className="-my-1 font-semibold text-fail underline decoration-fail-edge underline-offset-2 hover:decoration-current"
-        onClick={() =>
-          cancel.mutate({ ref, number }, { onSettled: () => setAsking(false) })
-        }
+        onClick={() => stop(() => setAsking(false))}
       >
         Yes
       </button>

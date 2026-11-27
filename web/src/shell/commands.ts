@@ -22,6 +22,7 @@ import { openHelp } from "../features/help/open";
 import { requestLock } from "../features/overview/lockRequest";
 import { projectSettingSections } from "../features/overview/sections";
 import { promoteCli, promotionPairs } from "../features/promote/plan";
+import { openQueue } from "../features/queue/open";
 import { rollbackTarget } from "../features/service/releases";
 import { tabsFor } from "../features/service/tabs";
 import { serviceSettingSections } from "../features/settings/sections";
@@ -526,6 +527,15 @@ export function useCommands({
     cli: "?",
     weight: -1,
     run: () => openHelp(),
+  });
+  add({
+    id: "deploys",
+    group: "Go to",
+    label: "Deploy queue",
+    keywords: "builds builder waiting queued running cancel",
+    cli: "dock queue",
+    weight: 0,
+    run: () => openQueue(),
   });
   add({
     id: "logout",

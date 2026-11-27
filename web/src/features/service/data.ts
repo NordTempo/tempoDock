@@ -68,3 +68,20 @@ export const useCancelRelease = () =>
     ({ ref }) => serviceWide(ref),
     ({ number }) => `Canceled r${number}`,
   );
+
+/**
+ * Cancels any org's deploy from the console's queue, by release ID
+ * (operators). The queue's events move it out; the release's own page
+ * is the org's.
+ */
+export const useConsoleCancelRelease = () =>
+  useAction(
+    ({ id }: { id: number; number: number }) =>
+      body(
+        api.POST("/api/v1/console/releases/{id}/cancel", {
+          params: { path: { id } },
+        }),
+      ),
+    () => [["deploy-queue"]],
+    ({ number }) => `Canceled r${number}`,
+  );

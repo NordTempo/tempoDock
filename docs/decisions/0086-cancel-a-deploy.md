@@ -91,3 +91,46 @@ a script can tell a deliberate stop from a broken build.
 - Every client that branched on `failed` had to learn `canceled`;
   `inFlight` checks in the UI now list the in-flight statuses instead of
   the finished ones, so a new status can't read as in flight.
+
+## Amended 2026-11-27: the deploy queue
+
+Canceling needs knowing what to cancel. Each builder builds one release
+at a time, so with a few services deploying at once (a promotion, a
+batch of pushes, previews) a deploy could wait minutes at a builder with
+nothing saying behind what. There was no place to see what builds, what
+waits and for how long.
+
+**One view, beside every page** (Saile's pick B of three mocks,
+Postplan `lx9q1wcrx4xw`). While any of the org's releases deploy or
+wait, the top bar shows a count ("2 deploying · 3 waiting") that opens a
+panel at the right edge, where Help opens, one of the two at a time. It
+lists each builder's build and the releases waiting behind it in order,
+then the deploys not at a builder (pulling an image, starting, health
+checking, queued behind a promotion step or a server move), each with
+who or what started it, its commit, the push waiting behind it (ADR
+0018), how long it has waited or run, and Cancel where the reader may
+deploy. The palette's "Deploy queue" and `dock queue` show it too. Idle,
+the top bar shows nothing.
+
+**Who sees what.** People see the releases they can read (`canSee`).
+Another org's release, or one they can't read, is a line in its place
+("2 releases of others"), so the wait it causes is still clear without
+naming it. Builders are "Builder 1, 2..." in the order the servers
+joined, not named: servers are the platform's (ADR 0062). The console
+has no top bar, so its sidebar has a Deploys row with the count, opening
+the same panel over every org: builders by name, each release with its
+org, commits by SHA only (an org's content isn't the console's).
+Platform viewers read it; operators cancel any release from it
+(`POST /console/releases/{id}/cancel`, orgs.administer), recorded in the
+org's log and the platform's, to free a builder without joining the org.
+
+**How.** A builder's slot is no longer a channel semaphore but an
+ordered line in memory (`buildSlots`): the holder and its waiters, each
+with since when, first come first served. A release waiting behind N
+builds now waits up to N build timeouts, not one. The view is one query
+(the releases in flight, from the partial index that holds only them,
+with their service, environment, project, org and waiting push) plus the
+servers, and the lines from memory. A `deploy_queue` event, with no
+payload, goes to each org with a release at a builder whose line moved
+and to the console; pages read the queue again only while they show
+it, and patch it from release events in between.

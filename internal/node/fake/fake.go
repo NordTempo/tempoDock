@@ -66,6 +66,7 @@ type Runtime struct {
 	routesErr    error
 	routesHold   *routesHold
 	healthGate   chan struct{}
+	buildGate    chan struct{}
 	// passHealth, when set (PassHealthAfter), turns a started container's
 	// health from starting to healthy that long after it starts.
 	passHealth  time.Duration
@@ -290,6 +291,24 @@ func (r *Runtime) HoldHealthChecks() (release func()) {
 		once.Do(func() {
 			r.mu.Lock()
 			r.healthGate = nil
+			r.mu.Unlock()
+			close(gate)
+		})
+	}
+}
+
+// HoldBuilds blocks builds until the returned func is called, for tests
+// that need a build to hold its builder's slot.
+func (r *Runtime) HoldBuilds() (release func()) {
+	gate := make(chan struct{})
+	r.mu.Lock()
+	r.buildGate = gate
+	r.mu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			r.mu.Lock()
+			r.buildGate = nil
 			r.mu.Unlock()
 			close(gate)
 		})
@@ -1432,10 +1451,20 @@ func (r *Runtime) Tunnel() *node.TunnelSpec {
 
 // Build implements node.Builder. It reads the whole source stream. A push
 // is recorded as "push <ref> token=<token>" after the build.
-func (r *Runtime) Build(_ context.Context, req node.BuildRequest) (node.Built, error) {
+func (r *Runtime) Build(ctx context.Context, req node.BuildRequest) (node.Built, error) {
 	n, err := io.Copy(io.Discard, req.Source)
 	if err != nil {
 		return node.Built{}, err
+	}
+	r.mu.Lock()
+	gate := r.buildGate
+	r.mu.Unlock()
+	if gate != nil {
+		select {
+		case <-gate:
+		case <-ctx.Done():
+			return node.Built{}, ctx.Err()
+		}
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
