@@ -107,9 +107,19 @@ type ComposeImportRequest struct {
 	// Values replace detected secrets' values (from the Compose file) or
 	// give the ones it lacks. Never echoed.
 	Values []VariableValue `json:"values,omitempty" doc:"Values for detected secrets, replacing the Compose file's; never shown back"`
+	// Environment is the environment the Compose file's services go in:
+	// an existing one is updated, a new one created. Default production.
+	Environment string `json:"environment,omitempty" doc:"The environment the services go in (default production); created if it doesn't exist"`
+	// Prune archives the environment's services the Compose file leaves
+	// out (needs admin). Variables, domains and jobs are never removed by
+	// a Compose file: it has no word for most of them.
+	Prune bool `json:"prune,omitempty" doc:"Also archive the environment's services the Compose file leaves out (admin); their volumes are kept"`
 	// Apply stages the converted file with the secrets' values and applies
 	// each environment's staged changes, as `dock apply FILE --deploy`.
 	Apply bool `json:"apply,omitempty" doc:"Stage and apply the converted file"`
+	// StageOnly, with Apply, stages without applying: the changes wait in
+	// the environment for review (`dock changes`).
+	StageOnly bool `json:"stage_only,omitempty" doc:"With apply: stage only, leaving the changes to review and apply"`
 }
 
 // ComposeImport is a converted Compose file: the project file, what didn't

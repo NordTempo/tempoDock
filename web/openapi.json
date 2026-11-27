@@ -3079,6 +3079,18 @@
             "description": "Files the Compose file reads (env_file paths as written, and .env), by path",
             "type": "object"
           },
+          "environment": {
+            "description": "The environment the services go in (default production); created if it doesn't exist",
+            "type": "string"
+          },
+          "prune": {
+            "description": "Also archive the environment's services the Compose file leaves out (admin); their volumes are kept",
+            "type": "boolean"
+          },
+          "stage_only": {
+            "description": "With apply: stage only, leaving the changes to review and apply",
+            "type": "boolean"
+          },
           "values": {
             "description": "Values for detected secrets, replacing the Compose file's; never shown back",
             "items": {

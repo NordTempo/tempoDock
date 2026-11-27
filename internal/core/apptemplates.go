@@ -180,7 +180,7 @@ func (c *Core) UseAppTemplate(ctx context.Context, a Actor, ref EnvRef, name str
 				return nil, envPlan{}, conflict("%s already has a service named %s; use the template under another name (--name)", es, s.Name)
 			}
 		}
-		ep, err := c.planEnv(a, fe, le, values, false)
+		ep, err := c.planEnv(a, fe, le, values, pruning{})
 		// A template only adds: the environment's other services aren't
 		// "kept", they are just not its concern.
 		ep.kept = nil
@@ -250,7 +250,7 @@ func (c *Core) UseAppTemplate(ctx context.Context, a Actor, ref EnvRef, name str
 	c.audit(ctx, a, "template.use", &es.project, &es.env, es.String()+"/"+ex.Main,
 		fmt.Sprintf("created %s from the %s template (revision %d)", strings.Join(out.Services, ", "), t.Title, t.Revision))
 	// Jobs are set on live services, so after they exist (jobs_apply.go).
-	chs, err := c.applyCreatedJobs(ctx, a, es, fe, false)
+	chs, err := c.applyCreatedJobs(ctx, a, es, fe, pruning{})
 	if err != nil {
 		out.Failed = append(out.Failed, fmt.Sprintf("couldn't set the scheduled jobs: %v. Set them with `dock job set`", err))
 	}

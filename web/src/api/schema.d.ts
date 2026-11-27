@@ -8001,6 +8001,12 @@ export interface components {
             env_files?: {
                 [key: string]: string;
             };
+            /** @description The environment the services go in (default production); created if it doesn't exist */
+            environment?: string;
+            /** @description Also archive the environment's services the Compose file leaves out (admin); their volumes are kept */
+            prune?: boolean;
+            /** @description With apply: stage only, leaving the changes to review and apply */
+            stage_only?: boolean;
             /** @description Values for detected secrets, replacing the Compose file's; never shown back */
             values?: components["schemas"]["VariableValue"][] | null;
         };

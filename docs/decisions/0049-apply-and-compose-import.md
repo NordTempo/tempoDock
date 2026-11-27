@@ -185,3 +185,21 @@ that changes is a warning.
 - Performance: no new periodic work. A plan is a fixed number of queries
   per environment (the export's queries plus staged domains); apply is one
   write transaction per environment plus the domain operations.
+
+## Amendment (2026-11-27): updating from a Compose file
+
+`dock import compose` on an existing project was already a plan against
+it, but had no way to remove a service the Compose file drops, and the UI
+offered it only for new projects. Now:
+
+| Topic | Decision |
+|---|---|
+| `--prune` | Archives the environment's services the Compose file leaves out, as `dock apply --prune` does: admin to stage and to apply, volumes and backups kept |
+| What a Compose prune never removes | Domains, jobs and variables. Compose has no word for Dock's domains and jobs, and a service's variables are often added to in Dock (a secret set with `dock env set`); a file that can't name them can't mean to remove them. Domains and jobs aren't even listed as kept; variables are, as "not in the Compose file; kept" |
+| `-e ENV` | The environment the services go in (default production). A new environment gets its name's kind; the file names no kind, so an existing environment's kind is never questioned |
+| `--stage` | Stages without applying, for review with `dock changes` (API: `stage_only`). `--apply` still stages and applies |
+| UI | Update from Compose in an environment's Settings: the plan's added, changed and removed services, removals behind one explicit checkbox that names what it archives |
+
+A project file without `kind` no longer gets the "an environment's kind
+doesn't change" line for an existing environment: no kind is no opinion.
+

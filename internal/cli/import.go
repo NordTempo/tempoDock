@@ -36,11 +36,11 @@ func newImportCmd(g *globals) *cobra.Command {
 // newImportComposeCmd is `dock import compose`: convert a Compose file
 // into a project file, show the plan, and with --apply stage and apply it.
 func newImportComposeCmd(g *globals) *cobra.Command {
-	var project, outPath string
-	var apply, yes bool
+	var project, env, outPath string
+	var apply, stage, prune, yes bool
 	cmd := &cobra.Command{
-		Use:   "compose [FILE] [--project NAME] [-o OUT] [--apply]",
-		Short: "Convert a docker-compose.yml into a project, and plan or create it",
+		Use:   "compose [FILE] [--project NAME] [-e ENV] [-o OUT] [--prune] [--apply|--stage]",
+		Short: "Convert a docker-compose.yml into a project, and plan, create or update it",
 		Long: `Convert a Docker Compose file (default: docker-compose.yml, or compose.yaml)
 into a Dock project file and show what applying it would do. Nothing
 changes without --apply.
@@ -52,14 +52,22 @@ dropped silently. Secrets (passwords, tokens, keys) are kept out of the
 file; their values come from the Compose file or are asked for.
 
 The .env next to the Compose file and the env_file files it names are sent
-with it. --project names the project (default: the directory's name).
+with it. --project names the project (default: the directory's name). An
+existing project is updated: the plan shows the services the file adds
+and changes, and those it leaves out, which are kept unless --prune.
 
+  -e ENV     the environment the services go in (default: production)
   -o OUT     also write the project file, for ` + "`dock apply OUT`" + ` later
+  --prune    also archive the environment's services the file leaves out
+             (needs admin; their volumes and backups are kept). Domains,
+             jobs and variables added in Dock are never removed
   --apply    stage and apply it (asks for each secret's value on a terminal;
-             Enter keeps the Compose file's), after confirming, or --yes`,
+             Enter keeps the Compose file's), after confirming, or --yes
+  --stage    stage it only, to review and apply with ` + "`dock changes`",
 		Example: `  dock import compose                         # plan ./docker-compose.yml
   dock import compose stack.yml -p shop -o dock.project.toml
-  dock import compose --apply`,
+  dock import compose --apply
+  dock import compose -p shop --prune --stage  # update shop, review with dock changes`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path, err := composePath(args)
@@ -68,6 +76,9 @@ with it. --project names the project (default: the directory's name).
 			}
 			if project == "" {
 				project = projectFromDir(path)
+			}
+			if apply && stage {
+				return usageError("--apply and --stage both given", "Pass --stage to stage the changes for review, or --apply to stage and apply them.")
 			}
 			ctx := cmd.Context()
 			s, err := g.connect()
@@ -78,6 +89,7 @@ with it. --project names the project (default: the directory's name).
 			if err != nil {
 				return err
 			}
+			req.Environment, req.Prune = env, prune
 			endpoint := apiPrefix + "/projects/" + project + "/import/compose"
 			res, err := send[apitypes.ComposeImport](ctx, s, http.MethodPost, endpoint, req)
 			if err != nil {
@@ -93,10 +105,10 @@ with it. --project names the project (default: the directory's name).
 					return err
 				}
 			}
-			if !apply {
+			if !apply && !stage {
 				return g.io.Print(res, func() error {
 					printImport(g, project, res, outPath)
-					g.io.Progressf("Create it with `dock import compose %s -p %s --apply`%s.", path, project, applyLater(outPath))
+					g.io.Progressf("Stage and apply it with `dock import compose %s -p %s%s --apply`%s.", path, project, importFlags(env, prune), applyLater(outPath))
 					return nil
 				})
 			}
@@ -107,11 +119,15 @@ with it. --project names the project (default: the directory's name).
 				return err
 			}
 			if !yes {
-				if err := g.io.Confirm(fmt.Sprintf("Stage and apply this plan in project %s?", project), "yes"); err != nil {
+				q := fmt.Sprintf("Stage and apply this plan in project %s?", project)
+				if stage {
+					q = fmt.Sprintf("Stage this plan in project %s?", project)
+				}
+				if err := g.io.Confirm(q, "yes"); err != nil {
 					return err
 				}
 			}
-			req.Apply = true
+			req.Apply, req.StageOnly = true, stage
 			res, err = send[apitypes.ComposeImport](ctx, s, http.MethodPost, endpoint, req)
 			if err != nil {
 				return err
@@ -124,8 +140,11 @@ with it. --project names the project (default: the directory's name).
 	}
 	cmd.Flags().StringVarP(&project, "project", "p", "", "project name (default: the Compose file's directory)")
 	_ = cmd.RegisterFlagCompletionFunc("project", cobra.NoFileCompletions) // a new name
+	cmd.Flags().StringVarP(&env, "environment", "e", "", "the environment the services go in (default: production)")
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "also write the project file here")
+	cmd.Flags().BoolVar(&prune, "prune", false, "also archive the environment's services the file leaves out (admin)")
 	cmd.Flags().BoolVar(&apply, "apply", false, "stage and apply it")
+	cmd.Flags().BoolVar(&stage, "stage", false, "stage it only, to review and apply with dock changes")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask: keep the Compose file's secret values and apply")
 	return cmd
 }
@@ -224,6 +243,19 @@ func writeNew(path, content string) error {
 	return f.Close()
 }
 
+// importFlags are the -e and --prune flags of an import, for the hint
+// that repeats it.
+func importFlags(env string, prune bool) string {
+	var out string
+	if env != "" {
+		out += " -e " + env
+	}
+	if prune {
+		out += " --prune"
+	}
+	return out
+}
+
 func applyLater(outPath string) string {
 	if outPath == "" {
 		return ""
@@ -270,7 +302,7 @@ func printImport(g *globals, project string, res apitypes.ComposeImport, outPath
 	for _, sec := range res.Secrets {
 		state := "value from the Compose file, never printed"
 		if !sec.HasValue {
-			state = fmt.Sprintf("needs a value: `dock env set %s %s=...`", target{project, "production", sec.Service}.flags(), sec.Key)
+			state = fmt.Sprintf("needs a value: `dock env set %s %s=...`", target{project, sec.Environment, sec.Service}.flags(), sec.Key)
 		}
 		g.io.Progressf("Secret %s.%s: %s", sec.Service, sec.Key, state)
 	}
@@ -280,10 +312,28 @@ func printImport(g *globals, project string, res apitypes.ComposeImport, outPath
 	}
 }
 
-// printImported reports what --apply did, and how to deploy services
-// built from source.
+// printImported reports what --apply or --stage did, and how to deploy
+// services built from source.
 func printImported(g *globals, project string, res apitypes.ComposeImport) {
 	if res.Result == nil {
+		return
+	}
+	env := "production"
+	if len(res.Secrets) > 0 {
+		env = res.Secrets[0].Environment
+	}
+	if len(res.Result.Staged) > 0 {
+		env = res.Result.Staged[0].Environment
+	}
+	if len(res.Result.Applied) == 0 {
+		for _, p := range res.Result.Staged {
+			if p.Count == 0 {
+				g.io.Successf("Nothing to stage in %s/%s: it matches the Compose file", project, p.Environment)
+				continue
+			}
+			g.io.Successf("Staged %s in %s/%s", plural(p.Count, "change"), project, p.Environment)
+			g.io.Progressf("Review them with `dock changes -p %s -e %s`, and apply them with `dock apply -p %s -e %s`.", project, p.Environment, project, p.Environment)
+		}
 		return
 	}
 	for _, a := range res.Result.Applied {
@@ -293,7 +343,7 @@ func printImported(g *globals, project string, res apitypes.ComposeImport) {
 		}
 	}
 	for _, b := range res.Builds {
-		g.io.Progressf("%s builds from source: deploy it with `dock deploy %s -p %s -e production -s %s`.", b.Service, b.Context, project, b.Service)
+		g.io.Progressf("%s builds from source: deploy it with `dock deploy %s -p %s -e %s -s %s`.", b.Service, b.Context, project, env, b.Service)
 	}
-	g.io.Progressf("Follow the releases with `dock status -p %s -e production`.", project)
+	g.io.Progressf("Follow the releases with `dock status -p %s -e %s`.", project, env)
 }
