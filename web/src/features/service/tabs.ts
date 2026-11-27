@@ -58,7 +58,7 @@ export const serviceTabs = [
     key: "g j",
     group: "operate",
   },
-  // A terminal in the running container (ADR 0107), for those with admin
+  // A terminal in the running container (ADR 0108), for those with admin
   // there (canShell). G X, "exec".
   {
     label: "Shell",

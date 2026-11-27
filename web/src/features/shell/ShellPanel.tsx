@@ -1,10 +1,10 @@
 import type { FitAddon } from "@xterm/addon-fit";
 import type { Terminal } from "@xterm/xterm";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { api, body } from "../../api/client";
 import type { components } from "../../api/schema";
 import { useAction } from "../../data/mutations";
-import { servicePath, useService } from "../../data/queries";
+import { servicePath, useService, useWhyNot } from "../../data/queries";
 import type { ServiceRef } from "../../data/types";
 import { clock } from "../../ui/format";
 import { Act, Button, ErrorText } from "../../ui/kit";
@@ -29,10 +29,10 @@ type Session =
   | { at: "idle" }
   | { at: "connecting" }
   | { at: "open"; since: string }
-  | { at: "ended"; end: ExecEnd | null };
+  | { at: "ended"; end: ExecEnd | null; byYou: boolean };
 
 /**
- * The service's Shell tab (ADR 0107, mock A): a terminal in the container
+ * The service's Shell tab (ADR 0108, mock A): a terminal in the container
  * of its active release. Nothing connects until Connect: the console gets
  * a single-use ticket (a CSRF-guarded call that checks admin and the
  * lock), then opens the shell's WebSocket with it. The socket carries the
@@ -46,6 +46,10 @@ export function ShellPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const [session, setSession] = useState<Session>({ at: "idle" });
   const [ticket, setTicket] = useState<ExecTicket | null>(null);
   const [ready, setReady] = useState(false);
+  const connectId = useId();
+  const denied = useWhyNot("admin", ref);
+  // Set when Disconnect closes the socket, to say so.
+  const leaving = useRef(false);
   const getTicket = useAction(
     () =>
       body(
@@ -137,6 +141,7 @@ export function ShellPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     socket.current = ws;
     const reader = new FrameReader();
     let end: ExecEnd | null = null;
+    leaving.current = false;
     ws.onopen = () => {
       setSession({ at: "open", since: new Date().toISOString() });
       tt.t.focus();
@@ -153,10 +158,18 @@ export function ShellPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     };
     ws.onclose = () => {
       if (socket.current === ws) socket.current = null;
-      setSession({ at: "ended", end });
+      setSession({ at: "ended", end, byYou: leaving.current });
     };
   };
 
+  // Once the terminal is there, Connect has focus: Enter opens the shell.
+  useEffect(() => {
+    if (ready) document.getElementById(connectId)?.focus();
+  }, [ready, connectId]);
+
+  const reason = service.active_release
+    ? denied
+    : "deploy first: a shell opens in the running container";
   const open = session.at === "open" || session.at === "connecting";
   const release = ticket?.release ?? service.active_release;
   return (
@@ -175,20 +188,22 @@ export function ShellPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         )}
         <span className="flex-1" />
         {open ? (
-          <Button danger onClick={() => socket.current?.close()}>
+          <Button
+            danger
+            onClick={() => {
+              leaving.current = true;
+              socket.current?.close();
+            }}
+          >
             Disconnect
           </Button>
         ) : (
           <Act
             primary
-            autoFocus
+            id={connectId}
             cli={`dock exec -s ${ref.service} -e ${ref.environment}`}
-            disabled={!service.active_release || !ready}
-            reason={
-              service.active_release
-                ? undefined
-                : "deploy first: a shell opens in the running container"
-            }
+            disabled={!!reason || !ready}
+            reason={reason}
             onClick={connect}
           >
             {session.at === "ended" ? "Reconnect" : "Connect"}
@@ -232,7 +247,9 @@ function SessionLine({ session }: { session: Session }) {
       if (e?.exit_code !== undefined)
         return <span>Session ended, exit code {e.exit_code}.</span>;
       if (e?.error) return <span className="text-fail">{e.error}</span>;
-      return <span>The connection ended.</span>;
+      return (
+        <span>{session.byYou ? "Disconnected." : "The connection ended."}</span>
+      );
     }
   }
 }

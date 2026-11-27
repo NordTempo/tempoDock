@@ -9,7 +9,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
 
-// Exec tickets (ADR 0107): a browser can't send a bearer token with a
+// Exec tickets (ADR 0108): a browser can't send a bearer token with a
 // WebSocket, and a WebSocket authenticated by the session cookie could be
 // opened by any page (browsers don't apply CORS to them). So the UI asks
 // for a ticket with an ordinary CSRF-guarded call, and the socket presents
