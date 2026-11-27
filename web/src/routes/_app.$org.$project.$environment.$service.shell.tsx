@@ -11,5 +11,13 @@ export const Route = createFileRoute(
 });
 
 function ShellTab() {
-  return <ShellPanel serviceRef={servicePath(Route.useParams())} />;
+  const params = Route.useParams();
+  const ref = servicePath(params);
+  // Another service is another panel: the old one's socket closes with it.
+  return (
+    <ShellPanel
+      key={`${params.org}/${ref.project}/${ref.environment}/${ref.service}`}
+      serviceRef={ref}
+    />
+  );
 }

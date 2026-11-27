@@ -46,6 +46,10 @@ export function ShellPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const [session, setSession] = useState<Session>({ at: "idle" });
   const [ticket, setTicket] = useState<ExecTicket | null>(null);
   const [ready, setReady] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  // Counts connection attempts: Disconnect and leaving the tab move it on,
+  // so a ticket that arrives for an older attempt opens nothing.
+  const attempt = useRef(0);
   const connectId = useId();
   const denied = useWhyNot("admin", ref);
   // Set when Disconnect closes the socket, to say so.
@@ -70,46 +74,54 @@ export function ShellPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       import("@xterm/xterm"),
       import("@xterm/addon-fit"),
       import("@xterm/xterm/css/xterm.css"),
-    ]).then(([{ Terminal }, { FitAddon }]) => {
-      if (gone || !box.current) return;
-      const t = new Terminal({
-        cursorBlink: false,
-        fontFamily: '"JetBrains Mono", ui-monospace, monospace',
-        fontSize: 13,
-        lineHeight: 1.25,
-        scrollback: 5000,
-        theme: {
-          background: "#000000",
-          foreground: "#e4e4e7",
-          cursor: "#e4e4e7",
-          selectionBackground: "#2c2c30",
-        },
+    ])
+      .catch(() => {
+        if (!gone) setLoadFailed(true);
+        return null;
+      })
+      .then((mods) => {
+        if (!mods) return;
+        const [{ Terminal }, { FitAddon }] = mods;
+        if (gone || !box.current) return;
+        const t = new Terminal({
+          cursorBlink: false,
+          fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+          fontSize: 13,
+          lineHeight: 1.25,
+          scrollback: 5000,
+          theme: {
+            background: "#000000",
+            foreground: "#e4e4e7",
+            cursor: "#e4e4e7",
+            selectionBackground: "#2c2c30",
+          },
+        });
+        const fit = new FitAddon();
+        t.loadAddon(fit);
+        t.open(box.current);
+        fit.fit();
+        term.current = { t, fit };
+        setReady(true);
+        // Fits to the box when the window or the layout changes it.
+        const seen = new ResizeObserver(() => fit.fit());
+        seen.observe(box.current);
+        const input = t.onData((d) =>
+          socket.current?.send(frame(Frame.stdin, new TextEncoder().encode(d))),
+        );
+        const resized = t.onResize(({ cols, rows }) =>
+          socket.current?.send(resizeFrame(cols, rows)),
+        );
+        cleanup = () => {
+          seen.disconnect();
+          input.dispose();
+          resized.dispose();
+          t.dispose();
+          term.current = null;
+        };
       });
-      const fit = new FitAddon();
-      t.loadAddon(fit);
-      t.open(box.current);
-      fit.fit();
-      term.current = { t, fit };
-      setReady(true);
-      // Fits to the box when the window or the layout changes it.
-      const seen = new ResizeObserver(() => fit.fit());
-      seen.observe(box.current);
-      const input = t.onData((d) =>
-        socket.current?.send(frame(Frame.stdin, new TextEncoder().encode(d))),
-      );
-      const resized = t.onResize(({ cols, rows }) =>
-        socket.current?.send(resizeFrame(cols, rows)),
-      );
-      cleanup = () => {
-        seen.disconnect();
-        input.dispose();
-        resized.dispose();
-        t.dispose();
-        term.current = null;
-      };
-    });
     return () => {
       gone = true;
+      attempt.current++;
       socket.current?.close();
       cleanup();
     };
@@ -118,14 +130,17 @@ export function ShellPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const connect = async () => {
     const tt = term.current;
     if (!tt) return;
+    const mine = ++attempt.current;
     setSession({ at: "connecting" });
     let tk: ExecTicket;
     try {
       tk = await getTicket.mutateAsync(undefined);
     } catch {
-      setSession({ at: "idle" });
+      if (attempt.current === mine) setSession({ at: "idle" });
       return;
     }
+    // Disconnected (or left) while the ticket was on its way.
+    if (attempt.current !== mine) return;
     setTicket(tk);
     tt.t.reset();
     const p = servicePath(ref);
@@ -192,7 +207,9 @@ export function ShellPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
             danger
             onClick={() => {
               leaving.current = true;
-              socket.current?.close();
+              attempt.current++;
+              if (socket.current) socket.current.close();
+              else setSession({ at: "ended", end: null, byYou: true });
             }}
           >
             Disconnect
@@ -217,6 +234,14 @@ export function ShellPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       <div className="flex flex-wrap gap-x-4 text-mut">
         <SessionLine session={session} />
         <ErrorText error={getTicket.error} />
+        {loadFailed && (
+          <span role="alert" className="text-fail">
+            The terminal didn't load.{" "}
+            <Button small onClick={() => window.location.reload()}>
+              Reload
+            </Button>
+          </span>
+        )}
       </div>
     </div>
   );

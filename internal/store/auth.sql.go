@@ -883,6 +883,24 @@ func (q *Queries) RevokeUserTokens(ctx context.Context, arg RevokeUserTokensPara
 	return items, nil
 }
 
+const sessionLive = `-- name: SessionLive :one
+SELECT count(*) FROM sessions WHERE id = +?1 AND NOT pending AND expires_at > +?2
+`
+
+type SessionLiveParams struct {
+	ID  int64
+	Now time.Time
+}
+
+// SessionLive is 1 while the session (by ID) exists, is signed in and
+// hasn't expired: what a shell opened from it checks before it starts.
+func (q *Queries) SessionLive(ctx context.Context, arg SessionLiveParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, sessionLive, arg.ID, arg.Now)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const setTokenOperator = `-- name: SetTokenOperator :exec
 UPDATE tokens SET operator = ? WHERE id = +?
 `

@@ -30,6 +30,9 @@ type execTickets struct {
 type execTicket struct {
 	actor   Actor
 	service int64
+	// release is the one the ticket named: a deploy since makes the
+	// ticket stale, as the console showed the old release.
+	release int64
 	expires time.Time
 }
 
@@ -61,7 +64,7 @@ func (c *Core) ExecTicket(ctx context.Context, a Actor, ref ServiceRef) (apitype
 		t.m = map[string]execTicket{}
 	}
 	out := apitypes.ExecTicket{Ticket: rand.Text(), ExpiresAt: at.Add(apitypes.ExecTicketSeconds * time.Second), Container: shortID(rel.ContainerID), Release: rel.Number}
-	t.m[out.Ticket] = execTicket{actor: a, service: ss.svc.ID, expires: out.ExpiresAt}
+	t.m[out.Ticket] = execTicket{actor: a, service: ss.svc.ID, release: rel.ID, expires: out.ExpiresAt}
 	return out, nil
 }
 
@@ -80,6 +83,9 @@ func (c *Core) RedeemExecTicket(ctx context.Context, ticket string, ref ServiceR
 	ss, err := c.loadService(ctx, found.actor.OrgID, ref)
 	if err != nil || ss.svc.ID != found.service {
 		return Actor{}, errf(apitypes.CodeUnauthorized, "the shell's ticket is for another service; open the shell again")
+	}
+	if rel, err := c.store.GetActiveRelease(ctx, ss.svc.ID); err != nil || rel.ID != found.release {
+		return Actor{}, conflict("a deploy replaced %s's container since the shell was asked for; open it again", ss.svc.Name)
 	}
 	return found.actor, nil
 }

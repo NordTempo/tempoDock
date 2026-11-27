@@ -26,6 +26,11 @@ FROM sessions JOIN users ON users.id = sessions.user_id
 LEFT JOIN sso_providers ON sso_providers.id = sessions.sso_provider_id
 WHERE sessions.hash = +?;
 
+-- name: SessionLive :one
+-- SessionLive is 1 while the session (by ID) exists, is signed in and
+-- hasn't expired: what a shell opened from it checks before it starts.
+SELECT count(*) FROM sessions WHERE id = +sqlc.arg(id) AND NOT pending AND expires_at > +sqlc.arg(now);
+
 -- name: DeleteSession :exec
 DELETE FROM sessions WHERE hash = +?;
 

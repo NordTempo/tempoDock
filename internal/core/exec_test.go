@@ -397,4 +397,11 @@ func TestExecTicket(t *testing.T) {
 	if _, err := h.c.RedeemExecTicket(h.ctx, tk.Ticket, web); CodeOf(err) != apitypes.CodeUnauthorized {
 		t.Fatalf("a used ticket: %v", err)
 	}
+	// A deploy since the ticket makes it stale: the console showed the
+	// release it named.
+	tk, _ = h.c.ExecTicket(h.ctx, testSystem, web)
+	h.deploy(web, "app:2")
+	if _, err := h.c.RedeemExecTicket(h.ctx, tk.Ticket, web); CodeOf(err) != apitypes.CodeConflict {
+		t.Fatalf("a ticket from before a deploy: %v", err)
+	}
 }

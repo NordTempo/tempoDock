@@ -184,6 +184,13 @@ func (e *Exec) wait(ctx context.Context, stream *node.JobStream) apitypes.ExecEn
 	if cur.UserID != 0 || cur.TokenID != 0 { // the system's access doesn't end
 		cur, err = c.actorNow(ctx, e.actor)
 	}
+	// A shell opened from a browser session (an exec ticket) needs that
+	// session still signed in: a password reset or a sign-out ends it.
+	if err == nil && e.actor.SessionID != 0 {
+		if n, serr := c.store.SessionLive(ctx, store.SessionLiveParams{ID: e.actor.SessionID, Now: now()}); serr != nil || n == 0 {
+			err = errors.New("the session ended")
+		}
+	}
 	if err != nil {
 		err = errf(apitypes.CodeForbidden, "your access changed before the session started; open it again")
 	} else {
