@@ -654,6 +654,21 @@ type Heartbeat struct {
 	UpdatedAt time.Time
 }
 
+type HostCheck struct {
+	ServerID  int64
+	CheckedAt time.Time
+	Results   string
+	Error     string
+}
+
+type HostCheckDismissal struct {
+	ServerID    int64
+	Finding     string
+	Reason      string
+	DismissedBy string
+	DismissedAt time.Time
+}
+
 type ImageFinding struct {
 	ScanID      int64
 	Severity    int64

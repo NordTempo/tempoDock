@@ -590,6 +590,9 @@ func (n *Node) runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 		s, err := rt.ContainerStats(ctx, a.IDs)
 		return containerStatsResult{Stats: toWireContainerStats(s)}, err
 	}))
+	h(opCheckHost, unary(func(ctx context.Context, _ empty) (checkHostResult, error) {
+		return checkHost(ctx, rt)
+	}))
 	h(opProbe, unary(func(ctx context.Context, a probeRequest) (probeResult, error) {
 		r, err := rt.Probe(ctx, node.ProbeRequest{URL: a.URL, ExpectStatus: a.ExpectStatus, Timeout: time.Duration(a.TimeoutMS) * time.Millisecond})
 		return probeResult{Up: r.Up, Status: r.Status, LatencyMS: r.Latency.Milliseconds(), Error: r.Error}, err

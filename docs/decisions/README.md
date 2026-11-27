@@ -122,6 +122,7 @@ line means a later record added to it without changing what it decided.
 | [0106](0106-dock-adds-the-analytics-script.md) | Dock adds the analytics script: Dock's own Caddy build with a `dock_inject` handler puts the tag in analytics sites' pages, streamed, CSP-aware; shipped and updated with each release | accepted |
 | [0107](0107-security-headers.md) | Security headers: Dock's Caddy adds HSTS, nosniff, a referrer policy and SAMEORIGIN framing to responses that lack them; a staged service setting each release keeps, on for new services, off for existing ones; no CSP | accepted |
 | [0108](0108-following-a-compose-file.md) | An environment follows a Compose file in its GitHub repository through the GitHub App: each push that changes it is staged for review; removals only when an admin turns them on; opt-in auto-apply for syncs that remove nothing | accepted |
+| [0109](0109-host-security-checks.md) | Host security checks: each server reads its own host about daily and on Check now (SSH passwords and root, ports open that Dock didn't open, Docker's API on TCP, the Docker socket in containers, security updates, reboots, automatic updates, firewalls), read-only as the dock user; results in the console only, one calm platform alert per server, dismiss with a reason | accepted |
 
 ## Template
 

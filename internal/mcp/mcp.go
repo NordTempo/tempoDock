@@ -115,8 +115,9 @@ const maxReason = 500
 var dataTools = []string{"data_schema", "data_rows", "data_keys", "data_query", "data_insights", "data_cancel", "propose_data_changes"}
 
 // platformTools are the tools a platform credential lists: who it is,
-// the servers and the platform's alerts (list_alerts with platform).
-var platformTools = []string{"whoami", "list_servers", "list_alerts"}
+// the servers, their host checks (ADR 0109) and the platform's alerts
+// (list_alerts with platform).
+var platformTools = []string{"whoami", "list_servers", "host_checks", "list_alerts"}
 
 // view is the tools an actor's tools/list shows (mcpkit.View): the
 // arguments its limits fill and the tools it can never use are left out.
@@ -147,7 +148,7 @@ func (h *handler) view(ctx context.Context, a core.Actor) mcpkit.View {
 		}
 	}
 	if a.Platform == "" {
-		v.Hide = append(v.Hide, "list_servers")
+		v.Hide = append(v.Hide, "list_servers", "host_checks")
 	}
 	// What the caller holds nowhere can't work for it (toolPerms).
 	for name, p := range toolPerms {

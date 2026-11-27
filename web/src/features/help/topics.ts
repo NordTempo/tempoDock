@@ -864,6 +864,10 @@ export const topics: Record<TopicId, Topic> = {
         cli: "dock env move staging --to web-2",
       },
       { what: "Empty a server", cli: "dock server drain web-1" },
+      {
+        what: "Check a server's host for security problems",
+        cli: "dock server checks web-1 --now",
+      },
       { what: "Update Dock", cli: "dock update apply" },
     ],
     watch: [
@@ -872,7 +876,8 @@ export const topics: Record<TopicId, Topic> = {
     ],
     related: ["backups", "deploying", "access"],
     guide: "install",
-    words: "server node placement drain update operator console",
+    words:
+      "server node placement drain update operator console security ssh firewall",
     operator: true,
   },
 

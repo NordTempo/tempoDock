@@ -7,9 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"time"
 
 	"github.com/moby/moby/client"
@@ -25,6 +28,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/node/collect"
 	"github.com/NordTempo/tempoDock/internal/node/docker"
 	"github.com/NordTempo/tempoDock/internal/node/fake"
+	"github.com/NordTempo/tempoDock/internal/node/hostcheck"
 	"github.com/NordTempo/tempoDock/internal/node/probe"
 	"github.com/NordTempo/tempoDock/internal/node/stats"
 	"github.com/NordTempo/tempoDock/internal/node/traffic"
@@ -153,7 +157,8 @@ func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog
 	}
 	st := stats.New(stats.Options{Disks: []string{dockerRoot(), cfg.DataDir}, Container: containers.MemoryOwner})
 	tunnel := docker.NewCloudflared(containers, cfg.Ingress.CloudflaredImage, owner, proxy.SetTunnelHostname)
-	return node.Local{Containers: containers, Builder: builder, Proxy: proxy, Stats: st, Traffic: counter, Tunnel: tunnel, Analytics: coll, Prober: uptime.New(false), Scanner: containers}, proxy, in, nil
+	host := hostcheck.Checker{Root: "/", DockPorts: dockPorts(cfg), Containers: containers.HostContainers, FirewallApplied: firewallCheck()}
+	return node.Local{Containers: containers, Builder: builder, Proxy: proxy, Stats: st, Traffic: counter, Tunnel: tunnel, Analytics: coll, Prober: uptime.New(false), Scanner: containers, HostChecker: host}, proxy, in, nil
 }
 
 // ingests are a server's ingests: Dock Analytics' events and the trace
@@ -326,3 +331,19 @@ func (notBuilder) PruneBuildCache(context.Context, int64) (node.PruneResult, err
 }
 
 func (notBuilder) WarmBuilder(context.Context) error { return nil }
+
+// dockPorts are the TCP ports Dock listens on, or has Caddy listen on,
+// by this server's config: open on purpose, so the host checks' open
+// port check leaves them out (ADR 0109). A setting a node doesn't use
+// (the API on a node) only leaves out a port nothing else should hold.
+func dockPorts(cfg config.Config) []int {
+	ports := []int{cfg.Caddy.HTTPPort, cfg.Caddy.HTTPSPort, cfg.Caddy.TunnelPort}
+	for _, addr := range []string{cfg.Listen, cfg.InternalListen, cfg.PublicListen, cfg.Node.Listen, cfg.Registry.Listen} {
+		if _, p, err := net.SplitHostPort(addr); err == nil {
+			if n, err := strconv.Atoi(p); err == nil {
+				ports = append(ports, n)
+			}
+		}
+	}
+	return slices.DeleteFunc(ports, func(p int) bool { return p <= 0 })
+}

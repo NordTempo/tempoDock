@@ -34,6 +34,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/node/hostcheck"
 )
 
 // Runtime is a node.Containers backed by the local Docker Engine.
@@ -1046,3 +1047,35 @@ func hostPort(ports network.PortMap) int {
 }
 
 var errRestarted = errors.New("container restarted during health check")
+
+// HostContainers lists every running container on the host, Dock's and
+// anyone else's, for the host checks (ADR 0109): their names, the host
+// paths they mount and the addresses they are published on. One list
+// call that only reads; it never touches a container that isn't Dock's.
+func (r *Runtime) HostContainers(ctx context.Context) ([]hostcheck.Container, error) {
+	res, err := r.cli.ContainerList(ctx, client.ContainerListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list containers: %w", err)
+	}
+	out := make([]hostcheck.Container, 0, len(res.Items))
+	for _, s := range res.Items {
+		c := hostcheck.Container{Dock: isManaged(s.Labels)}
+		if len(s.Names) > 0 {
+			c.Name = strings.TrimPrefix(s.Names[0], "/")
+		}
+		for _, m := range s.Mounts {
+			if m.Source != "" {
+				c.Mounts = append(c.Mounts, m.Source)
+			}
+		}
+		for _, p := range s.Ports {
+			// The checks read TCP listeners: a UDP publication on the same
+			// port is another socket.
+			if p.PublicPort != 0 && p.IP.IsValid() && p.Type == "tcp" {
+				c.Ports = append(c.Ports, netip.AddrPortFrom(p.IP, p.PublicPort))
+			}
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}

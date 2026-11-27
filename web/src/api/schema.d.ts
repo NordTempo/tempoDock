@@ -2096,6 +2096,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/host-checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every server's host checks
+         * @description Each server's last read-only security check of its host, by server name, for the console's Security page (ADR 0109). Operators and platform viewers only.
+         */
+        get: operations["list-host-checks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/incidents/{incident}": {
         parameters: {
             query?: never;
@@ -6437,6 +6457,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/servers/{server}/host-checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A server's host checks
+         * @description The last read-only security check of the server's host (ADR 0109): SSH that takes passwords or root, ports open to the internet that Dock didn't open, Docker's API on TCP, containers holding the Docker socket, security updates and reboots waiting, automatic updates and firewalls. Each finding says what to do, findings first and worst first. Servers check about once a day. Operators and platform viewers only.
+         */
+        get: operations["get-host-checks"];
+        put?: never;
+        /**
+         * Check a server's host now
+         * @description Runs the host checks on the server now and answers with the results, in a few seconds; while a check is under way, waits for it. 409 while the server is offline. Operators only.
+         */
+        post: operations["check-host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/servers/{server}/host-checks/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss a host check finding
+         * @description Says why a finding doesn't need fixing (a provider's firewall in front, a port open on purpose): it stops counting and alerting until restored, also if it goes away and comes back. Other operators see the reason. Operators only.
+         */
+        post: operations["dismiss-host-finding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/servers/{server}/host-checks/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore a dismissed host check finding
+         * @description Undoes a dismissal: the finding counts and alerts again. Operators only.
+         */
+        post: operations["restore-host-finding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/servers/{server}/prune": {
         parameters: {
             query?: never;
@@ -7402,7 +7486,7 @@ export interface components {
             environment?: string;
             /** Format: int64 */
             id: number;
-            /** @description disk, memory, cpu, server_offline, update_failed, connection_failed, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_regressed, error_spike, traffic_drop, unhealthy, uptime_down, job_failed, access_request, new_vulnerability, certificate_failed; more may be added */
+            /** @description disk, memory, cpu, server_offline, update_failed, connection_failed, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_regressed, error_spike, traffic_drop, unhealthy, uptime_down, job_failed, access_request, new_vulnerability, certificate_failed, host_security; more may be added */
             kind: string;
             message?: string;
             /** Format: date-time */
@@ -7452,6 +7536,7 @@ export interface components {
             error_group?: string;
             /** Format: int64 */
             error_issue?: number;
+            findings?: string[] | null;
             /** Format: int64 */
             image?: number;
             job?: string;
@@ -9215,6 +9300,18 @@ export interface components {
             /** Format: int64 */
             used_bytes: number;
         };
+        DismissHostFindingRequest: {
+            /**
+             * @description The finding's key, as a host check lists it
+             * @example host_firewall
+             */
+            finding: string;
+            /**
+             * @description Why it doesn't need fixing; other operators see it
+             * @example Hetzner's firewall allows 22, 80 and 443 only
+             */
+            reason: string;
+        };
         Domain: {
             /** Format: date-time */
             checked_at?: string;
@@ -10101,6 +10198,50 @@ export interface components {
             error?: string;
             heartbeat: components["schemas"]["Heartbeat"];
             ok: boolean;
+        };
+        HostCheck: {
+            /**
+             * @description ssh_password, ssh_root, open_port, docker_tcp, docker_socket, security_updates, reboot_required, auto_updates, host_firewall, app_firewall; more may be added
+             * @example open_port
+             */
+            check: string;
+            detail?: string;
+            dismissed?: components["schemas"]["HostCheckDismissal"];
+            /** Format: date-time */
+            first_seen_at?: string;
+            fix?: string;
+            /** @example open_port:5432 */
+            key: string;
+            /** @enum {string} */
+            severity?: "info" | "warning" | "critical";
+            /** @enum {string} */
+            status: "pass" | "finding" | "unknown" | "skipped";
+            /** @example 5432 */
+            subject?: string;
+            /** @example Port 5432 is open on every address */
+            title: string;
+        };
+        HostCheckCounts: {
+            /** Format: int64 */
+            critical: number;
+            /** Format: int64 */
+            info: number;
+            /** Format: int64 */
+            warning: number;
+        };
+        HostCheckDismissal: {
+            /** Format: date-time */
+            at: string;
+            by: string;
+            reason: string;
+        };
+        HostChecks: {
+            /** Format: date-time */
+            checked_at?: string;
+            checks: components["schemas"]["HostCheck"][] | null;
+            counts: components["schemas"]["HostCheckCounts"];
+            error?: string;
+            server: string;
         };
         IgnoreVulnRequest: {
             always?: boolean;
@@ -11297,6 +11438,10 @@ export interface components {
             to_latest?: boolean;
             /** Format: date-time */
             to_time?: string;
+        };
+        RestoreHostFindingRequest: {
+            /** @example host_firewall */
+            finding: string;
         };
         RestoreResult: {
             restore: components["schemas"]["BackupRun"];
@@ -25065,6 +25210,83 @@ export interface operations {
             };
             /** @description Error */
             default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "list-host-checks": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HostChecks"][] | null;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -51286,6 +51508,397 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ServerDrain"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-host-checks": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HostChecks"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "check-host": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HostChecks"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "dismiss-host-finding": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissHostFindingRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HostChecks"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "restore-host-finding": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestoreHostFindingRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HostChecks"];
                 };
             };
             /** @description Bad Request */

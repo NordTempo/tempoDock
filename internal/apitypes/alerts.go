@@ -90,6 +90,11 @@ const (
 	// AlertCertificate: the wildcard certificate of a base domain can't be
 	// issued or renewed (ADR 0090). The next success resolves it.
 	AlertCertificate AlertKind = "certificate_failed"
+	// AlertHostSecurity: a server's host check found something to fix
+	// (ADR 0109): one alert per server for its open warning and critical
+	// findings (Target.Findings). It resolves when they are fixed or
+	// dismissed.
+	AlertHostSecurity AlertKind = "host_security"
 )
 
 // Alert is one occurrence of a problem, open until its condition clears or
@@ -97,7 +102,7 @@ const (
 // fuller, the same deploy failing again), never raised twice.
 type Alert struct {
 	ID       int64         `json:"id"`
-	Kind     AlertKind     `json:"kind" doc:"disk, memory, cpu, server_offline, update_failed, connection_failed, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_regressed, error_spike, traffic_drop, unhealthy, uptime_down, job_failed, access_request, new_vulnerability, certificate_failed; more may be added"`
+	Kind     AlertKind     `json:"kind" doc:"disk, memory, cpu, server_offline, update_failed, connection_failed, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_regressed, error_spike, traffic_drop, unhealthy, uptime_down, job_failed, access_request, new_vulnerability, certificate_failed, host_security; more may be added"`
 	Severity AlertSeverity `json:"severity" enum:"warning,critical"`
 	Title    string        `json:"title" example:"Disk 91% full on vps-1"`
 	Message  string        `json:"message,omitempty"`
@@ -152,6 +157,9 @@ type AlertTarget struct {
 	// Vulnerabilities the IDs it is about.
 	Image           int64    `json:"image,omitempty"`
 	Vulnerabilities []string `json:"vulnerabilities,omitempty"`
+	// Findings are the host check findings of host_security (ADR 0109):
+	// every one raised while the alert was open, by key.
+	Findings []string `json:"findings,omitempty"`
 }
 
 // AlertChannelKind is how a channel sends alerts.

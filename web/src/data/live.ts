@@ -19,6 +19,7 @@ import { applyMoveEvent } from "../features/move/data";
 import { registryKey } from "../features/registry/data";
 import { applyAccessRequestEvent } from "../features/requests/data";
 import { applyRunEvent } from "../features/runs/data";
+import { type HostChecks, hostChecksKey } from "../features/security/data";
 import { diskKey } from "../features/servers/disk";
 import { applyDrainEvent } from "../features/servers/drain";
 import { storageKey } from "../features/storage/data";
@@ -715,6 +716,8 @@ function invalidateForAudit(
     // The list only: its server event patched it, and an open server
     // page follows the new name. The old name's detail would be a 404.
     queryClient.invalidateQueries({ queryKey: keys.servers, exact: true });
+    // Host check results are listed by server name (ADR 0109).
+    invalidate(hostChecksKey);
     // Environments name their server, in overviews and placements.
     queryClient.invalidateQueries({
       predicate: ({ queryKey: [root, , part] }) =>
@@ -767,6 +770,12 @@ function invalidateForAudit(
       });
   }
   if (kind === "registry") invalidate(registryKey);
+  // Host check findings dismissed or restored, a check run (ADR 0109):
+  // nothing else changed, the server list included.
+  if (kind === "server" && audit.action.startsWith("server.host_")) {
+    invalidate(hostChecksKey);
+    return;
+  }
   // Storage connections, and which one the registry uses.
   if (kind === "storage" || kind === "registry") invalidate(storageKey);
   // Cloudflare connections, their zones and the tunnels they run.
@@ -785,6 +794,16 @@ function invalidateForAudit(
   // Servers count what is placed on them; previews are environments.
   if (kind === "server" || kind === "environment" || kind === "preview")
     invalidate(keys.servers);
+  // The Security page lists every server (ADR 0109): a server that joined
+  // is fetched, one removed ("server <name>") is taken out of the list.
+  if (audit.action === "server.add" || audit.action === "server.join")
+    invalidate(hostChecksKey);
+  if (audit.action === "server.remove") {
+    const name = audit.target.replace(/^server /, "");
+    queryClient.setQueryData<HostChecks[]>(hostChecksKey, (list) =>
+      list?.filter((s) => s.server !== name),
+    );
+  }
   if (!audit.project) return;
   // The Images page shows which services update on their own.
   if (audit.action === "service.auto_update") invalidate(["images"]);

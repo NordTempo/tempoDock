@@ -130,7 +130,7 @@ func dockerHarnessWithTools(t *testing.T, probe, self string) *Core {
 	// Other tests on this Docker host use these images too: an archive's
 	// prune of a test's release must leave them (ADR 0035 amendment 2).
 	cfg.Retention.KeepImages = []string{"alpine:latest", "busybox:latest", "postgres:17-alpine", "traefik/whoami:latest"}
-	c, err := New(ctx, Options{Config: cfg, Store: st, Secrets: box, Runtime: node.Local{Containers: rt, Builder: noBuilder{}, Proxy: noProxy{}, Stats: noStats{}, Traffic: noStats{}, Tunnel: noProxy{}, Analytics: fake.New(), Prober: fake.New(), Scanner: fake.New()}, Logger: slog.New(slog.DiscardHandler)})
+	c, err := New(ctx, Options{Config: cfg, Store: st, Secrets: box, Runtime: node.Local{Containers: rt, Builder: noBuilder{}, Proxy: noProxy{}, Stats: noStats{}, Traffic: noStats{}, Tunnel: noProxy{}, Analytics: fake.New(), Prober: fake.New(), Scanner: fake.New(), HostChecker: fake.New()}, Logger: slog.New(slog.DiscardHandler)})
 	if err != nil {
 		t.Fatal(err)
 	}

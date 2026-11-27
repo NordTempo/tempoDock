@@ -16,7 +16,7 @@ import (
 // interface. A nil hub gives no Nodes at all.
 func TestNewRefusesRuntimesThatPanic(t *testing.T) {
 	f := fake.New()
-	whole := node.Local{Containers: f, Builder: f, Proxy: f, Stats: f, Traffic: f, Tunnel: f, Analytics: f, Prober: f, Scanner: f}
+	whole := node.Local{Containers: f, Builder: f, Proxy: f, Stats: f, Traffic: f, Tunnel: f, Analytics: f, Prober: f, Scanner: f, HostChecker: f}
 	if m := whole.Missing(); len(m) != 0 {
 		t.Fatalf("a whole Local misses %v", m)
 	}

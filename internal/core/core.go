@@ -346,6 +346,8 @@ type Core struct {
 	// concurrent callers; disk keeps each server's last reading.
 	diskReads singleflight.Group
 	disk      diskState
+	// hostChecks is when each server last checked its host (ADR 0109).
+	hostChecks hostCheckState
 }
 
 // checkRuntime refuses a runtime that would panic on its first call
@@ -613,6 +615,9 @@ func (c *Core) Start(ctx context.Context) error {
 		c.log.Error("maintenance: read the windows; none is applied until one changes", "err", err)
 	}
 	if err := c.startAlerts(ctx); err != nil {
+		return err
+	}
+	if err := c.loadHostChecks(ctx); err != nil {
 		return err
 	}
 	if err := c.loadHeartbeat(ctx); err != nil {

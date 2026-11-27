@@ -79,4 +79,4 @@ var toolPerms = map[string]core.Perm{
 // toolsForAll need no permission of their own: who the caller is,
 // asking for access, the platform's servers (the platform's role decides,
 // view), and the data tools, which the data policy decides.
-var toolsForAll = append([]string{"whoami", "request_access", "list_servers", "data_status"}, dataTools...)
+var toolsForAll = append([]string{"whoami", "request_access", "list_servers", "host_checks", "data_status"}, dataTools...)

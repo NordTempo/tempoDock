@@ -977,6 +977,30 @@ dock server prune ubuntu-4gb-nbg1-1                    # everything nothing need
 dock server prune ubuntu-4gb-nbg1-1 --only scanner     # one part
 ```
 
+### Host security checks
+
+About once a day every server reads its own host for security problems
+and the console's **Servers > Security** tab lists what it found, worst
+first, across every server ([ADR 0109](../decisions/0109-host-security-checks.md)):
+SSH that takes passwords or lets root in with one, ports open to the
+internet that Dock didn't open, Docker's API on TCP, containers holding
+the Docker socket, security updates and reboots waiting, automatic
+updates off, no host firewall, and Dock's app firewall missing. Each
+finding says what to run. The checks only read, as the `dock` user:
+config files, `/proc`, the running containers and a simulated `apt-get
+dist-upgrade` over the package lists apt already keeps. A file only root
+can read (some `sshd_config.d` files) makes a check say it can't tell,
+with the command to see for yourself. A provider's firewall in front of
+the server doesn't show from the host: dismiss what it covers, with the
+reason. New warnings open one platform alert per server. Only operators
+and platform viewers see any of it.
+
+```sh
+dock server checks ubuntu-4gb-nbg1-1 --now                  # check again and list the findings
+dock server checks dismiss ubuntu-4gb-nbg1-1 host_firewall --reason "Hetzner's firewall allows 22, 80, 443"
+dock server checks restore ubuntu-4gb-nbg1-1 host_firewall
+```
+
 ### Optional features
 
 Vulnerability scanning, Dock Analytics and tracing take memory and disk a

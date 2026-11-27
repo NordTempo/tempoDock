@@ -11,6 +11,7 @@ export type ConsolePage = {
   to:
     | "/console"
     | "/console/servers"
+    | "/console/security"
     | "/console/orgs"
     | "/console/features"
     | "/console/backups"
@@ -47,7 +48,10 @@ export const consoleNav: ConsoleEntry[] = [
   {
     label: "Servers",
     icon: "server",
-    pages: [{ to: "/console/servers", label: "Servers" }],
+    pages: [
+      { to: "/console/servers", label: "Servers" },
+      { to: "/console/security", label: "Security" },
+    ],
   },
   {
     label: "Organizations",

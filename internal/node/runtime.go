@@ -28,6 +28,7 @@ type Runtime interface {
 	Analytics
 	Prober
 	Scanner
+	HostChecker
 }
 
 // Prober runs uptime checks (ADR 0055): the control plane asks a server
