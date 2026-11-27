@@ -14,8 +14,8 @@ import (
 )
 
 // registerScans adds image vulnerability scanning (ADR 0074): the org's
-// images, one image, a service's live image, its SBOM, a rescan, and the
-// operators' switch.
+// images, one image, a service's live image, its SBOM, a rescan, a check
+// for a newer image and automatic updates, and the operators' switch.
 func registerScans(s *Server, a huma.API) {
 	orgPath := Prefix + "/org"
 	tags := []string{"images"}
@@ -66,6 +66,23 @@ func registerScans(s *Server, a huma.API) {
 		Body apitypes.ScanRequest
 	}) (*out[apitypes.ImageScan], error) {
 		return reply(s.core.ScanService(ctx, actor, in.ref(), in.Body.Release))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "check-service-image", Method: http.MethodPost, Path: servicePathT + "/image-check",
+		Summary: "Check for a newer image", Tags: tags,
+		Description: "Asks the registry now what the tag the live image follows points at (the image's own tag when it was deployed by tag, else the base image it was built on), instead of waiting for the daily check, and returns the image's scan with the answer in base. Scope: deploy.",
+	}, func(ctx context.Context, actor core.Actor, in *ServicePath) (*out[apitypes.ImageScan], error) {
+		return reply(s.core.CheckImageTag(ctx, actor, in.ref()))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "set-service-auto-update", Method: http.MethodPut, Path: servicePathT + "/auto-update",
+		Summary: "Turn automatic image updates on or off", Tags: tags,
+		Description: "For a service deployed by tag: after the daily check sees the tag point at a newer image, Dock snapshots the service's volumes and deploys that image by digest. A release that doesn't come up leaves the previous one serving. Applies immediately: never staged, never a release. Scope: deploy.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ServicePath
+		Body apitypes.AutoUpdateRequest
+	}) (*out[apitypes.Service], error) {
+		return reply(s.core.SetAutoUpdate(ctx, actor, in.ref(), in.Body))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "get-service-sbom", Method: http.MethodGet, Path: servicePathT + "/sbom",

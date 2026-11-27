@@ -69,12 +69,17 @@ type scanState struct {
 	// quiet overrides quietFor (Options.ScanQuiet).
 	quiet time.Duration
 	// refreshAt is when the next builder's database is due for its daily
-	// refresh, as the scanner's last pass saw its builders; zero for none
-	// known (the start-up pass looks).
+	// refresh, or the tags for their daily check (tagCheckDue), whichever
+	// is first, as the scanner's last pass saw them; zero for none known
+	// (the start-up pass looks).
 	refreshAt time.Time
 	// imported is the sha256 of the database archive an operator imported
 	// last, "" for none (ADR 0074 phase 3).
 	imported string
+	// tagsChecked is when the daily check of base images' tags last
+	// finished (checkTags; platform_settings.tags_checked_at); zero for
+	// never.
+	tagsChecked time.Time
 }
 
 func newScanState() scanState {
@@ -149,9 +154,19 @@ func (c *Core) startScans(ctx context.Context) {
 	if err != nil && !store.IsNotFound(err) {
 		c.log.Error("read the imported database", "err", err)
 	}
+	// The last finished daily tag check: a day after it the next is due,
+	// also across restarts. A check a restart cut short never recorded
+	// one, so it runs again.
+	var tagsChecked time.Time
+	if last, err := c.store.GetTagsChecked(ctx); err != nil && !store.IsNotFound(err) {
+		c.log.Error("read the last tag check", "err", err)
+	} else if last > 0 {
+		tagsChecked = time.Unix(last, 0)
+	}
 	c.scans.mu.Lock()
 	c.scans.enabled = on != 0
 	c.scans.imported = imported
+	c.scans.tagsChecked = tagsChecked
 	c.scans.lastBusy = time.Now()
 	c.scans.mu.Unlock()
 	c.kickScans()
@@ -282,11 +297,15 @@ func (c *Core) scanPass() (more bool, retry time.Time) {
 		c.importScanDatabase(ctx, srv)
 		return true, time.Time{}
 	}
-	if srv, ok := c.scanRefreshDue(builders, now()); ok {
+	n := now()
+	if srv, ok := c.scanRefreshDue(builders, n); ok {
 		c.refreshScanDatabase(ctx, srv)
 		return true, time.Time{}
 	}
-	n := now()
+	if c.tagCheckDue(n) {
+		c.checkTags(ctx, builders[0])
+		return true, time.Time{}
+	}
 	row, err := c.store.NextImageScan(ctx, store.NextImageScanParams{Now: ptr(n.Unix()), ProductionBuilder: boolInt(prod), NonProductionBuilder: boolInt(nonProd)})
 	if store.IsNotFound(err) {
 		due, err := c.store.NextImageScanRetry(ctx, ptr(n.Unix()))
@@ -684,8 +703,6 @@ func (c *Core) refreshScanDatabase(ctx context.Context, srv store.Server) {
 		return
 	}
 	c.log.Info("vulnerability database refreshed", "server", srv.Name, "built", db.Built, "rematch", n)
-	// Once a day, with the registry in reach: have base images moved?
-	c.checkBaseImages(ctx, srv, rt)
 }
 
 // setScanChecked records that a builder just asked for a newer database.
@@ -696,9 +713,9 @@ func (c *Core) setScanChecked(serverID int64) {
 }
 
 // kickScanRefresh starts the scanner when a builder's database is due
-// for its daily refresh, as its last pass noted. The hourly retention
-// pass calls it, so the refresh needs no timer of its own, and costs the
-// pass no query.
+// for its daily refresh, or base images' tags for their daily check, as
+// its last pass noted. The hourly retention pass calls it, so neither
+// needs a timer of its own, and it costs the pass no query.
 func (c *Core) kickScanRefresh() {
 	c.scans.mu.Lock()
 	due := c.scans.enabled && !c.scans.refreshAt.IsZero() && !now().Before(c.scans.refreshAt)
@@ -963,6 +980,34 @@ func (c *Core) publishScan(ctx context.Context, row store.ImageScan) {
 		return
 	}
 	for _, u := range uses {
+		scan := toImageScan(row, c.imageName(u.ImageRef, apitypes.ImageUse{Project: u.Project, Service: u.Service, Release: u.Number}))
+		c.bus.publish(busEvent{orgID: u.OrgID, projectID: u.ProjectID, envID: u.EnvironmentID, serviceID: u.ServiceID, ev: apitypes.Event{
+			Type: apitypes.EventScan, Time: now(), Project: u.Project, Environment: u.Environment, Service: u.Service, Scan: &scan,
+		}})
+	}
+}
+
+// publishScans is publishScan for several images, their live releases
+// read at once: the scans one tag check updated.
+func (c *Core) publishScans(ctx context.Context, rows []store.ImageScan) {
+	if len(rows) == 0 {
+		return
+	}
+	ids := make([]*int64, len(rows))
+	byID := make(map[int64]store.ImageScan, len(rows))
+	for i, row := range rows {
+		ids[i] = &row.ID
+		byID[row.ID] = row
+	}
+	uses, err := c.store.ListImageScansLiveUses(context.WithoutCancel(ctx), ids)
+	if err != nil {
+		return
+	}
+	for _, u := range uses {
+		row, ok := byID[*u.ImageScanID]
+		if !ok {
+			continue
+		}
 		scan := toImageScan(row, c.imageName(u.ImageRef, apitypes.ImageUse{Project: u.Project, Service: u.Service, Release: u.Number}))
 		c.bus.publish(busEvent{orgID: u.OrgID, projectID: u.ProjectID, envID: u.EnvironmentID, serviceID: u.ServiceID, ev: apitypes.Event{
 			Type: apitypes.EventScan, Time: now(), Project: u.Project, Environment: u.Environment, Service: u.Service, Scan: &scan,

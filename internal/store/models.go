@@ -825,6 +825,7 @@ type PlatformSetting struct {
 	Scanning           int64
 	ScanDbImport       string
 	AccessModel        string
+	TagsCheckedAt      int64
 }
 
 type Preview struct {
@@ -1070,6 +1071,7 @@ type Service struct {
 	Database                       string
 	FromTemplate                   string
 	FromTemplateRevision           int64
+	AutoUpdate                     int64
 }
 
 type ServiceAccess struct {

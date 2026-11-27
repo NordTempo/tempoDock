@@ -4,6 +4,7 @@ import { withOrg } from "../api/client";
 import { canDeploy, useSession } from "../data/queries";
 import type { ServiceRef } from "../data/types";
 import { openDeploy } from "../features/deploy/start";
+import { useCheckImage } from "../features/images/actions";
 import {
   type Finding,
   type FixGroup,
@@ -27,6 +28,7 @@ import {
   total,
   WorstCounts,
 } from "../features/images/parts";
+import { UpdateMany, updateTargets } from "../features/images/UpdateMany";
 import { useOrg } from "../shell/location";
 import { ago, day, plural, since } from "../ui/format";
 import { Icon } from "../ui/icons";
@@ -122,7 +124,13 @@ function ImagePage() {
                   · {plural(scan.packages, "package")}
                 </span>
               )}
-              {scan.base && <BaseLine base={scan.base} lead={!!scan.distro} />}
+              {scan.base && (
+                <BaseLine
+                  base={scan.base}
+                  lead={!!scan.distro}
+                  detail={detail}
+                />
+              )}
             </Prop>
           )}
           <Prop label="Scanned">
@@ -151,29 +159,76 @@ function ImagePage() {
 }
 
 /**
- * The image a Dockerfile build was built on: "· built on node:22-alpine",
- * and, once the daily check saw its tag move, that a rebuild picks up
- * the newer one.
+ * The tag the image follows (deployed by tag: "· follows
+ * postgres:17-alpine") or the image a Dockerfile build was built on
+ * ("· built on node:22-alpine"), and once the tag has a newer image what
+ * picks it up: Update, or a rebuild. Check now asks the registry at once,
+ * through the first live service the reader may deploy.
  */
 function BaseLine({
   base,
   lead,
+  detail,
 }: {
   base: NonNullable<ImageDetail["scan"]["base"]>;
   lead: boolean;
+  detail: ImageDetail;
 }) {
+  const session = useSession();
+  // Check now asks through a live service the reader may deploy.
+  const via = (detail.used_by ?? []).find(
+    (u) => u.live && canDeploy(session, refOf(u)),
+  );
+  const check = useCheckImage();
+  const word = base.own ? "follows" : "built on";
   return (
     <>
-      <span className="text-mut">{lead ? " · built on " : "built on "}</span>
+      <span className="text-mut">{lead ? ` · ${word} ` : `${word} `}</span>
       <span className="font-mono" title={base.digest}>
         {base.image}
       </span>
-      {base.moved && (
-        <span className="text-warn" title={base.checked_at}>
-          {" "}
-          · the tag has a newer image: a rebuild picks it up
-        </span>
-      )}
+      <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+        {!base.checked_at ? (
+          <span className="text-mut">Not checked yet</span>
+        ) : base.moved ? (
+          <span className="text-warn">
+            {base.own
+              ? "The tag has a newer image"
+              : "The tag has a newer image: a rebuild picks it up"}
+            {base.own && base.latest && (
+              <span className="font-mono">
+                , {base.latest.replace(/^sha256:/, "").slice(0, 7)}
+              </span>
+            )}
+          </span>
+        ) : (
+          <span className="text-mut">Up to date</span>
+        )}
+        {base.checked_at && (
+          <span className="text-mut" title={base.checked_at}>
+            · checked {ago(base.checked_at)}
+          </span>
+        )}
+        {via && (
+          <Act
+            small
+            cli={`dock image-updates check -p ${via.project} -s ${via.service} -e ${via.environment}`}
+            disabled={check.isPending}
+            onClick={() => check.mutate(refOf(via))}
+          >
+            Check now
+          </Act>
+        )}
+        <UpdateMany
+          small
+          targets={updateTargets({
+            scan: detail.scan,
+            used_by: detail.used_by,
+          })}
+          label="Update"
+        />
+        <ErrorText error={check.error} />
+      </span>
     </>
   );
 }

@@ -335,6 +335,19 @@ func (q *Queries) GetTagDigest(ctx context.Context, arg GetTagDigestParams) (str
 	return base_latest, err
 }
 
+const getTagsChecked = `-- name: GetTagsChecked :one
+SELECT tags_checked_at FROM platform_settings WHERE id = 1
+`
+
+// When the daily tag check last finished (0 for never): at start-up, a
+// day after it the next is due.
+func (q *Queries) GetTagsChecked(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getTagsChecked)
+	var tags_checked_at int64
+	err := row.Scan(&tags_checked_at)
+	return tags_checked_at, err
+}
+
 const getVulnIgnore = `-- name: GetVulnIgnore :one
 SELECT id, org_id, project_id, service_id, vuln_id, package, reason, expires_at, created_by, created_at FROM vuln_ignores WHERE id = +?1
 `
@@ -388,6 +401,55 @@ func (q *Queries) ListActiveVulnIgnores(ctx context.Context, arg ListActiveVulnI
 			&i.ExpiresAt,
 			&i.CreatedBy,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listImageAutoUpdates = `-- name: ListImageAutoUpdates :many
+SELECT r.service_id, r.image_ref, i.base_image, i.base_latest
+FROM services s
+CROSS JOIN releases r ON r.service_id = s.id AND r.status = 'active'
+JOIN image_scans i ON i.id = r.image_scan_id
+WHERE s.auto_update = 1 AND s.archived_at IS NULL AND s.stopped_at IS NULL
+  AND i.base_image != '' AND i.base_moved = 1 AND i.base_latest != '' AND i.base_digest = i.image_key
+`
+
+type ListImageAutoUpdatesRow struct {
+	ServiceID  int64
+	ImageRef   string
+	BaseImage  string
+	BaseLatest string
+}
+
+// The live releases of services with auto_update on whose image is its
+// tag's own (deployed by tag, not built on it) while the tag points at a
+// newer image: what the daily check updates. CROSS JOIN keeps services
+// outermost, read through services_auto_update: the few that update on
+// their own, not every live release.
+func (q *Queries) ListImageAutoUpdates(ctx context.Context) ([]ListImageAutoUpdatesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listImageAutoUpdates)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListImageAutoUpdatesRow
+	for rows.Next() {
+		var i ListImageAutoUpdatesRow
+		if err := rows.Scan(
+			&i.ServiceID,
+			&i.ImageRef,
+			&i.BaseImage,
+			&i.BaseLatest,
 		); err != nil {
 			return nil, err
 		}
@@ -556,7 +618,7 @@ func (q *Queries) ListImageScanLiveUses(ctx context.Context, scanID *int64) ([]L
 }
 
 const listImageScanReleases = `-- name: ListImageScanReleases :many
-SELECT r.id AS release_id, r.number, r.status, r.image_ref, s.id AS service_id, s.name AS service,
+SELECT r.id AS release_id, r.number, r.status, r.image_ref, s.id AS service_id, s.name AS service, s.auto_update,
        e.id AS environment_id, e.name AS environment, e.kind AS env_kind, p.id AS project_id, p.name AS project
 FROM releases r
 JOIN services s ON s.id = r.service_id
@@ -578,6 +640,7 @@ type ListImageScanReleasesRow struct {
 	ImageRef      string
 	ServiceID     int64
 	Service       string
+	AutoUpdate    int64
 	EnvironmentID int64
 	Environment   string
 	EnvKind       string
@@ -602,6 +665,7 @@ func (q *Queries) ListImageScanReleases(ctx context.Context, arg ListImageScanRe
 			&i.ImageRef,
 			&i.ServiceID,
 			&i.Service,
+			&i.AutoUpdate,
 			&i.EnvironmentID,
 			&i.Environment,
 			&i.EnvKind,
@@ -680,6 +744,75 @@ func (q *Queries) ListImageScansByID(ctx context.Context, ids []int64) ([]ImageS
 			&i.BaseMoved,
 			&i.BaseCheckedAt,
 			&i.BaseLatest,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listImageScansLiveUses = `-- name: ListImageScansLiveUses :many
+SELECT r.image_scan_id, p.org_id, p.id AS project_id, p.name AS project, e.id AS environment_id, e.name AS environment,
+       s.id AS service_id, s.name AS service, r.number, r.image_ref
+FROM releases r
+JOIN services s ON s.id = r.service_id AND s.archived_at IS NULL
+JOIN environments e ON e.id = s.environment_id
+JOIN projects p ON p.id = e.project_id
+WHERE r.image_scan_id IN (/*SLICE:scan_ids*/?) AND r.status = 'active'
+`
+
+type ListImageScansLiveUsesRow struct {
+	ImageScanID   *int64
+	OrgID         int64
+	ProjectID     int64
+	Project       string
+	EnvironmentID int64
+	Environment   string
+	ServiceID     int64
+	Service       string
+	Number        int64
+	ImageRef      string
+}
+
+// ListImageScanLiveUses for several images at once (sqlc.slice), with the
+// scan each release runs: one read for the scans a tag check updated.
+func (q *Queries) ListImageScansLiveUses(ctx context.Context, scanIds []*int64) ([]ListImageScansLiveUsesRow, error) {
+	query := listImageScansLiveUses
+	var queryParams []interface{}
+	if len(scanIds) > 0 {
+		for _, v := range scanIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:scan_ids*/?", strings.Repeat(",?", len(scanIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:scan_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListImageScansLiveUsesRow
+	for rows.Next() {
+		var i ListImageScansLiveUsesRow
+		if err := rows.Scan(
+			&i.ImageScanID,
+			&i.OrgID,
+			&i.ProjectID,
+			&i.Project,
+			&i.EnvironmentID,
+			&i.Environment,
+			&i.ServiceID,
+			&i.Service,
+			&i.Number,
+			&i.ImageRef,
 		); err != nil {
 			return nil, err
 		}
@@ -813,7 +946,7 @@ func (q *Queries) ListOrgFindings(ctx context.Context, arg ListOrgFindingsParams
 
 const listOrgImages = `-- name: ListOrgImages :many
 SELECT r.id AS release_id, r.number, r.image_ref, r.image_scan_id, r.finished_at,
-       s.id AS service_id, s.name AS service, e.id AS environment_id, e.name AS environment, e.kind AS env_kind, p.id AS project_id, p.name AS project
+       s.id AS service_id, s.name AS service, s.auto_update, e.id AS environment_id, e.name AS environment, e.kind AS env_kind, p.id AS project_id, p.name AS project
 FROM projects p
 JOIN environments e ON e.project_id = p.id AND e.archived_at IS NULL
 JOIN services s ON s.environment_id = e.id AND s.archived_at IS NULL
@@ -830,6 +963,7 @@ type ListOrgImagesRow struct {
 	FinishedAt    *time.Time
 	ServiceID     int64
 	Service       string
+	AutoUpdate    int64
 	EnvironmentID int64
 	Environment   string
 	EnvKind       string
@@ -856,6 +990,7 @@ func (q *Queries) ListOrgImages(ctx context.Context, orgID int64) ([]ListOrgImag
 			&i.FinishedAt,
 			&i.ServiceID,
 			&i.Service,
+			&i.AutoUpdate,
 			&i.EnvironmentID,
 			&i.Environment,
 			&i.EnvKind,
@@ -1585,10 +1720,11 @@ func (q *Queries) RequeueStaleLiveScans(ctx context.Context, built *int64) (int6
 	return result.RowsAffected()
 }
 
-const setBaseImageDigest = `-- name: SetBaseImageDigest :exec
+const setBaseImageDigest = `-- name: SetBaseImageDigest :many
 UPDATE image_scans SET base_moved = CAST(base_digest != ?1 AS INTEGER), base_latest = ?1,
   base_checked_at = ?2
 WHERE base_image = +?3 AND base_image != '' AND base_digest != ''
+RETURNING id, image_key, pull_ref, local_ref, built_on_server_id, org_id, production, state, priority, attempts, next_attempt_at, server_id, distro, packages, sbom_bytes, sbom_at, matched_at, db_built_at, critical, high, medium, low, other, fixable, kev, truncated, worst_fix, error, created_at, base_image, base_digest, base_moved, base_checked_at, base_latest
 `
 
 type SetBaseImageDigestParams struct {
@@ -1599,11 +1735,65 @@ type SetBaseImageDigestParams struct {
 
 // What a base image's tag points at now: the images built on an older
 // digest have a newer base a rebuild picks up, and an image deployed by
-// that tag has a newer image to update to. base_image != ” lets SQLite
-// use the partial index image_scans_base.
-func (q *Queries) SetBaseImageDigest(ctx context.Context, arg SetBaseImageDigestParams) error {
-	_, err := q.db.ExecContext(ctx, setBaseImageDigest, arg.Digest, arg.CheckedAt, arg.BaseImage)
-	return err
+// that tag has a newer image to update to. Returns the scans it updated,
+// for their pages to learn of it. base_image != ” lets SQLite use the
+// partial index image_scans_base.
+func (q *Queries) SetBaseImageDigest(ctx context.Context, arg SetBaseImageDigestParams) ([]ImageScan, error) {
+	rows, err := q.db.QueryContext(ctx, setBaseImageDigest, arg.Digest, arg.CheckedAt, arg.BaseImage)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ImageScan
+	for rows.Next() {
+		var i ImageScan
+		if err := rows.Scan(
+			&i.ID,
+			&i.ImageKey,
+			&i.PullRef,
+			&i.LocalRef,
+			&i.BuiltOnServerID,
+			&i.OrgID,
+			&i.Production,
+			&i.State,
+			&i.Priority,
+			&i.Attempts,
+			&i.NextAttemptAt,
+			&i.ServerID,
+			&i.Distro,
+			&i.Packages,
+			&i.SbomBytes,
+			&i.SbomAt,
+			&i.MatchedAt,
+			&i.DbBuiltAt,
+			&i.Critical,
+			&i.High,
+			&i.Medium,
+			&i.Low,
+			&i.Other,
+			&i.Fixable,
+			&i.Kev,
+			&i.Truncated,
+			&i.WorstFix,
+			&i.Error,
+			&i.CreatedAt,
+			&i.BaseImage,
+			&i.BaseDigest,
+			&i.BaseMoved,
+			&i.BaseCheckedAt,
+			&i.BaseLatest,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const setImageScanResult = `-- name: SetImageScanResult :exec
@@ -1831,6 +2021,39 @@ type SetServerScanImportParams struct {
 // The database archive a builder imported (its sha256).
 func (q *Queries) SetServerScanImport(ctx context.Context, arg SetServerScanImportParams) error {
 	_, err := q.db.ExecContext(ctx, setServerScanImport, arg.ScanDbImport, arg.ID)
+	return err
+}
+
+const setServiceAutoUpdate = `-- name: SetServiceAutoUpdate :exec
+UPDATE services SET auto_update = ? WHERE id = +?2
+`
+
+type SetServiceAutoUpdateParams struct {
+	AutoUpdate int64
+	ID         int64
+}
+
+// Turns a service's automatic image updates on (1) or off (0); applies
+// at once, never staged.
+func (q *Queries) SetServiceAutoUpdate(ctx context.Context, arg SetServiceAutoUpdateParams) error {
+	_, err := q.db.ExecContext(ctx, setServiceAutoUpdate, arg.AutoUpdate, arg.ID)
+	return err
+}
+
+const setTagsChecked = `-- name: SetTagsChecked :exec
+INSERT INTO platform_settings (id, tags_checked_at, updated_by, updated_at) VALUES (1, ?, 'system', ?)
+ON CONFLICT (id) DO UPDATE SET tags_checked_at = excluded.tags_checked_at
+`
+
+type SetTagsCheckedParams struct {
+	TagsCheckedAt int64
+	UpdatedAt     time.Time
+}
+
+// Records a finished daily tag check. Not an operator's change: an
+// existing row keeps its updated_by and updated_at.
+func (q *Queries) SetTagsChecked(ctx context.Context, arg SetTagsCheckedParams) error {
+	_, err := q.db.ExecContext(ctx, setTagsChecked, arg.TagsCheckedAt, arg.UpdatedAt)
 	return err
 }
 

@@ -43,6 +43,7 @@ import { DomainsPanel } from "../service/DomainsPanel";
 import { imageSetting } from "../service/releases";
 import { limitText } from "../service/Usage";
 import { HealthOnServer, UptimeChecks } from "../uptime/UptimePanel";
+import { ImageUpdatesRow } from "./ImageUpdates";
 import { OpenValue } from "./OpenValue";
 import {
   editPlaceholder,
@@ -83,7 +84,8 @@ export function SettingsPanel({
   serviceRef: ServiceRef;
   edit?: TextSettingKey;
 }) {
-  const { service } = useService(ref);
+  const view = useService(ref);
+  const { service } = view;
   const { environment } = useEnvironment(ref);
   const volumes = useVolumes(ref);
   const pending = useChanges(ref);
@@ -207,6 +209,7 @@ export function SettingsPanel({
               ? "A few seconds: the old release stops before the new one starts, since only one copy can use the volume at a time."
               : "None: the new release starts beside the old one, then traffic moves over."}
           </Item>
+          <ImageUpdatesRow serviceRef={ref} view={view} />
           {row(
             "Before it goes live",
             "Runs with the new image first, like migrations.",
