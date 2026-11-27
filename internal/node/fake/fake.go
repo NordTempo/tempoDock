@@ -1086,6 +1086,98 @@ func (r *Runtime) Dial(ctx context.Context, req node.DialRequest) (net.Conn, err
 	return d.DialContext(ctx, "tcp", addr)
 }
 
+// Exec implements node.Containers, recorded as "exec <id> <cmd...>". Like
+// the real runtime it only runs in a running app container whose labels
+// match. With Stdin it is `cat` (the input comes back as output, until its
+// end or ctx's); without, it prints "<cmd...>" and exits 0. A command
+// "exit N" exits N. ctx ending while an output write blocks returns only
+// once that write does, as over the node link.
+func (r *Runtime) Exec(ctx context.Context, req node.ExecRequest) (int, error) {
+	r.mu.Lock()
+	c, ok := r.containers[req.ContainerID]
+	var labels node.Labels
+	var state node.ContainerState
+	if ok {
+		labels, state = c.Labels, c.State
+	}
+	r.op("exec %s %s", req.ContainerID, strings.Join(req.Cmd, " "))
+	r.mu.Unlock()
+	switch {
+	case !ok || labels.Service == "" || !labels.Matches(req.Labels):
+		return 0, fmt.Errorf("container %s: %w", req.ContainerID, node.ErrNotFound)
+	case state != node.StateRunning:
+		return 0, fmt.Errorf("container %s: %w", req.ContainerID, node.ErrNotRunning)
+	case req.Stream == nil || req.Stream.Stdout == nil:
+		return 0, errors.New("fake: exec needs a stream")
+	}
+	st := req.Stream
+	if len(req.Cmd) == 2 && req.Cmd[0] == "exit" {
+		n, _ := strconv.Atoi(req.Cmd[1])
+		return n, nil
+	}
+	if st.Stdin == nil {
+		_, err := fmt.Fprintln(st.Stdout, strings.Join(req.Cmd, " "))
+		return 0, err
+	}
+	// Like the node link, a write in progress holds the session until it
+	// returns (JobStream.Cut frees it); a wait for input doesn't. Writes
+	// are admitted under mu, so none starts once the session ended.
+	var mu sync.Mutex
+	writing, ended := false, false
+	done := make(chan error, 1)
+	go func() {
+		buf := make([]byte, 32<<10)
+		for {
+			n, err := st.Stdin.Read(buf)
+			if n > 0 {
+				mu.Lock()
+				if ended {
+					mu.Unlock()
+					done <- nil
+					return
+				}
+				writing = true
+				mu.Unlock()
+				_, werr := st.Stdout.Write(buf[:n])
+				mu.Lock()
+				writing = false
+				stop := ended
+				mu.Unlock()
+				if werr != nil {
+					done <- werr
+					return
+				}
+				if stop {
+					done <- nil
+					return
+				}
+			}
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					err = nil
+				}
+				done <- err
+				return
+			}
+		}
+	}()
+	select {
+	case err := <-done:
+		return 0, err
+	case <-ctx.Done():
+		mu.Lock()
+		ended = true
+		wait := writing
+		mu.Unlock()
+		if wait {
+			if err := <-done; err != nil {
+				return 0, errors.Join(ctx.Err(), err)
+			}
+		}
+		return 0, ctx.Err()
+	}
+}
+
 // Forward implements node.Proxy, recorded as "forward <port>". It
 // listens on a free loopback port instead of port, which ForwardAddr
 // names; a port already forwarded is an error, as on a real server.

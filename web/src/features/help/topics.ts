@@ -370,8 +370,12 @@ export const topics: Record<TopicId, Topic> = {
         at: { s: "jobs" },
       },
       {
-        what: "Open a shell",
-        cli: "dock run -s {service} -e {env} --tty -- sh",
+        what: "Open a shell in a new container",
+        cli: "dock run -it -s {service} -e {env} -- sh",
+      },
+      {
+        what: "Open a shell in the running container",
+        cli: "dock exec -s {service} -e {env}",
       },
       {
         what: "Run one every night",

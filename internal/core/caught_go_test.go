@@ -33,6 +33,7 @@ var goAllowed = map[string]string{
 	"git_github.go:tarball":                   "re-roots a repository's archive inside caught: a panic closes the pipe with an error, which fails the deploy reading it",
 	"placement.go:fanOut":                     "each call defers recovered itself (run), so a server costs no second closure",
 	"runs.go:wait":                            "context.AfterFunc: only cancels the run's context when the daemon stops",
+	"exec.go:wait":                            "context.AfterFunc: only cancels the session's context when the daemon stops",
 }
 
 // goStart reports whether n starts a goroutine, and how: a go statement,

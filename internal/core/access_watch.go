@@ -35,6 +35,9 @@ type accessChange struct {
 	userID, tokenID, orgID int64
 	keepToken              int64
 	changed, everyone      bool
+	// envID: an environment's lock changed (ADR 0044). Only what is held
+	// open in it with a still check is asked again, tokens' included.
+	envID int64
 }
 
 // ends reports whether the change ends what a holds open. An org's
@@ -70,17 +73,20 @@ type heldOpen struct {
 	// (nil: they may still hold it). An org's change asks it instead of
 	// ending: a run or a tunnel can't be opened again where it was.
 	still func(context.Context, Actor) error
+	// env is the environment it is open in, 0 for none: a change to
+	// that environment's lock asks still again (accessChange.envID).
+	env int64
 }
 
 // watch registers what a holds open; end closes it when a's access ends
 // or changes, at most once and without blocking. still (nil: none) is
 // asked first when the access changed without ending (accessChange). stop takes it out. The system holds nothing: its access
 // doesn't end.
-func (w *accessWatch) watch(a Actor, end func(), still func(context.Context, Actor) error) (stop func()) {
+func (w *accessWatch) watch(a Actor, env int64, end func(), still func(context.Context, Actor) error) (stop func()) {
 	if a.UserID == 0 && a.TokenID == 0 {
 		return func() {}
 	}
-	h := &heldOpen{a: a, end: sync.OnceFunc(end), still: still}
+	h := &heldOpen{a: a, end: sync.OnceFunc(end), still: still, env: env}
 	w.mu.Lock()
 	if w.held == nil {
 		w.held = map[*heldOpen]struct{}{}
@@ -104,6 +110,10 @@ func (c *Core) accessChanged(ch accessChange) {
 	var ask []*heldOpen
 	for h := range w.held {
 		switch {
+		case ch.envID != 0:
+			if h.env == ch.envID && h.still != nil {
+				ask = append(ask, h)
+			}
 		case !ch.ends(h.a):
 		case changed && h.still != nil:
 			ask = append(ask, h)
@@ -176,10 +186,11 @@ func (c *Core) actorNow(ctx context.Context, a Actor) (Actor, error) {
 }
 
 // watched is ctx ending with ErrAccessChanged when a's access ends or
-// changes (see watch for still); stop frees it.
-func (c *Core) watched(ctx context.Context, a Actor, still func(context.Context, Actor) error) (_ context.Context, stop func()) {
+// changes (see watch for still), or, with env, that environment's lock
+// changes and still refuses; stop frees it.
+func (c *Core) watched(ctx context.Context, a Actor, env int64, still func(context.Context, Actor) error) (_ context.Context, stop func()) {
 	ctx, cancel := context.WithCancelCause(ctx)
-	unwatch := c.access.watch(a, func() { cancel(ErrAccessChanged) }, still)
+	unwatch := c.access.watch(a, env, func() { cancel(ErrAccessChanged) }, still)
 	return ctx, func() {
 		unwatch()
 		cancel(nil)
@@ -192,7 +203,7 @@ func (c *Core) watched(ctx context.Context, a Actor, still func(context.Context,
 // actor as they were when it opened.
 func held[T any](c *Core, a Actor, s Stream[T]) Stream[T] {
 	return func(ctx context.Context, ready func(), send func(...T) error) error {
-		ctx, stop := c.watched(ctx, a, nil)
+		ctx, stop := c.watched(ctx, a, 0, nil)
 		defer stop()
 		err := s(ctx, ready, send)
 		if errors.Is(context.Cause(ctx), ErrAccessChanged) {

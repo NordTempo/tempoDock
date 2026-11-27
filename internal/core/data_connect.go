@@ -218,7 +218,7 @@ func (c *Core) OpenTunnel(ctx context.Context, a Actor, ref ServiceRef, req Tunn
 		return nil, errf(apitypes.CodeServerOffline, "the daemon is shutting down; try again in a moment")
 	}
 	// It closes when the actor's access ends or changes; Pipe then ends.
-	t.unwatch = c.access.watch(a, func() { _ = conn.Close() }, func(ctx context.Context, now Actor) error {
+	t.unwatch = c.access.watch(a, 0, func() { _ = conn.Close() }, func(ctx context.Context, now Actor) error {
 		_, _, err := c.connectAccess(ctx, now, ref, req.Confirm)
 		return err
 	})

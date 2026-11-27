@@ -162,20 +162,9 @@ func lockedRunHint(err error) error {
 func timeoutSeconds(d time.Duration) int { return int((d + time.Second - 1) / time.Second) }
 
 // streamRun runs command on t's service over the run stream and returns
-// the run as it ended. Output goes to stdout and stderr (stdout to stderr
-// with --json); with o.stdin, stdin goes to the command; with o.tty and a
-// terminal on stdin, the command gets a terminal of its size and the local
-// one is in raw mode until it ends. Ctrl-C (ctx ending) closes the
-// connection, which stops the command, and is exitInterrupted.
+// the run as it ended (streamFrames).
 func (g *globals) streamRun(ctx context.Context, s *session, t target, command string, o runOptions) (apitypes.CommandRun, error) {
-	fd, tty := -1, false
-	if o.tty {
-		if f, ok := g.io.In.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
-			fd, tty = int(f.Fd()), true
-		} else {
-			g.io.Warnf("stdin is not a terminal, so the command runs without one")
-		}
-	}
+	fd, tty := g.terminal(o.tty)
 	q := url.Values{"command": {command}, "tty": {strconv.FormatBool(tty)}, "stdin": {strconv.FormatBool(o.stdin)}}
 	if o.timeout > 0 {
 		q.Set("timeout_seconds", strconv.Itoa(timeoutSeconds(o.timeout)))
@@ -186,15 +175,49 @@ func (g *globals) streamRun(ctx context.Context, s *session, t target, command s
 	if o.noSnapshot {
 		q.Set("no_snapshot", "true")
 	}
+	var r apitypes.CommandRun
+	raw, err := g.streamFrames(ctx, s, t.servicePath()+"/run", apitypes.RunProtocol, q, fd, tty, o.stdin, "`dock runs` shows how it ended.")
+	if err != nil {
+		return r, err
+	}
+	if err := json.Unmarshal(raw, &r); err != nil {
+		return r, &output.Error{Exit: output.ExitIncompatible, Message: "the server sent a run this CLI can't read", Hint: "Run `dock self-update` to install the CLI that matches the server.", Err: err}
+	}
+	return r, nil
+}
+
+// terminal is the terminal on stdin when want asks for one: its fd and
+// true, or -1 and false (with a warning when stdin isn't one).
+func (g *globals) terminal(want bool) (int, bool) {
+	if !want {
+		return -1, false
+	}
+	if f, ok := g.io.In.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		return int(f.Fd()), true
+	}
+	g.io.Warnf("stdin is not a terminal, so the command runs without one")
+	return -1, false
+}
+
+// streamFrames runs a streamed call (`dock run`, `dock exec`): it upgrades
+// path to protocol with q (plus the terminal's size with tty), then
+// copies output frames to stdout and stderr (stdout to stderr with
+// --json) until the Exit frame, whose payload it returns. With stdin,
+// stdin goes to the command; with tty, the command gets a terminal of
+// fd's size, and with stdin too the local one is in raw mode until it
+// ends. Ctrl-C (ctx ending) closes the connection, which stops the
+// command, and is exitInterrupted. lost is the hint for a connection
+// that ended before the Exit frame.
+func (g *globals) streamFrames(ctx context.Context, s *session, path, protocol string, q url.Values, fd int, tty, stdin bool, lost string) ([]byte, error) {
 	if tty {
 		if cols, rows, err := term.GetSize(fd); err == nil {
 			q.Set("cols", strconv.Itoa(cols))
 			q.Set("rows", strconv.Itoa(rows))
 		}
 	}
-	conn, err := s.api.Upgrade(ctx, t.servicePath()+"/run?"+q.Encode(), apitypes.RunProtocol)
+	conn, err := s.api.Upgrade(ctx, path+"?"+q.Encode(), protocol)
 	if err != nil {
-		return apitypes.CommandRun{}, err
+		return nil, err
 	}
 	defer func() { _ = conn.Close() }()
 	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
@@ -204,14 +227,14 @@ func (g *globals) streamRun(ctx context.Context, s *session, t target, command s
 	if tty {
 		// Raw only with input: without it keys never reach the command,
 		// and Ctrl-C has to stay a local interrupt.
-		if o.stdin {
+		if stdin {
 			if state, err := term.MakeRaw(fd); err == nil {
 				defer func() { _ = term.Restore(fd, state) }()
 			}
 		}
 		defer watchResize(fd, func(cols, rows uint16) { _ = fw.Resize(cols, rows) })()
 	}
-	if o.stdin {
+	if stdin {
 		// Never joined: a terminal's read only ends with the process.
 		go func() {
 			_, _ = io.Copy(fw.Stream(runframe.Stdin), g.io.In)
@@ -228,10 +251,10 @@ func (g *globals) streamRun(ctx context.Context, s *session, t target, command s
 		typ, p, err := fr.Next()
 		if err != nil {
 			if ctx.Err() != nil {
-				return apitypes.CommandRun{}, exitInterrupted
+				return nil, exitInterrupted
 			}
-			return apitypes.CommandRun{}, &output.Error{Exit: output.ExitUnreachable, Message: "the connection to the server ended before the command did",
-				Hint: "`dock runs` shows how it ended.", Err: err}
+			return nil, &output.Error{Exit: output.ExitUnreachable, Message: "the connection to the server ended before the command did",
+				Hint: lost, Err: err}
 		}
 		switch typ {
 		case runframe.Stdout:
@@ -239,11 +262,7 @@ func (g *globals) streamRun(ctx context.Context, s *session, t target, command s
 		case runframe.Stderr:
 			_, _ = g.io.Err.Write(p)
 		case runframe.Exit:
-			var r apitypes.CommandRun
-			if err := json.Unmarshal(p, &r); err != nil {
-				return r, &output.Error{Exit: output.ExitIncompatible, Message: "the server sent a run this CLI can't read", Hint: "Run `dock self-update` to install the CLI that matches the server.", Err: err}
-			}
-			return r, nil
+			return p, nil
 		}
 	}
 }

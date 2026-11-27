@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/runframe"
@@ -58,63 +59,88 @@ func (c *Client) streamJob(ctx context.Context, spec node.JobSpec) (node.JobResu
 	}
 	st := spec.Stream
 	req := jobStreamRequest{jobRequest: toJobRequest(spec), TTY: st.TTY, Cols: st.Size.Cols, Rows: st.Size.Rows, Stdin: st.Stdin != nil}
+	var tail tailWriter
+	code, err := streamCall(ctx, s, opRunJobStream, req, st, &tail)
+	res := node.JobResult{ExitCode: code, Output: tail.String()}
+	if errors.Is(err, errStreamOutput) {
+		err = fmt.Errorf("job %s output: %w", spec.Name, err)
+	}
+	return res, err
+}
+
+// errStreamOutput marks a streamCall whose caller stopped taking output.
+var errStreamOutput = errors.New("the caller stopped taking output")
+
+// streamCall is one full-duplex call carrying a stream (run-job-stream,
+// exec): req, then st's input as frames up; output frames down into st
+// (and tail, when set) until the Exit frame, whose exit code it returns.
+// Returning resets the call, which ends the work on the node.
+func streamCall(ctx context.Context, s *session, op string, req any, st *node.JobStream, tail *tailWriter) (int, error) {
 	callCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	up, upW := io.Pipe()
-	body, err := open(callCtx, s, opRunJobStream, req, up)
+	body, err := open(callCtx, s, op, req, up)
 	if err != nil {
 		_ = upW.Close()
-		return node.JobResult{}, err
+		return 0, err
 	}
 	// Canceling (or returning, through the deferred cancel) closes both
 	// bodies: the transport doesn't watch ctx while it waits for input.
 	// The input ends with the cancel's error, not a clean EOF: the node
-	// must see the call reset, not a job whose input simply ended.
+	// must see the call reset, not a stream whose input simply ended.
 	context.AfterFunc(callCtx, func() { _, _ = upW.CloseWithError(context.Canceled), body.Close() })
 	ended := make(chan struct{})
 	defer close(ended)
 	go sendJobInput(runframe.NewWriter(upW), upW, st, ended)
 
-	var tail tailWriter
-	stdout := teeTail(st.Stdout, &tail)
-	stderr := teeTail(cmp.Or(st.Stderr, st.Stdout), &tail)
+	stdout, stderr := st.Stdout, cmp.Or(st.Stderr, st.Stdout)
+	if tail != nil {
+		stdout, stderr = teeTail(stdout, tail), teeTail(stderr, tail)
+	}
 	fr := runframe.NewReader(body)
 	for {
 		t, p, err := fr.Next()
 		if err != nil {
 			if ctx.Err() != nil {
-				return node.JobResult{Output: tail.String()}, ctx.Err()
+				return 0, ctx.Err()
 			}
-			return node.JobResult{Output: tail.String()}, offline(ctx, s.name(), err)
+			return 0, offline(ctx, s.name(), err)
 		}
 		var werr error
 		switch t {
 		case runframe.Stdout:
-			_, werr = stdout.Write(p)
+			_, werr = writeTo(stdout, p)
 		case runframe.Stderr:
-			_, werr = stderr.Write(p)
+			_, werr = writeTo(stderr, p)
 		case runframe.Exit:
 			var end jobStreamEnd
 			if err := json.Unmarshal(p, &end); err != nil {
-				return node.JobResult{Output: tail.String()}, fmt.Errorf("server %s: bad job end: %w", s.name(), err)
+				return 0, fmt.Errorf("server %s: bad stream end: %w", s.name(), err)
 			}
-			res := node.JobResult{ExitCode: end.ExitCode, Output: tail.String()}
 			if end.Error != nil {
-				return res, end.Error
+				return end.ExitCode, end.Error
 			}
 			if err := ctx.Err(); err != nil {
-				// Canceled while the end was on its way: the job was
+				// Canceled while the end was on its way: the work was
 				// stopped, however it ended on the node.
-				return res, err
+				return end.ExitCode, err
 			}
-			return res, nil
+			return end.ExitCode, nil
 		}
 		if werr != nil {
 			// The caller stopped taking output: returning resets the call
-			// and the job ends on the node.
-			return node.JobResult{Output: tail.String()}, fmt.Errorf("job %s output: %w", spec.Name, werr)
+			// and the work ends on the node.
+			return 0, fmt.Errorf("%w: %w", errStreamOutput, werr)
 		}
 	}
+}
+
+// writeTo writes p to w, if any.
+func writeTo(w io.Writer, p []byte) (int, error) {
+	if w == nil {
+		return len(p), nil
+	}
+	return w.Write(p)
 }
 
 // sendJobInput frames a job's input and terminal sizes into the call's
@@ -157,38 +183,54 @@ func serveRunJobStream(rt node.Runtime) http.HandlerFunc {
 			newResponder(w).fail(&Error{Code: codeBadRequest, Message: err.Error()})
 			return
 		}
-		rc := http.NewResponseController(w)
-		w.Header().Set("Content-Type", "application/octet-stream")
-		w.WriteHeader(http.StatusOK)
-		if err := rc.Flush(); err != nil {
-			return
-		}
-		fw := runframe.NewWriter(flushWriter{w, rc})
-		spec := a.node()
-		resize := make(chan node.TermSize, 1)
-		st := &node.JobStream{
-			Stdout: fw.Stream(runframe.Stdout), Stderr: fw.Stream(runframe.Stderr),
-			TTY: a.TTY, Size: node.TermSize{Cols: a.Cols, Rows: a.Rows}, Resize: resize,
-		}
-		var stdinW *io.PipeWriter
-		if a.Stdin {
-			var pr *io.PipeReader
-			pr, stdinW = io.Pipe()
-			st.Stdin = pr
-		}
-		spec.Stream = st
-		go receiveJobInput(runframe.NewReader(up), stdinW, resize)
-		res, err := rt.RunJob(r.Context(), spec)
-		if stdinW != nil {
-			_ = stdinW.Close() // ends the runtime's copy into the job
-		}
-		end := jobStreamEnd{ExitCode: res.ExitCode}
-		if err != nil {
-			end.Error = wireError(err)
-		}
-		raw, _ := json.Marshal(end)
-		_ = fw.Frame(runframe.Exit, raw)
+		serveStream(w, r, up, a.TTY, a.Cols, a.Rows, a.Stdin, func(st *node.JobStream) (int, error) {
+			spec := a.node()
+			spec.Stream = st
+			res, err := rt.RunJob(r.Context(), spec)
+			return res.ExitCode, err
+		})
 	}
+}
+
+// serveStream answers a stream call on the node (run-job-stream, exec):
+// 200, then run's output as frames while it reads its input from up's
+// frames, then one Exit frame with how it ended.
+func serveStream(w http.ResponseWriter, r *http.Request, up io.Reader, tty bool, cols, rows uint16, stdin bool, run func(*node.JobStream) (int, error)) {
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.WriteHeader(http.StatusOK)
+	if err := rc.Flush(); err != nil {
+		return
+	}
+	// The runtime may still be writing when run returns (a job's or a
+	// session's output copy, once its caller's end frees it): out takes
+	// no write after the end, which the handler's return would make a
+	// write to a finished response.
+	out := &endedWriter{w: flushWriter{w, rc}}
+	defer out.end()
+	fw := runframe.NewWriter(out)
+	resize := make(chan node.TermSize, 1)
+	st := &node.JobStream{
+		Stdout: fw.Stream(runframe.Stdout), Stderr: fw.Stream(runframe.Stderr),
+		TTY: tty, Size: node.TermSize{Cols: cols, Rows: rows}, Resize: resize,
+	}
+	var stdinW *io.PipeWriter
+	if stdin {
+		var pr *io.PipeReader
+		pr, stdinW = io.Pipe()
+		st.Stdin = pr
+	}
+	go receiveJobInput(runframe.NewReader(up), stdinW, resize)
+	code, err := run(st)
+	if stdinW != nil {
+		_ = stdinW.Close() // ends the runtime's copy of the input
+	}
+	end := jobStreamEnd{ExitCode: code}
+	if err != nil {
+		end.Error = wireError(err)
+	}
+	raw, _ := json.Marshal(end)
+	_ = fw.Frame(runframe.Exit, raw)
 }
 
 // receiveJobInput reads the control plane's input frames into the job's
@@ -255,4 +297,27 @@ func teeTail(w io.Writer, tail *tailWriter) io.Writer {
 		return tail
 	}
 	return io.MultiWriter(w, tail)
+}
+
+// endedWriter passes writes to w until end, then refuses them. end waits
+// for a write in progress.
+type endedWriter struct {
+	mu    sync.Mutex
+	w     io.Writer
+	ended bool
+}
+
+func (e *endedWriter) Write(p []byte) (int, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.ended {
+		return 0, io.ErrClosedPipe
+	}
+	return e.w.Write(p)
+}
+
+func (e *endedWriter) end() {
+	e.mu.Lock()
+	e.ended = true
+	e.mu.Unlock()
 }

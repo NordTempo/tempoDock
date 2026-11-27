@@ -365,6 +365,7 @@ func (o offlineRuntime) Events(context.Context) (<-chan node.ContainerEvent, err
 	return nil, o.err
 }
 func (o offlineRuntime) Dial(context.Context, node.DialRequest) (net.Conn, error) { return nil, o.err }
+func (o offlineRuntime) Exec(context.Context, node.ExecRequest) (int, error)      { return 0, o.err }
 func (o offlineRuntime) RunJob(context.Context, node.JobSpec) (node.JobResult, error) {
 	return node.JobResult{}, o.err
 }

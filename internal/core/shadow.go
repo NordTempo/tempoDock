@@ -252,6 +252,7 @@ var actionPerms = map[actionKey]Perm{
 	{apitypes.ScopeDeploy, "rolling back"}:                                       PermServiceOperate,
 	{apitypes.ScopeDeploy, "running a backup"}:                                   PermConfigWrite,
 	{apitypes.ScopeDeploy, "running a command"}:                                  PermRun,
+	{apitypes.ScopeAdmin, actionShell}:                                           PermShell,
 	{apitypes.ScopeDeploy, "running a job"}:                                      PermRun,
 	{apitypes.ScopeDeploy, "scanning images"}:                                    PermDeploy,
 	{apitypes.ScopeDeploy, "checking for a newer image"}:                         PermDeploy,

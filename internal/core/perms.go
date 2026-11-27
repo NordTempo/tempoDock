@@ -29,6 +29,9 @@ const (
 	PermServiceOperate
 	PermDeploy
 	PermRun
+	// PermShell opens a shell in a service's running container (`dock
+	// exec`, ADR 0111): admin on the environment today.
+	PermShell
 	PermConfigWrite
 	PermEnvironmentsCreate
 	PermProjectsCreate
@@ -104,6 +107,7 @@ var permTable = [permCount]permInfo{
 	PermServiceOperate:      {"service.operate", PermEnv, false, false},
 	PermDeploy:              {"deploy", PermEnv, true, false},
 	PermRun:                 {"run", PermEnv, true, false},
+	PermShell:               {"shell", PermEnv, true, false},
 	PermConfigWrite:         {"config.write", PermEnv, false, false},
 	PermEnvironmentsCreate:  {"environments.create", PermProject, false, false},
 	PermProjectsCreate:      {"projects.create", PermOrg, false, false},
@@ -188,6 +192,9 @@ var areaRoles = []areaRole{
 		{"view", permsOf(PermEnvView)},
 		{"operate", permsOf(PermServiceOperate)},
 		{"edit", permsOf(PermDeploy, PermRun, PermConfigWrite, PermEnvironmentsCreate, PermProjectsCreate)},
+		// A shell is the serving container itself: beyond edit, so
+		// Developers (deploy:edit) don't hold it.
+		{"shell", permsOf(PermShell)},
 	}},
 	{"variables", "Variables and secrets", []roleLevel{
 		{"view", permsOf(PermVariablesRead)},

@@ -1,13 +1,17 @@
 package api
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -71,45 +75,22 @@ func registerRuns(s *Server, a huma.API, mux *http.ServeMux) {
 // to them, and end with an Exit frame holding the run. Errors before the
 // upgrade are problem responses. The client going away cancels the run.
 func (s *Server) streamRun(w http.ResponseWriter, r *http.Request) {
-	if r.ProtoMajor != 1 || !headerHas(r.Header, "Connection", "upgrade") || !strings.EqualFold(r.Header.Get("Upgrade"), apitypes.RunProtocol) {
-		w.Header().Set("Upgrade", apitypes.RunProtocol)
-		s.writeProblem(w, &apitypes.Error{Status: http.StatusUpgradeRequired, Title: http.StatusText(http.StatusUpgradeRequired), Code: apitypes.CodeValidation,
-			Detail: "a streamed run is an HTTP/1.1 upgrade: send `Connection: Upgrade` and `Upgrade: " + apitypes.RunProtocol + "`; `dock run` does. Without streaming, POST to .../runs"})
-		return
-	}
-	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if !ok || strings.TrimSpace(token) == "" {
-		s.writeProblem(w, &apitypes.Error{Status: http.StatusUnauthorized, Title: http.StatusText(http.StatusUnauthorized), Code: apitypes.CodeUnauthorized,
-			Detail: "send `Authorization: Bearer <token>`"})
+	actor, ok := s.upgradeActor(w, r, apitypes.RunProtocol, "`dock run` does. Without streaming, POST to .../runs")
+	if !ok {
 		return
 	}
 	q := r.URL.Query()
-	actor, err := s.core.AuthenticateToken(r.Context(), strings.TrimSpace(token), q.Get("org"))
-	if err != nil {
-		s.writeProblem(w, s.problem(err))
-		return
-	}
+	var err error
 	req := apitypes.RunCommandRequest{Command: q.Get("command"), Volumes: apitypes.RunVolumes(q.Get("volumes")), NoSnapshot: q.Get("no_snapshot") == "true"}
 	tty, stdin := q.Get("tty") == "true", q.Get("stdin") == "true"
-	var size node.TermSize
-	var bad []string
+	size, bad := termSize(q)
 	if v := q.Get("timeout_seconds"); v != "" {
 		if req.TimeoutSeconds, err = strconv.Atoi(v); err != nil {
 			bad = append(bad, "timeout_seconds")
 		}
 	}
-	for name, dst := range map[string]*uint16{"cols": &size.Cols, "rows": &size.Rows} {
-		if v := q.Get(name); v != "" {
-			n, err := strconv.ParseUint(v, 10, 16)
-			if err != nil {
-				bad = append(bad, name)
-			}
-			*dst = uint16(n)
-		}
-	}
 	if len(bad) > 0 {
-		s.writeProblem(w, &apitypes.Error{Status: http.StatusBadRequest, Title: http.StatusText(http.StatusBadRequest), Code: apitypes.CodeValidation,
-			Detail: "not a number: " + strings.Join(bad, ", ")})
+		s.writeProblem(w, notANumber(bad))
 		return
 	}
 	in := runCommandInput{ServicePath: ServicePath{EnvPath: EnvPath{ProjectPath: ProjectPath{Project: r.PathValue("project")}, Environment: r.PathValue("environment")}, Service: r.PathValue("service")}, Body: req}
@@ -124,25 +105,38 @@ func (s *Server) streamRun(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, s.problem(s.fileRequest(ctx, actor, runCommandOp, &in, err)))
 		return
 	}
-	conn, brw, err := http.NewResponseController(w).Hijack()
-	if err != nil {
+	conn, brw, ok := s.switchProtocols(w, apitypes.RunProtocol)
+	if !ok {
 		run.Abandon()
-		s.opts.Logger.Error("api: run hijack", "err", err)
 		return
 	}
 	defer func() { _ = conn.Close() }()
-	// The server's header timeout set a deadline; a run has its own.
-	_ = conn.SetDeadline(time.Time{})
-	if _, err := conn.Write([]byte("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: " + apitypes.RunProtocol + "\r\n\r\n")); err != nil {
-		run.Abandon()
-		return
-	}
+	serveFrames(r.Context(), conn, brw, tty, size, stdin, func(ctx context.Context, st *node.JobStream) any { return run.Wait(ctx, st) })
+}
 
-	ctx, cancel := context.WithCancel(r.Context())
+// serveFrames runs a streamed call on its upgraded connection: input,
+// close-stdin and resize frames from the client into st, wait's output
+// to it as frames, then wait's result as the Exit frame (JSON). The
+// client going away ends wait's ctx.
+func serveFrames(ctx context.Context, conn net.Conn, brw *bufio.ReadWriter, tty bool, size node.TermSize, stdin bool, wait func(context.Context, *node.JobStream) any) {
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	fw := runframe.NewWriter(conn)
 	resize := make(chan node.TermSize, 1)
-	st := &node.JobStream{Stdout: fw.Stream(runframe.Stdout), Stderr: fw.Stream(runframe.Stderr), TTY: tty, Size: size, Resize: resize}
+	// A cut (core's, when the run or session ends early) fails a write to
+	// a client that stopped reading at once. One that runs after wait
+	// returned would also fail the Exit frame, which has a deadline of its
+	// own: ended keeps it from doing that.
+	var cutMu sync.Mutex
+	ended := false
+	st := &node.JobStream{Stdout: fw.Stream(runframe.Stdout), Stderr: fw.Stream(runframe.Stderr), TTY: tty, Size: size, Resize: resize,
+		Cut: func() {
+			cutMu.Lock()
+			defer cutMu.Unlock()
+			if !ended {
+				_ = conn.SetWriteDeadline(time.Now())
+			}
+		}}
 	var stdinW *io.PipeWriter
 	if stdin {
 		var pr *io.PipeReader
@@ -150,11 +144,14 @@ func (s *Server) streamRun(w http.ResponseWriter, r *http.Request) {
 		st.Stdin = pr
 	}
 	go readRunInput(runframe.NewReader(brw.Reader), stdinW, resize, cancel)
-	res := run.Wait(ctx, st)
+	res := wait(ctx, st)
 	if stdinW != nil {
 		_ = stdinW.Close()
 	}
 	raw, _ := json.Marshal(res)
+	cutMu.Lock()
+	ended = true
+	cutMu.Unlock()
 	_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	_ = fw.Frame(runframe.Exit, raw)
 }
@@ -195,4 +192,85 @@ func readRunInput(fr *runframe.Reader, stdin *io.PipeWriter, resize chan node.Te
 			}
 		}
 	}
+}
+
+// upgradeActor checks that r upgrades to protocol over HTTP/1.1 and
+// authenticates its bearer token (the only credential a streamed call
+// takes) in the org its `org` parameter or Dock-Org header names, with
+// the project its Dock-Project-ID expects, writing the problem and
+// returning false otherwise. hint ends
+// the detail of a request that doesn't upgrade.
+func (s *Server) upgradeActor(w http.ResponseWriter, r *http.Request, protocol, hint string) (core.Actor, bool) {
+	if r.ProtoMajor != 1 || !headerHas(r.Header, "Connection", "upgrade") || !strings.EqualFold(r.Header.Get("Upgrade"), protocol) {
+		w.Header().Set("Upgrade", protocol)
+		s.writeProblem(w, &apitypes.Error{Status: http.StatusUpgradeRequired, Title: http.StatusText(http.StatusUpgradeRequired), Code: apitypes.CodeValidation,
+			Detail: "this is an HTTP/1.1 upgrade: send `Connection: Upgrade` and `Upgrade: " + protocol + "`; " + hint})
+		return core.Actor{}, false
+	}
+	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !ok || strings.TrimSpace(token) == "" {
+		s.writeProblem(w, &apitypes.Error{Status: http.StatusUnauthorized, Title: http.StatusText(http.StatusUnauthorized), Code: apitypes.CodeUnauthorized,
+			Detail: "send `Authorization: Bearer <token>`"})
+		return core.Actor{}, false
+	}
+	org := r.URL.Query().Get("org")
+	if org == "" {
+		org = r.Header.Get(orgHeader)
+	}
+	actor, err := s.core.AuthenticateToken(r.Context(), strings.TrimSpace(token), org)
+	if err != nil {
+		s.writeProblem(w, s.problem(err))
+		return core.Actor{}, false
+	}
+	// A directory linked by ID names its project's, so a project renamed
+	// or replaced under the same name is refused, as on every other route.
+	if v := r.Header.Get("Dock-Project-ID"); v != "" {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || id < 1 {
+			s.writeProblem(w, &apitypes.Error{Status: http.StatusBadRequest, Title: http.StatusText(http.StatusBadRequest), Code: apitypes.CodeValidation,
+				Detail: "Dock-Project-ID must be a project ID"})
+			return core.Actor{}, false
+		}
+		actor.ExpectedProjectID = id
+	}
+	return actor, true
+}
+
+// switchProtocols takes the connection over and answers 101 for protocol.
+// The server's header timeout set a deadline; the stream has its own
+// bounds, so it is cleared. false means the connection is gone (and
+// closed).
+func (s *Server) switchProtocols(w http.ResponseWriter, protocol string) (net.Conn, *bufio.ReadWriter, bool) {
+	conn, brw, err := http.NewResponseController(w).Hijack()
+	if err != nil {
+		s.opts.Logger.Error("api: hijack", "protocol", protocol, "err", err)
+		return nil, nil, false
+	}
+	_ = conn.SetDeadline(time.Time{})
+	if _, err := conn.Write([]byte("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: " + protocol + "\r\n\r\n")); err != nil {
+		_ = conn.Close()
+		return nil, nil, false
+	}
+	return conn, brw, true
+}
+
+// termSize reads a streamed call's cols and rows; bad names those that
+// aren't numbers.
+func termSize(q url.Values) (size node.TermSize, bad []string) {
+	for name, dst := range map[string]*uint16{"cols": &size.Cols, "rows": &size.Rows} {
+		if v := q.Get(name); v != "" {
+			n, err := strconv.ParseUint(v, 10, 16)
+			if err != nil {
+				bad = append(bad, name)
+			}
+			*dst = uint16(n)
+		}
+	}
+	return size, bad
+}
+
+// notANumber is the problem for query parameters that must be numbers.
+func notANumber(names []string) *apitypes.Error {
+	return &apitypes.Error{Status: http.StatusBadRequest, Title: http.StatusText(http.StatusBadRequest), Code: apitypes.CodeValidation,
+		Detail: "not a number: " + strings.Join(names, ", ")}
 }
