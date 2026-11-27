@@ -42,6 +42,7 @@ import { Route as AppConsoleFeaturesRouteImport } from './routes/_app.console.fe
 import { Route as AppConsoleGithubRouteImport } from './routes/_app.console.github'
 import { Route as AppConsoleOrgsRouteImport } from './routes/_app.console.orgs'
 import { Route as AppConsoleRegistryRouteImport } from './routes/_app.console.registry'
+import { Route as AppConsoleSecurityRouteImport } from './routes/_app.console.security'
 import { Route as AppConsoleServersRouteImport } from './routes/_app.console.servers'
 import { Route as AppConsoleSignInRouteImport } from './routes/_app.console.sign-in'
 import { Route as AppConsoleStorageRouteImport } from './routes/_app.console.storage'
@@ -288,6 +289,11 @@ const AppConsoleOrgsRoute = AppConsoleOrgsRouteImport.update({
 const AppConsoleRegistryRoute = AppConsoleRegistryRouteImport.update({
   id: '/registry',
   path: '/registry',
+  getParentRoute: () => AppConsoleRoute,
+} as any)
+const AppConsoleSecurityRoute = AppConsoleSecurityRouteImport.update({
+  id: '/security',
+  path: '/security',
   getParentRoute: () => AppConsoleRoute,
 } as any)
 const AppConsoleServersRoute = AppConsoleServersRouteImport.update({
@@ -788,6 +794,7 @@ export interface FileRoutesByFullPath {
   '/console/github': typeof AppConsoleGithubRoute
   '/console/orgs': typeof AppConsoleOrgsRoute
   '/console/registry': typeof AppConsoleRegistryRoute
+  '/console/security': typeof AppConsoleSecurityRoute
   '/console/servers': typeof AppConsoleServersRoute
   '/console/sign-in': typeof AppConsoleSignInRoute
   '/console/storage': typeof AppConsoleStorageRoute
@@ -901,6 +908,7 @@ export interface FileRoutesByTo {
   '/console/github': typeof AppConsoleGithubRoute
   '/console/orgs': typeof AppConsoleOrgsRoute
   '/console/registry': typeof AppConsoleRegistryRoute
+  '/console/security': typeof AppConsoleSecurityRoute
   '/console/servers': typeof AppConsoleServersRoute
   '/console/sign-in': typeof AppConsoleSignInRoute
   '/console/storage': typeof AppConsoleStorageRoute
@@ -1015,6 +1023,7 @@ export interface FileRoutesById {
   '/_app/console/github': typeof AppConsoleGithubRoute
   '/_app/console/orgs': typeof AppConsoleOrgsRoute
   '/_app/console/registry': typeof AppConsoleRegistryRoute
+  '/_app/console/security': typeof AppConsoleSecurityRoute
   '/_app/console/servers': typeof AppConsoleServersRoute
   '/_app/console/sign-in': typeof AppConsoleSignInRoute
   '/_app/console/storage': typeof AppConsoleStorageRoute
@@ -1134,6 +1143,7 @@ export interface FileRouteTypes {
     | '/console/github'
     | '/console/orgs'
     | '/console/registry'
+    | '/console/security'
     | '/console/servers'
     | '/console/sign-in'
     | '/console/storage'
@@ -1247,6 +1257,7 @@ export interface FileRouteTypes {
     | '/console/github'
     | '/console/orgs'
     | '/console/registry'
+    | '/console/security'
     | '/console/servers'
     | '/console/sign-in'
     | '/console/storage'
@@ -1360,6 +1371,7 @@ export interface FileRouteTypes {
     | '/_app/console/github'
     | '/_app/console/orgs'
     | '/_app/console/registry'
+    | '/_app/console/security'
     | '/_app/console/servers'
     | '/_app/console/sign-in'
     | '/_app/console/storage'
@@ -1689,6 +1701,13 @@ declare module '@tanstack/react-router' {
       path: '/registry'
       fullPath: '/console/registry'
       preLoaderRoute: typeof AppConsoleRegistryRouteImport
+      parentRoute: typeof AppConsoleRoute
+    }
+    '/_app/console/security': {
+      id: '/_app/console/security'
+      path: '/security'
+      fullPath: '/console/security'
+      preLoaderRoute: typeof AppConsoleSecurityRouteImport
       parentRoute: typeof AppConsoleRoute
     }
     '/_app/console/servers': {
@@ -2584,6 +2603,7 @@ interface AppConsoleRouteChildren {
   AppConsoleGithubRoute: typeof AppConsoleGithubRoute
   AppConsoleOrgsRoute: typeof AppConsoleOrgsRoute
   AppConsoleRegistryRoute: typeof AppConsoleRegistryRoute
+  AppConsoleSecurityRoute: typeof AppConsoleSecurityRoute
   AppConsoleServersRoute: typeof AppConsoleServersRoute
   AppConsoleSignInRoute: typeof AppConsoleSignInRoute
   AppConsoleStorageRoute: typeof AppConsoleStorageRoute
@@ -2607,6 +2627,7 @@ const AppConsoleRouteChildren: AppConsoleRouteChildren = {
   AppConsoleGithubRoute: AppConsoleGithubRoute,
   AppConsoleOrgsRoute: AppConsoleOrgsRoute,
   AppConsoleRegistryRoute: AppConsoleRegistryRoute,
+  AppConsoleSecurityRoute: AppConsoleSecurityRoute,
   AppConsoleServersRoute: AppConsoleServersRoute,
   AppConsoleSignInRoute: AppConsoleSignInRoute,
   AppConsoleStorageRoute: AppConsoleStorageRoute,

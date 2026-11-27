@@ -777,7 +777,7 @@
             "type": "integer"
           },
           "kind": {
-            "description": "disk, memory, cpu, server_offline, update_failed, connection_failed, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_regressed, error_spike, traffic_drop, unhealthy, uptime_down, job_failed, access_request, new_vulnerability, certificate_failed; more may be added",
+            "description": "disk, memory, cpu, server_offline, update_failed, connection_failed, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_regressed, error_spike, traffic_drop, unhealthy, uptime_down, job_failed, access_request, new_vulnerability, certificate_failed, host_security; more may be added",
             "type": "string"
           },
           "message": {
@@ -931,6 +931,15 @@
           "error_issue": {
             "format": "int64",
             "type": "integer"
+          },
+          "findings": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "image": {
             "format": "int64",
@@ -7168,6 +7177,34 @@
         ],
         "type": "object"
       },
+      "DismissHostFindingRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "finding": {
+            "description": "The finding's key, as a host check lists it",
+            "examples": [
+              "host_firewall"
+            ],
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why it doesn't need fixing; other operators see it",
+            "examples": [
+              "Hetzner's firewall allows 22, 80 and 443 only"
+            ],
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "finding",
+          "reason"
+        ],
+        "type": "object"
+      },
       "Domain": {
         "additionalProperties": false,
         "properties": {
@@ -10237,6 +10274,150 @@
         "required": [
           "heartbeat",
           "ok"
+        ],
+        "type": "object"
+      },
+      "HostCheck": {
+        "additionalProperties": false,
+        "properties": {
+          "check": {
+            "description": "ssh_password, ssh_root, open_port, docker_tcp, docker_socket, security_updates, reboot_required, auto_updates, host_firewall, app_firewall; more may be added",
+            "examples": [
+              "open_port"
+            ],
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "dismissed": {
+            "$ref": "#/components/schemas/HostCheckDismissal"
+          },
+          "first_seen_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fix": {
+            "type": "string"
+          },
+          "key": {
+            "examples": [
+              "open_port:5432"
+            ],
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pass",
+              "finding",
+              "unknown",
+              "skipped"
+            ],
+            "type": "string"
+          },
+          "subject": {
+            "examples": [
+              "5432"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "examples": [
+              "Port 5432 is open on every address"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "check",
+          "status",
+          "title"
+        ],
+        "type": "object"
+      },
+      "HostCheckCounts": {
+        "additionalProperties": false,
+        "properties": {
+          "critical": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "info": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "warning": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "critical",
+          "warning",
+          "info"
+        ],
+        "type": "object"
+      },
+      "HostCheckDismissal": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "by": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "by",
+          "at"
+        ],
+        "type": "object"
+      },
+      "HostChecks": {
+        "additionalProperties": false,
+        "properties": {
+          "checked_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/HostCheck"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "counts": {
+            "$ref": "#/components/schemas/HostCheckCounts"
+          },
+          "error": {
+            "type": "string"
+          },
+          "server": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "server",
+          "counts",
+          "checks"
         ],
         "type": "object"
       },
@@ -14315,6 +14496,23 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "RestoreHostFindingRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "finding": {
+            "examples": [
+              "host_firewall"
+            ],
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "finding"
+        ],
         "type": "object"
       },
       "RestoreResult": {
@@ -37182,6 +37380,112 @@
         "summary": "Daemon health and version",
         "tags": [
           "system"
+        ]
+      }
+    },
+    "/api/v1/host-checks": {
+      "get": {
+        "description": "Each server's last read-only security check of its host, by server name, for the console's Security page (ADR 0109). Operators and platform viewers only.",
+        "operationId": "list-host-checks",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/HostChecks"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Every server's host checks",
+        "tags": [
+          "servers"
         ]
       }
     },
@@ -77123,6 +77427,534 @@
           }
         ],
         "summary": "Resume a paused drain",
+        "tags": [
+          "servers"
+        ]
+      }
+    },
+    "/api/v1/servers/{server}/host-checks": {
+      "get": {
+        "description": "The last read-only security check of the server's host (ADR 0109): SSH that takes passwords or root, ports open to the internet that Dock didn't open, Docker's API on TCP, containers holding the Docker socket, security updates and reboots waiting, automatic updates and firewalls. Each finding says what to do, findings first and worst first. Servers check about once a day. Operators and platform viewers only.",
+        "operationId": "get-host-checks",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Server name",
+            "in": "path",
+            "name": "server",
+            "required": true,
+            "schema": {
+              "description": "Server name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostChecks"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "A server's host checks",
+        "tags": [
+          "servers"
+        ]
+      },
+      "post": {
+        "description": "Runs the host checks on the server now and answers with the results, in a few seconds; while a check is under way, waits for it. 409 while the server is offline. Operators only.",
+        "operationId": "check-host",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Server name",
+            "in": "path",
+            "name": "server",
+            "required": true,
+            "schema": {
+              "description": "Server name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostChecks"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Check a server's host now",
+        "tags": [
+          "servers"
+        ]
+      }
+    },
+    "/api/v1/servers/{server}/host-checks/dismiss": {
+      "post": {
+        "description": "Says why a finding doesn't need fixing (a provider's firewall in front, a port open on purpose): it stops counting and alerting until restored, also if it goes away and comes back. Other operators see the reason. Operators only.",
+        "operationId": "dismiss-host-finding",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Server name",
+            "in": "path",
+            "name": "server",
+            "required": true,
+            "schema": {
+              "description": "Server name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissHostFindingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostChecks"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Dismiss a host check finding",
+        "tags": [
+          "servers"
+        ]
+      }
+    },
+    "/api/v1/servers/{server}/host-checks/restore": {
+      "post": {
+        "description": "Undoes a dismissal: the finding counts and alerts again. Operators only.",
+        "operationId": "restore-host-finding",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Server name",
+            "in": "path",
+            "name": "server",
+            "required": true,
+            "schema": {
+              "description": "Server name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreHostFindingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostChecks"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Restore a dismissed host check finding",
         "tags": [
           "servers"
         ]

@@ -104,8 +104,9 @@ const (
 	// PruneProtocol). 35 adds stop-analytics-store: analytics turned off
 	// with its data kept (ADR 0101, StopStoreProtocol). 36 takes Dock's
 	// Caddy with an update (ADR 0106, CaddyUpdateProtocol). 37 adds the
-	// routes' security headers (ADR 0107).
-	Protocol = 37
+	// routes' security headers (ADR 0107). 38 adds check-host: read-only
+	// security checks of the server's host (ADR 0109, HostCheckProtocol).
+	Protocol = 38
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1

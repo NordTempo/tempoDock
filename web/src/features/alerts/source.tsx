@@ -251,6 +251,12 @@ export function AlertLink({
           Open updates
         </Link>
       );
+    case "host_security":
+      return (
+        <Link to="/console/security" {...props}>
+          Open security
+        </Link>
+      );
     case "certificate_failed":
       return (
         <Link to="/console/address" {...props}>

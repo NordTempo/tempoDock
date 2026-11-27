@@ -52,6 +52,47 @@ func registerServers(s *Server, a huma.API) {
 		return reply(s.core.ServerDisk(ctx, actor, in.Server))
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "list-host-checks", Method: http.MethodGet, Path: Prefix + "/host-checks",
+		Summary: "Every server's host checks", Tags: tags,
+		Description: "Each server's last read-only security check of its host, by server name, for the console's Security page (ADR 0109). Operators and platform viewers only.",
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[[]apitypes.HostChecks], error) {
+		return reply(s.core.ListHostChecks(ctx, actor))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "get-host-checks", Method: http.MethodGet, Path: serverPathT + "/host-checks",
+		Summary: "A server's host checks", Tags: tags,
+		Description: "The last read-only security check of the server's host (ADR 0109): SSH that takes passwords or root, ports open to the internet that Dock didn't open, Docker's API on TCP, containers holding the Docker socket, security updates and reboots waiting, automatic updates and firewalls. Each finding says what to do, findings first and worst first. Servers check about once a day. Operators and platform viewers only.",
+	}, func(ctx context.Context, actor core.Actor, in *ServerPath) (*out[apitypes.HostChecks], error) {
+		return reply(s.core.HostChecks(ctx, actor, in.Server))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "check-host", Method: http.MethodPost, Path: serverPathT + "/host-checks",
+		Summary: "Check a server's host now", Tags: tags,
+		Description: "Runs the host checks on the server now and answers with the results, in a few seconds; while a check is under way, waits for it. 409 while the server is offline. Operators only.",
+	}, func(ctx context.Context, actor core.Actor, in *ServerPath) (*out[apitypes.HostChecks], error) {
+		return reply(s.core.CheckHostNow(ctx, actor, in.Server))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "dismiss-host-finding", Method: http.MethodPost, Path: serverPathT + "/host-checks/dismiss",
+		Summary: "Dismiss a host check finding", Tags: tags,
+		Description: "Says why a finding doesn't need fixing (a provider's firewall in front, a port open on purpose): it stops counting and alerting until restored, also if it goes away and comes back. Other operators see the reason. Operators only.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ServerPath
+		Body apitypes.DismissHostFindingRequest
+	}) (*out[apitypes.HostChecks], error) {
+		return reply(s.core.DismissHostFinding(ctx, actor, in.Server, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "restore-host-finding", Method: http.MethodPost, Path: serverPathT + "/host-checks/restore",
+		Summary: "Restore a dismissed host check finding", Tags: tags,
+		Description: "Undoes a dismissal: the finding counts and alerts again. Operators only.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ServerPath
+		Body apitypes.RestoreHostFindingRequest
+	}) (*out[apitypes.HostChecks], error) {
+		return reply(s.core.RestoreHostFinding(ctx, actor, in.Server, in.Body))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "prune-server", Method: http.MethodPost, Path: serverPathT + "/prune",
 		Summary: "Prune a server's disk now", Tags: tags,
 		Description: "Frees disk on a server (ADR 0035 amendment 2), one target at a time or several. Safe ones, run without targets and by Dock itself once the disk passes prune_disk_percent: `images` (images of archived services, out of rollback windows, and Dock's replaced images), `scanner` (cut-off downloads left in the vulnerability database) and `cache` (BuildKit's cache above [retention] build_cache_keep_mb). Asked for by name: `rollbacks` (rollback images the registry has too, but the active release's and the one before), `all-cache` (all of BuildKit's cache) and `scan-db` (the whole vulnerability database, downloaded again before the next scan). Running apps and volumes are never touched. A prune that partly failed answers with what it freed and its error. 409 while the server is being pruned. Operators only.",

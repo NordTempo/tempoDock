@@ -105,6 +105,8 @@ type Runtime struct {
 
 	// probes are scripted uptime probe results (probe.go).
 	probes fakeProbes
+	// hostChecks are scripted host check results (hostcheck.go).
+	hostChecks fakeHostChecks
 
 	// scans are scripted image scans (scan.go).
 	scans fakeScans

@@ -235,6 +235,15 @@ const words: Record<string, readonly [label: string, past: string]> = {
   "server.add": ["add server", "added"],
   "server.join": ["server joined", "joined"],
   "server.prune": ["prune server", "pruned"],
+  "server.host_check": ["check host", "checked the host of"],
+  "server.host_finding_dismiss": [
+    "dismiss host finding",
+    "dismissed a host check finding on",
+  ],
+  "server.host_finding_restore": [
+    "restore host finding",
+    "restored a host check finding on",
+  ],
   "server.remove": ["remove server", "removed"],
   "server.revoke": ["revoke server", "revoked"],
   "server.rotate_key": ["rotate server key", "rotated the key of"],

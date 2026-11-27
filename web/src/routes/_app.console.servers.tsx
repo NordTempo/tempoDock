@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { memo, useState } from "react";
 import { queries, useServers } from "../data/queries";
 import type { Server } from "../data/types";
+import { ConsoleTabs } from "../features/console/ConsoleTabs";
 import { AddServer } from "../features/servers/AddServer";
 import { Ingress, statusTitle, Version } from "../features/servers/parts";
 import { useShortcuts } from "../shell/keys";
@@ -19,8 +20,17 @@ export const Route = createFileRoute("/_app/console/servers")({
       queryClient.ensureQueryData(queries.session()),
       queryClient.ensureQueryData(queries.servers()),
     ]),
-  component: Servers,
+  component: Tabbed,
 });
+
+/** The page under its sidebar entry's tab row (ConsoleTabs): Servers, Security. */
+function Tabbed() {
+  return (
+    <ConsoleTabs>
+      <Servers />
+    </ConsoleTabs>
+  );
+}
 
 function Servers() {
   const servers = useServers();

@@ -463,6 +463,31 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 			return mcpkit.Reply{Summary: fmt.Sprintf("%d servers: %s.", len(out), strings.Join(parts, ", ")), Data: out}, nil
 		})
 
+	mcpkit.AddTool(s, "host_checks", "Check a server's host",
+		"A server's last security check of its host: findings with what to do, worst first. Operators and platform viewers only.",
+		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
+			Server string `json:"server" doc:"The server's name, from list_servers."`
+		}) (mcpkit.Reply, error) {
+			v, err := h.core.HostChecks(ctx, c.Actor, in.Server)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			if v.CheckedAt == nil {
+				return mcpkit.Reply{Summary: "Server " + v.Server + " hasn't checked its host yet; servers check about once a day.", Data: v}, nil
+			}
+			var open []string
+			for _, hc := range v.Checks {
+				if hc.Status == apitypes.HostCheckFinding && hc.Dismissed == nil {
+					open = append(open, string(hc.Severity)+": "+hc.Title)
+				}
+			}
+			sum := fmt.Sprintf("Server %s: %d critical, %d warnings, %d info.", v.Server, v.Counts.Critical, v.Counts.Warning, v.Counts.Info)
+			if len(open) > 0 {
+				sum += " " + strings.Join(open, "; ") + "."
+			}
+			return mcpkit.Reply{Summary: sum, Data: v}, nil
+		})
+
 	// Read-only on purpose: a tool that takes or returns registry
 	// passwords would put them in an agent's context (ADR 0051).
 	mcpkit.AddTool(s, "list_registry_credentials", "List registry credentials",

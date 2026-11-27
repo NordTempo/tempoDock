@@ -412,6 +412,7 @@ func (o offlineRuntime) ArchivedLogs(context.Context, node.LogArchiveQuery) (<-c
 func (o offlineRuntime) PruneLogs(context.Context, node.LogPrune) (node.PruneResult, error) {
 	return node.PruneResult{}, o.err
 }
+func (o offlineRuntime) CheckHost(context.Context) ([]node.HostCheck, error) { return nil, o.err }
 func (o offlineRuntime) Probe(context.Context, node.ProbeRequest) (node.ProbeResult, error) {
 	return node.ProbeResult{}, o.err
 }

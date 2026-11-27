@@ -435,7 +435,7 @@ func (c *Core) onAlertEvent(ctx context.Context, ev LiveEvent, now time.Time) {
 		}
 		id := strconv.FormatInt(s.ID, 10)
 		if ev.Message == "removed" {
-			for _, k := range []string{"disk:", "memory:", "cpu:", "update:", "firewall:"} {
+			for _, k := range []string{"disk:", "memory:", "cpu:", "update:", "firewall:", "hostchecks:"} {
 				c.resolveAlert(ctx, k+id, now)
 			}
 			c.alerts.mu.Lock()
@@ -1049,9 +1049,10 @@ func settles(kind apitypes.AlertKind) bool {
 }
 
 // repeats reports whether an open alert of kind whose target changed is
-// another occurrence (ADR 0097): another release or backup failed.
+// another occurrence (ADR 0097): another release or backup failed, or a
+// host check found something new (ADR 0109).
 func repeats(kind apitypes.AlertKind) bool {
-	return kind == apitypes.AlertDeployFailed || kind == apitypes.AlertBackupFailed
+	return kind == apitypes.AlertDeployFailed || kind == apitypes.AlertBackupFailed || kind == apitypes.AlertHostSecurity
 }
 
 // resolveMode is how resolveAlertID closes an alert.

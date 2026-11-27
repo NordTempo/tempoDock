@@ -230,7 +230,7 @@ func TestScopedToken(t *testing.T) {
 	// Nor tools it can never use: promoting needs a second environment,
 	// listing servers an operator, the data tools data access (tokens have
 	// none by default; data_status says so).
-	for _, hidden := range []string{"promote", "clone_environment", "list_projects", "list_servers", "list_registry_credentials", "data_query", "propose_data_changes"} {
+	for _, hidden := range []string{"promote", "clone_environment", "list_projects", "list_servers", "host_checks", "list_registry_credentials", "data_query", "propose_data_changes"} {
 		if slices.Contains(names, hidden) {
 			t.Errorf("tools/list shows %s to a token limited to shop/staging", hidden)
 		}
@@ -956,11 +956,18 @@ func TestPlatformTokenTools(t *testing.T) {
 		names = append(names, tl.Name)
 	}
 	slices.Sort(names)
-	if !slices.Equal(names, []string{"list_alerts", "list_servers", "whoami"}) {
+	if !slices.Equal(names, []string{"host_checks", "list_alerts", "list_servers", "whoami"}) {
 		t.Fatalf("tools/list = %v", names)
 	}
-	if c := call(t, s, "list_servers", nil); c.isError {
+	c := call(t, s, "list_servers", nil)
+	if c.isError {
 		t.Fatalf("list_servers: %s", c.summary)
+	}
+	// "1 servers: <name> online."
+	_, name, _ := strings.Cut(c.summary, ": ")
+	name, _, _ = strings.Cut(name, " ")
+	if c := call(t, s, "host_checks", map[string]any{"server": name}); c.isError {
+		t.Fatalf("host_checks: %s", c.summary)
 	}
 	if code := call(t, s, "list_projects", nil).errorCode(t); code != apitypes.CodeForbidden {
 		t.Fatalf("list_projects: %s", code)
