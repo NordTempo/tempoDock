@@ -1150,10 +1150,10 @@ func TestIntegrationWake(t *testing.T) {
 }
 
 // Security headers through a real Caddy (ADR 0107): the ones the app
-// leaves out are added, the one it sets keeps its value, and a route
-// without the flag gets none.
+// leaves out are added, the one it sets keeps its value, a password's
+// 401 gets them all, and a route without the flag gets none.
 func TestIntegrationSecurityHeaders(t *testing.T) {
-	ask := newAskServer(t, "app.test", "plain.test")
+	ask := newAskServer(t, "app.test", "plain.test", "locked.test")
 	tc := startCaddy(t, ask.url, false)
 	app := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("X-Frame-Options", "DENY")
@@ -1164,6 +1164,7 @@ func TestIntegrationSecurityHeaders(t *testing.T) {
 	tc.applyRoutes(t, []node.Route{
 		{Hostnames: []string{"app.test"}, Upstream: upstream, SecurityHeaders: true},
 		{Hostnames: []string{"plain.test"}, Upstream: upstream},
+		{Hostnames: []string{"locked.test"}, Upstream: upstream, SecurityHeaders: true, Access: &node.Access{Username: "u", PasswordHash: "$2a$06$x"}},
 	})
 	tc.trustInternalCA(t)
 
@@ -1176,6 +1177,10 @@ func TestIntegrationSecurityHeaders(t *testing.T) {
 		if got := h.Values(name); len(got) != 1 || got[0] != v {
 			t.Errorf("%s = %v, want %q", name, got, v)
 		}
+	}
+	code, h, _ := tc.get(t, tc.url("https", "locked.test", "/"))
+	if code != http.StatusUnauthorized || h.Get("Www-Authenticate") == "" || h.Get("X-Frame-Options") != "SAMEORIGIN" || h.Get("Strict-Transport-Security") == "" {
+		t.Errorf("unauthenticated: %d %v", code, h)
 	}
 	_, h, _ = tc.get(t, tc.url("https", "plain.test", "/"))
 	if got := h.Get("X-Content-Type-Options"); got != "" {

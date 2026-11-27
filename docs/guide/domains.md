@@ -212,7 +212,9 @@ See [ADR 0030](../decisions/0030-access-protection.md).
 
 ## Security headers
 
-Dock's proxy adds these to a service's responses that don't set them:
+Dock's proxy adds these to a service's responses that don't set them,
+its own answers included (a password's `401`, the stopped page), but not
+to [redirect domains](#redirects):
 
 | Header | Value |
 |---|---|

@@ -108,6 +108,23 @@ type server struct {
 	ClientIPHeaders []string `json:"client_ip_headers,omitempty"`
 	// Logs logs the requests of counted routes (ADR 0033).
 	Logs *serverLogs `json:"logs,omitempty"`
+	// Errors handles a handler's error (an authentication's 401), which
+	// Caddy writes outside the route that failed (securityHeaders).
+	Errors *serverErrors `json:"errors,omitempty"`
+}
+
+// serverErrors are the routes an error response goes through; one that
+// writes nothing leaves Caddy's own (the error's status, empty body).
+type serverErrors struct {
+	Routes []route `json:"routes"`
+}
+
+// errorsOf is a server's Errors for its routes' error routes, nil for none.
+func errorsOf(routes []route) *serverErrors {
+	if len(routes) == 0 {
+		return nil
+	}
+	return &serverErrors{Routes: routes}
 }
 
 // ipRanges is Caddy's static IP source module.
@@ -425,6 +442,9 @@ func Render(opts Options, routes []node.Route, certs []node.Certificate) ([]byte
 	tunnelListener := !opts.tunnel() && opts.TunnelPort > 0 &&
 		slices.ContainsFunc(routes, func(r node.Route) bool { return r.TunnelOnly })
 	var main, viaTunnel []route
+	// mainErrors and tunnelErrors give error responses of routes with
+	// SecurityHeaders their headers too.
+	var mainErrors, tunnelErrors []route
 	if opts.ServerMarker != "" {
 		main = append(main, markerRoute(opts.ServerMarker))
 		viaTunnel = append(viaTunnel, markerRoute(opts.ServerMarker))
@@ -529,8 +549,10 @@ func Render(opts Options, routes []node.Route, certs []node.Certificate) ([]byte
 			}
 		}
 		// Security headers wrap everything after them: the app's
-		// responses, and Dock's own (a login, a 503) too. Tunnel visitors
-		// are on HTTPS, whatever this server's own scheme.
+		// responses, and Dock's own (a login, a 503) too. An error (a
+		// password's 401) is written outside the route, so the server's
+		// error routes add them as well. Tunnel visitors are on HTTPS,
+		// whatever this server's own scheme.
 		var headers, headersVia []handler
 		if r.SecurityHeaders && r.RedirectTo == "" {
 			headers, headersVia = headersHTTP, headersHTTPS
@@ -540,9 +562,15 @@ func Render(opts Options, routes []node.Route, certs []node.Certificate) ([]byte
 		}
 		if public {
 			main = append(main, route{Match: []match{m}, Handle: slices.Concat(headers, handle, []handler{h}), Terminal: true})
+			if headers != nil {
+				mainErrors = append(mainErrors, route{Match: []match{{Host: r.Hostnames}}, Handle: headers})
+			}
 		}
 		if tunnelListener {
 			viaTunnel = append(viaTunnel, route{Match: []match{m}, Handle: slices.Concat(headersVia, handle, []handler{ht}), Terminal: true})
+			if headersVia != nil {
+				tunnelErrors = append(tunnelErrors, route{Match: []match{{Host: r.Hostnames}}, Handle: headersVia})
+			}
 		}
 	}
 	// Apps' OTLP exports, plain HTTP from the server's own containers:
@@ -582,6 +610,7 @@ func Render(opts Options, routes []node.Route, certs []node.Certificate) ([]byte
 			Routes:         main,
 			AutomaticHTTPS: automaticHTTPS{Disable: true},
 			Logs:           logs,
+			Errors:         errorsOf(mainErrors),
 		}
 		if opts.tunnel() {
 			// Only the local cloudflared connects; nothing is public.
@@ -590,7 +619,7 @@ func Render(opts Options, routes []node.Route, certs []node.Certificate) ([]byte
 			srv.ClientIPHeaders = []string{"CF-Connecting-IP", "X-Forwarded-For"}
 		}
 		cfg.Apps.HTTP.Servers = map[string]server{"http": srv}
-		addTunnelServer(cfg.Apps.HTTP.Servers, opts, tunnelListener, viaTunnel, logs)
+		addTunnelServer(cfg.Apps.HTTP.Servers, opts, tunnelListener, viaTunnel, tunnelErrors, logs)
 		return json.Marshal(cfg)
 	}
 
@@ -617,6 +646,7 @@ func Render(opts Options, routes []node.Route, certs []node.Certificate) ([]byte
 			TLSConnectionPolicies: connectionPolicies(certs),
 			AutomaticHTTPS:        automaticHTTPS{Disable: true},
 			Logs:                  logs,
+			Errors:                errorsOf(mainErrors),
 		},
 		"http": {
 			Listen:         []string{listenAddr(opts.HTTPPort)},
@@ -625,7 +655,7 @@ func Render(opts Options, routes []node.Route, certs []node.Certificate) ([]byte
 		},
 	}
 
-	addTunnelServer(cfg.Apps.HTTP.Servers, opts, tunnelListener, viaTunnel, logs)
+	addTunnelServer(cfg.Apps.HTTP.Servers, opts, tunnelListener, viaTunnel, tunnelErrors, logs)
 
 	iss := issuer{Module: "acme", Email: opts.ACMEEmail}
 	if opts.internalCA {
@@ -698,8 +728,9 @@ const tunnelServer = "tunnel"
 
 // addTunnelServer adds a direct server's tunnel listener (Options.
 // TunnelPort) when on is set: plain HTTP on loopback, where only the local
-// cloudflared connects, trusting its forwarding headers.
-func addTunnelServer(servers map[string]server, opts Options, on bool, routes []route, logs *serverLogs) {
+// cloudflared connects, trusting its forwarding headers, with errs as its
+// error routes.
+func addTunnelServer(servers map[string]server, opts Options, on bool, routes, errs []route, logs *serverLogs) {
 	if !on {
 		return
 	}
@@ -710,6 +741,7 @@ func addTunnelServer(servers map[string]server, opts Options, on bool, routes []
 		Logs:            logs,
 		TrustedProxies:  &ipRanges{Source: "static", Ranges: loopback},
 		ClientIPHeaders: []string{"CF-Connecting-IP", "X-Forwarded-For"},
+		Errors:          errorsOf(errs),
 	}
 }
 

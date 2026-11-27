@@ -272,6 +272,7 @@ export function SettingsPanel({
           undefined,
           {
             key: "security_headers",
+            cli: "--security-headers",
             word: "add them",
             title:
               "Strict-Transport-Security, X-Content-Type-Options, Referrer-Policy and X-Frame-Options; turn off if another site frames the app",
@@ -529,7 +530,11 @@ function ImageNote({ serviceRef: ref }: { serviceRef: ServiceRef }) {
 type Part = { key: TextSettingKey; word?: string; shown?: string };
 
 /** An on/off setting in a row's form, a checkbox: `word` is its label. */
-type Flag = { key: FlagSettingKey; word: string; title: string };
+/**
+ * An on/off setting in a row; cli, the `dock service update` flag that
+ * sets it, makes a row of only the flag show its command on Save.
+ */
+type Flag = { key: FlagSettingKey; word: string; title: string; cli?: string };
 
 /** A value the evidence suggests for a row's field, with why: "Use 8080". */
 type Suggestion = { key: TextSettingKey; value: string; why: string };
@@ -729,9 +734,19 @@ function SettingRow({
               </span>
             )}
             <span className="flex gap-2">
-              <Button small primary type="submit" disabled={stage.isPending}>
+              <Act
+                small
+                primary
+                type="submit"
+                disabled={stage.isPending}
+                cli={
+                  flag?.cli && parts.length === 0
+                    ? `dock service update ${ref.service} ${flag.cli}=${flagOn} -e ${ref.environment}`
+                    : undefined
+                }
+              >
                 Save
-              </Button>
+              </Act>
               <Button small onClick={cancel}>
                 Cancel
               </Button>
