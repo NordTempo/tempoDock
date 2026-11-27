@@ -1010,6 +1010,9 @@ type Domain struct {
 	// tunnel (added from Cloudflare, ADR 0036): how far it is. Only in a
 	// service's domain list and domain changes.
 	DNS *DomainDNS `json:"dns,omitempty"`
+	// Certificate is set while the domain is served with a certificate
+	// its org uploaded (ADR 0112) instead of one Dock gets itself.
+	Certificate *DomainCertificate `json:"certificate,omitempty"`
 }
 
 // AddDomainRequest adds a hostname to a service.

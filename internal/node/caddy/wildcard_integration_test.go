@@ -127,9 +127,15 @@ func (tc *testCaddy) getTLS(t *testing.T, host string) (int, string, string) {
 // signed.
 func testWildcard(t *testing.T, base string) (*x509.Certificate, node.Certificate) {
 	t.Helper()
+	return testCertificate(t, "Wildcard Test CA", base)
+}
+
+// testCertificate is testWildcard with a CA named caName.
+func testCertificate(t *testing.T, caName, base string) (*x509.Certificate, node.Certificate) {
+	t.Helper()
 	caKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	caTmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "Wildcard Test CA"},
+		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: caName},
 		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(24 * time.Hour),
 		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
 	}
@@ -158,4 +164,51 @@ func testWildcard(t *testing.T, base string) (*x509.Certificate, node.Certificat
 		t.Fatal(err)
 	}
 	return ca, c
+}
+
+// TestIntegrationUploaded loads an org's uploaded certificates (ADR 0112)
+// into a real Caddy, next to a wildcard: each is served for its exact
+// hostnames, ahead of the wildcard that also covers one of them, nothing
+// is issued on demand for them, and CheckDomain accepts them although
+// the server doesn't trust their CA.
+func TestIntegrationUploaded(t *testing.T) {
+	ask := newAskServer(t, "web.apps.test", "intranet.corp.test", "other.apps.test")
+	tc := startCaddy(t, ask.url, false)
+	tc.proxy.lookupIP = func(context.Context, string) ([]net.IPAddr, error) {
+		return []net.IPAddr{{IP: net.IPv4(127, 0, 0, 1)}}, nil
+	}
+	wildCA, wild := testWildcard(t, "apps.test")
+	corpCA, corp := testCertificate(t, "Corp CA", "corp.test")
+	ownCA, own := testCertificate(t, "Own CA", "apps.test") // for one name under the base
+	corp.Names, corp.Uploaded = []string{"intranet.corp.test"}, true
+	own.Names, own.Uploaded = []string{"web.apps.test"}, true
+	pool := tc.client.Transport.(*http.Transport).TLSClientConfig.RootCAs
+	for _, ca := range []*x509.Certificate{wildCA, corpCA, ownCA} {
+		pool.AddCert(ca)
+	}
+	trusted := x509.NewCertPool() // the server trusts the wildcard's CA only
+	trusted.AddCert(wildCA)
+	tc.proxy.rootCAs = trusted
+
+	routes := []node.Route{
+		{Hostnames: []string{"web.apps.test", "other.apps.test"}, Upstream: backend(t, "WEB")},
+		{Hostnames: []string{"intranet.corp.test"}, Upstream: backend(t, "INTRA")},
+	}
+	if err := tc.proxy.ApplyRoutes(t.Context(), routes, []node.Certificate{own, corp, wild}); err != nil {
+		t.Fatal(err)
+	}
+	before := len(ask.questions())
+	for host, want := range map[string]*x509.Certificate{"web.apps.test": ownCA, "other.apps.test": wildCA, "intranet.corp.test": corpCA} {
+		if code, issuer, _ := tc.getTLS(t, host); code != 200 || issuer != want.Subject.CommonName {
+			t.Errorf("%s: %d with a certificate from %q, want %q", host, code, issuer, want.Subject.CommonName)
+		}
+	}
+	if q := ask.questions()[before:]; len(q) != 0 {
+		t.Errorf("covered names were asked about: %v", q)
+	}
+	for _, host := range []string{"intranet.corp.test", "web.apps.test"} {
+		if dc, err := tc.proxy.CheckDomain(t.Context(), host); err != nil || !dc.CertificateOK {
+			t.Errorf("CheckDomain(%s) = %+v, %v", host, dc, err)
+		}
+	}
 }

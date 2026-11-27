@@ -3,6 +3,7 @@ package caddy
 import (
 	"context"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"net/http"
 	"slices"
@@ -20,6 +21,10 @@ type hostSet map[string]struct{}
 type askSet struct {
 	hosts   hostSet
 	covered []string
+	// uploaded are the leaves of uploaded certificates (ADR 0112) by the
+	// hostnames they are loaded for, which CheckDomain accepts as they
+	// are. Unknown before the first ApplyRoutes after a start.
+	uploaded map[string][]byte
 }
 
 // allows reports whether host may get an on-demand certificate: it has a
@@ -38,6 +43,28 @@ func certNames(certs []node.Certificate) []string {
 		names = append(names, c.Names...)
 	}
 	return names
+}
+
+// uploadedLeaves are the DER leaves of certs' uploaded certificates, by
+// hostname; nil without any.
+func uploadedLeaves(certs []node.Certificate) map[string][]byte {
+	var m map[string][]byte
+	for _, c := range certs {
+		if !c.Uploaded {
+			continue
+		}
+		b, _ := pem.Decode(c.ChainPEM)
+		if b == nil {
+			continue
+		}
+		if m == nil {
+			m = map[string][]byte{}
+		}
+		for _, n := range c.Names {
+			m[n] = b.Bytes
+		}
+	}
+	return m
 }
 
 // routeHosts collects the hostnames of routes, redirects included: they

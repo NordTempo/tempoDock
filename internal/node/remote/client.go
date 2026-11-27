@@ -481,12 +481,23 @@ func (c *Client) OpenRequests(ctx context.Context, upstreams []string) (int, err
 // apply-routes carries (ADR 0090).
 const WildcardProtocol = 31
 
+// UploadedCertProtocol is the first node protocol whose domain checks
+// accept an uploaded certificate from a CA the server doesn't trust (ADR
+// 0112).
+const UploadedCertProtocol = 40
+
 // ApplyRoutes implements node.Proxy. An older node gets no certificates:
 // it keeps issuing on demand, and a key never goes where it isn't used.
+// One before UploadedCertProtocol gets no uploaded ones: it would report
+// their domains as failing.
 func (c *Client) ApplyRoutes(ctx context.Context, routes []node.Route, certs []node.Certificate) error {
 	if len(certs) > 0 {
-		if s, err := c.session(ctx); err != nil || s.hello.Protocol < WildcardProtocol {
+		s, err := c.session(ctx)
+		switch {
+		case err != nil || s.hello.Protocol < WildcardProtocol:
 			certs = nil
+		case s.hello.Protocol < UploadedCertProtocol:
+			certs = slices.DeleteFunc(slices.Clone(certs), func(c node.Certificate) bool { return c.Uploaded })
 		}
 	}
 	if slices.ContainsFunc(routes, func(r node.Route) bool { return r.Access != nil }) {

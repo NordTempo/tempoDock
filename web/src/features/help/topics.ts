@@ -837,6 +837,11 @@ export const topics: Record<TopicId, Topic> = {
         at: { o: "registries" },
       },
       {
+        what: "Upload your own TLS certificate",
+        cli: "dock certificate add --cert chain.pem --key key.pem",
+        at: { o: "certificates" },
+      },
+      {
         what: "See who changed what",
         cli: "dock audit",
         at: { o: "activity" },

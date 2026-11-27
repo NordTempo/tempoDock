@@ -107,7 +107,10 @@ const (
 	// routes' security headers (ADR 0107). 38 adds check-host: read-only
 	// security checks of the server's host (ADR 0109, HostCheckProtocol). 39
 	// adds exec: a shell in a running container (ADR 0111, ExecProtocol).
-	Protocol = 39
+	// 40 adds uploaded to apply-routes' certificates: the org's own (ADR
+	// 0112, UploadedCertProtocol), which a domain check accepts from a CA
+	// the server doesn't trust.
+	Protocol = 40
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1

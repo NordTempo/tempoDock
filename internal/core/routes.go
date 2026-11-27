@@ -27,7 +27,9 @@ import (
 // sleep Dock's uptime probes aren't counted (sleep.go). On a direct
 // server, domains Dock routes through its Cloudflare tunnel are served
 // to the tunnel only (ADR 0036). The server's base domain's wildcard
-// certificate goes with them (ADR 0090, wildcards.go).
+// certificate goes with them (ADR 0090, wildcards.go), and the orgs'
+// uploaded certificates for the domains they cover (ADR 0112,
+// certificates.go).
 func (c *Core) applyRoutes(ctx context.Context, serverID int64) error {
 	c.routesMu.Lock()
 	defer c.routesMu.Unlock()
@@ -170,11 +172,28 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 			}
 		}
 	}
-	certs, err := c.serverCertificates(ctx, serverID)
+	wild, err := c.serverCertificates(ctx, serverID)
 	if err != nil {
 		return err
 	}
-	return c.runtime(serverID).ApplyRoutes(ctx, c.withControlRoutes(serverID, routes), certs)
+	// Uploaded ones first: Caddy picks the first connection policy whose
+	// names match, and an exact name is more specific than a wildcard.
+	// Only a server that serves them gets the keys (servesUploads): one
+	// more read of its row, and none while no org has an upload.
+	serves := false
+	if c.anyOwnCerts() {
+		srv, err := c.store.GetServer(ctx, serverID)
+		if err != nil {
+			return err
+		}
+		serves = c.servesUploads(srv)
+	}
+	own, sent := c.routeOwnCerts(rows, viaTunnel, serves)
+	if err := c.runtime(serverID).ApplyRoutes(ctx, c.withControlRoutes(serverID, routes), append(own, wild...)); err != nil {
+		return err // the server keeps what it had, and so does sent
+	}
+	c.setSent(serverID, sent)
+	return nil
 }
 
 // routeKey names a service's routes across its releases (node.Route.Key),

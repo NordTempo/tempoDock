@@ -363,7 +363,7 @@ func (p *Proxy) ApplyRoutes(ctx context.Context, routes []node.Route, certs []no
 		}
 	}
 	p.dials.Store(&dials)
-	p.hosts.Store(&askSet{hosts: *routeHosts(routes), covered: certNames(certs)})
+	p.hosts.Store(&askSet{hosts: *routeHosts(routes), covered: certNames(certs), uploaded: uploadedLeaves(certs)})
 	p.setWakeKeys(routes)
 	traced := map[string]string{}
 	for _, r := range routes {

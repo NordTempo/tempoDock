@@ -41,11 +41,13 @@ var (
 	sealedTunnelToken     = secrets.Column{Table: "cloudflare_tunnels", Name: "token", Key: []string{"tunnel_id"}}                             // the tunnel's, wherever its row points
 	sealedWildcardKey     = secrets.Column{Table: "wildcard_certificates", Name: "key", Key: []string{"base_domain"}}                          // ADR 0090
 	sealedACMEKey         = secrets.Column{Table: "acme_accounts", Name: "key", Key: []string{"directory"}}
-	sealedAnalyticsSalt   = secrets.Column{Table: "analytics_salts", Name: "salt", Key: []string{"day"}}
-	sealedBackupKeys      = secrets.Column{Table: "backup_settings", Name: "credentials"}
-	sealedBackupPassword  = secrets.Column{Table: "backup_settings", Name: "password"}
-	sealedAnalyticsToken  = secrets.Column{Table: "analytics_settings", Name: "token"}
-	sealedHeartbeatURL    = secrets.Column{Table: "heartbeat", Name: "url"} // ADR 0097
+	// sealedCertificateKey is an uploaded certificate's key (ADR 0112).
+	sealedCertificateKey = secrets.Column{Table: "custom_certificates", Name: "key", Key: []string{"org_id", "fingerprint"}}
+	sealedAnalyticsSalt  = secrets.Column{Table: "analytics_salts", Name: "salt", Key: []string{"day"}}
+	sealedBackupKeys     = secrets.Column{Table: "backup_settings", Name: "credentials"}
+	sealedBackupPassword = secrets.Column{Table: "backup_settings", Name: "password"}
+	sealedAnalyticsToken = secrets.Column{Table: "analytics_settings", Name: "token"}
+	sealedHeartbeatURL   = secrets.Column{Table: "heartbeat", Name: "url"} // ADR 0097
 	// A GitHub App's values (ADR 0105), bound to its random hook ID. The
 	// legacy* AADs are the one-row github_app table's, which the migrated
 	// App's values carry until resealGitHubApps binds them.
@@ -73,7 +75,7 @@ var (
 		sealedBackupPassword, sealedAnalyticsToken, sealedAppKey, sealedAppWebhookSecret, sealedAppClientSecret,
 		sealedDataReader, sealedDataWriter, sealedRequestArgs, sealedLogDrain, sealedRegistrySecret, sealedUserFactor,
 		sealedSSOSecret, sealedSessionIDToken, sealedStatusHook, sealedEmailPassword, sealedEmailBody, sealedWildcardKey, sealedACMEKey,
-		sealedHeartbeatURL,
+		sealedHeartbeatURL, sealedCertificateKey,
 	}
 )
 
@@ -156,6 +158,12 @@ func orgVariableAAD(orgID int64, key string) secrets.AAD {
 
 // registrySecretAAD binds an org's password or token for a registry host
 // (ADR 0051).
+// certificateKeyAAD binds an uploaded certificate's key to its org and
+// leaf.
+func certificateKeyAAD(orgID int64, fingerprint string) secrets.AAD {
+	return sealedCertificateKey.AAD(strconv.FormatInt(orgID, 10), fingerprint)
+}
+
 func registrySecretAAD(orgID int64, host string) secrets.AAD {
 	return sealedRegistrySecret.AAD(strconv.FormatInt(orgID, 10), host)
 }

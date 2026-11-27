@@ -99,6 +99,7 @@ export const orgPlaces = {
   github: { to: "/$org/settings/github", label: "GitHub" },
   cloudflare: { to: "/$org/settings/cloudflare", label: "Cloudflare" },
   registries: { to: "/$org/settings/registries", label: "Registries" },
+  certificates: { to: "/$org/settings/certificates", label: "Certificates" },
   activity: { to: "/$org/settings/activity", label: "Activity" },
   archived: { to: "/$org/settings/archived", label: "Archived projects" },
 } as const;

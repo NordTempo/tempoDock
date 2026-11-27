@@ -72,7 +72,7 @@ func newWildState() wildState {
 }
 
 // kickWildcards wakes the worker: a server's base domain, ingress or the
-// platform's Cloudflare zones changed. A kicked pass also retries what
+// platform's Cloudflare zones changed, or an org's uploaded certificates. A kicked pass also retries what
 // waits for a change (a token without DNS permission).
 func (c *Core) kickWildcards() {
 	select {
@@ -200,14 +200,17 @@ func (c *Core) wildcardBases(ctx context.Context) (map[string][]store.Server, er
 	return bases, nil
 }
 
-// runWildcards is the worker. It runs from Start until Close.
+// runWildcards is the certificate worker. It runs from Start until Close,
+// for the wildcards and the orgs' uploaded certificates (ownCertPass,
+// ADR 0112).
 //
 // Its timer (a doc comment is required for every timer, see
-// docs/performance.md) exists while a certificate is issued or an attempt
-// failed: it fires at the earliest renewal (a third of the certificate's
-// lifetime before it ends: 30 days for Let's Encrypt's 90), retry or
-// expiry, weeks apart once certificates are issued. Without a wildcard
-// to get there is none.
+// docs/performance.md) exists while a certificate is issued or uploaded,
+// or an attempt failed: it fires at the earliest wildcard renewal (a
+// third of the certificate's lifetime before it ends: 30 days for Let's
+// Encrypt's 90), retry or expiry, or an upload's next expiry stage (30
+// and 7 days before it ends, and the end), weeks apart once certificates
+// are issued. Without a wildcard to get or an upload there is none.
 func (c *Core) runWildcards() {
 	defer c.wg.Done()
 	kicked := true // the first pass retries what waited for a change
@@ -217,6 +220,13 @@ func (c *Core) runWildcards() {
 		next, err := caught(c.log, "a pass over the wildcard certificates", func() (time.Time, error) { return c.wildcardPass(c.ctx, kicked), nil })
 		if err != nil {
 			next = now().Add(wildcardRetryMin)
+		}
+		own, err := caught(c.log, "a pass over the uploaded certificates", func() (time.Time, error) { return c.ownCertPass(c.ctx), nil })
+		if err != nil {
+			own = now().Add(wildcardRetryMin)
+		}
+		if !own.IsZero() && (next.IsZero() || own.Before(next)) {
+			next = own
 		}
 		if timer != nil {
 			timer.Stop()
@@ -475,16 +485,20 @@ func (c *Core) forgetWildcard(ctx context.Context, base string) {
 }
 
 // applyServers re-applies the routes of servers, which carry their
-// base's certificate (or no longer do).
-func (c *Core) applyServers(ctx context.Context, servers []store.Server) {
+// base's certificate (or no longer do) and the uploads for their domains,
+// reporting whether every online one took them.
+func (c *Core) applyServers(ctx context.Context, servers []store.Server) bool {
+	ok := true
 	for _, s := range servers {
 		if s.ID != c.localID && !c.online(s.ID) {
 			continue // it gets them when it connects
 		}
 		if err := c.applyRoutes(ctx, s.ID); err != nil {
-			c.log.Error("apply routes with a wildcard certificate", "server", s.Name, "err", err)
+			c.log.Error("apply routes with their certificates", "server", s.Name, "err", err)
+			ok = false
 		}
 	}
+	return ok
 }
 
 // wildcardAlertKey names a base domain's certificate alert.

@@ -347,6 +347,43 @@ certificate for `*.<base domain>` and `<base domain>` instead
 Remote servers get the certificate with their routes; one older than
 protocol 31 keeps a certificate per hostname until it is upgraded.
 
+### Your own certificates
+
+For names Let's Encrypt can't cover, upload a certificate
+([ADR 0112](../decisions/0112-uploaded-certificates.md)): a Cloudflare
+origin certificate (SSL mode Full (strict)), one from an internal or
+corporate CA for LAN or Tailscale names, or one your company requires.
+
+```sh
+dock certificate add --cert origin.pem --key origin.key --domain shop.example.com
+dock certificate list          # expiry, status and the domains each serves
+dock certificate remove 3
+```
+
+- It serves every verified domain of the organization one of its names
+  covers, wildcards included (`*.corp.example.com` covers
+  `wiki.corp.example.com`, not `a.b.corp.example.com`), on every server,
+  at once. Domains added later are covered too.
+- Dock checks that the key matches, puts the chain in order (leaf first),
+  and refuses a certificate without DNS names or that isn't valid now.
+  The key is stored encrypted and never shown again.
+- It doesn't renew. Dock alerts the organization's channels 30 days
+  before it expires and again, critical, 7 days before. Upload the
+  renewal: of several that cover a domain, the one that expires last
+  serves it, so it takes over at once.
+- Once it has expired Dock stops serving it, and its domains get
+  certificates from Let's Encrypt again where it can issue them (public
+  names only).
+- Settings › Certificates lists them with their expiry and the domains
+  each serves, and uploads and removes them. A domain's row on the
+  service's Settings says "own certificate until ..." with a link there.
+  `dock domain check` accepts it even when the server doesn't trust its
+  CA.
+- An organization keeps at most 100.
+- Managing them needs domains edit on the whole organization (not just a
+  project): `certificates.manage`. Servers older than protocol 40 keep Let's Encrypt for
+  those domains until they are updated.
+
 ## Rules
 
 - A hostname belongs to at most one service. Adding a taken one fails with

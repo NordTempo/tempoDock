@@ -307,6 +307,10 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
           event.alert.kind === "error_regressed"
         )
           queryClient.invalidateQueries({ queryKey: ["errors"] });
+        // An uploaded certificate's expiry alert: one that expired is no
+        // longer served (ADR 0112), which no audit event says.
+        if (event.alert.kind === "certificate_failed")
+          invalidateCertificates(queryClient);
         // A crash loop or unhealthy service is diagnosed as its alert
         // opens or turns critical (ADR 0071): its overview and live
         // release then name the cause. Rare, so refetched.
@@ -708,6 +712,23 @@ function invalidateStatusPages(queryClient: QueryClient) {
 }
 
 /**
+ * Refetches what shows uploaded certificates (ADR 0112): their list, and
+ * every project's overview, whose domains show the one they are served
+ * with. Overviews a call in flight refetches on settle are left to it.
+ */
+function invalidateCertificates(queryClient: QueryClient) {
+  queryClient.invalidateQueries({
+    predicate: ({ queryKey }) => {
+      const [root, second, part] = queryKey;
+      const shows =
+        (root === "org" && second === "certificates") ||
+        (root === "project" && part === "overview");
+      return shows && !refetchedOnSettle(queryKey);
+    },
+  });
+}
+
+/**
  * Every mutation is audited, so audit events also say what someone else (or
  * the CLI) just changed. Queries a call from this page will refetch once it
  * settles are left to it: its own event arrives before its answer.
@@ -752,6 +773,14 @@ function invalidateForAudit(
   if (audit.action === "org.rename" || audit.action === "org.slug") {
     invalidate(keys.orgs);
     queryClient.invalidateQueries({ queryKey: ["org"], exact: true });
+  }
+  // An uploaded certificate added or removed (ADR 0112): its list, and the
+  // overviews, whose domains show the certificate they are served with.
+  if (
+    audit.action === "certificate.upload" ||
+    audit.action === "certificate.remove"
+  ) {
+    invalidateCertificates(queryClient);
   }
   // Registry credentials (features/org/data.ts), set from the CLI too.
   if (audit.action.startsWith("org.registry_credential"))
@@ -803,6 +832,8 @@ function invalidateForAudit(
   // A domain added or removed may carry a site along or leave it.
   if (kind === "domain" && audit.project)
     invalidate(["analytics", "sites", audit.project]);
+  // It also changes which uploaded certificate serves what (ADR 0112).
+  if (kind === "domain") invalidate(["org", "certificates"]);
   // Servers count what is placed on them; previews are environments.
   if (kind === "server" || kind === "environment" || kind === "preview")
     invalidate(keys.servers);

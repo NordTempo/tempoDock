@@ -2682,6 +2682,50 @@ export interface paths {
         patch: operations["set-org-analytics-defaults"];
         trace?: never;
     };
+    "/api/v1/org/certificates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List uploaded certificates
+         * @description The TLS certificates the organization uploaded for its domains (ADR 0112), newest first, with the domains each serves now and its expiry. Keys are never returned. Scope: deploy, unlimited; certificates.manage (domains edit on the whole org).
+         */
+        get: operations["list-certificates"];
+        put?: never;
+        /**
+         * Upload a certificate
+         * @description Uploads a chain and private key in PEM for names ACME can't cover: a Cloudflare origin certificate, an internal or corporate CA. It serves every verified domain of the organization one of its names covers, instead of a Let's Encrypt certificate, as soon as each domain's server loads its routes again (right after the upload when it is online): servers with TLS and node protocol 40 or later, not domains routed through a Cloudflare tunnel. Of several that cover a domain, the one that expires last. It doesn't renew: Dock alerts 30 and 7 days before it expires and then stops serving it. Checked: the key matches, the chain is the leaf's (put in order), it names DNS hostnames and is valid now. Scope: deploy, unlimited; certificates.manage (domains edit on the whole org).
+         */
+        post: operations["add-certificate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/org/certificates/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove an uploaded certificate
+         * @description Its domains get another uploaded certificate that covers them, or certificates from Let's Encrypt again. Scope: deploy, unlimited; certificates.manage (domains edit on the whole org).
+         */
+        delete: operations["remove-certificate"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/org/images": {
         parameters: {
             query?: never;
@@ -7435,6 +7479,11 @@ export interface components {
             /** @enum {string} */
             role: "read" | "deploy" | "admin";
         };
+        AddCertificateRequest: {
+            chain: string;
+            domain?: string;
+            key: string;
+        };
         AddDomainRequest: {
             cloudflare?: boolean;
             hostname: string;
@@ -8039,6 +8088,31 @@ export interface components {
         };
         CLILoginWaitRequest: {
             device_code: string;
+        };
+        Certificate: {
+            /** Format: date-time */
+            created_at: string;
+            created_by: string;
+            domains: components["schemas"]["CertificateDomain"][] | null;
+            fingerprint: string;
+            /** Format: int64 */
+            id: number;
+            /** @example Cloudflare Origin SSL ECC Certificate Authority */
+            issuer: string;
+            names: string[] | null;
+            /** Format: date-time */
+            not_after: string;
+            /** Format: date-time */
+            not_before: string;
+            public: boolean;
+            /** @enum {string} */
+            status: "active" | "expiring" | "expired" | "unused";
+        };
+        CertificateDomain: {
+            environment: string;
+            hostname: string;
+            project: string;
+            service: string;
         };
         ChangePasswordRequest: {
             current_password: string;
@@ -9397,6 +9471,7 @@ export interface components {
             reason: string;
         };
         Domain: {
+            certificate?: components["schemas"]["DomainCertificate"];
             /** Format: date-time */
             checked_at?: string;
             /** Format: date-time */
@@ -9417,6 +9492,14 @@ export interface components {
             url: string;
             verification?: components["schemas"]["DNSRecord"];
             verified: boolean;
+        };
+        DomainCertificate: {
+            /** Format: int64 */
+            id: number;
+            issuer: string;
+            /** Format: date-time */
+            not_after: string;
+            public: boolean;
         };
         DomainChange: {
             domain: components["schemas"]["Domain"];
@@ -28446,6 +28529,277 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["OrgSiteDefaults"];
                 };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "list-certificates": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Certificate"][] | null;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "add-certificate": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddCertificateRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Certificate"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "remove-certificate": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Bad Request */
             400: {
