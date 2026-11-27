@@ -357,7 +357,11 @@ func TestExecEndsWhenItsTokenExpires(t *testing.T) {
 	go func() { ended <- ex.Wait(h.ctx, &node.JobStream{Stdout: io.Discard, Stdin: in, TTY: true}) }()
 	select {
 	case end := <-ended:
-		if end.ExitCode != nil || end.Code != apitypes.CodeForbidden || !strings.Contains(end.Error, "token expired") {
+		// The deadline is read once, at the start; a runner too slow to
+		// start within the 2 s refuses the expired token there instead.
+		// Either way the session doesn't outlive its token.
+		if end.ExitCode != nil || end.Code != apitypes.CodeForbidden ||
+			!strings.Contains(end.Error, "token expired") && !strings.Contains(end.Error, "before the session started") {
 			t.Fatalf("ended %+v", end)
 		}
 	case <-time.After(15 * time.Second):
