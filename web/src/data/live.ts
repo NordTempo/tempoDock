@@ -16,7 +16,11 @@ import { featuresKey } from "../features/console/features";
 import { applyScanEvent } from "../features/images/data";
 import { applyJobEvent, applyJobRunEvent } from "../features/jobs/data";
 import { applyMoveEvent } from "../features/move/data";
-import { applyQueueEvent, applyQueueRelease } from "../features/queue/data";
+import {
+  applyQueueEvent,
+  applyQueueRelease,
+  rereadQueue,
+} from "../features/queue/data";
 import { registryKey } from "../features/registry/data";
 import { applyAccessRequestEvent } from "../features/requests/data";
 import { applyRunEvent } from "../features/runs/data";
@@ -1026,7 +1030,7 @@ export function useLiveUpdates() {
             ? recover()
             : reconcileProjectNames(queryClient, router, org).then(() =>
                 // The top bar's queue was read before the stream listened.
-                applyQueueEvent(queryClient),
+                rereadQueue(queryClient),
               )
         ).catch(() => router.invalidate());
       },

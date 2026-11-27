@@ -43,6 +43,17 @@ export function applyQueueEvent(queryClient: QueryClient) {
 }
 
 /**
+ * The queue read again once the event stream listens (its first
+ * connection): a read still in flight then may answer from before, and
+ * an invalidation alone would join it rather than read anew, so it is
+ * canceled first.
+ */
+export async function rereadQueue(queryClient: QueryClient) {
+  await queryClient.cancelQueries({ queryKey: queueKeys.all });
+  applyQueueEvent(queryClient);
+}
+
+/**
  * A release event of the org's: its item in the org's queue takes its
  * new step, and leaves once done. A release not in the cache yet (just
  * queued), or past its build while still at a builder, reads the queue
