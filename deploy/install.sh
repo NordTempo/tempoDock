@@ -663,7 +663,7 @@ uninstall() {
     rm -f "/etc/systemd/system/$unit"
   done
   systemctl daemon-reload
-  rm -f /usr/local/bin/dock /usr/local/bin/caddy /usr/local/bin/cloudflared /etc/sysctl.d/90-dock.conf
+  rm -f /usr/local/bin/dock /usr/local/bin/caddy /usr/local/bin/caddy.new /usr/local/bin/cloudflared /etc/sysctl.d/90-dock.conf
   if [[ "$purge" == true ]]; then
     rm -rf /etc/dock /var/lib/dock /var/lib/dock-caddy /var/lib/dock-upstreams /var/lib/dock-registry /var/lib/dock-update
     for unit in dock dock-caddy dock-registry; do
@@ -1069,11 +1069,10 @@ main() {
   fi
 
   say "==> $caddy_name"
-  caddy_changed=false
+  # Put in place right before Caddy restarts (below), so a run that fails
+  # before then leaves the Caddy it had, with a config it can resume.
   if [[ -n "$caddy_new" ]]; then
     install -m 0755 "$caddy_new" /usr/local/bin/caddy.new
-    mv /usr/local/bin/caddy.new /usr/local/bin/caddy
-    caddy_changed=true
   fi
 
   tunnel_changed=false
@@ -1359,17 +1358,21 @@ CONF
   systemctl enable dock-caddy.service
   # Caddy's own build can't resume a saved config with Dock's handlers
   # (ADR 0106) and wouldn't start: it starts on caddy.json instead, and the
-  # daemon loads the routes again. Judged from what is on disk, so a run
-  # that failed after putting Caddy's own build in place is caught by the
-  # next. The running Caddy (Dock's, until it restarts) is stopped before
-  # the file is read, so it can't save a route load after; started below.
+  # daemon loads the routes again. A running Dock Caddy that one replaces
+  # is stopped first, so it can't save a route load after the file goes;
+  # it starts again below. Judged from what is on disk too, for a saved
+  # config an older install.sh left next to Caddy's own build.
   autosave=/var/lib/dock-caddy/caddy/autosave.json
-  if ! /usr/local/bin/caddy list-modules 2>/dev/null | grep -q '^http\.handlers\.dock_inject$' \
-    && { [[ "$caddy_changed" == true ]] || grep -q '"dock_inject"' "$autosave" 2>/dev/null; }; then
+  has_inject() { "$1" list-modules 2>/dev/null | grep -q '^http\.handlers\.dock_inject$'; }
+  caddy_changed=false
+  if [[ -n "$caddy_new" ]]; then
+    has_inject /usr/local/bin/caddy.new || systemctl stop dock-caddy.service 2>/dev/null || true
+    mv /usr/local/bin/caddy.new /usr/local/bin/caddy
+    caddy_changed=true
+  fi
+  if ! has_inject /usr/local/bin/caddy && grep -q '"dock_inject"' "$autosave" 2>/dev/null; then
     systemctl stop dock-caddy.service 2>/dev/null || true
-    if grep -q '"dock_inject"' "$autosave" 2>/dev/null; then
-      rm -f "$autosave"
-    fi
+    rm -f "$autosave"
   fi
   if [[ "$caddy_unit_changed" == true || "$caddy_changed" == true ]] && systemctl is-active -q dock-caddy.service; then
     # Picks up a new binary, and unit changes such as the dock-caddy
