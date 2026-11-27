@@ -242,11 +242,12 @@ func (c *Core) diskParts(srv store.Server, du node.DiskUsage, host node.HostStat
 	add(apitypes.DiskImages, "shared layers", "layers several images use, counted once", du.ImagesShared, 0)
 	add(apitypes.DiskImages, "not Dock's", "images other work on the server pulled", du.ImagesOther, 0)
 	add(apitypes.DiskReclaimable, "unused images", "of archived services, out of rollback windows, and Dock's replaced images", du.ImagesReclaimable, du.ImagesReclaimable)
-	// A server that no longer builds needs none of its build cache and
-	// scanner database: a prune frees all of both (pruneServer).
+	// A server that no longer builds needs none of its build cache, and
+	// one that scans nothing none of its scanner database: a prune frees
+	// all of them (pruneServer).
 	leftovers, leftDetail := min(du.ScanLeftovers, scanDB), "cut-off downloads of the vulnerability database"
-	if !srv.Builder {
-		leftovers, leftDetail = scanDB, "the vulnerability database, from when it built images"
+	if !scansAny(srv) {
+		leftovers, leftDetail = scanDB, "the vulnerability database, from when it scanned images"
 	}
 	add(apitypes.DiskReclaimable, diskPartScanLeftovers, leftDetail, leftovers, leftovers)
 	var cacheFree int64
@@ -277,8 +278,12 @@ func (c *Core) diskParts(srv store.Server, du node.DiskUsage, host node.HostStat
 		apitypes.PruneImages: du.ImagesReclaimable, apitypes.PruneRollbacks: du.ImagesRollbacks,
 	}
 	frees[apitypes.PruneScanner], frees[apitypes.PruneCache] = leftovers, cacheFree
-	if srv.Builder { // elsewhere the safe ones take all of it
-		frees[apitypes.PruneScanDB], frees[apitypes.PruneAllCache] = scanDB, cacheBytes
+	// Elsewhere the safe ones take all of it.
+	if srv.Builder {
+		frees[apitypes.PruneAllCache] = cacheBytes
+	}
+	if scansAny(srv) {
+		frees[apitypes.PruneScanDB] = scanDB
 	}
 	out.Prunes = []apitypes.DiskPrune{}
 	for _, t := range apitypes.PruneTargets {

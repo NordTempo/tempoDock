@@ -118,9 +118,10 @@ func freedBytes(r apitypes.ServerPruneResult) int64 {
 // pruneTargets are the targets a prune runs, in apitypes.PruneTargets'
 // order: the safe ones without any, and a wider target in place of the
 // narrower one it covers (all-cache for cache, scan-db for scanner). A
-// server that doesn't build needs none of its build cache and scanner
-// database, so there cache and scanner take all of it (pruneServer) and
-// stand in for the wider ones.
+// server that doesn't build needs none of its build cache, and one that
+// scans nothing (scansAny) none of its scanner database, so there cache
+// and scanner take all of it (pruneServer) and stand in for the wider
+// ones.
 func pruneTargets(srv store.Server, asked []apitypes.PruneTarget) []apitypes.PruneTarget {
 	want := func(t apitypes.PruneTarget) bool {
 		if len(asked) == 0 {
@@ -131,11 +132,21 @@ func pruneTargets(srv store.Server, asked []apitypes.PruneTarget) []apitypes.Pru
 	wider := func(t apitypes.PruneTarget) bool {
 		return t == apitypes.PruneCache && want(apitypes.PruneAllCache) || t == apitypes.PruneScanner && want(apitypes.PruneScanDB)
 	}
+	// unused: the server needs none of what t's wider target frees.
+	unused := func(t apitypes.PruneTarget) bool {
+		switch t {
+		case apitypes.PruneCache, apitypes.PruneAllCache:
+			return !srv.Builder
+		case apitypes.PruneScanner, apitypes.PruneScanDB:
+			return !scansAny(srv)
+		}
+		return false
+	}
 	var out []apitypes.PruneTarget
 	for _, t := range apitypes.PruneTargets {
 		switch {
-		case !srv.Builder && (t == apitypes.PruneAllCache || t == apitypes.PruneScanDB):
-		case !srv.Builder && wider(t):
+		case unused(t) && (t == apitypes.PruneAllCache || t == apitypes.PruneScanDB):
+		case unused(t) && wider(t):
 			out = append(out, t)
 		case !want(t):
 		case wider(t):
@@ -188,7 +199,7 @@ func (c *Core) pruneServer(ctx context.Context, srv store.Server, asked []apityp
 		case apitypes.PruneAllCache:
 			res, err = rt.PruneBuildCache(ctx, 0)
 		case apitypes.PruneScanner, apitypes.PruneScanDB:
-			res, err = c.pruneScanDatabase(ctx, srv, rt, t == apitypes.PruneScanDB || !srv.Builder)
+			res, err = c.pruneScanDatabase(ctx, srv, rt, t == apitypes.PruneScanDB || !scansAny(srv))
 		}
 		if err != nil {
 			errs = append(errs, fmt.Errorf("prune %s: %w", t, c.nodeErr(srv.ID, err)))
@@ -208,10 +219,10 @@ func (c *Core) pruneServer(ctx context.Context, srv store.Server, asked []apityp
 // pruneScanDatabase frees a builder's vulnerability database: its
 // leftovers, or with all the whole of it. The scanner stops first (a
 // running scan is cancelled, none starts) and goes on after; a database
-// that went is downloaded again before the next scan. A server that
-// doesn't build scans nothing, so the scanner goes on.
+// that went is downloaded again before the next scan. On a server that
+// scans nothing the scanner goes on.
 func (c *Core) pruneScanDatabase(ctx context.Context, srv store.Server, rt node.Runtime, all bool) (node.PruneResult, error) {
-	if srv.Builder {
+	if scansAny(srv) {
 		c.scanBusy()
 		defer c.scanDone()
 	}

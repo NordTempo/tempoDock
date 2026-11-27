@@ -791,8 +791,19 @@ each node uses ("connected 3h ago via Tailscale").
    let it build production (`dock server update homelab --builds all`,
    or Builds on the server's page). Production builds get production's
    variables, so only do that for a server you trust with them. The
-   control plane then builds only while no other builder is online, and
-   scans only kinds no other server builds.
+   control plane then builds only while no other builder is online.
+
+   What a builder scans for vulnerabilities is its own setting: each
+   scanner keeps a database of a few GB. To build production on the
+   control plane but scan everything on the homelab:
+
+   ```sh
+   dock server update homelab --scans all
+   dock server update <control plane> --scans none
+   dock server prune <control plane>   # removes its database
+   ```
+
+   The control plane scans only kinds no other server scans.
 
 The node daemon serves the control plane's registry on its own
 `127.0.0.1:5000` (over the link) and answers Caddy's certificate checks

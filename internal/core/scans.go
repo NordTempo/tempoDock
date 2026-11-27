@@ -343,7 +343,7 @@ func (c *Core) scanBuilders(ctx context.Context) (out []store.Server, prod, nonP
 func (c *Core) scanners(servers []store.Server) (out []store.Server, prod, nonProd bool) {
 	for s := range c.scanning(servers) {
 		out = append(out, s)
-		prod, nonProd = prod || s.BuildsProduction, nonProd || s.BuildsNonProduction
+		prod, nonProd = prod || s.ScansProduction, nonProd || s.ScansNonProduction
 	}
 	return out, prod, nonProd
 }
@@ -352,41 +352,72 @@ func (c *Core) scanners(servers []store.Server) (out []store.Server, prod, nonPr
 // and non-production images now, without collecting them.
 func (c *Core) scanKinds(servers []store.Server) (prod, nonProd bool) {
 	for s := range c.scanning(servers) {
-		prod, nonProd = prod || s.BuildsProduction, nonProd || s.BuildsNonProduction
+		prod, nonProd = prod || s.ScansProduction, nonProd || s.ScansNonProduction
 	}
 	return prod, nonProd
 }
 
 // scanning yields the servers among servers that may scan now: online
-// builders whose disk isn't past the prune threshold. Each comes with its
-// builds flags (buildsKind) saying which images it may scan: production
-// ones only on builders that build production. With the registry, the
-// control plane scans a kind only while no other server builds it, online
-// or not: a scan can wait, and every scanner keeps a database of
-// gigabytes. Without it images stay where they were built, so the control
-// plane scans its own.
+// scanners (scanRoles) whose disk isn't past the prune threshold.
 func (c *Core) scanning(servers []store.Server) iter.Seq[store.Server] {
 	return func(yield func(store.Server) bool) {
-		var remoteProd, remoteNonProd bool
-		for _, s := range servers {
-			if !s.Local && c.canBuild(s) && c.reg != nil {
-				remoteProd = remoteProd || s.BuildsProduction
-				remoteNonProd = remoteNonProd || s.BuildsNonProduction
-			}
-		}
-		for _, s := range servers {
-			if !c.canBuild(s) || c.connected(s.ID) == nil || c.diskFull(s.ID) {
+		for s := range c.scanRoles(servers) {
+			if c.connected(s.ID) == nil || c.diskFull(s.ID) {
 				continue
 			}
-			if s.Local {
-				s.BuildsProduction = s.BuildsProduction && !remoteProd
-				s.BuildsNonProduction = s.BuildsNonProduction && !remoteNonProd
-			}
-			if (s.BuildsProduction || s.BuildsNonProduction) && !yield(s) {
+			if !yield(s) {
 				return
 			}
 		}
 	}
+}
+
+// scanRoles yields the builders among servers that scan some kind's
+// images, online or not, each with the scans flags it acts on (scansKind):
+// what an operator set apart from what it builds (ADR 0074 amendment
+// 2026-11-27). With the registry, the control plane scans a kind only
+// while no other server scans it, online or not: a scan can wait, and
+// every scanner keeps a database of gigabytes. Without it images stay
+// where they were built, so the control plane scans its own.
+func (c *Core) scanRoles(servers []store.Server) iter.Seq[store.Server] {
+	return func(yield func(store.Server) bool) {
+		var remoteProd, remoteNonProd bool
+		for _, s := range servers {
+			if !s.Local && c.canBuild(s) && c.reg != nil {
+				remoteProd = remoteProd || s.ScansProduction
+				remoteNonProd = remoteNonProd || s.ScansNonProduction
+			}
+		}
+		for _, s := range servers {
+			if !c.canBuild(s) {
+				continue
+			}
+			if s.Local {
+				s.ScansProduction = s.ScansProduction && !remoteProd
+				s.ScansNonProduction = s.ScansNonProduction && !remoteNonProd
+			}
+			if scansAny(s) && !yield(s) {
+				return
+			}
+		}
+	}
+}
+
+// scansKind reports whether an operator lets builder s scan images of
+// environments of kind, apart from what it builds: a production image
+// may carry what its build was given, so it goes only where that was
+// chosen.
+func scansKind(s store.Server, kind apitypes.EnvironmentKind) bool {
+	if kind == apitypes.KindProduction {
+		return s.ScansProduction
+	}
+	return s.ScansNonProduction
+}
+
+// scansAny reports whether s is a builder that scans some kind's images,
+// and so keeps a vulnerability database.
+func scansAny(s store.Server) bool {
+	return s.Builder && (s.ScansProduction || s.ScansNonProduction)
 }
 
 // syncScans gives every live release without a scan its image's scan,
@@ -567,14 +598,14 @@ func (c *Core) runScan(ctx context.Context, row store.ImageScan, builders []stor
 
 // scanServer picks the builder for a scan among scanBuilders': the one
 // that built the image when it can take it, else any that may (production
-// images only on builders that build production). An image without a
+// images only on builders that scan production). An image without a
 // pull reference can only be scanned where it was built.
 func (c *Core) scanServer(row store.ImageScan, builders []store.Server) (store.Server, bool) {
 	kind := apitypes.KindNonProduction
 	if row.Production != 0 {
 		kind = apitypes.KindProduction
 	}
-	may := func(s store.Server) bool { return buildsKind(s, kind) }
+	may := func(s store.Server) bool { return scansKind(s, kind) }
 	for _, s := range builders {
 		if row.BuiltOnServerID != nil && s.ID == *row.BuiltOnServerID && may(s) {
 			return s, true

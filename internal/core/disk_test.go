@@ -189,6 +189,39 @@ func TestDiskOfServerThatStoppedBuilding(t *testing.T) {
 	}
 }
 
+// A builder that scans nothing needs none of its scanner database: a
+// prune without targets frees all of it and keeps the build cache.
+func TestDiskOfBuilderThatScansNothing(t *testing.T) {
+	h := newHarness(t)
+	const gb = 1 << 30
+	h.rt.SetHostStats(node.HostStats{Disks: []node.Disk{{Paths: []string{"/var/lib/docker", "/var/lib/dock"}, Total: 40 * gb, Used: 20 * gb}}})
+	h.rt.SetDiskUsage(node.DiskUsage{Volumes: []node.VolumeUsage{{Name: "dock_scan_db_abc", Role: node.VolumeScanDB, Bytes: 2 * gb}}})
+	local, err := h.store.GetLocalServer(h.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.store.UpdateServerSettings(h.ctx, store.UpdateServerSettingsParams{BaseDomain: local.BaseDomain, Builder: true, BuildsNonProduction: true, ID: local.ID}); err != nil {
+		t.Fatal(err)
+	}
+	d, err := h.c.ServerDisk(h.ctx, testSystem, local.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []apitypes.DiskPrune{{Target: apitypes.PruneScanner, Bytes: 2 * gb, Safe: true}}; !slices.Equal(d.Prunes, want) {
+		t.Fatalf("prunes = %+v, want %+v", d.Prunes, want)
+	}
+	since := len(h.rt.Ops())
+	if _, err := h.c.PruneServer(h.ctx, testSystem, local.Name, nil); err != nil {
+		t.Fatal(err)
+	}
+	ops := h.rt.Ops()[since:]
+	if !slices.ContainsFunc(ops, func(op string) bool {
+		return strings.HasPrefix(op, "scan-database prune") && strings.HasSuffix(op, " all")
+	}) || slices.Contains(ops, "prune cache 0") {
+		t.Fatalf("ops = %v; want all of the database and the cache kept", ops)
+	}
+}
+
 // A prune's images come from every release on the server: each live
 // service's rollback window and active release are kept, the rest are
 // unneeded, and with the registry the kept ones it has too, but the

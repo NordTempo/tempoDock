@@ -517,7 +517,7 @@ VPS still built its own deploys first. Decided by the agent.
 | Trust | Each server says which kinds it builds: `builds_production` and `builds_non_production` (migration 0132), apart from what it accepts. A production build, and a production image's scan, runs only on a builder that builds production. `dock server update homelab --builds all`; in the console, the server's Builds select (nothing, non-production, production, all environments) |
 | Defaults | A new server builds what it accepts (production when it accepts production; non-production always), and the migration sets existing servers the same way, so nothing changes until an operator says so |
 | Order | Target first when it is a builder for the kind and not the control plane, then the oldest other online builder for it, the control plane last. The control plane's server keeps its CPU and memory for the platform; when the homelab is offline, the control plane builds, so deploys keep working |
-| Scans | The control plane scans a kind only while no other server builds it, online or not. A scan can wait for the homelab to come back, and each scanner keeps a 3.4 GB database |
+| Scans | The control plane scans a kind only while no other server builds it, online or not. A scan can wait for the homelab to come back, and each scanner keeps a 3.4 GB database. Since 2026-11-27 what a builder scans is its own setting, apart from what it builds ([0074](0074-image-vulnerability-scanning.md#amendment-2026-11-27-what-a-builder-scans-apart-from-what-it-builds)) |
 | A builder for no kind | Refused: turn the builder off instead |
 
 A server that builds production holds production's variables during its

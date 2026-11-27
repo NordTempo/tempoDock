@@ -43,6 +43,13 @@ function buildsOf(s: Server): Builds {
 
 const buildsProduction = (b: Builds) => b === "production" || b === "all";
 
+/** Which kinds' images a builder scans: the same choices as Builds. */
+function scansOf(s: Server): Builds {
+  if (s.scans_production && s.scans_non_production) return "all";
+  if (s.scans_production) return "production";
+  return s.scans_non_production ? "non_production" : "off";
+}
+
 const acceptsField = {
   production: "accepts_production",
   non_production: "accepts_non_production",
@@ -50,8 +57,10 @@ const acceptsField = {
 
 /**
  * An admin's switches for one server: which kinds it accepts, whether it
- * takes new placements and which kinds it builds images for (apart from
- * what it accepts: a staging homelab can build production's images). Every change asks
+ * takes new placements, which kinds it builds images for (apart from
+ * what it accepts: a staging homelab can build production's images) and,
+ * on a builder, which kinds' images it scans (apart from what it builds:
+ * each scanner keeps a vulnerability database of a few GB). Every change asks
  * first (the `confirm` node, which the caller places), naming its effect,
  * as a danger when no other server does that work. A switch that would
  * leave production environments nowhere to run is disabled, with why.
@@ -294,6 +303,80 @@ export function useServerSwitches(server: Server) {
           </select>
         </span>
         {saved("builder", "builds_production", "builds_non_production")}
+      </span>
+    ),
+    // Only builders scan: elsewhere there is nothing to choose.
+    scans: server.builder && (
+      <span className="inline-flex flex-wrap items-center gap-x-3">
+        <span>
+          <span className="text-mut">Scans</span>{" "}
+          <select
+            aria-label={`What ${name} scans`}
+            value={scansOf(server)}
+            disabled={update.isPending}
+            onChange={(e) => {
+              const to =
+                buildsOptions.find((b) => b === e.target.value) ?? "off";
+              const others = servers.filter(
+                (s) =>
+                  s.name !== name &&
+                  s.builder &&
+                  (s.scans_production || s.scans_non_production),
+              );
+              setAsk({
+                patch: {
+                  scans_production: buildsProduction(to),
+                  scans_non_production: to === "non_production" || to === "all",
+                },
+                action:
+                  to === "off" ? "Stop scanning" : `Scan ${buildsLabel[to]}`,
+                cli: `dock server update ${name} --scans ${{ off: "none", non_production: "non-production", production: "production", all: "all" }[to]}`,
+                last: to === "off" && others.length === 0,
+                text:
+                  to === "off" ? (
+                    <>
+                      Stop scanning images on{" "}
+                      <b className="font-mono font-medium">{name}</b>?{" "}
+                      <span className="text-mut">
+                        Its vulnerability database goes with the next prune (
+                        <span className="font-mono">
+                          dock server prune {name}
+                        </span>
+                        ).{" "}
+                        {others.length
+                          ? `Scans go to ${others.map((s) => s.name).join(", ")}.`
+                          : ""}
+                      </span>
+                      {others.length === 0 && (
+                        <span className="mt-2 block text-warn-text">
+                          No other builder scans: images go unscanned until one
+                          does.
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      Scan images of {buildsLabel[to]} on{" "}
+                      <b className="font-mono font-medium">{name}</b>?{" "}
+                      <span className="text-mut">
+                        It keeps a vulnerability database of a few GB.{" "}
+                        {!server.local &&
+                          "The control plane scans only what no other server does."}
+                      </span>
+                    </>
+                  ),
+              });
+            }}
+            className="field py-[3px]"
+          >
+            {buildsOptions.map((b) => (
+              <option key={b} value={b}>
+                {buildsLabel[b]}
+              </option>
+            ))}
+          </select>
+        </span>
+        {saved("scans_production", "scans_non_production")}
       </span>
     ),
     confirm: ask && (

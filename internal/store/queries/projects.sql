@@ -1,9 +1,9 @@
 -- name: CreateServer :one
--- A new server builds images for the kinds it accepts (a builder that
--- accepts production may build production's).
-INSERT INTO servers (name, accepts_production, accepts_non_production, builder, local, status, last_seen_at, version, builds_production)
+-- A new server builds and scans images for the kinds it accepts (a
+-- builder that accepts production may build and scan production's).
+INSERT INTO servers (name, accepts_production, accepts_non_production, builder, local, status, last_seen_at, version, builds_production, scans_production)
 VALUES (sqlc.arg(name), sqlc.arg(accepts_production), sqlc.arg(accepts_non_production), sqlc.arg(builder), sqlc.arg(local), 'online',
-    sqlc.arg(last_seen_at), sqlc.arg(version), sqlc.arg(accepts_production))
+    sqlc.arg(last_seen_at), sqlc.arg(version), sqlc.arg(accepts_production), sqlc.arg(accepts_production))
 RETURNING *;
 
 -- name: TouchLocalServer :one
