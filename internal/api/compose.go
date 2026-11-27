@@ -11,7 +11,7 @@ import (
 )
 
 // registerCompose registers an environment's followed Compose file
-// (ADR 0110): what it follows, following and unfollowing, and a sync now.
+// (ADR 0108): what it follows, following and unfollowing, and a sync now.
 func registerCompose(s *Server, a huma.API) {
 	tags := []string{"compose"}
 	authed(s, a, huma.Operation{

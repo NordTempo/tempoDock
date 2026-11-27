@@ -3,7 +3,7 @@ package apitypes
 import "time"
 
 // ComposeSourceRequest makes an environment follow a Docker Compose file
-// in a GitHub repository (ADR 0110), read through the organization's
+// in a GitHub repository (ADR 0108), read through the organization's
 // GitHub App.
 type ComposeSourceRequest struct {
 	Repo string `json:"repo" doc:"owner/name; the organization's GitHub App must be installed on it"`

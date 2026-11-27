@@ -1,4 +1,4 @@
-# 0110: An environment follows a Compose file in its repository
+# 0108: An environment follows a Compose file in its repository
 
 Status: accepted (decided by the agent, 2026-11-27).
 

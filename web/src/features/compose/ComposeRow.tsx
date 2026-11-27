@@ -10,7 +10,7 @@ const FollowCompose = lazy(() => import("./FollowCompose"));
 /**
  * The environment's Compose row in its Settings (mock A): update its
  * services from a newer docker-compose.yml once (ADR 0049), or follow
- * one in GitHub (ADR 0110), when the row shows the file, its last sync
+ * one in GitHub (ADR 0108), when the row shows the file, its last sync
  * and what waits for review. canChange is false for sessions that may
  * only read, which see the row without its buttons.
  */

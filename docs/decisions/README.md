@@ -121,6 +121,7 @@ line means a later record added to it without changing what it decided.
 | [0105](0105-github-apps-per-org.md) | GitHub Apps of the platform or an org: any number per owner, an org's own private App whose installations on its owner account are the org's, the org's own Apps asked first | accepted |
 | [0106](0106-dock-adds-the-analytics-script.md) | Dock adds the analytics script: Dock's own Caddy build with a `dock_inject` handler puts the tag in analytics sites' pages, streamed, CSP-aware; shipped and updated with each release | accepted |
 | [0107](0107-security-headers.md) | Security headers: Dock's Caddy adds HSTS, nosniff, a referrer policy and SAMEORIGIN framing to responses that lack them; a staged service setting each release keeps, on for new services, off for existing ones; no CSP | accepted |
+| [0108](0108-following-a-compose-file.md) | An environment follows a Compose file in its GitHub repository through the GitHub App: each push that changes it is staged for review; removals only when an admin turns them on; opt-in auto-apply for syncs that remove nothing | accepted |
 
 ## Template
 

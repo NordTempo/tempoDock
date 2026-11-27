@@ -12,7 +12,7 @@ import { type ComposeSource, useFollowCompose } from "./data";
 import { SyncOutcome } from "./SyncOutcome";
 
 /**
- * Follow a Compose file in GitHub (ADR 0110): the repository (one the
+ * Follow a Compose file in GitHub (ADR 0108): the repository (one the
  * org's GitHub App reads), branch and path, whether removals are staged
  * and whether syncs apply themselves. Following syncs the branch's head
  * at once, and the dialog then shows that sync's outcome and plan. With

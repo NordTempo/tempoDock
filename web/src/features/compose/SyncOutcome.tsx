@@ -14,7 +14,7 @@ const outcomeTone = {
 } as const;
 
 /**
- * What a followed Compose file is and how its last sync went (ADR 0110):
+ * What a followed Compose file is and how its last sync went (ADR 0108):
  * the repository, branch and path, the commit, the outcome in one line,
  * and the environment's staged changes with a link to review them.
  * onReview runs when that link is followed (a dialog closes).

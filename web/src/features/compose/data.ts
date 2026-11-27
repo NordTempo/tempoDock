@@ -5,7 +5,7 @@ import { useAction } from "../../data/mutations";
 import { envPath, keys } from "../../data/queries";
 import type { EnvRef } from "../../data/types";
 
-// The Compose file an environment follows (ADR 0110). Syncs run on
+// The Compose file an environment follows (ADR 0108). Syncs run on
 // pushes in the background; each is audited (compose.sync), and live.ts
 // refetches the environment's subtree from that event, this query and
 // its staged changes included. Nothing polls.

@@ -739,7 +739,7 @@ dock compose status -p shop -e production
 ```
 
 An environment can follow a Compose file in a repository the
-organization's GitHub App reads ([ADR 0110](../decisions/0110-following-a-compose-file.md)).
+organization's GitHub App reads ([ADR 0108](../decisions/0108-following-a-compose-file.md)).
 Each push to its branch that changes the file (or its `.env`, or an
 `env_file` it reads) is converted and planned, and the changes are staged
 in the environment for review: nothing runs until someone applies them

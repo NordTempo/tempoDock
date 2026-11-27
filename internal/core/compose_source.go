@@ -12,7 +12,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// Followed Compose files (ADR 0110). An environment can follow a Docker
+// Followed Compose files (ADR 0108). An environment can follow a Docker
 // Compose file in a GitHub repository, read through the organization's
 // GitHub App. A push to its branch that changes the file (or a file it
 // read) queues a sync, as a push to a connected service queues a deploy;

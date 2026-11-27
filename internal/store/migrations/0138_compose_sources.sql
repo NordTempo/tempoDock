@@ -1,5 +1,5 @@
 -- An environment that follows a Docker Compose file in a GitHub repository
--- (ADR 0110): a push to its branch that changes the file (or a file it
+-- (ADR 0108): a push to its branch that changes the file (or a file it
 -- reads) is converted and planned, and its changes staged for review like
 -- `dock import compose --stage`. One per environment, read through the
 -- organization's GitHub App installation (installation_id, repo_id).
@@ -16,7 +16,7 @@ CREATE TABLE compose_sources (
     -- repository's root: a push that changes one syncs too.
     reads           TEXT NOT NULL DEFAULT '',
     -- prune stages archives for services the file drops (set by an admin);
-    -- auto_apply applies a sync that only adds and changes (ADR 0110).
+    -- auto_apply applies a sync that only adds and changes (ADR 0108).
     prune           BOOLEAN NOT NULL DEFAULT 0,
     auto_apply      BOOLEAN NOT NULL DEFAULT 0,
     -- A push waiting to be synced, latest wins; pending_by is who pushed.

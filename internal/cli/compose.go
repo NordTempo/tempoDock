@@ -9,7 +9,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/cli/output"
 )
 
-// Followed Compose files (ADR 0110): `dock compose follow|status|sync|
+// Followed Compose files (ADR 0108): `dock compose follow|status|sync|
 // unfollow`. An environment follows a Compose file in a GitHub repository;
 // each push that changes it is staged as changes to review.
 

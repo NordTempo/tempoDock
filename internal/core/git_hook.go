@@ -227,7 +227,7 @@ func (c *Core) gitDelivery(ctx context.Context, d GitDelivery) (string, error) {
 // 0105); pull requests go to previews (ADR 0056). Pushes go to every App connection of the repository (by its
 // GitHub ID, so renames don't matter), each deciding by its branch and
 // directory, and to every environment following a Compose file in it
-// (ADR 0110); an uninstalled App's installation is unassigned. The App's
+// (ADR 0108); an uninstalled App's installation is unassigned. The App's
 // webhook secret is the authority, as a connection's is for its own hook.
 func (c *Core) gitAppWebhook(ctx context.Context, app store.GithubApp, d GitDelivery) (string, error) {
 	secret, err := c.box.Open(app.WebhookSecret, appWebhookSecretAAD(app.HookID))
@@ -267,7 +267,7 @@ func (c *Core) gitAppWebhook(ctx context.Context, app store.GithubApp, d GitDeli
 	if err != nil {
 		return "", err
 	}
-	// Environments that follow a Compose file in it (ADR 0110).
+	// Environments that follow a Compose file in it (ADR 0108).
 	composed, err := c.queueComposePushes(ctx, p)
 	if err != nil {
 		return "", err
