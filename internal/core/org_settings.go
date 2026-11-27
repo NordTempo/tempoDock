@@ -95,7 +95,7 @@ func (c *Core) RenameOrg(ctx context.Context, a Actor, req apitypes.UpdateOrgReq
 
 // DeleteOrg deletes an org that has no projects (archived ones count:
 // projects are never deleted) and no status pages, with its memberships, invites, variables,
-// registry credentials and data policy, and revokes its tokens. Its audit
+// registry credentials, uploaded certificates and data policy, and revokes its tokens. Its audit
 // log stays.
 func (c *Core) DeleteOrg(ctx context.Context, a Actor) error {
 	if err := a.requireUnlimited(apitypes.ScopeAdmin, "deleting the organization"); err != nil {
@@ -116,7 +116,7 @@ func (c *Core) DeleteOrg(ctx context.Context, a Actor) error {
 		return conflict("organization %s has %d status pages; remove them first (`dock status-page remove`)", a.OrgSlug, n)
 	}
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
-		for _, del := range []func(context.Context, int64) error{q.DeleteOrgMembers, q.DeleteOrgInvites, q.DeleteOrgVariables, q.DeleteOrgRegistryCredentials, q.DeleteOrgDataPolicy, q.DeleteOrgTemplates} {
+		for _, del := range []func(context.Context, int64) error{q.DeleteOrgMembers, q.DeleteOrgInvites, q.DeleteOrgVariables, q.DeleteOrgRegistryCredentials, q.DeleteOrgDataPolicy, q.DeleteOrgTemplates, q.DeleteOrgCustomCertificates} {
 			if err := del(ctx, a.OrgID); err != nil {
 				return err
 			}
@@ -130,6 +130,7 @@ func (c *Core) DeleteOrg(ctx context.Context, a Actor) error {
 		return err
 	}
 	c.accessChanged(accessChange{orgID: a.OrgID, everyone: true})
+	c.ownCertsChanged(ctx) // its uploaded certificates' keys leave memory
 	c.audit(ctx, a.platform(), "org.delete", nil, nil, a.OrgSlug, "deleted organization "+a.OrgSlug)
 	return nil
 }

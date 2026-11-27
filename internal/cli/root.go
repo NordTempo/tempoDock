@@ -135,7 +135,7 @@ func newRoot(g *globals) *cobra.Command {
 		newDeployCmd(g), newPromoteCmd(g), newStatusCmd(g), newLogsCmd(g), newErrorsCmd(g), newQueueCmd(g), newTrafficCmd(g), newTracesCmd(g), newMetricsCmd(g), newUptimeCmd(g), newStatusPageCmd(g), newIncidentCmd(g), newMaintenanceCmd(g), newReleaseListCmd(g, "releases"), newReleaseCmd(g), newDiagnoseCmd(g), newVulnsCmd(g), newImagesCmd(g), newScanCmd(g), newImageUpdatesCmd(g), newSBOMCmd(g),
 		newRollbackCmd(g), newRestartCmd(g), newDBCmd(g), newConnectCmd(g), newRunCmd(g), newRunsCmd(g), newExecCmd(g), newJobCmd(g), newGitCmd(g), newBackupCmd(g), newRequestCmd(g))
 	addGroup(root, "config", "Configure (changes are staged until applied):",
-		newEnvCmd(g), newChangesCmd(g), newApplyCmd(g), newTemplateCmd(g), newImportCmd(g), newComposeCmd(g), newProjectExportCmd(g), newDiscardCmd(g), newDomainCmd(g), newAccessCmd(g), newVolumeCmd(g),
+		newEnvCmd(g), newChangesCmd(g), newApplyCmd(g), newTemplateCmd(g), newImportCmd(g), newComposeCmd(g), newProjectExportCmd(g), newDiscardCmd(g), newDomainCmd(g), newCertificateCmd(g), newAccessCmd(g), newVolumeCmd(g),
 		newServiceCmd(g), newEnvironmentCmd(g), newProjectCmd(g))
 	addGroup(root, "admin", "Administer:",
 		newTokenCmd(g), newUserCmd(g), newGroupCmd(g), newGrantCmd(g), newCanCmd(g), newRoleCmd(g), newAgentCmd(g), newPlatformCmd(g), newAuditCmd(g), newServerCmd(g), newRegistryCmd(g), newStorageCmd(g), newAlertsCmd(g), newUpdateCmd(g), newAddressCmd(g), newEmailCmd(g), newSecurityCmd(g), newSSOCmd(g), newGitHubCmd(g), newCloudflareCmd(g), newAnalyticsCmd(g), newScanningCmd(g), newTracingCmd(g), newFeaturesCmd(g))

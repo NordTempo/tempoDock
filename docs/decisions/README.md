@@ -22,7 +22,7 @@ line means a later record added to it without changing what it decided.
 | [0006](0006-every-way-to-build.md) | Every way to build and deploy | accepted; amended by [0089](0089-faster-builds.md) |
 | [0007](0007-config-db-plus-repo-file.md) | Config in the platform DB plus an optional repo file | accepted |
 | [0008](0008-keep-doors-open.md) | Keep open source and hosting possible, cheaply | superseded in part by [0027](0027-organizations.md), [0082](0082-open-source-license.md) |
-| [0009](0009-dynamic-domains-and-tls.md) | Dynamic domains and automatic TLS | superseded in part by [0042](0042-domain-verification.md); amended by [0087](0087-unguessable-generated-hostnames.md) (random part in generated hostnames) and [0090](0090-wildcard-certificates.md) (one wildcard per base domain) |
+| [0009](0009-dynamic-domains-and-tls.md) | Dynamic domains and automatic TLS | superseded in part by [0042](0042-domain-verification.md); amended by [0087](0087-unguessable-generated-hostnames.md) (random part in generated hostnames), [0090](0090-wildcard-certificates.md) (one wildcard per base domain) and [0110](0110-uploaded-certificates.md) (an org's own certificates) |
 | [0010](0010-environments-on-servers.md) | Environments are placed on servers | superseded in part by [0015](0015-server-pools-and-placement.md) |
 | [0011](0011-stateful-services-and-databases.md) | Stateful services and databases | superseded in part by [0047](0047-volume-snapshots.md) |
 | [0012](0012-name-tempo-dock.md) | Name: Tempo Dock, CLI `dock` | accepted |
@@ -103,7 +103,7 @@ line means a later record added to it without changing what it decided.
 | [0087](0087-unguessable-generated-hostnames.md) | Generated hostnames nobody can guess: a random part in new ones, status page names per organization, plain HTTP alike for every host; what CT logs still show | accepted |
 | [0088](0088-signed-releases.md) | Signed releases: Ed25519 over `SHA256SUMS`, keys built into dock, checked on every download path from v0.56.0; build-provenance attestations | accepted |
 | [0089](0089-faster-builds.md) | Faster builds: half the server's cores (at least two) by default, zstd layers, Railpack images pinned, a hint for Dockerfiles without `.next/cache`, previews keep cold cache mounts; amended: BuildKit pushes through a relay, builders fetch Railpack's images ahead | accepted |
-| [0090](0090-wildcard-certificates.md) | Wildcard certificates for generated hostnames: `*.<base>` over ACME DNS-01 through Cloudflare, sent to servers with their routes, no CT log entries or TLS oracle | accepted |
+| [0090](0090-wildcard-certificates.md) | Wildcard certificates for generated hostnames: `*.<base>` over ACME DNS-01 through Cloudflare, sent to servers with their routes, no CT log entries or TLS oracle | accepted; amended by [0110](0110-uploaded-certificates.md) (uploads share its worker) |
 | [0091](0091-switches-without-reloads.md) | Traffic switches without Caddy reloads: each service's upstream in a file Caddy reads per request, and a move's hold on a fresh port | accepted |
 | [0092](0092-preview-database-copies.md) | Previews start with a copy of the base's database: empty, newest snapshot, copy, or masked (sensitive columns replaced while the base is read); forks get none unless allowed; refresh from base | accepted |
 | [0093](0093-point-in-time-restore.md) | Point-in-time restore for Postgres: WAL archived by a sidecar that holds the keys, daily base backups in restic, restores to a time into a new service or in place | accepted |
@@ -125,6 +125,7 @@ line means a later record added to it without changing what it decided.
 | [0109](0109-host-security-checks.md) | Host security checks: each server reads its own host about daily and on Check now (SSH passwords and root, ports open that Dock didn't open, Docker's API on TCP, the Docker socket in containers, security updates, reboots, automatic updates, firewalls), read-only as the dock user; results in the console only, one calm platform alert per server, dismiss with a reason | accepted |
 | [0110](0110-mongodb.md) | MongoDB as a first-class database: the `mongodb` template (`mongo:8.0`, `MONGODB_URI`), mongodump backups, restores into a new service without `admin`, drills, unmasked preview copies, compose import; no point-in-time restore; the Data panel next | accepted |
 | [0111](0111-shells-in-running-containers.md) | Shells in running containers: `dock exec` in the active release's container, the new `shell` permission above deploy, audited, refused by the lock without a request, ended with its caller's access, what it started stopped after where Dock can (best effort); node protocol 39 | accepted |
+| [0112](0112-uploaded-certificates.md) | Uploaded certificates: an org's own chain and key serve its verified domains the names cover (the one that expires last wins), sealed, alerts 30 and 7 days before expiry on the wildcard worker's timer, then back to Let's Encrypt | accepted |
 
 ## Template
 

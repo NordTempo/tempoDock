@@ -1170,13 +1170,21 @@ type PushTarget struct {
 // Certificate is a certificate the proxy loads instead of issuing its own
 // for the names it covers: the wildcard of a server's base domain (ADR
 // 0090), which keeps generated hostnames out of certificate-transparency
-// logs. Caddy serves it for every hostname matching Names, routed or not,
-// and issues no on-demand certificate for them.
+// logs, or one an org uploaded for its domains (ADR 0110). Caddy serves
+// it for every hostname matching Names, routed or not, and issues no
+// on-demand certificate for them. Certificates come in order: the first
+// whose names match a hostname is served.
 type Certificate struct {
-	// Names are the certificate's names: *.<base> and <base>.
+	// Names are the hostnames it is served for: *.<base> and <base> for a
+	// wildcard, the domains it covers for an upload.
 	Names []string
 	// ChainPEM is the leaf and its intermediates, KeyPEM its private key.
 	ChainPEM, KeyPEM []byte
+	// Uploaded marks an org's own certificate. It may come from a CA the
+	// server doesn't trust (a Cloudflare origin certificate, an internal
+	// CA), so CheckDomain accepts it when Caddy serves it, without
+	// checking its chain.
+	Uploaded bool
 }
 
 // Route sends traffic for Hostnames to Upstream (host:port).

@@ -52,6 +52,7 @@ const (
 	// Domains
 	PermDomainsRead
 	PermDomainsWrite
+	PermCertificatesManage
 	// Analytics
 	PermAnalyticsRead
 	PermAnalyticsReplays
@@ -124,7 +125,10 @@ var permTable = [permCount]permInfo{
 	PermDataApprove:         {"data.approve", PermEnv, false, false},
 	PermDomainsRead:         {"domains.read", PermEnv, false, true},
 	PermDomainsWrite:        {"domains.write", PermEnv, false, false},
-	PermAnalyticsRead:       {"analytics.read", PermEnv, false, true},
+	// An uploaded certificate serves every project's domains it covers
+	// (ADR 0110), so managing them takes the whole org.
+	PermCertificatesManage: {"certificates.manage", PermOrg, false, false},
+	PermAnalyticsRead:      {"analytics.read", PermEnv, false, true},
 	// Replays show what visitors saw and did: the pages' text unless the
 	// site masks it (inputs always are), so a role may leave them out.
 	PermAnalyticsReplays:  {"analytics.replays", PermEnv, false, true},
@@ -214,7 +218,7 @@ var areaRoles = []areaRole{
 	}},
 	{"domains", "Domains", []roleLevel{
 		{"view", permsOf(PermDomainsRead)},
-		{"edit", permsOf(PermDomainsWrite)},
+		{"edit", permsOf(PermDomainsWrite, PermCertificatesManage)},
 	}},
 	{"analytics", "Analytics", []roleLevel{
 		{"view", permsOf(PermAnalyticsRead, PermAnalyticsReplays)},

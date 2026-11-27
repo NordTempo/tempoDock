@@ -216,6 +216,8 @@ type (
 		Names []string `json:"names"`
 		Chain string   `json:"chain"`
 		Key   string   `json:"key"`
+		// Uploaded marks an org's own certificate (protocol 39).
+		Uploaded bool `json:"uploaded,omitempty"`
 	}
 	domainRequest struct {
 		Hostname string `json:"hostname"`
@@ -729,7 +731,7 @@ func toWireRoutes(rs []node.Route) []wireRoute {
 func toWireCertificates(cs []node.Certificate) []wireCertificate {
 	out := make([]wireCertificate, 0, len(cs))
 	for _, c := range cs {
-		out = append(out, wireCertificate{Names: c.Names, Chain: string(c.ChainPEM), Key: string(c.KeyPEM)})
+		out = append(out, wireCertificate{Names: c.Names, Chain: string(c.ChainPEM), Key: string(c.KeyPEM), Uploaded: c.Uploaded})
 	}
 	return out
 }
@@ -740,7 +742,7 @@ func fromWireCertificates(ws []wireCertificate) []node.Certificate {
 	}
 	out := make([]node.Certificate, 0, len(ws))
 	for _, w := range ws {
-		out = append(out, node.Certificate{Names: w.Names, ChainPEM: []byte(w.Chain), KeyPEM: []byte(w.Key)})
+		out = append(out, node.Certificate{Names: w.Names, ChainPEM: []byte(w.Chain), KeyPEM: []byte(w.Key), Uploaded: w.Uploaded})
 	}
 	return out
 }

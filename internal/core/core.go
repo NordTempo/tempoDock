@@ -335,6 +335,8 @@ type Core struct {
 	cf cfState
 	// wild is the base domains' wildcard certificates (wildcards.go).
 	wild wildState
+	// own is the orgs' uploaded certificates (certificates.go).
+	own ownCerts
 	// obtain gets a wildcard certificate, waitTXT waits for its
 	// challenge records and acmeHTTP talks to the CA: Options'.
 	obtain   func(context.Context, acmedns.Request) (acmedns.Certificate, error)
@@ -496,6 +498,9 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		return nil, fmt.Errorf("load Cloudflare state: %w", err)
 	}
 	if err := c.loadWildcards(ctx); err != nil {
+		return nil, err
+	}
+	if err := c.loadOwnCerts(ctx); err != nil {
 		return nil, err
 	}
 	// Held deploys run again through core itself (held.go).

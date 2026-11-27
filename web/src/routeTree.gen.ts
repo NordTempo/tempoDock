@@ -65,6 +65,7 @@ import { Route as AppOrgSettingsAgentsRouteImport } from './routes/_app.$org.set
 import { Route as AppOrgSettingsAlertsRouteImport } from './routes/_app.$org.settings.alerts'
 import { Route as AppOrgSettingsAnalyticsRouteImport } from './routes/_app.$org.settings.analytics'
 import { Route as AppOrgSettingsArchivedRouteImport } from './routes/_app.$org.settings.archived'
+import { Route as AppOrgSettingsCertificatesRouteImport } from './routes/_app.$org.settings.certificates'
 import { Route as AppOrgSettingsCloudflareRouteImport } from './routes/_app.$org.settings.cloudflare'
 import { Route as AppOrgSettingsDataAccessRouteImport } from './routes/_app.$org.settings.data-access'
 import { Route as AppOrgSettingsGeneralRouteImport } from './routes/_app.$org.settings.general'
@@ -407,6 +408,12 @@ const AppOrgSettingsArchivedRoute = AppOrgSettingsArchivedRouteImport.update({
   path: '/archived',
   getParentRoute: () => AppOrgSettingsRoute,
 } as any)
+const AppOrgSettingsCertificatesRoute =
+  AppOrgSettingsCertificatesRouteImport.update({
+    id: '/certificates',
+    path: '/certificates',
+    getParentRoute: () => AppOrgSettingsRoute,
+  } as any)
 const AppOrgSettingsCloudflareRoute =
   AppOrgSettingsCloudflareRouteImport.update({
     id: '/cloudflare',
@@ -814,6 +821,7 @@ export interface FileRoutesByFullPath {
   '/$org/settings/alerts': typeof AppOrgSettingsAlertsRoute
   '/$org/settings/analytics': typeof AppOrgSettingsAnalyticsRoute
   '/$org/settings/archived': typeof AppOrgSettingsArchivedRoute
+  '/$org/settings/certificates': typeof AppOrgSettingsCertificatesRoute
   '/$org/settings/cloudflare': typeof AppOrgSettingsCloudflareRoute
   '/$org/settings/data-access': typeof AppOrgSettingsDataAccessRoute
   '/$org/settings/general': typeof AppOrgSettingsGeneralRoute
@@ -927,6 +935,7 @@ export interface FileRoutesByTo {
   '/$org/settings/alerts': typeof AppOrgSettingsAlertsRoute
   '/$org/settings/analytics': typeof AppOrgSettingsAnalyticsRoute
   '/$org/settings/archived': typeof AppOrgSettingsArchivedRoute
+  '/$org/settings/certificates': typeof AppOrgSettingsCertificatesRoute
   '/$org/settings/cloudflare': typeof AppOrgSettingsCloudflareRoute
   '/$org/settings/data-access': typeof AppOrgSettingsDataAccessRoute
   '/$org/settings/general': typeof AppOrgSettingsGeneralRoute
@@ -1043,6 +1052,7 @@ export interface FileRoutesById {
   '/_app/$org/settings/alerts': typeof AppOrgSettingsAlertsRoute
   '/_app/$org/settings/analytics': typeof AppOrgSettingsAnalyticsRoute
   '/_app/$org/settings/archived': typeof AppOrgSettingsArchivedRoute
+  '/_app/$org/settings/certificates': typeof AppOrgSettingsCertificatesRoute
   '/_app/$org/settings/cloudflare': typeof AppOrgSettingsCloudflareRoute
   '/_app/$org/settings/data-access': typeof AppOrgSettingsDataAccessRoute
   '/_app/$org/settings/general': typeof AppOrgSettingsGeneralRoute
@@ -1163,6 +1173,7 @@ export interface FileRouteTypes {
     | '/$org/settings/alerts'
     | '/$org/settings/analytics'
     | '/$org/settings/archived'
+    | '/$org/settings/certificates'
     | '/$org/settings/cloudflare'
     | '/$org/settings/data-access'
     | '/$org/settings/general'
@@ -1276,6 +1287,7 @@ export interface FileRouteTypes {
     | '/$org/settings/alerts'
     | '/$org/settings/analytics'
     | '/$org/settings/archived'
+    | '/$org/settings/certificates'
     | '/$org/settings/cloudflare'
     | '/$org/settings/data-access'
     | '/$org/settings/general'
@@ -1391,6 +1403,7 @@ export interface FileRouteTypes {
     | '/_app/$org/settings/alerts'
     | '/_app/$org/settings/analytics'
     | '/_app/$org/settings/archived'
+    | '/_app/$org/settings/certificates'
     | '/_app/$org/settings/cloudflare'
     | '/_app/$org/settings/data-access'
     | '/_app/$org/settings/general'
@@ -1864,6 +1877,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgSettingsArchivedRouteImport
       parentRoute: typeof AppOrgSettingsRoute
     }
+    '/_app/$org/settings/certificates': {
+      id: '/_app/$org/settings/certificates'
+      path: '/certificates'
+      fullPath: '/$org/settings/certificates'
+      preLoaderRoute: typeof AppOrgSettingsCertificatesRouteImport
+      parentRoute: typeof AppOrgSettingsRoute
+    }
     '/_app/$org/settings/cloudflare': {
       id: '/_app/$org/settings/cloudflare'
       path: '/cloudflare'
@@ -2316,6 +2336,7 @@ interface AppOrgSettingsRouteChildren {
   AppOrgSettingsAlertsRoute: typeof AppOrgSettingsAlertsRoute
   AppOrgSettingsAnalyticsRoute: typeof AppOrgSettingsAnalyticsRoute
   AppOrgSettingsArchivedRoute: typeof AppOrgSettingsArchivedRoute
+  AppOrgSettingsCertificatesRoute: typeof AppOrgSettingsCertificatesRoute
   AppOrgSettingsCloudflareRoute: typeof AppOrgSettingsCloudflareRoute
   AppOrgSettingsDataAccessRoute: typeof AppOrgSettingsDataAccessRoute
   AppOrgSettingsGeneralRoute: typeof AppOrgSettingsGeneralRoute
@@ -2335,6 +2356,7 @@ const AppOrgSettingsRouteChildren: AppOrgSettingsRouteChildren = {
   AppOrgSettingsAlertsRoute: AppOrgSettingsAlertsRoute,
   AppOrgSettingsAnalyticsRoute: AppOrgSettingsAnalyticsRoute,
   AppOrgSettingsArchivedRoute: AppOrgSettingsArchivedRoute,
+  AppOrgSettingsCertificatesRoute: AppOrgSettingsCertificatesRoute,
   AppOrgSettingsCloudflareRoute: AppOrgSettingsCloudflareRoute,
   AppOrgSettingsDataAccessRoute: AppOrgSettingsDataAccessRoute,
   AppOrgSettingsGeneralRoute: AppOrgSettingsGeneralRoute,

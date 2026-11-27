@@ -1360,4 +1360,21 @@ func TestRoutesCarryCertificates(t *testing.T) {
 	if err := h.client.ApplyRoutes(ctx, routes, certs); err != nil || len(h.rt.Certificates()) != 0 || !equalJSON(h.rt.Routes(), routes) {
 		t.Fatalf("older node: %v, has certificates %v and routes %v", err, h.rt.Certificates(), h.rt.Routes())
 	}
+
+	// An org's own certificate (ADR 0110) goes only to a node whose domain
+	// checks accept it.
+	own := node.Certificate{Names: []string{"shop.example.com"}, ChainPEM: []byte("OWN"), KeyPEM: []byte("OWNKEY"), Uploaded: true}
+	both := append(slices.Clone(certs), own)
+	h.stopNode()
+	h.startNode(func(n *Node) { n.protocol = UploadedCertProtocol - 1 })
+	waitFor(t, "the older node", func() bool { return h.hub.State(h.id).Hello.Protocol == UploadedCertProtocol-1 && h.client.Online() })
+	if err := h.client.ApplyRoutes(ctx, routes, both); err != nil || !equalJSON(h.rt.Certificates(), certs) {
+		t.Fatalf("node before %d: %v, has %v", UploadedCertProtocol, err, h.rt.Certificates())
+	}
+	h.stopNode()
+	h.startNode()
+	waitFor(t, "the current node", func() bool { return h.hub.State(h.id).Hello.Protocol == Protocol && h.client.Online() })
+	if err := h.client.ApplyRoutes(ctx, routes, both); err != nil || !equalJSON(h.rt.Certificates(), both) {
+		t.Fatalf("current node: %v, has %v", err, h.rt.Certificates())
+	}
 }

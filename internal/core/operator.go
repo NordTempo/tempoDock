@@ -520,7 +520,7 @@ func (c *Core) OperatorDeleteOrg(ctx context.Context, a Actor, slug, confirm str
 		}
 	}
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
-		for _, del := range []func(context.Context, int64) error{q.DeleteOrgMembers, q.DeleteOrgInvites, q.DeleteOrgVariables, q.DeleteOrgRegistryCredentials, q.DeleteOrgDataPolicy, q.DeleteOrgTemplates} {
+		for _, del := range []func(context.Context, int64) error{q.DeleteOrgMembers, q.DeleteOrgInvites, q.DeleteOrgVariables, q.DeleteOrgRegistryCredentials, q.DeleteOrgDataPolicy, q.DeleteOrgTemplates, q.DeleteOrgCustomCertificates} {
 			if err := del(ctx, o.ID); err != nil {
 				return err
 			}
@@ -534,6 +534,7 @@ func (c *Core) OperatorDeleteOrg(ctx context.Context, a Actor, slug, confirm str
 		return err
 	}
 	c.accessChanged(accessChange{orgID: o.ID, everyone: true})
+	c.ownCertsChanged(ctx) // its uploaded certificates' keys leave memory
 	c.auditBoth(ctx, a, o, "org.delete", fmt.Sprintf("the platform's operator deleted the organization: its %d projects are archived and kept for their history", len(projects)))
 	return nil
 }

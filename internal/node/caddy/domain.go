@@ -1,6 +1,7 @@
 package caddy
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -155,11 +156,35 @@ func redirectsToItself(resp *http.Response, hostname string) bool {
 // with DNS OK that means issuance is still pending.
 var errNoCertYet = errors.New("no certificate yet")
 
-// checkCertificate handshakes with the local Caddy as hostname.
+// checkCertificate handshakes with the local Caddy as hostname. The
+// certificate must chain to a trusted root, unless it is the uploaded one
+// loaded for hostname (ADR 0110): that one may come from a CA only
+// Cloudflare or the org's own machines trust, so it only has to be the
+// one served, and current.
 func (p *Proxy) checkCertificate(ctx context.Context, hostname string) error {
 	ctx, cancel := context.WithTimeout(ctx, certCheckTimeout)
 	defer cancel()
-	d := tls.Dialer{Config: &tls.Config{ServerName: hostname, RootCAs: p.rootCAs}}
+	cfg := &tls.Config{ServerName: hostname, RootCAs: p.rootCAs}
+	if s := p.hosts.Load(); s != nil && s.uploaded[hostname] != nil {
+		want := s.uploaded[hostname]
+		cfg.InsecureSkipVerify = true // VerifyConnection checks instead
+		cfg.VerifyConnection = func(cs tls.ConnectionState) error {
+			leaf := cs.PeerCertificates[0]
+			if !bytes.Equal(leaf.Raw, want) {
+				inter := x509.NewCertPool()
+				for _, c := range cs.PeerCertificates[1:] {
+					inter.AddCert(c)
+				}
+				_, err := leaf.Verify(x509.VerifyOptions{DNSName: hostname, Roots: p.rootCAs, Intermediates: inter})
+				return err
+			}
+			if at := time.Now(); at.After(leaf.NotAfter) || at.Before(leaf.NotBefore) {
+				return x509.CertificateInvalidError{Cert: leaf, Reason: x509.Expired}
+			}
+			return nil
+		}
+	}
+	d := tls.Dialer{Config: cfg}
 	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(p.opts.HTTPSPort)))
 	if err != nil {
 		var unknownAuthority x509.UnknownAuthorityError

@@ -445,6 +445,9 @@ func (c *Core) AllowCertificate(ctx context.Context, hostname string) (bool, err
 	if ss.svc.ArchivedAt != nil || ss.env.ServerID != c.localID {
 		return false, nil
 	}
+	if _, own := c.ownCertFor(ss.project.OrgID, host); own {
+		return false, nil // Caddy serves the org's uploaded certificate (ADR 0110)
+	}
 	// Served to the Cloudflare tunnel only: Cloudflare's edge has its
 	// certificate (ADR 0036).
 	if r, err := c.store.GetCloudflareRecord(ctx, host); err == nil && r.Want == cfPresent {
@@ -480,6 +483,13 @@ func (c *Core) toDomain(ss svcScope, d store.Domain, siblings []store.Domain, in
 		out.CheckedAt, out.ResolvedIPs = &check.at, check.resolved
 	}
 	c.checksMu.Unlock()
+	// What the server's last routes carried for it: not to a tunnel, and
+	// only to a node that takes uploads.
+	if out.Verified && ing.mode == apitypes.IngressDirect && !ing.plainHTTP && c.takesUploads(ss.env.ServerID) {
+		if o, ok := c.sentCert(ss.env.ServerID, ss.project.OrgID, d.Hostname); ok {
+			out.Certificate = &apitypes.DomainCertificate{ID: o.id, Issuer: o.issuer, Public: o.public, NotAfter: o.notAfter}
+		}
+	}
 	if d.Generated && underBase(d.Hostname, ing.baseDomain) {
 		return out // covered by the wildcard record for the base domain
 	}

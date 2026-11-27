@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { lazy, type ReactNode, Suspense, useEffect, useState } from "react";
 import { api, body } from "../../api/client";
 import {
@@ -9,7 +10,8 @@ import { domainNeedsAttention } from "../../data/problems";
 import { listenPort, servicePath, useService } from "../../data/queries";
 import type { Domain, ServiceRef } from "../../data/types";
 import { useShortcuts } from "../../shell/keys";
-import { ago } from "../../ui/format";
+import { useOrg } from "../../shell/location";
+import { ago, isoDay } from "../../ui/format";
 import {
   Act,
   Button,
@@ -24,6 +26,7 @@ import {
 import { notify } from "../../ui/notice";
 import { SettingsSection } from "../../ui/sections";
 import { domainState } from "../../ui/status";
+import { daysLeft } from "../certificates/data";
 import { AccessLine } from "./AccessLine";
 
 // Loads when it opens.
@@ -400,6 +403,7 @@ function detail(d: Domain) {
   switch (d.status) {
     case "active":
       if (d.dns) return "through the server's Cloudflare tunnel";
+      if (d.certificate) return "served";
       return d.generated
         ? "generated · certificate issued"
         : "certificate issued";
@@ -415,6 +419,36 @@ function detail(d: Domain) {
     case "error":
       return d.status_reason ?? "error";
   }
+}
+
+/**
+ * The uploaded certificate a domain is served with (ADR 0110): until
+ * when, in the warning colour within 30 days, and a link to Settings ›
+ * Certificates, where it is replaced.
+ */
+function OwnCertificate({
+  cert,
+}: {
+  cert: NonNullable<Domain["certificate"]>;
+}) {
+  const org = useOrg();
+  const soon = daysLeft(cert.not_after) <= 30;
+  return (
+    <>
+      {" · "}
+      <span className={soon ? "text-warn" : ""}>
+        own certificate until {isoDay(cert.not_after)}
+      </span>
+      {" · "}
+      <Link
+        to="/$org/settings/certificates"
+        params={{ org }}
+        className="text-info no-underline hover:underline"
+      >
+        Certificates
+      </Link>
+    </>
+  );
 }
 
 /**
@@ -460,6 +494,7 @@ function DomainRow({
         >
           {d.redirect_to ? `redirects to ${d.redirect_to}` : `:${port}`}
           {waiting ? "" : ` · ${detail(d)}`}
+          {d.certificate && <OwnCertificate cert={d.certificate} />}
           <span className="text-faint">{lastCheck(d)}</span>
         </td>
         <td className="py-1 text-right">

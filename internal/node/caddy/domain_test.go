@@ -148,3 +148,39 @@ func TestCheckDomainProxied(t *testing.T) {
 		})
 	}
 }
+
+// TestCheckDomainUploaded: a certificate from a CA the server doesn't
+// trust fails the check, unless it is the uploaded one loaded for the
+// hostname (ADR 0110). The httptest certificate stands in for it.
+func TestCheckDomainUploaded(t *testing.T) {
+	srv := httptest.NewTLSServer(http.NotFoundHandler())
+	defer srv.Close()
+	port := srv.Listener.Addr().(*net.TCPAddr).Port
+	p, err := New(Options{AdminSocket: "/x", HTTPPort: 80, HTTPSPort: port, AskURL: "http://127.0.0.1:1/ask", PublicIPs: []string{"203.0.113.7"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.rootCAs = x509.NewCertPool() // trusts nothing
+	p.lookupIP = func(context.Context, string) ([]net.IPAddr, error) {
+		return []net.IPAddr{{IP: net.ParseIP("203.0.113.7")}}, nil
+	}
+	check := func() (bool, string) {
+		dc, err := p.CheckDomain(context.Background(), "example.com")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return dc.CertificateOK, dc.Error
+	}
+	if ok, msg := check(); ok || !strings.Contains(msg, "is not valid") {
+		t.Errorf("untrusted, not uploaded: %v %q", ok, msg)
+	}
+	leaf := srv.Certificate().Raw
+	p.hosts.Store(&askSet{uploaded: map[string][]byte{"example.com": leaf}})
+	if ok, msg := check(); !ok || msg != "" {
+		t.Errorf("the uploaded one: %v %q", ok, msg)
+	}
+	p.hosts.Store(&askSet{uploaded: map[string][]byte{"example.com": []byte("another leaf")}})
+	if ok, _ := check(); ok {
+		t.Error("an untrusted certificate other than the uploaded one passed")
+	}
+}

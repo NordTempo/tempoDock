@@ -377,6 +377,22 @@ type ControlPlaneBackup struct {
 	ScheduledAt *time.Time
 }
 
+type CustomCertificate struct {
+	ID          int64
+	OrgID       int64
+	Names       string
+	Chain       string
+	Key         []byte
+	Fingerprint string
+	Issuer      string
+	Public      bool
+	NotBefore   time.Time
+	NotAfter    time.Time
+	Alerted     int64
+	CreatedBy   string
+	CreatedAt   time.Time
+}
+
 type DataAccess struct {
 	ServiceID        int64
 	ServerVersion    string

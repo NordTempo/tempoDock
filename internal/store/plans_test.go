@@ -22,6 +22,8 @@ func TestQueryPlansUseIndexes(t *testing.T) {
 		{"GetLatestReadySnapshot", getLatestReadySnapshot, []any{1, 1}},
 		{"ListServerReleaseImages", listServerReleaseImages, []any{1}},
 		{"ListUnroutedGeneratedDomains", listUnroutedGeneratedDomains, []any{1}},
+		{"ListOrgCustomCertificates", listOrgCustomCertificates, []any{1}},
+		{"ListOrgVerifiedDomains", listOrgVerifiedDomains, []any{1}},
 	})
 }
 

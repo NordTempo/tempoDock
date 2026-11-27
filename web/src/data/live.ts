@@ -753,6 +753,18 @@ function invalidateForAudit(
     invalidate(keys.orgs);
     queryClient.invalidateQueries({ queryKey: ["org"], exact: true });
   }
+  // An uploaded certificate added or removed (ADR 0110): its list, and the
+  // overviews, whose domains show the certificate they are served with.
+  if (
+    audit.action === "certificate.upload" ||
+    audit.action === "certificate.remove"
+  ) {
+    invalidate(["org", "certificates"]);
+    queryClient.invalidateQueries({
+      predicate: ({ queryKey: [root, , part] }) =>
+        root === "project" && part === "overview",
+    });
+  }
   // Registry credentials (features/org/data.ts), set from the CLI too.
   if (audit.action.startsWith("org.registry_credential"))
     invalidate(["org", "registry-credentials"]);
@@ -803,6 +815,8 @@ function invalidateForAudit(
   // A domain added or removed may carry a site along or leave it.
   if (kind === "domain" && audit.project)
     invalidate(["analytics", "sites", audit.project]);
+  // It also changes which uploaded certificate serves what (ADR 0110).
+  if (kind === "domain") invalidate(["org", "certificates"]);
   // Servers count what is placed on them; previews are environments.
   if (kind === "server" || kind === "environment" || kind === "preview")
     invalidate(keys.servers);
