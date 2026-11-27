@@ -210,6 +210,40 @@ Notes:
 
 See [ADR 0030](../decisions/0030-access-protection.md).
 
+## Security headers
+
+Dock's proxy adds these to a service's responses that don't set them,
+its own answers included (a password's `401`, the stopped page), but not
+to [redirect domains](#redirects):
+
+| Header | Value |
+|---|---|
+| `Strict-Transport-Security` | `max-age=31536000` (only over HTTPS; no `includeSubDomains`, no `preload`) |
+| `X-Content-Type-Options` | `nosniff` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `X-Frame-Options` | `SAMEORIGIN` |
+
+A header the app sends itself is left as it is, so an app that sets its
+own `X-Frame-Options` or HSTS keeps it. There is no
+`Content-Security-Policy`: only the app knows what its pages load.
+
+It is on for services created since Dock added it and off for older ones.
+It is a setting like the port, staged and put live by the next deploy or
+Apply, and each release keeps the value it was deployed with, so a
+rollback brings that back:
+
+```sh
+dock service update --security-headers=false   # e.g. a widget other sites frame
+dock service update --security-headers         # on again
+```
+
+In the UI it is the Security headers row under the domain list on
+Settings, Domains. `[deploy] security_headers = false` in
+[dock.toml](../dock-toml.md) turns it off from the repository. A server
+whose dock is older than the control plane's serves the routes without
+them until it is updated. See
+[ADR 0107](../decisions/0107-security-headers.md).
+
 ## Uptime checks
 
 An uptime check fetches a URL on one of the service's domains from outside

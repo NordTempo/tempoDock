@@ -320,6 +320,8 @@ func revertSetting(next *apitypes.ServiceSettings, live apitypes.ServiceSettings
 		next.PreDeployTimeoutSeconds = live.PreDeployTimeoutSeconds
 	case "pre_deploy_snapshot":
 		next.PreDeploySnapshot = live.PreDeploySnapshot
+	case "security_headers":
+		next.SecurityHeaders = live.SecurityHeaders
 	}
 }
 
@@ -873,6 +875,7 @@ func settingChanges(service string, old, next apitypes.ServiceSettings) []apityp
 		{"pre_deploy_command", old.PreDeployCommand, next.PreDeployCommand},
 		{"pre_deploy_timeout_seconds", strconv.Itoa(old.PreDeployTimeoutSeconds), strconv.Itoa(next.PreDeployTimeoutSeconds)},
 		{"pre_deploy_snapshot", strconv.FormatBool(old.PreDeploySnapshot), strconv.FormatBool(next.PreDeploySnapshot)},
+		{"security_headers", strconv.FormatBool(old.SecurityHeaders), strconv.FormatBool(next.SecurityHeaders)},
 	}
 	var out []apitypes.SettingChange
 	for _, f := range fields {

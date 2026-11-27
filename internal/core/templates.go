@@ -208,6 +208,7 @@ func (c *Core) createFromTemplate(ctx context.Context, a Actor, es envScope, nam
 	err := c.store.Tx(ctx, func(q *store.Queries) error {
 		s, err := q.CreateService(ctx, store.CreateServiceParams{
 			EnvironmentID: es.env.ID, Name: name, Image: image, StartCommand: t.cmd, MemoryMb: int64(t.memoryMB),
+			SecurityHeaders: true, // as every new service (ADR 0107)
 		})
 		if store.IsUnique(err) {
 			// An archived service keeps its name: say so, as it isn't in

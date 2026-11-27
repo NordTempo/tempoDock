@@ -245,6 +245,14 @@ type headerOps struct {
 	// Deferred applies the change when the response is written, so it
 	// overrides the same header from an upstream. Response edits only.
 	Deferred bool `json:"deferred,omitempty"`
+	// Require applies a deferred change only to responses it matches.
+	Require *responseMatcher `json:"require,omitempty"`
+}
+
+// responseMatcher matches a response by its headers: a header listed
+// with no values (JSON null) matches only when the response lacks it.
+type responseMatcher struct {
+	Headers map[string][]string `json:"headers"`
 }
 
 type tlsApp struct {
@@ -457,6 +465,17 @@ func Render(opts Options, routes []node.Route, certs []node.Certificate) ([]byte
 		if r.PathPrefix != "" {
 			m.Path = []string{r.PathPrefix + "*"}
 		}
+		// Security headers wrap everything after them: the app's
+		// responses, and Dock's own (a password's 401, a login, a 503)
+		// too. Tunnel visitors are on HTTPS, whatever this server's own
+		// scheme.
+		var headers, headersVia []handler
+		if r.SecurityHeaders && r.RedirectTo == "" {
+			headers, headersVia = headersHTTP, headersHTTPS
+			if scheme == "https" {
+				headers = headersHTTPS
+			}
+		}
 		var handle []handler
 		if r.Traffic && r.RedirectTo == "" && opts.TrafficAddr != "" {
 			if counted == nil {
@@ -476,7 +495,7 @@ func Render(opts Options, routes []node.Route, certs []node.Certificate) ([]byte
 			if r.Access.Login() {
 				handle = append(handle, loginAccess(opts.accessCheck, r.Access)...)
 			} else {
-				handle = append(handle, passwordAccess(opts.accessCheck, r.Access)...)
+				handle = append(handle, passwordAccess(opts.accessCheck, r.Access, headers)...)
 			}
 		}
 		if r.Wake != "" && r.RedirectTo == "" && r.Stopped == "" {
@@ -521,10 +540,10 @@ func Render(opts Options, routes []node.Route, certs []node.Certificate) ([]byte
 			}
 		}
 		if public {
-			main = append(main, route{Match: []match{m}, Handle: append(slices.Clone(handle), h), Terminal: true})
+			main = append(main, route{Match: []match{m}, Handle: slices.Concat(headers, handle, []handler{h}), Terminal: true})
 		}
 		if tunnelListener {
-			viaTunnel = append(viaTunnel, route{Match: []match{m}, Handle: append(slices.Clone(handle), ht), Terminal: true})
+			viaTunnel = append(viaTunnel, route{Match: []match{m}, Handle: slices.Concat(headersVia, handle, []handler{ht}), Terminal: true})
 		}
 	}
 	// Apps' OTLP exports, plain HTTP from the server's own containers:
@@ -768,6 +787,30 @@ func scriptInject(opts Options, r node.Route) *handler {
 	return &handler{Handler: "dock_inject", Hosts: hosts, Src: ingest.ScriptPath}
 }
 
+// headersHTTPS and headersHTTP are the handlers of a route with
+// SecurityHeaders, for visitors on HTTPS and on plain HTTP. Built once:
+// Render only reads them.
+var headersHTTPS, headersHTTP = securityHeaders(true), securityHeaders(false)
+
+// securityHeaders are the headers handlers that add node.SecurityHeaders:
+// one per header, each set when the response is written and only if the
+// response lacks it, so the app's own header wins. HSTS only for
+// visitors on HTTPS: browsers ignore it over plain HTTP.
+func securityHeaders(https bool) []handler {
+	out := make([]handler, 0, len(node.SecurityHeaders))
+	for _, h := range node.SecurityHeaders {
+		if h.Name == "Strict-Transport-Security" && !https {
+			continue
+		}
+		out = append(out, handler{Handler: "headers", Response: &headerOps{
+			Set:      map[string][]string{h.Name: {h.Value}},
+			Deferred: true,
+			Require:  &responseMatcher{Headers: map[string][]string{h.Name: nil}},
+		}})
+	}
+	return out
+}
+
 // privateRanges are where apps' containers reach the server from: their
 // Docker networks are private. Anyone else asking for dock-otlp gets the
 // catch-all 404; the ingest checks every export's token besides.
@@ -810,9 +853,10 @@ const userHeaderAlias = "X_Dock_User"
 // key, a request that says it is Dock's uptime probe and brings a session
 // cookie is asked for no password: the access check decides it instead
 // (probeAccess). Everyone else meets basic auth exactly as without the
-// key, at no extra cost.
-func passwordAccess(check accessCheck, a *node.Access) []handler {
-	basic := basicAuth(a)
+// key, at no extra cost. headers are the route's security headers
+// handlers, if it has them; basic auth's 401 gets them too (basicAuth).
+func passwordAccess(check accessCheck, a *node.Access, headers []handler) []handler {
+	basic := basicAuth(a, headers)
 	if len(a.ProbeKey) == 0 || check.dial == "" {
 		return basic
 	}
@@ -850,9 +894,16 @@ func probeAccess(check accessCheck, a *node.Access) []handler {
 	}
 }
 
-// basicAuth is passwordAccess for everyone but the probe.
-func basicAuth(a *node.Access) []handler {
-	return []handler{
+// basicAuth is passwordAccess for everyone but the probe. With headers
+// (securityHeaders), their headers are set on the response before the
+// check and deleted once it passes. Its 401 is an error, which Caddy
+// writes outside the route's deferred handlers but with what is set by
+// then; a request that signs in reaches the app with none of them, so the
+// deferred handlers still let the app's own win. (Server-wide error
+// routes would reach the 401 too, but with any of them Caddy logs every
+// handled error, a 502 too, at debug level.)
+func basicAuth(a *node.Access, headers []handler) []handler {
+	auth := []handler{
 		{Handler: "authentication", Providers: &authProviders{HTTPBasic: httpBasic{
 			Accounts:  []account{{Username: a.Username, Password: a.PasswordHash}},
 			Hash:      hashAlg{Algorithm: "bcrypt"},
@@ -861,6 +912,17 @@ func basicAuth(a *node.Access) []handler {
 		}}},
 		{Handler: "headers", Request: &headerOps{Delete: []string{userHeaderAlias}, Set: map[string][]string{access.UserHeader: {"{http.auth.user.id}"}}}},
 	}
+	if len(headers) == 0 {
+		return auth
+	}
+	set, unset := &headerOps{Set: map[string][]string{}}, &headerOps{}
+	for _, h := range headers {
+		for name, v := range h.Response.Set {
+			set.Set[name] = v
+			unset.Delete = append(unset.Delete, name)
+		}
+	}
+	return slices.Concat([]handler{{Handler: "headers", Response: set}}, auth[:1], []handler{{Handler: "headers", Response: unset}}, auth[1:])
 }
 
 // loginAccess is Caddy's forward_auth, spelled out: the request's method,

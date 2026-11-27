@@ -18,7 +18,8 @@ import (
 // (ADR 0030), its requests counted (ADR 0033) and, for hostnames of an
 // analytics site, /_dock/a/* sent to the server's ingest tagged with the
 // site, service and release (ADR 0037) and, unless the site's auto_script
-// is off, the script added to their pages (ADR 0106); services that moved away are
+// is off, the script added to their pages (ADR 0106), and the active
+// release's security headers (ADR 0107); services that moved away are
 // forwarded with their domains, except generated ones under another
 // server's base (ADR 0063); redirect domains redirect, and
 // those of a stopped service answer 503 saying so (ADR 0050). Those of an
@@ -34,9 +35,11 @@ func (c *Core) applyRoutes(ctx context.Context, serverID int64) error {
 }
 
 // routeOverride is a release a cutover switches a service to before the
-// DB records it as active: its host port, and its ID for analytics tags.
+// DB records it as active: its host port, its ID for analytics tags, and
+// whether it has security headers.
 type routeOverride struct {
 	port, release int64
+	headers       bool
 }
 
 // applyRoutesLocked is applyRoutes for callers holding routesMu. override
@@ -121,11 +124,11 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 	bySvc := map[svcRoute]int{} // → index in routes
 	for _, d := range rows {
 		tunnelOnly := viaTunnel[d.Hostname]
-		port, release, stopped, asleep := d.HostPort, d.ReleaseID, d.Stopped, d.Asleep
+		port, release, stopped, asleep, headers := d.HostPort, d.ReleaseID, d.Stopped, d.Asleep, d.SecurityHeaders
 		if o, ok := override[d.ServiceID]; ok {
 			// The release going live runs, whether the service was
 			// stopped or not.
-			port, release, stopped, asleep = o.port, o.release, false, false
+			port, release, stopped, asleep, headers = o.port, o.release, false, false, o.headers
 		}
 		switch {
 		case d.RedirectTo != "":
@@ -149,7 +152,8 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 					// on a port of its own (forwards.go).
 					port = p
 				}
-				routes = append(routes, node.Route{Upstream: fmt.Sprintf("127.0.0.1:%d", port), Key: routeKey(d.ServiceID), Access: acc, Traffic: true, TunnelOnly: tunnelOnly, Hold: held[d.ServiceID], QuietProbes: d.Sleepable})
+				routes = append(routes, node.Route{Upstream: fmt.Sprintf("127.0.0.1:%d", port), Key: routeKey(d.ServiceID), Access: acc, Traffic: true, TunnelOnly: tunnelOnly, Hold: held[d.ServiceID], QuietProbes: d.Sleepable,
+					SecurityHeaders: headers})
 				routes[i].Trace = traced[d.ServiceID]
 				switch {
 				case stopped:

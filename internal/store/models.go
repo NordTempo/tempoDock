@@ -926,6 +926,7 @@ type Release struct {
 	PinnedRef             string
 	BaseImage             string
 	BaseDigest            string
+	SecurityHeaders       bool
 }
 
 type ReleaseEvent struct {
@@ -1074,6 +1075,7 @@ type Service struct {
 	FromTemplate                   string
 	FromTemplateRevision           int64
 	AutoUpdate                     int64
+	SecurityHeaders                bool
 }
 
 type ServiceAccess struct {

@@ -1148,3 +1148,54 @@ func TestIntegrationWake(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
+// Security headers through a real Caddy (ADR 0107): the ones the app
+// leaves out are added, the one it sets keeps its value, a password's
+// 401 gets them all, and a route without the flag gets none.
+func TestIntegrationSecurityHeaders(t *testing.T) {
+	ask := newAskServer(t, "app.test", "plain.test", "locked.test")
+	tc := startCaddy(t, ask.url, false)
+	app := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Frame-Options", "DENY")
+		_, _ = io.WriteString(w, "ok")
+	}))
+	t.Cleanup(app.Close)
+	upstream := strings.TrimPrefix(app.URL, "http://")
+	hash, _ := bcrypt.GenerateFromPassword([]byte("correct horse battery"), 4)
+	tc.applyRoutes(t, []node.Route{
+		{Hostnames: []string{"app.test"}, Upstream: upstream, SecurityHeaders: true},
+		{Hostnames: []string{"plain.test"}, Upstream: upstream},
+		{Hostnames: []string{"locked.test"}, Upstream: upstream, SecurityHeaders: true, Access: &node.Access{Username: "team", PasswordHash: string(hash)}},
+	})
+	tc.trustInternalCA(t)
+
+	_, h, _ := tc.get(t, tc.url("https", "app.test", "/"))
+	want := map[string]string{
+		"Strict-Transport-Security": "max-age=31536000", "X-Content-Type-Options": "nosniff",
+		"Referrer-Policy": "strict-origin-when-cross-origin", "X-Frame-Options": "DENY",
+	}
+	for name, v := range want {
+		if got := h.Values(name); len(got) != 1 || got[0] != v {
+			t.Errorf("%s = %v, want %q", name, got, v)
+		}
+	}
+	code, h, _ := tc.get(t, tc.url("https", "locked.test", "/"))
+	if code != http.StatusUnauthorized || h.Get("Www-Authenticate") == "" || h.Get("X-Frame-Options") != "SAMEORIGIN" || h.Get("Strict-Transport-Security") == "" {
+		t.Errorf("unauthenticated: %d %v", code, h)
+	}
+	// Signed in, the app's own header is the only one.
+	req, _ := http.NewRequest(http.MethodGet, tc.url("https", "locked.test", "/"), nil)
+	req.SetBasicAuth("team", "correct horse battery")
+	resp, err := tc.client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if got := resp.Header.Values("X-Frame-Options"); resp.StatusCode != 200 || len(got) != 1 || got[0] != "DENY" || resp.Header.Get("Referrer-Policy") == "" {
+		t.Errorf("signed in: %d %v", resp.StatusCode, resp.Header)
+	}
+	_, h, _ = tc.get(t, tc.url("https", "plain.test", "/"))
+	if got := h.Get("X-Content-Type-Options"); got != "" {
+		t.Errorf("a route without security headers got X-Content-Type-Options %q", got)
+	}
+}

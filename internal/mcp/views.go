@@ -136,6 +136,8 @@ type serviceView struct {
 	StoppedBy string     `json:"stopped_by,omitempty"`
 	// PreDeploySnapshot snapshots stateful services before that command.
 	PreDeploySnapshot bool `json:"pre_deploy_snapshot,omitempty"`
+	// SecurityHeaders: Dock adds security headers to its responses.
+	SecurityHeaders bool `json:"security_headers,omitempty"`
 }
 
 func viewService(s apitypes.Service) serviceView {
@@ -145,7 +147,7 @@ func viewService(s apitypes.Service) serviceView {
 		ExitCode: s.Status.ExitCode, MemoryMB: s.EffectiveMemoryMB, Stateful: s.Stateful, Database: s.DataEngine,
 		PendingChanges: s.PendingChanges, Archived: s.ArchivedAt != nil, PreDeployCommand: s.PreDeployCommand,
 		StoppedAt: s.StoppedAt, StoppedBy: s.StoppedBy,
-		PreDeploySnapshot: s.PreDeploySnapshot,
+		PreDeploySnapshot: s.PreDeploySnapshot, SecurityHeaders: s.SecurityHeaders,
 	}
 }
 

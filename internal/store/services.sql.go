@@ -67,9 +67,9 @@ INSERT INTO services (environment_id, name, image, port, health_check_path, heal
                       start_command, dockerfile_path, build_command, memory_mb, cpus,
                       health_check_interval_seconds, health_check_probe_timeout_seconds,
                       health_check_retries, health_check_start_period_seconds,
-                      pre_deploy_command, pre_deploy_timeout_seconds, pre_deploy_snapshot)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, database_url_variable, template, health_check_interval_seconds, health_check_probe_timeout_seconds, health_check_retries, health_check_start_period_seconds, pre_deploy_command, pre_deploy_timeout_seconds, staged, stopped_at, stopped_by, pre_deploy_snapshot, "database", from_template, from_template_revision, auto_update
+                      pre_deploy_command, pre_deploy_timeout_seconds, pre_deploy_snapshot, security_headers)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, database_url_variable, template, health_check_interval_seconds, health_check_probe_timeout_seconds, health_check_retries, health_check_start_period_seconds, pre_deploy_command, pre_deploy_timeout_seconds, staged, stopped_at, stopped_by, pre_deploy_snapshot, "database", from_template, from_template_revision, auto_update, security_headers
 `
 
 type CreateServiceParams struct {
@@ -91,6 +91,7 @@ type CreateServiceParams struct {
 	PreDeployCommand               string
 	PreDeployTimeoutSeconds        int64
 	PreDeploySnapshot              bool
+	SecurityHeaders                bool
 }
 
 func (q *Queries) CreateService(ctx context.Context, arg CreateServiceParams) (Service, error) {
@@ -113,6 +114,7 @@ func (q *Queries) CreateService(ctx context.Context, arg CreateServiceParams) (S
 		arg.PreDeployCommand,
 		arg.PreDeployTimeoutSeconds,
 		arg.PreDeploySnapshot,
+		arg.SecurityHeaders,
 	)
 	var i Service
 	err := row.Scan(
@@ -147,6 +149,7 @@ func (q *Queries) CreateService(ctx context.Context, arg CreateServiceParams) (S
 		&i.FromTemplate,
 		&i.FromTemplateRevision,
 		&i.AutoUpdate,
+		&i.SecurityHeaders,
 	)
 	return i, err
 }
@@ -214,7 +217,7 @@ func (q *Queries) DeleteVolume(ctx context.Context, id int64) error {
 }
 
 const getService = `-- name: GetService :one
-SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, database_url_variable, template, health_check_interval_seconds, health_check_probe_timeout_seconds, health_check_retries, health_check_start_period_seconds, pre_deploy_command, pre_deploy_timeout_seconds, staged, stopped_at, stopped_by, pre_deploy_snapshot, "database", from_template, from_template_revision, auto_update FROM services WHERE id = +?
+SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, database_url_variable, template, health_check_interval_seconds, health_check_probe_timeout_seconds, health_check_retries, health_check_start_period_seconds, pre_deploy_command, pre_deploy_timeout_seconds, staged, stopped_at, stopped_by, pre_deploy_snapshot, "database", from_template, from_template_revision, auto_update, security_headers FROM services WHERE id = +?
 `
 
 func (q *Queries) GetService(ctx context.Context, id int64) (Service, error) {
@@ -252,12 +255,13 @@ func (q *Queries) GetService(ctx context.Context, id int64) (Service, error) {
 		&i.FromTemplate,
 		&i.FromTemplateRevision,
 		&i.AutoUpdate,
+		&i.SecurityHeaders,
 	)
 	return i, err
 }
 
 const getServiceByName = `-- name: GetServiceByName :one
-SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, database_url_variable, template, health_check_interval_seconds, health_check_probe_timeout_seconds, health_check_retries, health_check_start_period_seconds, pre_deploy_command, pre_deploy_timeout_seconds, staged, stopped_at, stopped_by, pre_deploy_snapshot, "database", from_template, from_template_revision, auto_update FROM services WHERE environment_id = +? AND name = +?
+SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, database_url_variable, template, health_check_interval_seconds, health_check_probe_timeout_seconds, health_check_retries, health_check_start_period_seconds, pre_deploy_command, pre_deploy_timeout_seconds, staged, stopped_at, stopped_by, pre_deploy_snapshot, "database", from_template, from_template_revision, auto_update, security_headers FROM services WHERE environment_id = +? AND name = +?
 `
 
 type GetServiceByNameParams struct {
@@ -300,6 +304,7 @@ func (q *Queries) GetServiceByName(ctx context.Context, arg GetServiceByNamePara
 		&i.FromTemplate,
 		&i.FromTemplateRevision,
 		&i.AutoUpdate,
+		&i.SecurityHeaders,
 	)
 	return i, err
 }
@@ -422,7 +427,7 @@ func (q *Queries) ListEnvironmentVolumes(ctx context.Context, environmentID int6
 }
 
 const listProjectServices = `-- name: ListProjectServices :many
-SELECT services.id, services.environment_id, services.name, services.image, services.port, services.health_check_path, services.health_check_timeout_seconds, services.start_command, services.dockerfile_path, services.build_command, services.memory_mb, services.cpus, services.pending_settings, services.created_at, services.archived_at, services.database_url_variable, services.template, services.health_check_interval_seconds, services.health_check_probe_timeout_seconds, services.health_check_retries, services.health_check_start_period_seconds, services.pre_deploy_command, services.pre_deploy_timeout_seconds, services.staged, services.stopped_at, services.stopped_by, services.pre_deploy_snapshot, services."database", services.from_template, services.from_template_revision, services.auto_update FROM services
+SELECT services.id, services.environment_id, services.name, services.image, services.port, services.health_check_path, services.health_check_timeout_seconds, services.start_command, services.dockerfile_path, services.build_command, services.memory_mb, services.cpus, services.pending_settings, services.created_at, services.archived_at, services.database_url_variable, services.template, services.health_check_interval_seconds, services.health_check_probe_timeout_seconds, services.health_check_retries, services.health_check_start_period_seconds, services.pre_deploy_command, services.pre_deploy_timeout_seconds, services.staged, services.stopped_at, services.stopped_by, services.pre_deploy_snapshot, services."database", services.from_template, services.from_template_revision, services.auto_update, services.security_headers FROM services
 JOIN environments ON environments.id = services.environment_id
 WHERE environments.project_id = +?
 ORDER BY services.environment_id, services.name
@@ -470,6 +475,7 @@ func (q *Queries) ListProjectServices(ctx context.Context, projectID int64) ([]S
 			&i.FromTemplate,
 			&i.FromTemplateRevision,
 			&i.AutoUpdate,
+			&i.SecurityHeaders,
 		); err != nil {
 			return nil, err
 		}
@@ -609,7 +615,7 @@ func (q *Queries) ListServiceIDs(ctx context.Context) ([]int64, error) {
 }
 
 const listServices = `-- name: ListServices :many
-SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, database_url_variable, template, health_check_interval_seconds, health_check_probe_timeout_seconds, health_check_retries, health_check_start_period_seconds, pre_deploy_command, pre_deploy_timeout_seconds, staged, stopped_at, stopped_by, pre_deploy_snapshot, "database", from_template, from_template_revision, auto_update FROM services WHERE environment_id = +? ORDER BY name
+SELECT id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, database_url_variable, template, health_check_interval_seconds, health_check_probe_timeout_seconds, health_check_retries, health_check_start_period_seconds, pre_deploy_command, pre_deploy_timeout_seconds, staged, stopped_at, stopped_by, pre_deploy_snapshot, "database", from_template, from_template_revision, auto_update, security_headers FROM services WHERE environment_id = +? ORDER BY name
 `
 
 func (q *Queries) ListServices(ctx context.Context, environmentID int64) ([]Service, error) {
@@ -653,6 +659,7 @@ func (q *Queries) ListServices(ctx context.Context, environmentID int64) ([]Serv
 			&i.FromTemplate,
 			&i.FromTemplateRevision,
 			&i.AutoUpdate,
+			&i.SecurityHeaders,
 		); err != nil {
 			return nil, err
 		}
@@ -865,9 +872,10 @@ UPDATE services SET
     start_command = ?, dockerfile_path = ?, build_command = ?, memory_mb = ?, cpus = ?,
     health_check_interval_seconds = ?, health_check_probe_timeout_seconds = ?,
     health_check_retries = ?, health_check_start_period_seconds = ?,
-    pre_deploy_command = ?, pre_deploy_timeout_seconds = ?, pre_deploy_snapshot = ?
+    pre_deploy_command = ?, pre_deploy_timeout_seconds = ?, pre_deploy_snapshot = ?,
+    security_headers = ?
 WHERE id = +?
-RETURNING id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, database_url_variable, template, health_check_interval_seconds, health_check_probe_timeout_seconds, health_check_retries, health_check_start_period_seconds, pre_deploy_command, pre_deploy_timeout_seconds, staged, stopped_at, stopped_by, pre_deploy_snapshot, "database", from_template, from_template_revision, auto_update
+RETURNING id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, database_url_variable, template, health_check_interval_seconds, health_check_probe_timeout_seconds, health_check_retries, health_check_start_period_seconds, pre_deploy_command, pre_deploy_timeout_seconds, staged, stopped_at, stopped_by, pre_deploy_snapshot, "database", from_template, from_template_revision, auto_update, security_headers
 `
 
 type UpdateServiceParams struct {
@@ -887,6 +895,7 @@ type UpdateServiceParams struct {
 	PreDeployCommand               string
 	PreDeployTimeoutSeconds        int64
 	PreDeploySnapshot              bool
+	SecurityHeaders                bool
 	ID                             int64
 }
 
@@ -908,6 +917,7 @@ func (q *Queries) UpdateService(ctx context.Context, arg UpdateServiceParams) (S
 		arg.PreDeployCommand,
 		arg.PreDeployTimeoutSeconds,
 		arg.PreDeploySnapshot,
+		arg.SecurityHeaders,
 		arg.ID,
 	)
 	var i Service
@@ -943,6 +953,7 @@ func (q *Queries) UpdateService(ctx context.Context, arg UpdateServiceParams) (S
 		&i.FromTemplate,
 		&i.FromTemplateRevision,
 		&i.AutoUpdate,
+		&i.SecurityHeaders,
 	)
 	return i, err
 }

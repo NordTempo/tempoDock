@@ -46,6 +46,8 @@ pre_deploy_command = "npx prisma migrate deploy"
 pre_deploy_timeout = "15m"
 # Snapshot the environment's stateful services before the pre-deploy command.
 pre_deploy_snapshot = true
+# Dock's security headers on responses that lack them (on for new services).
+security_headers = true
 
 # Scheduled jobs (ADR 0054), one [[jobs]] table each: a command from the
 # release's image on a cron schedule. See "Jobs" below.
@@ -73,6 +75,7 @@ overlap = "skip"
 | `deploy.pre_deploy_command` | string | See [pre-deploy command](guide/deploying.md#pre-deploy-command) |
 | `deploy.pre_deploy_timeout` | duration string | 1s to 1h |
 | `deploy.pre_deploy_snapshot` | boolean | See [pre-deploy command](guide/deploying.md#pre-deploy-command); `false` turns the service's setting off |
+| `deploy.security_headers` | boolean | See [security headers](guide/domains.md#security-headers); `false` turns them off for releases from this source |
 | `jobs[].name` | string | Required. Lower-case letters, digits and dashes, at most 40; unique in the file |
 | `jobs[].schedule` | string | Required. Five cron fields, or `@hourly`, `@daily`, `@weekly`, `@monthly`, `@yearly` |
 | `jobs[].timezone` | string | IANA name, e.g. `"Europe/Oslo"`. Default UTC |

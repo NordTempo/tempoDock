@@ -3777,6 +3777,10 @@
             "minimum": 0,
             "type": "integer"
           },
+          "security_headers": {
+            "description": "Add security headers to responses that lack them (ADR 0107); on when omitted",
+            "type": "boolean"
+          },
           "start_command": {
             "type": "string"
           },
@@ -13706,6 +13710,9 @@
             "description": "Port is published for routing",
             "type": "boolean"
           },
+          "security_headers": {
+            "type": "boolean"
+          },
           "start_command": {
             "type": "string"
           },
@@ -15659,6 +15666,10 @@
           "project": {
             "type": "string"
           },
+          "security_headers": {
+            "description": "Add Strict-Transport-Security, X-Content-Type-Options, Referrer-Policy and X-Frame-Options to responses that don't set them",
+            "type": "boolean"
+          },
           "staged": {
             "enum": [
               "create",
@@ -15726,6 +15737,7 @@
           "pre_deploy_command",
           "pre_deploy_timeout_seconds",
           "pre_deploy_snapshot",
+          "security_headers",
           "effective_memory_mb",
           "effective_cpus",
           "memory_from_default",
@@ -15901,6 +15913,9 @@
           "pre_deploy_timeout_seconds": {
             "format": "int64",
             "type": "integer"
+          },
+          "security_headers": {
+            "type": "boolean"
           },
           "start_command": {
             "type": "string"
@@ -20277,6 +20292,10 @@
             "maximum": 3600,
             "minimum": 0,
             "type": "integer"
+          },
+          "security_headers": {
+            "description": "Add security headers to responses that lack them (ADR 0107)",
+            "type": "boolean"
           },
           "start_command": {
             "type": "string"

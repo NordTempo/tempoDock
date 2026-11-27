@@ -32,6 +32,7 @@ type SettingsInput struct {
 	BuildCommand              *string  `json:"build_command,omitempty"`
 	MemoryMB                  *int     `json:"memory_mb,omitempty" minimum:"0" doc:"Default 512."`
 	CPUs                      *float64 `json:"cpus,omitempty" minimum:"0" doc:"Cores. Default 1."`
+	SecurityHeaders           *bool    `json:"security_headers,omitempty" doc:"HSTS, nosniff, referrer policy, SAMEORIGIN framing on responses lacking them. Default on; false if another site frames the app."`
 }
 
 // addServiceTools registers the service, volume, domain removal, stats
@@ -59,7 +60,7 @@ func (h *handler) addServiceTools(s *mcpkit.Server[core.Actor]) {
 				Name: in.Name, Template: in.Template, Image: deref(set.Image), Port: deref(set.Port),
 				HealthCheckPath: deref(set.HealthCheckPath), HealthCheckTimeoutSeconds: deref(set.HealthCheckTimeoutSeconds),
 				StartCommand: deref(set.StartCommand), DockerfilePath: deref(set.DockerfilePath), BuildCommand: deref(set.BuildCommand),
-				MemoryMB: deref(set.MemoryMB), CPUs: deref(set.CPUs),
+				MemoryMB: deref(set.MemoryMB), CPUs: deref(set.CPUs), SecurityHeaders: set.SecurityHeaders,
 			}
 			if in.Repo != "" {
 				req.Git = &apitypes.ServiceGitRequest{Repo: in.Repo, Branch: in.Branch, Dir: in.Dir}
@@ -118,7 +119,7 @@ func (h *handler) addServiceTools(s *mcpkit.Server[core.Actor]) {
 			res, err := h.core.UpdateService(ctx, c.Actor, ref, apitypes.UpdateServiceRequest{
 				Image: set.Image, Port: set.Port, HealthCheckPath: set.HealthCheckPath, HealthCheckTimeoutSeconds: set.HealthCheckTimeoutSeconds,
 				StartCommand: set.StartCommand, DockerfilePath: set.DockerfilePath, BuildCommand: set.BuildCommand,
-				MemoryMB: set.MemoryMB, CPUs: set.CPUs, Apply: in.Apply,
+				MemoryMB: set.MemoryMB, CPUs: set.CPUs, SecurityHeaders: set.SecurityHeaders, Apply: in.Apply,
 			})
 			if err != nil {
 				return mcpkit.Reply{}, err

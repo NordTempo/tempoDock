@@ -449,6 +449,10 @@ type ServiceSettings struct {
 	// environment before the pre-deploy command runs (ADR 0047); a failed
 	// snapshot fails the release before the command runs.
 	PreDeploySnapshot bool `json:"pre_deploy_snapshot" doc:"Snapshot the environment's stateful services before the pre-deploy command runs; a failed snapshot fails the release"`
+	// SecurityHeaders has Dock's proxy add HSTS, nosniff, a referrer
+	// policy and SAMEORIGIN framing to the service's responses that lack
+	// them (ADR 0107). On for new services.
+	SecurityHeaders bool `json:"security_headers" doc:"Add Strict-Transport-Security, X-Content-Type-Options, Referrer-Policy and X-Frame-Options to responses that don't set them"`
 }
 
 // Service is a container built from source or an image.
@@ -542,6 +546,7 @@ type CreateServiceRequest struct {
 	PreDeployCommand               string `json:"pre_deploy_command,omitempty"`
 	PreDeployTimeoutSeconds        int    `json:"pre_deploy_timeout_seconds,omitempty" minimum:"0" maximum:"3600"`
 	PreDeploySnapshot              bool   `json:"pre_deploy_snapshot,omitempty"`
+	SecurityHeaders                *bool  `json:"security_headers,omitempty" doc:"Add security headers to responses that lack them (ADR 0107); on when omitted"`
 }
 
 // UpdateServiceRequest stages settings changes. Only fields that are set
@@ -560,6 +565,7 @@ type UpdateServiceRequest struct {
 	PreDeployCommand          *string  `json:"pre_deploy_command,omitempty" doc:"Empty string removes it"`
 	PreDeployTimeoutSeconds   *int     `json:"pre_deploy_timeout_seconds,omitempty" minimum:"0" maximum:"3600"`
 	PreDeploySnapshot         *bool    `json:"pre_deploy_snapshot,omitempty"`
+	SecurityHeaders           *bool    `json:"security_headers,omitempty" doc:"Add security headers to responses that lack them (ADR 0107)"`
 	Apply                     bool     `json:"apply,omitempty" doc:"Also apply all staged changes in the environment"`
 
 	HealthCheckIntervalSeconds     *int `json:"health_check_interval_seconds,omitempty" minimum:"-1" maximum:"3600"`
@@ -660,11 +666,14 @@ type ReleaseConfig struct {
 	PreDeployCommand string `json:"pre_deploy_command,omitempty"`
 	// PreDeploySnapshot says the environment's stateful services were (or
 	// would be) snapshotted before the pre-deploy command.
-	PreDeploySnapshot bool          `json:"pre_deploy_snapshot,omitempty"`
-	MemoryMB          int           `json:"memory_mb"`
-	CPUs              float64       `json:"cpus"`
-	VariableKeys      []string      `json:"variable_keys"`
-	Mounts            []VolumeMount `json:"mounts"`
+	PreDeploySnapshot bool `json:"pre_deploy_snapshot,omitempty"`
+	// SecurityHeaders says Dock's proxy adds security headers to the
+	// release's responses (ADR 0107).
+	SecurityHeaders bool          `json:"security_headers,omitempty"`
+	MemoryMB        int           `json:"memory_mb"`
+	CPUs            float64       `json:"cpus"`
+	VariableKeys    []string      `json:"variable_keys"`
+	Mounts          []VolumeMount `json:"mounts"`
 	// FromRepoFile lists the settings dock.toml set (they win over the
 	// service's settings and show as locked).
 	FromRepoFile []string `json:"from_repo_file"`

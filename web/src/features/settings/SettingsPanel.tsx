@@ -262,7 +262,23 @@ export function SettingsPanel({
         <UptimeChecks serviceRef={ref} />
       </SettingsSection>
 
-      <DomainsPanel serviceRef={ref} />
+      <DomainsPanel
+        serviceRef={ref}
+        headers={row(
+          "Security headers",
+          "Added to responses that don't set them: HSTS, nosniff, a referrer policy and SAMEORIGIN framing.",
+          [],
+          undefined,
+          undefined,
+          {
+            key: "security_headers",
+            cli: "--security-headers",
+            word: "add them",
+            title:
+              "Strict-Transport-Security, X-Content-Type-Options, Referrer-Policy and X-Frame-Options; turn off if another site frames the app",
+          },
+        )}
+      />
 
       <ServiceAnalyticsPanel serviceRef={ref} />
 
@@ -514,7 +530,11 @@ function ImageNote({ serviceRef: ref }: { serviceRef: ServiceRef }) {
 type Part = { key: TextSettingKey; word?: string; shown?: string };
 
 /** An on/off setting in a row's form, a checkbox: `word` is its label. */
-type Flag = { key: FlagSettingKey; word: string; title: string };
+/**
+ * An on/off setting in a row; cli, the `dock service update` flag that
+ * sets it, makes a row of only the flag show its command on Save.
+ */
+type Flag = { key: FlagSettingKey; word: string; title: string; cli?: string };
 
 /** A value the evidence suggests for a row's field, with why: "Use 8080". */
 type Suggestion = { key: TextSettingKey; value: string; why: string };
@@ -714,9 +734,19 @@ function SettingRow({
               </span>
             )}
             <span className="flex gap-2">
-              <Button small primary type="submit" disabled={stage.isPending}>
+              <Act
+                small
+                primary
+                type="submit"
+                disabled={stage.isPending}
+                cli={
+                  flag?.cli && parts.length === 0
+                    ? `dock service update ${ref.service} ${flag.cli}=${flagOn} -e ${ref.environment}`
+                    : undefined
+                }
+              >
                 Save
-              </Button>
+              </Act>
               <Button small onClick={cancel}>
                 Cancel
               </Button>
@@ -726,7 +756,7 @@ function SettingRow({
           <span className="text-xs text-mut">
             {staged &&
               `Saved changes wait for Apply in the header (${modKey.trim()} Enter), which puts them live together. `}
-            Empty means the default.
+            {parts.length > 0 && "Empty means the default."}
           </span>
           <ErrorText error={error ?? stage.error} />
         </form>
@@ -752,12 +782,15 @@ function SettingRow({
                   {value(part)}
                 </span>
               ))}
-              {flag && (flagStart() || change(flag.key)) && (
-                <span>
-                  <span className="font-sans text-mut">{flag.word} </span>
-                  {value({ key: flag.key })}
-                </span>
-              )}
+              {flag && parts.length === 0 && value({ key: flag.key })}
+              {flag &&
+                parts.length > 0 &&
+                (flagStart() || change(flag.key)) && (
+                  <span>
+                    <span className="font-sans text-mut">{flag.word} </span>
+                    {value({ key: flag.key })}
+                  </span>
+                )}
             </span>
           </OpenValue>
           {saved.length > 0 && (

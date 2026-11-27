@@ -60,21 +60,24 @@ type ServiceExport struct {
 	Name     string   `json:"name" toml:"name"`
 	Template Template `json:"template,omitempty" toml:"template,omitempty"`
 	// Stopped is set for a service stopped on purpose (`dock service stop`).
-	Stopped                   bool            `json:"stopped,omitempty" toml:"stopped,omitempty"`
-	Image                     string          `json:"image,omitempty" toml:"image,omitempty"`
-	Port                      int             `json:"port,omitempty" toml:"port,omitempty"`
-	HealthCheckPath           string          `json:"health_check_path,omitempty" toml:"health_check_path,omitempty"`
-	HealthCheckTimeoutSeconds int             `json:"health_check_timeout_seconds,omitempty" toml:"health_check_timeout_seconds,omitempty"`
-	StartCommand              string          `json:"start_command,omitempty" toml:"start_command,omitempty"`
-	DockerfilePath            string          `json:"dockerfile_path,omitempty" toml:"dockerfile_path,omitempty"`
-	BuildCommand              string          `json:"build_command,omitempty" toml:"build_command,omitempty"`
-	MemoryMB                  int             `json:"memory_mb,omitempty" toml:"memory_mb,omitempty"`
-	CPUs                      float64         `json:"cpus,omitempty" toml:"cpus,omitempty"`
-	PreDeployCommand          string          `json:"pre_deploy_command,omitempty" toml:"pre_deploy_command,omitempty"`
-	PreDeployTimeoutSeconds   int             `json:"pre_deploy_timeout_seconds,omitempty" toml:"pre_deploy_timeout_seconds,omitempty"`
-	PreDeploySnapshot         bool            `json:"pre_deploy_snapshot,omitempty" toml:"pre_deploy_snapshot,omitempty"`
-	Database                  DatabaseSetting `json:"database,omitempty" toml:"database,omitempty"`
-	DatabaseURLVariable       string          `json:"database_url_variable,omitempty" toml:"database_url_variable,omitempty"`
+	Stopped                   bool    `json:"stopped,omitempty" toml:"stopped,omitempty"`
+	Image                     string  `json:"image,omitempty" toml:"image,omitempty"`
+	Port                      int     `json:"port,omitempty" toml:"port,omitempty"`
+	HealthCheckPath           string  `json:"health_check_path,omitempty" toml:"health_check_path,omitempty"`
+	HealthCheckTimeoutSeconds int     `json:"health_check_timeout_seconds,omitempty" toml:"health_check_timeout_seconds,omitempty"`
+	StartCommand              string  `json:"start_command,omitempty" toml:"start_command,omitempty"`
+	DockerfilePath            string  `json:"dockerfile_path,omitempty" toml:"dockerfile_path,omitempty"`
+	BuildCommand              string  `json:"build_command,omitempty" toml:"build_command,omitempty"`
+	MemoryMB                  int     `json:"memory_mb,omitempty" toml:"memory_mb,omitempty"`
+	CPUs                      float64 `json:"cpus,omitempty" toml:"cpus,omitempty"`
+	PreDeployCommand          string  `json:"pre_deploy_command,omitempty" toml:"pre_deploy_command,omitempty"`
+	PreDeployTimeoutSeconds   int     `json:"pre_deploy_timeout_seconds,omitempty" toml:"pre_deploy_timeout_seconds,omitempty"`
+	PreDeploySnapshot         bool    `json:"pre_deploy_snapshot,omitempty" toml:"pre_deploy_snapshot,omitempty"`
+	// SecurityHeaders is only written when off. Left out, a new service
+	// gets them and an existing one keeps its setting (ADR 0107).
+	SecurityHeaders     *bool           `json:"security_headers,omitempty" toml:"security_headers,omitempty"`
+	Database            DatabaseSetting `json:"database,omitempty" toml:"database,omitempty"`
+	DatabaseURLVariable string          `json:"database_url_variable,omitempty" toml:"database_url_variable,omitempty"`
 	// Variables are the names of the service's own variables whose values
 	// are set separately (secrets); a project file only requires them.
 	Variables []string `json:"variables,omitempty" toml:"variables,omitempty"`
