@@ -174,12 +174,36 @@ func (c *converter) templateVariables(s *svc) {
 		s.pg = creds
 	case apitypes.TemplateRedis:
 		if v, ok := s.vars["REDIS_PASSWORD"]; ok {
-			s.redisPassword = v.value
+			s.password = v.value
 			delete(s.vars, "REDIS_PASSWORD")
-			c.warn(s, "REDIS_PASSWORD", "The redis template generates its own password, so this value isn't used. Other services' variables that held it now reference %s.", ref(s.name, "REDIS_PASSWORD"))
+			c.warn(s, "REDIS_PASSWORD", "The redis template generates its own password, so this value isn't used. Other services' variables that held it now reference %s, unless another service had the same one.", ref(s.name, "REDIS_PASSWORD"))
+		}
+	case apitypes.TemplateMongoDB:
+		if _, ok := s.vars["MONGO_INITDB_ROOT_PASSWORD"]; ok {
+			s.password, _ = get("MONGO_INITDB_ROOT_PASSWORD")
+			delete(s.vars, "MONGO_INITDB_ROOT_PASSWORD")
+			c.warn(s, "MONGO_INITDB_ROOT_PASSWORD", "The mongodb template generates its own password, so this value isn't used. Other services' variables that held it now reference %s, unless another service had the same one.", ref(s.name, "MONGO_INITDB_ROOT_PASSWORD"))
+		}
+		// MONGODB_URI holds the user as it is, unescaped: keep one only
+		// when it is known now and safe in a URL as written (MongoDB wants
+		// $ : / ? # [ ] @ and % escaped).
+		if _, set := s.vars["MONGO_INITDB_ROOT_USERNAME"]; set {
+			switch v, ok := get("MONGO_INITDB_ROOT_USERNAME"); {
+			case ok && v == "root":
+				delete(s.vars, "MONGO_INITDB_ROOT_USERNAME")
+			case !ok:
+				delete(s.vars, "MONGO_INITDB_ROOT_USERNAME")
+				c.warn(s, "MONGO_INITDB_ROOT_USERNAME", "The user has no value in the Compose file or .env, and MONGODB_URI holds it as it is, so the template's root user is used instead.")
+			case !mongoUserRe.MatchString(v):
+				delete(s.vars, "MONGO_INITDB_ROOT_USERNAME")
+				c.warn(s, "MONGO_INITDB_ROOT_USERNAME", "The user %q has characters a mongodb:// URL can't hold as they are, so the template's root user is used instead.", v)
+			}
 		}
 	}
 }
+
+// mongoUserRe is a MongoDB user that a connection string holds as it is.
+var mongoUserRe = regexp.MustCompile(`^[A-Za-z0-9._~-]+$`)
 
 // portVariable uses a PORT variable as the service's port when nothing
 // else set one: Dock sets PORT from the port setting.
@@ -250,7 +274,8 @@ func (c *converter) rewrite(key string, v *variable) (string, string) {
 	mentions := func(words ...string) bool {
 		return slices.ContainsFunc(words, func(w string) bool { return strings.Contains(upper, w) })
 	}
-	if mentions("DB", "PG", "POSTGRES", "DATABASE") {
+	// MONGODB_PASSWORD says DB too: Mongo and Redis keys are theirs.
+	if mentions("DB", "PG", "POSTGRES", "DATABASE") && !mentions("MONGO", "REDIS") {
 		field := ""
 		switch {
 		case mentions("PASS"):
@@ -284,12 +309,29 @@ func (c *converter) rewrite(key string, v *variable) (string, string) {
 			return r, fmt.Sprintf("matches %s's %s in the Compose file, so it now references %s.", match[0].compose, field, r)
 		}
 	}
-	if mentions("REDIS") && mentions("PASS") {
+	if mentions("REDIS", "MONGO") && mentions("PASS") {
+		// A REDIS_ key matches only a Redis template, a MONGO_ key only a
+		// MongoDB one; as for Postgres, only one service may match, or
+		// the value stays as it is.
+		var match []*svc
 		for _, t := range c.services {
-			if t.out.Template == apitypes.TemplateRedis && t.redisPassword != "" && v.value == t.redisPassword {
-				r := ref(t.name, "REDIS_PASSWORD")
-				return r, fmt.Sprintf("matches %s's password in the Compose file, so it now references %s.", t.compose, r)
+			pw, ok := templatePasswords[t.out.Template]
+			if ok && mentions(pw.engine) && t.password != "" && v.value == t.password {
+				match = append(match, t)
 			}
+		}
+		if len(match) == 1 {
+			r := ref(match[0].name, templatePasswords[match[0].out.Template].field)
+			return r, fmt.Sprintf("matches %s's password in the Compose file, so it now references %s.", match[0].compose, r)
+		}
+		if len(match) > 1 {
+			// Kept as written, which no generated password matches: say
+			// which references to choose from.
+			refs := make([]string, len(match))
+			for i, t := range match {
+				refs[i] = ref(t.name, templatePasswords[t.out.Template].field)
+			}
+			return v.value, fmt.Sprintf("matches the password of %d services in the Compose file, which each get their own, so it keeps the old value and won't log in; set it to the one it uses: %s.", len(match), strings.Join(refs, " or "))
 		}
 	}
 	if strings.HasSuffix(upper, "HOST") {
@@ -298,6 +340,13 @@ func (c *converter) rewrite(key string, v *variable) (string, string) {
 		}
 	}
 	return "", ""
+}
+
+// templatePasswords are the templates whose password other services'
+// variables may hold: the variable it is, and the word a key names it by.
+var templatePasswords = map[apitypes.Template]struct{ field, engine string }{
+	apitypes.TemplateRedis:   {"REDIS_PASSWORD", "REDIS"},
+	apitypes.TemplateMongoDB: {"MONGO_INITDB_ROOT_PASSWORD", "MONGO"},
 }
 
 // rewriteURL rewrites a URL whose host is a template service into its
@@ -322,6 +371,22 @@ func (c *converter) rewriteURL(value string, u urlParts) (string, string) {
 	case t.out.Template == apitypes.TemplateRedis && (u.scheme == "redis" || u.scheme == "rediss"):
 		r := ref(t.name, "REDIS_URL") + u.rest
 		return r, fmt.Sprintf("points at %s, so it now uses the redis template's REDIS_URL: %s.", t.compose, r)
+	case t.out.Template == apitypes.TemplateMongoDB && u.scheme == "mongodb":
+		// The app's database and other options stay; the root user is
+		// in admin, whatever authSource the old user had.
+		path, query, _ := strings.Cut(u.rest, "?")
+		opts := []string{}
+		for o := range strings.SplitSeq(query, "&") {
+			if o != "" && !strings.HasPrefix(strings.ToLower(o), "authsource=") {
+				opts = append(opts, o)
+			}
+		}
+		query = strings.Join(append(opts, "authSource=admin"), "&")
+		if path == "" {
+			path = "/"
+		}
+		r := fmt.Sprintf("mongodb://%s:%s@%s:27017%s?%s", ref(t.name, "MONGO_INITDB_ROOT_USERNAME"), ref(t.name, "MONGO_INITDB_ROOT_PASSWORD"), t.name, path, query)
+		return r, fmt.Sprintf("points at %s, so it now uses the mongodb template's credentials: %s.", t.compose, r)
 	case t.name != t.compose && strings.EqualFold(u.host, t.compose):
 		return replaceHost(value, t.name), fmt.Sprintf("points at %s, which is named %s in Dock, so the URL now uses that name.", t.compose, t.name)
 	}

@@ -553,7 +553,7 @@ func jobLog(env map[string]string, out string) string {
 		return ""
 	}
 	secrets := map[string]string{}
-	for _, k := range append([]string{"RESTIC_PASSWORD", "AWS_SECRET_ACCESS_KEY", "PGPASSWORD", "REDISCLI_AUTH", "MYSQL_PWD"}, walarchive.Secrets...) {
+	for _, k := range append([]string{"RESTIC_PASSWORD", "AWS_SECRET_ACCESS_KEY", "PGPASSWORD", "REDISCLI_AUTH", "MYSQL_PWD", backup.MongoPassword}, walarchive.Secrets...) {
 		if v := env[k]; v != "" {
 			secrets[k] = v
 		}
@@ -782,6 +782,14 @@ func (c *Core) backupJob(ctx context.Context, ss svcScope, row store.Backup, for
 		}
 		t, _ := templateOf(ss.svc)
 		src.Port, src.Password, image = t.port, mysqlRootPassword(env), jobImage(ss)
+	case apitypes.BackupMongoDB:
+		env, err := c.activeEnv(ctx, ss)
+		if err != nil {
+			return backup.Result{}, "", err
+		}
+		t, _ := templateOf(ss.svc)
+		src.User, src.Password = mongoRoot(env)
+		src.Port, image = t.port, jobImage(ss)
 	case apitypes.BackupVolume:
 		for _, v := range vols {
 			mounts = append(mounts, node.Mount{Volume: v.DockerName, Path: backup.VolumesPath + "/" + v.Name, ReadOnly: true})

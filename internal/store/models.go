@@ -160,7 +160,6 @@ type Backup struct {
 	ID              int64
 	ServiceID       int64
 	Operation       string
-	Kind            string
 	Trigger         string
 	Status          string
 	Repository      string
@@ -177,6 +176,7 @@ type Backup struct {
 	WalSegmentBytes int64
 	ConsistentAt    *time.Time
 	RestoreToTime   *time.Time
+	Kind            string
 }
 
 type BackupCheck struct {
@@ -1098,7 +1098,6 @@ type Service struct {
 	CreatedAt                      time.Time
 	ArchivedAt                     *time.Time
 	DatabaseUrlVariable            string
-	Template                       string
 	HealthCheckIntervalSeconds     int64
 	HealthCheckProbeTimeoutSeconds int64
 	HealthCheckRetries             int64
@@ -1109,11 +1108,12 @@ type Service struct {
 	StoppedAt                      *time.Time
 	StoppedBy                      string
 	PreDeploySnapshot              bool
-	Database                       string
 	FromTemplate                   string
 	FromTemplateRevision           int64
 	AutoUpdate                     int64
 	SecurityHeaders                bool
+	Template                       string
+	Database                       string
 }
 
 type ServiceAccess struct {

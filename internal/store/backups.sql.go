@@ -13,7 +13,7 @@ import (
 const createBackup = `-- name: CreateBackup :one
 INSERT INTO backups (service_id, operation, kind, trigger, status, repository, snapshot_id, restored_to, created_by, started_at)
 VALUES (?, ?, ?, ?, 'running', ?, ?, ?, ?, ?)
-RETURNING id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time
+RETURNING id, service_id, operation, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time, kind
 `
 
 type CreateBackupParams struct {
@@ -45,7 +45,6 @@ func (q *Queries) CreateBackup(ctx context.Context, arg CreateBackupParams) (Bac
 		&i.ID,
 		&i.ServiceID,
 		&i.Operation,
-		&i.Kind,
 		&i.Trigger,
 		&i.Status,
 		&i.Repository,
@@ -62,6 +61,7 @@ func (q *Queries) CreateBackup(ctx context.Context, arg CreateBackupParams) (Bac
 		&i.WalSegmentBytes,
 		&i.ConsistentAt,
 		&i.RestoreToTime,
+		&i.Kind,
 	)
 	return i, err
 }
@@ -132,7 +132,7 @@ const createPITRRestore = `-- name: CreatePITRRestore :one
 INSERT INTO backups (service_id, operation, kind, trigger, status, repository, snapshot_id, restored_to, created_by, started_at,
     wal_generation, restore_to_time)
 VALUES (?, 'restore', 'pitr', 'manual', 'running', ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time
+RETURNING id, service_id, operation, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time, kind
 `
 
 type CreatePITRRestoreParams struct {
@@ -164,7 +164,6 @@ func (q *Queries) CreatePITRRestore(ctx context.Context, arg CreatePITRRestorePa
 		&i.ID,
 		&i.ServiceID,
 		&i.Operation,
-		&i.Kind,
 		&i.Trigger,
 		&i.Status,
 		&i.Repository,
@@ -181,6 +180,7 @@ func (q *Queries) CreatePITRRestore(ctx context.Context, arg CreatePITRRestorePa
 		&i.WalSegmentBytes,
 		&i.ConsistentAt,
 		&i.RestoreToTime,
+		&i.Kind,
 	)
 	return i, err
 }
@@ -304,7 +304,7 @@ func (q *Queries) FinishBackupCheck(ctx context.Context, arg FinishBackupCheckPa
 }
 
 const getBackup = `-- name: GetBackup :one
-SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups WHERE id = +?
+SELECT id, service_id, operation, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time, kind FROM backups WHERE id = +?
 `
 
 func (q *Queries) GetBackup(ctx context.Context, id int64) (Backup, error) {
@@ -314,7 +314,6 @@ func (q *Queries) GetBackup(ctx context.Context, id int64) (Backup, error) {
 		&i.ID,
 		&i.ServiceID,
 		&i.Operation,
-		&i.Kind,
 		&i.Trigger,
 		&i.Status,
 		&i.Repository,
@@ -331,12 +330,13 @@ func (q *Queries) GetBackup(ctx context.Context, id int64) (Backup, error) {
 		&i.WalSegmentBytes,
 		&i.ConsistentAt,
 		&i.RestoreToTime,
+		&i.Kind,
 	)
 	return i, err
 }
 
 const getBackupBySnapshot = `-- name: GetBackupBySnapshot :one
-SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups
+SELECT id, service_id, operation, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time, kind FROM backups
 WHERE service_id = +?1 AND operation = 'backup' AND status = 'succeeded'
   AND substr(snapshot_id, 1, length(?2)) = ?2
 ORDER BY id DESC
@@ -356,7 +356,6 @@ func (q *Queries) GetBackupBySnapshot(ctx context.Context, arg GetBackupBySnapsh
 		&i.ID,
 		&i.ServiceID,
 		&i.Operation,
-		&i.Kind,
 		&i.Trigger,
 		&i.Status,
 		&i.Repository,
@@ -373,6 +372,7 @@ func (q *Queries) GetBackupBySnapshot(ctx context.Context, arg GetBackupBySnapsh
 		&i.WalSegmentBytes,
 		&i.ConsistentAt,
 		&i.RestoreToTime,
+		&i.Kind,
 	)
 	return i, err
 }
@@ -431,7 +431,7 @@ func (q *Queries) GetBackupSettings(ctx context.Context) (BackupSetting, error) 
 }
 
 const getDrillRestore = `-- name: GetDrillRestore :one
-SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups
+SELECT id, service_id, operation, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time, kind FROM backups
 WHERE service_id = +?1 AND operation = 'restore' AND restored_to = +?2
 ORDER BY id DESC LIMIT 1
 `
@@ -450,7 +450,6 @@ func (q *Queries) GetDrillRestore(ctx context.Context, arg GetDrillRestoreParams
 		&i.ID,
 		&i.ServiceID,
 		&i.Operation,
-		&i.Kind,
 		&i.Trigger,
 		&i.Status,
 		&i.Repository,
@@ -467,12 +466,13 @@ func (q *Queries) GetDrillRestore(ctx context.Context, arg GetDrillRestoreParams
 		&i.WalSegmentBytes,
 		&i.ConsistentAt,
 		&i.RestoreToTime,
+		&i.Kind,
 	)
 	return i, err
 }
 
 const getDrillSnapshot = `-- name: GetDrillSnapshot :one
-SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups
+SELECT id, service_id, operation, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time, kind FROM backups
 WHERE service_id = +? AND operation = 'backup' AND status = 'succeeded'
   AND pruned = 0 AND kind <> 'pitr' AND snapshot_id <> ''
 ORDER BY id DESC LIMIT 1
@@ -486,7 +486,6 @@ func (q *Queries) GetDrillSnapshot(ctx context.Context, serviceID int64) (Backup
 		&i.ID,
 		&i.ServiceID,
 		&i.Operation,
-		&i.Kind,
 		&i.Trigger,
 		&i.Status,
 		&i.Repository,
@@ -503,6 +502,7 @@ func (q *Queries) GetDrillSnapshot(ctx context.Context, serviceID int64) (Backup
 		&i.WalSegmentBytes,
 		&i.ConsistentAt,
 		&i.RestoreToTime,
+		&i.Kind,
 	)
 	return i, err
 }
@@ -533,7 +533,7 @@ func (q *Queries) GetLatestDrill(ctx context.Context, serviceID *int64) (BackupC
 }
 
 const getRestoreInto = `-- name: GetRestoreInto :one
-SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups
+SELECT id, service_id, operation, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time, kind FROM backups
 WHERE restored_to = +? AND operation = 'restore' AND service_id != restored_to
 ORDER BY id DESC LIMIT 1
 `
@@ -548,7 +548,6 @@ func (q *Queries) GetRestoreInto(ctx context.Context, restoredTo *int64) (Backup
 		&i.ID,
 		&i.ServiceID,
 		&i.Operation,
-		&i.Kind,
 		&i.Trigger,
 		&i.Status,
 		&i.Repository,
@@ -565,6 +564,7 @@ func (q *Queries) GetRestoreInto(ctx context.Context, restoredTo *int64) (Backup
 		&i.WalSegmentBytes,
 		&i.ConsistentAt,
 		&i.RestoreToTime,
+		&i.Kind,
 	)
 	return i, err
 }
@@ -823,7 +823,7 @@ func (q *Queries) ListLatestRepositoryChecks(ctx context.Context) ([]BackupCheck
 }
 
 const listLatestScheduledBackups = `-- name: ListLatestScheduledBackups :many
-SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups WHERE id IN (
+SELECT id, service_id, operation, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time, kind FROM backups WHERE id IN (
     SELECT max(id) FROM backups WHERE operation = 'backup' AND trigger = 'schedule' GROUP BY service_id
 )
 `
@@ -842,7 +842,6 @@ func (q *Queries) ListLatestScheduledBackups(ctx context.Context) ([]Backup, err
 			&i.ID,
 			&i.ServiceID,
 			&i.Operation,
-			&i.Kind,
 			&i.Trigger,
 			&i.Status,
 			&i.Repository,
@@ -859,6 +858,7 @@ func (q *Queries) ListLatestScheduledBackups(ctx context.Context) ([]Backup, err
 			&i.WalSegmentBytes,
 			&i.ConsistentAt,
 			&i.RestoreToTime,
+			&i.Kind,
 		); err != nil {
 			return nil, err
 		}
@@ -907,7 +907,7 @@ func (q *Queries) ListLocalBackupServers(ctx context.Context) ([]int64, error) {
 }
 
 const listPITRBases = `-- name: ListPITRBases :many
-SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups
+SELECT id, service_id, operation, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time, kind FROM backups
 WHERE service_id = +? AND kind = 'pitr' AND operation = 'backup' AND status = 'succeeded' AND pruned = 0
 ORDER BY consistent_at
 `
@@ -927,7 +927,6 @@ func (q *Queries) ListPITRBases(ctx context.Context, serviceID int64) ([]Backup,
 			&i.ID,
 			&i.ServiceID,
 			&i.Operation,
-			&i.Kind,
 			&i.Trigger,
 			&i.Status,
 			&i.Repository,
@@ -944,6 +943,7 @@ func (q *Queries) ListPITRBases(ctx context.Context, serviceID int64) ([]Backup,
 			&i.WalSegmentBytes,
 			&i.ConsistentAt,
 			&i.RestoreToTime,
+			&i.Kind,
 		); err != nil {
 			return nil, err
 		}
@@ -959,7 +959,7 @@ func (q *Queries) ListPITRBases(ctx context.Context, serviceID int64) ([]Backup,
 }
 
 const listProjectLatestBackups = `-- name: ListProjectLatestBackups :many
-SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups WHERE id IN (
+SELECT id, service_id, operation, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time, kind FROM backups WHERE id IN (
     SELECT max(backups.id) FROM backups
     JOIN services ON services.id = backups.service_id
     JOIN environments ON environments.id = services.environment_id
@@ -982,7 +982,6 @@ func (q *Queries) ListProjectLatestBackups(ctx context.Context, projectID int64)
 			&i.ID,
 			&i.ServiceID,
 			&i.Operation,
-			&i.Kind,
 			&i.Trigger,
 			&i.Status,
 			&i.Repository,
@@ -999,6 +998,7 @@ func (q *Queries) ListProjectLatestBackups(ctx context.Context, projectID int64)
 			&i.WalSegmentBytes,
 			&i.ConsistentAt,
 			&i.RestoreToTime,
+			&i.Kind,
 		); err != nil {
 			return nil, err
 		}
@@ -1043,7 +1043,7 @@ func (q *Queries) ListRepositorySnapshots(ctx context.Context, repository string
 }
 
 const listRunningRestoresInto = `-- name: ListRunningRestoresInto :many
-SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups
+SELECT id, service_id, operation, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time, kind FROM backups
 WHERE status = 'running' AND operation = 'restore' AND restored_to IS NOT NULL AND restored_to <> service_id
 `
 
@@ -1064,7 +1064,6 @@ func (q *Queries) ListRunningRestoresInto(ctx context.Context) ([]Backup, error)
 			&i.ID,
 			&i.ServiceID,
 			&i.Operation,
-			&i.Kind,
 			&i.Trigger,
 			&i.Status,
 			&i.Repository,
@@ -1081,6 +1080,7 @@ func (q *Queries) ListRunningRestoresInto(ctx context.Context) ([]Backup, error)
 			&i.WalSegmentBytes,
 			&i.ConsistentAt,
 			&i.RestoreToTime,
+			&i.Kind,
 		); err != nil {
 			return nil, err
 		}
@@ -1096,7 +1096,7 @@ func (q *Queries) ListRunningRestoresInto(ctx context.Context) ([]Backup, error)
 }
 
 const listServiceBackups = `-- name: ListServiceBackups :many
-SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups WHERE service_id = +? ORDER BY id DESC LIMIT +?
+SELECT id, service_id, operation, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time, kind FROM backups WHERE service_id = +? ORDER BY id DESC LIMIT +?
 `
 
 type ListServiceBackupsParams struct {
@@ -1117,7 +1117,6 @@ func (q *Queries) ListServiceBackups(ctx context.Context, arg ListServiceBackups
 			&i.ID,
 			&i.ServiceID,
 			&i.Operation,
-			&i.Kind,
 			&i.Trigger,
 			&i.Status,
 			&i.Repository,
@@ -1134,6 +1133,7 @@ func (q *Queries) ListServiceBackups(ctx context.Context, arg ListServiceBackups
 			&i.WalSegmentBytes,
 			&i.ConsistentAt,
 			&i.RestoreToTime,
+			&i.Kind,
 		); err != nil {
 			return nil, err
 		}
@@ -1149,7 +1149,7 @@ func (q *Queries) ListServiceBackups(ctx context.Context, arg ListServiceBackups
 }
 
 const listUnprunedBackups = `-- name: ListUnprunedBackups :many
-SELECT id, service_id, operation, kind, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time FROM backups
+SELECT id, service_id, operation, "trigger", status, repository, snapshot_id, size_bytes, pruned, restored_to, error, created_by, started_at, finished_at, wal_generation, wal_start, wal_segment_bytes, consistent_at, restore_to_time, kind FROM backups
 WHERE service_id = +? AND repository = +? AND operation = 'backup' AND status = 'succeeded' AND pruned = 0
 ORDER BY id
 `
@@ -1174,7 +1174,6 @@ func (q *Queries) ListUnprunedBackups(ctx context.Context, arg ListUnprunedBacku
 			&i.ID,
 			&i.ServiceID,
 			&i.Operation,
-			&i.Kind,
 			&i.Trigger,
 			&i.Status,
 			&i.Repository,
@@ -1191,6 +1190,7 @@ func (q *Queries) ListUnprunedBackups(ctx context.Context, arg ListUnprunedBacku
 			&i.WalSegmentBytes,
 			&i.ConsistentAt,
 			&i.RestoreToTime,
+			&i.Kind,
 		); err != nil {
 			return nil, err
 		}

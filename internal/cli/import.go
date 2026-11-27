@@ -45,7 +45,7 @@ func newImportComposeCmd(g *globals) *cobra.Command {
 into a Dock project file and show what applying it would do. Nothing
 changes without --apply.
 
-postgres and redis images become Dock's database templates, with backups.
+postgres, redis and mongo images become Dock's database templates, with backups.
 Everything Dock can't run as written (bind mounts, host networking,
 privileged mode, extra ports, ...) is listed as a warning: nothing is
 dropped silently. Secrets (passwords, tokens, keys) are kept out of the

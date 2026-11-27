@@ -1483,7 +1483,8 @@
               "mysql",
               "mariadb",
               "valkey",
-              "pgvector"
+              "pgvector",
+              "mongodb"
             ],
             "type": "string"
           },
@@ -2020,6 +2021,7 @@
               "postgres",
               "redis",
               "mysql",
+              "mongodb",
               "volume",
               "pitr"
             ],
@@ -3962,7 +3964,8 @@
               "mysql",
               "mariadb",
               "valkey",
-              "pgvector"
+              "pgvector",
+              "mongodb"
             ],
             "type": "string"
           }
@@ -16216,7 +16219,8 @@
               "mysql",
               "mariadb",
               "valkey",
-              "pgvector"
+              "pgvector",
+              "mongodb"
             ],
             "type": "string"
           },
@@ -16274,6 +16278,7 @@
               "postgres",
               "redis",
               "mysql",
+              "mongodb",
               "volume"
             ],
             "type": "string"
@@ -19571,7 +19576,8 @@
               "mysql",
               "mariadb",
               "valkey",
-              "pgvector"
+              "pgvector",
+              "mongodb"
             ],
             "type": "string"
           }

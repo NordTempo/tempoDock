@@ -98,7 +98,7 @@ func TestTemplatePostgres(t *testing.T) {
 		t.Error("two databases share a password")
 	}
 
-	if _, err := h.c.CreateService(h.ctx, testSystem, db.Env(), apitypes.CreateServiceRequest{Name: "x", Template: "mongodb"}); CodeOf(err) != apitypes.CodeValidation {
+	if _, err := h.c.CreateService(h.ctx, testSystem, db.Env(), apitypes.CreateServiceRequest{Name: "x", Template: "cassandra"}); CodeOf(err) != apitypes.CodeValidation {
 		t.Errorf("unknown template: %v", err)
 	}
 }
@@ -657,6 +657,45 @@ func TestTemplateMySQLBackupAndRestore(t *testing.T) {
 	job = jobs[len(jobs)-1]
 	newPw := h.revealed(ServiceRef{"shop", "production", "db-old"})["MYSQL_ROOT_PASSWORD"]
 	if !strings.Contains(job.Name, "_restore") || job.Env["DOCK_DB_HOST"] != "db-old" || job.Env["MYSQL_PWD"] != newPw || newPw == vars["MYSQL_ROOT_PASSWORD"] {
+		t.Fatalf("restore job = %+v", job)
+	}
+}
+
+// A MongoDB template backs up with mongodump of its own image as its root
+// user, and restores into a new MongoDB with its own root password.
+func TestTemplateMongoDBBackupAndRestore(t *testing.T) {
+	h := newHarness(t)
+	db := h.templateDB("db", apitypes.TemplateMongoDB)
+	vars := h.revealed(db)
+	if vars["MONGO_INITDB_ROOT_USERNAME"] != "root" || len(vars["MONGO_INITDB_ROOT_PASSWORD"]) != 32 ||
+		vars["MONGODB_URI"] != "mongodb://${{db.MONGO_INITDB_ROOT_USERNAME}}:${{db.MONGO_INITDB_ROOT_PASSWORD}}@db:27017/app?authSource=admin" {
+		t.Fatalf("variables = %v", vars)
+	}
+	snap := "ffff6666ffff6666"
+	h.rt.OnJob(func(node.JobSpec) (node.JobResult, error) {
+		return node.JobResult{Output: resticOutput(snap, 100, snap)}, nil
+	})
+	if run := h.runBackup(db); run.Status != apitypes.BackupSucceeded || run.Kind != apitypes.BackupMongoDB {
+		t.Fatalf("backup = %+v", run)
+	}
+	jobs := h.rt.Jobs()
+	job := jobs[len(jobs)-1]
+	if !strings.HasPrefix(job.Image, "mongo:8.0") || job.Env["DOCK_DB_USER"] != "root" || job.Env[backup.MongoPassword] != vars["MONGO_INITDB_ROOT_PASSWORD"] ||
+		job.Env["DOCK_DB_HOST"] != "db" || job.Env["DOCK_DB_PORT"] != "27017" {
+		t.Fatalf("backup job = %+v", job)
+	}
+
+	res, err := h.c.RestoreBackup(h.ctx, testSystem, db, apitypes.RestoreBackupRequest{Snapshot: snap[:8], As: "db-old"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done := h.waitRun(db, res.Restore.ID); done.Status != apitypes.BackupSucceeded {
+		t.Fatalf("restore = %+v", done)
+	}
+	jobs = h.rt.Jobs()
+	job = jobs[len(jobs)-1]
+	newPw := h.revealed(ServiceRef{"shop", "production", "db-old"})["MONGO_INITDB_ROOT_PASSWORD"]
+	if !strings.Contains(job.Name, "_restore") || job.Env["DOCK_DB_HOST"] != "db-old" || job.Env[backup.MongoPassword] != newPw || newPw == vars["MONGO_INITDB_ROOT_PASSWORD"] {
 		t.Fatalf("restore job = %+v", job)
 	}
 }

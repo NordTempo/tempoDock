@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"fmt"
@@ -71,6 +72,7 @@ var templates = map[apitypes.Template]dbTemplate{
 		"mysql:8.4@sha256:8c233bad33d520a7aae1c1e619c3a9775f4a1ba2d463d692fada04ec7f40be00", "mysqld", "MYSQL", 768),
 	apitypes.TemplateMariaDB: mysqlTemplate(apitypes.TemplateMariaDB, "MariaDB", "GPL-2.0", "MariaDB 11.8 LTS, tuned for 512 MB",
 		"mariadb:11.8@sha256:e1d5495f445654134f226f55a41ce0da227116f6f27f283101f405c794d841fc", "mariadbd", "MARIADB", 512),
+	apitypes.TemplateMongoDB: mongoTemplate("mongo:8.0@sha256:479e85ced54ffb8a40dade1dcde2da2a9ae858515b9415e9cc54bfb8f0575d01"),
 }
 
 // postgresTemplate is a Postgres template running image, which keeps the
@@ -149,6 +151,43 @@ func mysqlTemplate(name apitypes.Template, title, license, description, image, s
 		},
 		exports: []string{"DATABASE_URL"},
 	}
+}
+
+// mongoPort is where MongoDB listens.
+const mongoPort = 27017
+
+// mongoTemplate is the MongoDB template (ADR 0110) running image, the
+// official one: its entrypoint creates the root user from the
+// MONGO_INITDB_ROOT_* variables on a new volume and then turns
+// authentication on. The WiredTiger cache is held to 256 MB, its smallest,
+// of a 512 MB limit: by default it takes half the memory it sees less a
+// gigabyte. Apps connect as root to the app database; backups dump every
+// database with mongodump, which the image has.
+func mongoTemplate(image string) dbTemplate {
+	return dbTemplate{
+		name: apitypes.TemplateMongoDB, title: "MongoDB", license: "SSPL-1.0", image: image,
+		description: "MongoDB 8.0 with a 256 MB cache, tuned for 512 MB",
+		port:        mongoPort,
+		mountPath:   "/data/db",
+		memoryMB:    512,
+		cmd:         "exec docker-entrypoint.sh mongod --wiredTigerCacheSizeGB 0.25",
+		backup:      apitypes.BackupMongoDB,
+		vars: func(svc, password string) map[string]string {
+			return map[string]string{
+				"MONGO_INITDB_ROOT_USERNAME": "root",
+				"MONGO_INITDB_ROOT_PASSWORD": password,
+				"MONGODB_URI": fmt.Sprintf("mongodb://${{%[1]s.MONGO_INITDB_ROOT_USERNAME}}:${{%[1]s.MONGO_INITDB_ROOT_PASSWORD}}@%[1]s:%[2]d/app?authSource=admin",
+					svc, mongoPort),
+			}
+		},
+		exports: []string{"MONGODB_URI"},
+	}
+}
+
+// mongoRoot is a MongoDB service's root user and password, from the
+// variables its image reads.
+func mongoRoot(env map[string]string) (user, password string) {
+	return cmp.Or(env["MONGO_INITDB_ROOT_USERNAME"], "root"), env["MONGO_INITDB_ROOT_PASSWORD"]
 }
 
 // templateOf returns a service's template, if it has one.

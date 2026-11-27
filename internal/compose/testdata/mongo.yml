@@ -1,0 +1,47 @@
+# A Node app with MongoDB, Redis and Postgres, in the style of most Express and
+# Mongoose apps' docs. The databases share a password, as quick setups often
+# do (two MongoDBs, so a MONGO password can't say which), and the MongoDB user
+# needs escaping in a URL.
+services:
+  mongo:
+    image: mongo:7.0
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: "app$$prod"
+      MONGO_INITDB_ROOT_PASSWORD: s3cret-shared
+    volumes:
+      - mongo_data:/data/db
+    ports:
+      - "27017:27017"
+
+  archive:
+    image: mongo:8.0
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${ARCHIVE_USER}
+      MONGO_INITDB_ROOT_PASSWORD: s3cret-shared
+
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_PASSWORD: s3cret-shared
+
+  cache:
+    image: redis:7
+    environment:
+      REDIS_PASSWORD: s3cret-shared
+
+  api:
+    image: ghcr.io/example/notes-api:2.1
+    depends_on:
+      - mongo
+      - cache
+    environment:
+      MONGODB_URI: mongodb://app%24prod:s3cret-shared@mongo:27017/notes?retryWrites=true&authSource=notes
+      MONGODB_PASSWORD: s3cret-shared
+      REDIS_PASSWORD: s3cret-shared
+      PORT: "3000"
+    ports:
+      - "3000:3000"
+
+volumes:
+  mongo_data:

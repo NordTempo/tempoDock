@@ -7,6 +7,7 @@ export const backupWhat: Record<Kind, string> = {
   postgres: "Database dumps",
   redis: "Redis snapshots",
   mysql: "Database dumps",
+  mongodb: "Database dumps",
   volume: "Copies of its volumes' files",
 };
 

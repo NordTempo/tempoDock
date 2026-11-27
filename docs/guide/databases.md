@@ -11,7 +11,7 @@ checks out, the environment switches to it in one step. Design:
 ## Add a database
 
 ```sh
-dock service create db --template postgres     # or pgvector, mysql, mariadb, redis, valkey
+dock service create db --template postgres     # or pgvector, mysql, mariadb, redis, valkey, mongodb
 dock env set -s api DATABASE_URL='${{db.DATABASE_URL}}' --deploy
 ```
 
@@ -33,6 +33,7 @@ The others follow the same pattern:
 | `mysql` | MySQL 8.4 LTS | `MYSQL_ROOT_PASSWORD` (generated), `MYSQL_DATABASE` (`app`), `DATABASE_URL` (`mysql://root:...@db:3306/app`) | 768 MB | `mysqldump` of every database but the server's own |
 | `mariadb` | MariaDB 11.8 LTS | `MARIADB_ROOT_PASSWORD`, `MARIADB_DATABASE`, `DATABASE_URL` | 512 MB | `mariadb-dump`, as MySQL |
 | `valkey` | Valkey 9, the BSD fork of Redis | as Redis | 256 MB | as Redis |
+| `mongodb` | MongoDB 8.0 (SSPL) | `MONGO_INITDB_ROOT_USERNAME` (`root`), `MONGO_INITDB_ROOT_PASSWORD` (generated), `MONGODB_URI` (`mongodb://root:...@db:27017/app?authSource=admin`) | 512 MB (WiredTiger cache 256 MB) | `mongodump` of every database; restores leave out `admin` and `config` |
 
 - Creating a template service deploys it at once. Afterwards it is an
   ordinary service: change its memory or start command, roll it back, and
@@ -58,6 +59,13 @@ The others follow the same pattern:
 - Postgres templates get the [Data tab](data.md) set up automatically.
 - Changing `POSTGRES_PASSWORD` later doesn't change the database's
   password (Postgres only reads it when the volume is first initialised).
+  The same goes for `MONGO_INITDB_ROOT_PASSWORD`.
+- MongoDB 5.0 and later need a CPU with AVX (any x86 server from the
+  last ten years; some virtual machines hide it).
+- A MongoDB restore, like a MySQL one, brings the databases' data and
+  indexes, not the server's users: users the app created
+  (`db.createUser`) live in `admin` and are created again by the app or
+  by hand.
 
 ## Backups
 
@@ -65,6 +73,7 @@ The others follow the same pattern:
 |---|---|
 | Postgres template | The server's roles (`pg_dumpall --roles-only`) and `pg_dump -Fc`, in a short-lived container of the same image (so the tools match the server), streamed into restic |
 | Redis template | `redis-cli --rdb`: a consistent snapshot over the replication protocol |
+| MongoDB template | `mongodump --archive` of every database. A single server has no oplog, so writes during the dump can leave it inconsistent, within a collection too: for an exact copy, stop the app's writes while it runs, or take a volume snapshot. No point-in-time restore |
 | Any other service with a volume | The volume's files, mounted read-only. A database writing while it is copied can leave an inconsistent copy: use a template for databases |
 
 A Postgres backup is the template's database (`POSTGRES_DB`) and the

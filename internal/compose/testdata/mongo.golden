@@ -1,0 +1,62 @@
+# Tempo Dock project app, exported with `dock project export`.
+# Settings as they are live. Secrets are names only (variables); values holds only references.
+# Apply it with `dock apply FILE --plan`, then without --plan to stage it.
+
+version = 1
+project = 'app'
+
+[[environments]]
+  name = 'production'
+  kind = 'production'
+
+  [[environments.services]]
+    name = 'api'
+    image = 'ghcr.io/example/notes-api:2.1'
+    port = 3000
+    variables = ['MONGODB_PASSWORD']
+    depends_on = ['cache', 'mongo']
+    domains = [{hostname = '', generated = true}]
+
+    [environments.services.values]
+      MONGODB_URI = 'mongodb://${{mongo.MONGO_INITDB_ROOT_USERNAME}}:${{mongo.MONGO_INITDB_ROOT_PASSWORD}}@mongo:27017/notes?retryWrites=true&authSource=admin'
+      REDIS_PASSWORD = '${{cache.REDIS_PASSWORD}}'
+
+  [[environments.services]]
+    name = 'archive'
+    template = 'mongodb'
+
+  [[environments.services]]
+    name = 'cache'
+    template = 'redis'
+
+  [[environments.services]]
+    name = 'db'
+    template = 'postgres'
+
+  [[environments.services]]
+    name = 'mongo'
+    template = 'mongodb'
+
+# warnings
+api | MONGODB_PASSWORD | MONGODB_PASSWORD matches the password of 2 services in the Compose file, which each get their own, so it keeps the old value and won't log in; set it to the one it uses: ${{archive.MONGO_INITDB_ROOT_PASSWORD}} or ${{mongo.MONGO_INITDB_ROOT_PASSWORD}}.
+api | MONGODB_URI | MONGODB_URI points at mongo, so it now uses the mongodb template's credentials: mongodb://${{mongo.MONGO_INITDB_ROOT_USERNAME}}:${{mongo.MONGO_INITDB_ROOT_PASSWORD}}@mongo:27017/notes?retryWrites=true&authSource=admin.
+api | PORT | PORT is set by Dock from the service's port setting, so this value isn't used.
+api | REDIS_PASSWORD | REDIS_PASSWORD matches cache's password in the Compose file, so it now references ${{cache.REDIS_PASSWORD}}.
+api | ports | Dock doesn't publish host ports, so 3000:3000 isn't opened on the server. HTTP reaches port 3000 through a generated domain when the server has a base domain; add your own with `dock domain add <hostname> -s api`.
+archive | MONGO_INITDB_ROOT_PASSWORD | The mongodb template generates its own password, so this value isn't used. Other services' variables that held it now reference ${{archive.MONGO_INITDB_ROOT_PASSWORD}}, unless another service had the same one.
+archive | MONGO_INITDB_ROOT_USERNAME | The user has no value in the Compose file or .env, and MONGODB_URI holds it as it is, so the template's root user is used instead.
+archive | image | mongo:8.0 becomes Dock's mongodb template, which brings its own volume, port, health check and backups, so the service's ports, volumes, health check and command aren't used. Data in the Compose volumes isn't moved: the new database starts empty.
+cache | REDIS_PASSWORD | The redis template generates its own password, so this value isn't used. Other services' variables that held it now reference ${{cache.REDIS_PASSWORD}}, unless another service had the same one.
+cache | image | redis:7 becomes Dock's redis template, which brings its own volume, port, health check and backups, so the service's ports, volumes, health check and command aren't used.
+cache | image | The redis template requires a password (REDIS_PASSWORD, generated). ${{cache.REDIS_URL}} includes it; services that connect by host and port need ${{cache.REDIS_PASSWORD}} as their password.
+db | POSTGRES_PASSWORD | The postgres template generates its own password, so this value isn't used. Other services' variables that held it now reference ${{db.POSTGRES_PASSWORD}}.
+db | image | postgres:17 becomes Dock's postgres template, which brings its own volume, port, health check and backups, so the service's ports, volumes, health check and command aren't used. Data in the Compose volumes isn't moved: the new database starts empty.
+mongo | MONGO_INITDB_ROOT_PASSWORD | The mongodb template generates its own password, so this value isn't used. Other services' variables that held it now reference ${{mongo.MONGO_INITDB_ROOT_PASSWORD}}, unless another service had the same one.
+mongo | MONGO_INITDB_ROOT_USERNAME | The user "app$prod" has characters a mongodb:// URL can't hold as they are, so the template's root user is used instead.
+mongo | image | mongo:7.0 becomes Dock's mongodb template, which brings its own volume, port, health check and backups, so the service's ports, volumes, health check and command aren't used. Data in the Compose volumes isn't moved: the new database starts empty.
+mongo | image | The mongodb template runs MongoDB 8.0, and the Compose file uses mongo:7.0. To move data from the old database, dump it with mongodump and load it into the new one with mongorestore.
+
+# secrets
+api MONGODB_PASSWORD (value set)
+
+# builds

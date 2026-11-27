@@ -15,11 +15,13 @@ const (
 	TemplateValkey   Template = "valkey"
 	// TemplatePgvector is Postgres with the vector extension (pgvector).
 	TemplatePgvector Template = "pgvector"
+	// TemplateMongoDB is MongoDB (ADR 0110).
+	TemplateMongoDB Template = "mongodb"
 )
 
 // TemplateInfo describes a template for the UI and CLI.
 type TemplateInfo struct {
-	Name        Template `json:"name" enum:"postgres,redis,mysql,mariadb,valkey,pgvector"`
+	Name        Template `json:"name" enum:"postgres,redis,mysql,mariadb,valkey,pgvector,mongodb"`
 	Description string   `json:"description"`
 	Image       string   `json:"image"`
 	MemoryMB    int      `json:"memory_mb"`
@@ -30,13 +32,14 @@ type TemplateInfo struct {
 }
 
 // BackupKind is how a service is backed up: with the database's own tool
-// (postgres, redis, mysql) or file by file (volume).
+// (postgres, redis, mysql, mongodb) or file by file (volume).
 type BackupKind string
 
 const (
 	BackupPostgres BackupKind = "postgres"
 	BackupRedis    BackupKind = "redis"
 	BackupMySQL    BackupKind = "mysql"
+	BackupMongoDB  BackupKind = "mongodb"
 	BackupVolume   BackupKind = "volume"
 	// BackupPITR is a Postgres database's base backup for point-in-time
 	// restore, and a restore to a time (ADR 0093).
@@ -57,7 +60,7 @@ type BackupRun struct {
 	ID        int64        `json:"id"`
 	Service   string       `json:"service"`
 	Operation string       `json:"operation" enum:"backup,restore"`
-	Kind      BackupKind   `json:"kind" enum:"postgres,redis,mysql,volume,pitr"`
+	Kind      BackupKind   `json:"kind" enum:"postgres,redis,mysql,mongodb,volume,pitr"`
 	Trigger   string       `json:"trigger" enum:"schedule,manual"`
 	Status    BackupStatus `json:"status" enum:"running,succeeded,failed"`
 	// Snapshot is the restic snapshot ID: written by a backup, read by a
@@ -115,7 +118,7 @@ type BackupSchedule struct {
 // ServiceBackups is a stateful service's backups: how, when, and the runs.
 type ServiceBackups struct {
 	Service string     `json:"service"`
-	Kind    BackupKind `json:"kind" enum:"postgres,redis,mysql,volume"`
+	Kind    BackupKind `json:"kind" enum:"postgres,redis,mysql,mongodb,volume"`
 	// Warning explains the limits of file-level volume backups.
 	Warning string `json:"warning,omitempty"`
 	// Restorable says backups can be restored into a new service (template

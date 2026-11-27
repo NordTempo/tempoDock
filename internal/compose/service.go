@@ -162,6 +162,12 @@ func (c *converter) source(s *svc) apitypes.Template {
 		s.out.Template = apitypes.TemplateRedis
 		c.warn(s, "image", "%s becomes Dock's redis template, which brings its own volume, port, health check and backups, so the service's ports, volumes, health check and command aren't used.", image)
 		c.warn(s, "image", "The redis template requires a password (REDIS_PASSWORD, generated). ${{%[1]s.REDIS_URL}} includes it; services that connect by host and port need ${{%[1]s.REDIS_PASSWORD}} as their password.", s.name)
+	case "mongo":
+		s.out.Template = apitypes.TemplateMongoDB
+		c.warn(s, "image", "%s becomes Dock's mongodb template, which brings its own volume, port, health check and backups, so the service's ports, volumes, health check and command aren't used. Data in the Compose volumes isn't moved: the new database starts empty.", image)
+		if ref.major() != "8" {
+			c.warn(s, "image", "The mongodb template runs MongoDB 8.0, and the Compose file uses %s. To move data from the old database, dump it with mongodump and load it into the new one with mongorestore.", image)
+		}
 	default:
 		s.out.Image = image
 		c.databaseImage(s, ref)
@@ -173,7 +179,9 @@ func (c *converter) source(s *svc) apitypes.Template {
 // they stay image services, since the template runs plain PostgreSQL.
 var pgCompatible = []string{"pgvecto-rs", "pgvector", "postgis", "timescaledb", "timescaledb-ha", "vchord-postgres", "postgresql", "postgres"}
 
-// otherDatabases are database images Dock has no template for.
+// otherDatabases are database images Dock has no template for (or not
+// from Compose files yet: mysql and mariadb), by repository name; the
+// official mongo image is the mongodb template.
 var otherDatabases = []string{"mysql", "mariadb", "mongo", "mongodb", "clickhouse-server"}
 
 // databaseImage warns that a database image that isn't a template runs as
@@ -237,9 +245,9 @@ func (c *converter) templateSettings(s *svc) {
 	for i, w := range words {
 		w, _ = interpolate(w, c.lookup)
 		if v, ok := strings.CutPrefix(w, "--requirepass="); ok {
-			s.redisPassword = v
+			s.password = v
 		} else if w == "--requirepass" && i+1 < len(words) {
-			s.redisPassword, _ = interpolate(words[i+1], c.lookup)
+			s.password, _ = interpolate(words[i+1], c.lookup)
 		}
 	}
 }

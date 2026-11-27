@@ -140,11 +140,20 @@ func (r *restore) deployed(ok bool) {
 		r.finish(ctx, fmt.Errorf("%s failed to start; see its release", r.to.svc.Name))
 		return
 	}
-	if r.t.backup == apitypes.BackupMySQL {
-		r.finish(ctx, r.mysqlRestore(ctx))
-		return
+	r.finish(ctx, r.load(ctx))
+}
+
+// load restores the snapshot into the new, running database with the
+// engine's own tool: every template database but Redis, whose volume is
+// filled before it starts (fill).
+func (r *restore) load(ctx context.Context) error {
+	switch r.t.backup {
+	case apitypes.BackupMySQL:
+		return r.mysqlRestore(ctx)
+	case apitypes.BackupMongoDB:
+		return r.mongoRestore(ctx)
 	}
-	r.finish(ctx, r.pgRestore(ctx))
+	return r.pgRestore(ctx)
 }
 
 // mysqlRestore streams the dump into the new, running MySQL or MariaDB as
@@ -159,6 +168,22 @@ func (r *restore) mysqlRestore(ctx context.Context) error {
 		return notRunningErr(to, err)
 	}
 	target := backup.Source{Kind: apitypes.BackupMySQL, Host: to.svc.Name, Port: r.t.port, Password: mysqlRootPassword(env)}
+	return r.run(ctx, to, target, nil)
+}
+
+// mongoRestore streams the archive into the new, running MongoDB as its
+// root user.
+func (r *restore) mongoRestore(ctx context.Context) error {
+	to, err := r.c.scopeOf(ctx, r.to.svc.ID)
+	if err != nil {
+		return err
+	}
+	env, err := r.c.activeEnv(ctx, to)
+	if err != nil {
+		return notRunningErr(to, err)
+	}
+	target := backup.Source{Kind: apitypes.BackupMongoDB, Host: to.svc.Name, Port: r.t.port}
+	target.User, target.Password = mongoRoot(env)
 	return r.run(ctx, to, target, nil)
 }
 

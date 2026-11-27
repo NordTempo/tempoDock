@@ -73,6 +73,7 @@ const backupKind: Record<ServiceBackups["kind"], string> = {
   postgres: "dump",
   mysql: "dump",
   redis: "dump",
+  mongodb: "dump",
   volume: "file backup",
 };
 

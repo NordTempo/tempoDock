@@ -753,7 +753,7 @@ environment's Settings › Compose.
 | Compose | Dock |
 |---|---|
 | `image`, `build` | The service's image, or a source service (deploy it with `dock deploy <context>`) |
-| `postgres`, `redis` images | Dock's database templates, with backups. Other services' URLs and passwords pointing at them become references (`${{db.DATABASE_URL}}`) |
+| `postgres`, `redis`, `mongo` images | Dock's database templates, with backups. Other services' URLs and passwords pointing at them become references (`${{db.DATABASE_URL}}`) |
 | `environment`, `env_file`, `.env` | Variables. Passwords, tokens and keys are secrets: kept out of the file, their values staged from the Compose file (or asked for with `--apply` on a terminal) |
 | `ports`, `expose` | The service's port; a published HTTP port gets a generated domain |
 | Named and anonymous volumes | Named Dock volumes. Bind mounts and tmpfs aren't mounted (warned) |

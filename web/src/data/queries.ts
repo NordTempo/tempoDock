@@ -148,10 +148,22 @@ export const serviceRef = (s: Service): ServiceRef => ({
   service: s.name,
 });
 
+type Template = NonNullable<Service["template"]>;
+
+/** The port each database template listens on. */
+const templatePorts: Record<Template, number> = {
+  postgres: 5432,
+  pgvector: 5432,
+  mysql: 3306,
+  mariadb: 3306,
+  redis: 6379,
+  valkey: 6379,
+  mongodb: 27017,
+};
+
 /** The port a service listens on: its setting, its template's, or 8080. */
 export const listenPort = (s: Service) =>
-  s.port ||
-  (s.template === "postgres" ? 5432 : s.template === "redis" ? 6379 : 8080);
+  s.port || (s.template && templatePorts[s.template]) || 8080;
 
 /**
  * Whether a service has the Data tab: a detected database engine, or the

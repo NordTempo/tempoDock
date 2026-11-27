@@ -119,9 +119,10 @@ type svc struct {
 	vars    map[string]*variable
 	// mounts are the Compose volume names this service mounts.
 	mounts []string
-	// redisPassword is a Redis service's password from its command
-	// (--requirepass) or environment, to recognise it in other services.
-	redisPassword string
+	// password is a Redis service's password from its command
+	// (--requirepass) or environment, or a MongoDB service's root
+	// password, to recognise it in other services.
+	password string
 	// pg are a postgres template's credentials in the Compose file.
 	pg *pgCreds
 	// portVar is the PORT variable, which Dock sets itself.
