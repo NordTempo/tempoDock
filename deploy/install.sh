@@ -1371,7 +1371,14 @@ CONF
   has_inject() { "$1" list-modules 2>/dev/null | grep -q '^http\.handlers\.dock_inject$'; }
   caddy_changed=false
   if [[ -n "$caddy_new" ]]; then
-    has_inject /usr/local/bin/caddy.new || systemctl stop dock-caddy.service 2>/dev/null || true
+    # The file goes before the binary changes: stopped here, either Caddy
+    # starts on what is left.
+    if ! has_inject /usr/local/bin/caddy.new; then
+      systemctl stop dock-caddy.service 2>/dev/null || true
+      if grep -q '"dock_inject"' "$autosave" 2>/dev/null; then
+        rm -f "$autosave"
+      fi
+    fi
     mv /usr/local/bin/caddy.new /usr/local/bin/caddy
     caddy_changed=true
   fi
