@@ -308,12 +308,17 @@ function allClear(all: HostChecks[]) {
   const unchecked = all.filter((s) => !s.checked_at).length;
   if (unchecked === all.length)
     return "No server has checked its host yet. Servers check about once a day.";
-  if (unchecked > 0)
-    return `Nothing to fix on the servers that checked; ${unchecked === 1 ? "1 server hasn't" : `${unchecked} servers haven't`} checked yet.`;
-  // A last check that failed shows the one before it: not an all-clear.
+  // A last check that failed shows the one before it, and an unchecked
+  // server shows nothing: neither is an all-clear.
   const failed = all.filter((s) => s.error).length;
-  if (failed > 0)
-    return `Nothing to fix in the results shown, but the last check failed on ${failed === 1 ? "1 server" : `${failed} servers`}: those results are from the check before. See Servers below.`;
+  const notes = [
+    unchecked > 0 &&
+      `${unchecked === 1 ? "1 server hasn't" : `${unchecked} servers haven't`} checked yet`,
+    failed > 0 &&
+      `the last check failed on ${failed === 1 ? "1 server" : `${failed} servers`}, whose results are from the check before`,
+  ].filter(Boolean);
+  if (notes.length > 0)
+    return `Nothing to fix in the results shown; ${notes.join(", and ")}. See Servers below.`;
   return "Nothing to fix on any server.";
 }
 

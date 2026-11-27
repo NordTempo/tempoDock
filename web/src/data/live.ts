@@ -19,7 +19,7 @@ import { applyMoveEvent } from "../features/move/data";
 import { registryKey } from "../features/registry/data";
 import { applyAccessRequestEvent } from "../features/requests/data";
 import { applyRunEvent } from "../features/runs/data";
-import { hostChecksKey } from "../features/security/data";
+import { type HostChecks, hostChecksKey } from "../features/security/data";
 import { diskKey } from "../features/servers/disk";
 import { applyDrainEvent } from "../features/servers/drain";
 import { storageKey } from "../features/storage/data";
@@ -794,13 +794,16 @@ function invalidateForAudit(
   // Servers count what is placed on them; previews are environments.
   if (kind === "server" || kind === "environment" || kind === "preview")
     invalidate(keys.servers);
-  // The Security page lists every server (ADR 0109): one joined or removed.
-  if (
-    audit.action === "server.add" ||
-    audit.action === "server.join" ||
-    audit.action === "server.remove"
-  )
+  // The Security page lists every server (ADR 0109): a server that joined
+  // is fetched, one removed ("server <name>") is taken out of the list.
+  if (audit.action === "server.add" || audit.action === "server.join")
     invalidate(hostChecksKey);
+  if (audit.action === "server.remove") {
+    const name = audit.target.replace(/^server /, "");
+    queryClient.setQueryData<HostChecks[]>(hostChecksKey, (list) =>
+      list?.filter((s) => s.server !== name),
+    );
+  }
   if (!audit.project) return;
   // The Images page shows which services update on their own.
   if (audit.action === "service.auto_update") invalidate(["images"]);
