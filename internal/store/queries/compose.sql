@@ -22,7 +22,9 @@ ON CONFLICT (environment_id) DO UPDATE SET
 RETURNING *;
 
 -- name: DeleteComposeSource :execrows
-DELETE FROM compose_sources WHERE environment_id = +?;
+-- Deletes the environment's source, if it is still the one read (the
+-- caller held its sync).
+DELETE FROM compose_sources WHERE id = +sqlc.arg(id) AND environment_id = +sqlc.arg(environment_id);
 
 -- name: ListRepoComposeSources :many
 -- The sources one App push delivery may sync.

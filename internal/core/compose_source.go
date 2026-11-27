@@ -127,7 +127,7 @@ func (c *Core) UnfollowCompose(ctx context.Context, a Actor, ref EnvRef) error {
 		return ctx.Err()
 	}
 	defer release()
-	n, err := c.store.DeleteComposeSource(ctx, es.env.ID)
+	n, err := c.store.DeleteComposeSource(ctx, store.DeleteComposeSourceParams{ID: row.ID, EnvironmentID: es.env.ID})
 	if err != nil {
 		return err
 	}
@@ -560,22 +560,31 @@ func (c *Core) kickComposeSync(id int64) {
 // also when a sync couldn't record its end (the commit stays queued for
 // the next push, sync or start).
 func (c *Core) composeWork(id int64) {
+	exited := false
 	defer func() {
-		c.composeMu.Lock()
-		delete(c.composeWorkers, id)
-		c.composeMu.Unlock()
+		// A panic ends the worker (goCounted recovers it): free the source
+		// for the next kick.
+		if !exited {
+			c.composeMu.Lock()
+			delete(c.composeWorkers, id)
+			c.composeMu.Unlock()
+		}
 	}()
 	for {
 		c.composeMu.Lock()
 		*c.composeWorkers[id] = false
 		c.composeMu.Unlock()
 		c.composeOnce(id)
+		// The check and the exit in one critical section: a kick after it
+		// starts a new worker, one before it runs this one again.
 		c.composeMu.Lock()
-		again := *c.composeWorkers[id]
-		c.composeMu.Unlock()
-		if !again || c.ctx.Err() != nil {
+		if !*c.composeWorkers[id] || c.ctx.Err() != nil {
+			delete(c.composeWorkers, id)
+			c.composeMu.Unlock()
+			exited = true
 			return
 		}
+		c.composeMu.Unlock()
 	}
 }
 

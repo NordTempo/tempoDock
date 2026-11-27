@@ -11,11 +11,18 @@ import (
 )
 
 const deleteComposeSource = `-- name: DeleteComposeSource :execrows
-DELETE FROM compose_sources WHERE environment_id = +?
+DELETE FROM compose_sources WHERE id = +?1 AND environment_id = +?2
 `
 
-func (q *Queries) DeleteComposeSource(ctx context.Context, environmentID int64) (int64, error) {
-	result, err := q.db.ExecContext(ctx, deleteComposeSource, environmentID)
+type DeleteComposeSourceParams struct {
+	ID            int64
+	EnvironmentID int64
+}
+
+// Deletes the environment's source, if it is still the one read (the
+// caller held its sync).
+func (q *Queries) DeleteComposeSource(ctx context.Context, arg DeleteComposeSourceParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteComposeSource, arg.ID, arg.EnvironmentID)
 	if err != nil {
 		return 0, err
 	}
