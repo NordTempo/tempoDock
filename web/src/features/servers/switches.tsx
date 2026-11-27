@@ -160,6 +160,34 @@ export function useServerSwitches(server: Server) {
     );
   };
 
+  // What this server stopping scanning kinds (scanning only to from
+  // now) leaves: the builders that take those scans, the kinds no other
+  // builder scans, and the warning for them.
+  const scanLoss = (to: Builds) => {
+    const was = server.builder ? scansOf(server) : "off";
+    const lost = (["production", "non_production"] as const)
+      .filter((k) => scansKind(was, k) && !scansKind(to, k))
+      .map((k) => ({
+        kind: k,
+        others: servers.filter(
+          (s) => s.name !== name && builds(s) && s[scansField[k]],
+        ),
+      }));
+    const others = [
+      ...new Set(lost.flatMap((l) => l.others.map((s) => s.name))),
+    ];
+    const orphaned = lost
+      .filter((l) => l.others.length === 0)
+      .map((l) => kindLabel[l.kind]);
+    const warning = orphaned.length > 0 && (
+      <span className="mt-2 block text-warn-text">
+        No other builder scans {orphaned.join(" or ")} images: they go unscanned
+        until one does.
+      </span>
+    );
+    return { others, orphaned, warning };
+  };
+
   // Production goes only where placement is open: closing the last open
   // server would leave new projects nowhere to run.
   const lastPlacement =
@@ -251,11 +279,16 @@ export function useServerSwitches(server: Server) {
                   losesProduction &&
                   prodOthers.length === 0 &&
                   others.length > 0;
+                // Only builders scan: stopping stops its scans too.
+                const scans = scanLoss("off");
                 return setAsk({
                   patch: { builder: false },
                   action: "Stop building",
                   cli: `dock server update ${name} --no-builder`,
-                  last: others.length === 0 || noProduction,
+                  last:
+                    others.length === 0 ||
+                    noProduction ||
+                    scans.orphaned.length > 0,
                   text: (
                     <>
                       Stop building images on{" "}
@@ -272,6 +305,7 @@ export function useServerSwitches(server: Server) {
                           deploys from source will fail until one does.
                         </span>
                       )}
+                      {scans.warning}
                     </>
                   ),
                 });
@@ -332,29 +366,7 @@ export function useServerSwitches(server: Server) {
             onChange={(e) => {
               const to =
                 buildsOptions.find((b) => b === e.target.value) ?? "off";
-              const was = scansOf(server);
-              // Each kind this server stops scanning, and the builders
-              // that still scan it.
-              const lost = (["production", "non_production"] as const)
-                .filter((k) => scansKind(was, k) && !scansKind(to, k))
-                .map((k) => ({
-                  kind: k,
-                  others: servers.filter(
-                    (s) => s.name !== name && builds(s) && s[scansField[k]],
-                  ),
-                }));
-              const others = [
-                ...new Set(lost.flatMap((l) => l.others.map((s) => s.name))),
-              ];
-              const orphaned = lost
-                .filter((l) => l.others.length === 0)
-                .map((l) => kindLabel[l.kind]);
-              const warning = orphaned.length > 0 && (
-                <span className="mt-2 block text-warn-text">
-                  No other builder scans {orphaned.join(" or ")} images: they go
-                  unscanned until one does.
-                </span>
-              );
+              const { others, orphaned, warning } = scanLoss(to);
               setAsk({
                 patch: {
                   scans_production: buildsProduction(to),
