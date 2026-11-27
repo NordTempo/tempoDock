@@ -468,7 +468,7 @@ type Service struct {
 	// the image. DatabaseURLVariable names the variable the panel reads
 	// connection details from, e.g. DATABASE_URL or api.DATABASE_URL.
 	// Both apply immediately and are never staged.
-	Database            DatabaseSetting `json:"database" enum:",postgres,mysql,redis,none"`
+	Database            DatabaseSetting `json:"database" enum:",postgres,mysql,redis,mongodb,none"`
 	DatabaseURLVariable string          `json:"database_url_variable"`
 	// AutoUpdate: a service deployed by tag updates to the tag's newer
 	// image on its own after the daily check (ADR 0074). Applies
@@ -476,7 +476,7 @@ type Service struct {
 	AutoUpdate bool `json:"auto_update"`
 	// DataEngine is the detected database engine; the Data tab shows when
 	// it is set.
-	DataEngine DataEngine `json:"data_engine,omitempty" enum:"postgres,mysql,redis"`
+	DataEngine DataEngine `json:"data_engine,omitempty" enum:"postgres,mysql,redis,mongodb"`
 	// Template is the database template the service was created from.
 	Template Template `json:"template,omitempty" enum:"postgres,redis,mysql,mariadb,valkey,pgvector,mongodb"`
 	// FromTemplate is the app template (ADR 0083) that created it, if one did.

@@ -294,17 +294,13 @@ func (c *Core) drillResult(ctx context.Context, from, to svcScope, restoreErr er
 
 // drillQuery is a drill's sanity query against the restored copy to,
 // through the Data panel's connection to it (no other path to a
-// database): Postgres and MySQL count the user tables, and fail when
+// database): Postgres and MySQL count the user tables (MongoDB its
+// collections), and fail when
 // there are none while the live database from has some; Redis answers
 // its key count. Template databases get data access when their first
 // release goes live (afterActive); a copy that has none yet is set up
 // here, once.
 func (c *Core) drillQuery(ctx context.Context, from, to svcScope) (string, error) {
-	if t, _ := templateOf(to.svc); t.database == "" {
-		// No Data panel for its engine yet (MongoDB, ADR 0110): the
-		// restore loaded the snapshot without an error and the copy runs.
-		return "restored and running", nil
-	}
 	sys := System.InOrg(to.project.OrgID)
 	ref := ServiceRef{to.project.Name, to.env.Name, to.svc.Name}
 	s, err := c.DataSchema(ctx, sys, ref, "")
@@ -323,16 +319,20 @@ func (c *Core) drillQuery(ctx context.Context, from, to svcScope) (string, error
 		}
 		return drillCount(keys, "key"), nil
 	}
+	word := "table"
+	if t, _ := templateOf(to.svc); t.database == apitypes.DatabaseMongoDB {
+		word = "collection"
+	}
 	n := userTables(s)
 	if n == 0 {
 		// Read from the panel's cached schema of the live database; one
 		// that can't be read (no data access) is not compared.
 		live, err := c.DataSchema(ctx, sys, ServiceRef{from.project.Name, from.env.Name, from.svc.Name}, "")
 		if err == nil && userTables(live) > 0 {
-			return "", fmt.Errorf("the restored copy has no tables, but %s has %d: the snapshot doesn't hold its data", from.svc.Name, userTables(live))
+			return "", fmt.Errorf("the restored copy has no %ss, but %s has %d: the snapshot doesn't hold its data", word, from.svc.Name, userTables(live))
 		}
 	}
-	return drillCount(n, "table"), nil
+	return drillCount(n, word), nil
 }
 
 // userTables counts a schema's tables, without its views.

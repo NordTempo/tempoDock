@@ -266,6 +266,8 @@ export type TableQuery = {
   table: string;
   order?: string;
   filters?: DataFilter[];
+  /** MongoDB: a find filter, Extended JSON as typed in the shell. */
+  where?: string;
   reveal?: boolean;
 };
 
@@ -282,6 +284,7 @@ export function useTableRows(q: TableQuery | null) {
       q?.table,
       q?.order ?? "",
       q?.filters ?? [],
+      q?.where ?? "",
       !!q?.reveal,
     ],
     queryFn: ({ pageParam, signal }) => {
@@ -291,6 +294,7 @@ export function useTableRows(q: TableQuery | null) {
           table: q.table,
           order: q.order,
           filters: q.filters,
+          where: q.where,
           after: pageParam || undefined,
           reveal: q.reveal,
         },

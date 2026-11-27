@@ -3,8 +3,11 @@ import { useMemo, useReducer, useState } from "react";
 import { useShortcuts } from "../../shell/keys";
 import { plural } from "../../ui/format";
 import { type TableQuery, useCli, useDataSource, useTableRows } from "./api";
+import { isBson } from "./bson";
 import { cellInput, filterFlag, rowCount, rowKey, tableName } from "./cells";
+import { DocumentDrawer } from "./DocumentDrawer";
 import { editsReducer, noEdits, rowId, toChanges } from "./edits";
+import { engines } from "./engines";
 import { FilterBar } from "./FilterBar";
 import { Grid, type GridCol } from "./Grid";
 import { Btn, Head, Kbd } from "./kit";
@@ -45,6 +48,7 @@ export function TablesView({
     () => new Set(),
   );
   const cli = useCli();
+  const noun = engines[info.engine].nouns.row;
   const rows = useTableRows({
     ...query,
     reveal: revealed.size > 0,
@@ -58,10 +62,23 @@ export function TablesView({
   const [counting, setCounting] = useState(false);
   const source = useDataSource();
   const exact = useQuery({
-    queryKey: [...source.key, "rows", query.table, "count", query.filters],
+    queryKey: [
+      ...source.key,
+      "rows",
+      query.table,
+      "count",
+      query.filters,
+      query.where ?? "",
+    ],
     queryFn: ({ signal }) =>
       source.rows(
-        { table: query.table, filters: query.filters, limit: 1, count: true },
+        {
+          table: query.table,
+          filters: query.filters,
+          where: query.where,
+          limit: 1,
+          count: true,
+        },
         signal,
       ),
     enabled: counting,
@@ -180,7 +197,7 @@ export function TablesView({
       ? `${plural(counted, "row")}${filters.length ? " matching" : ""}`
       : filters.length
         ? `${loaded}${rows.hasNextPage ? "+" : ""} matching`
-        : rowCount(total);
+        : rowCount(total, noun);
   // Worth counting: more rows than loaded, and no exact count yet.
   const canCount =
     typeof counted !== "number" &&
@@ -261,6 +278,14 @@ export function TablesView({
               (pk.length ? ", a view" : ", no primary key: can't be edited")}
           </span>
         </Head>
+        {isBson(table.columns?.[0]?.type_name ?? "") && (
+          <WhereBar
+            where={query.where ?? ""}
+            onWhere={(where) =>
+              onQuery({ ...query, where: where || undefined })
+            }
+          />
+        )}
         <FilterBar
           columns={table.columns ?? []}
           filters={filters}
@@ -371,7 +396,7 @@ export function TablesView({
               ? `${plural(loaded, "row")}, loading the next page`
               : rows.hasNextPage
                 ? `${plural(loaded, "row")} loaded, more as you scroll`
-                : rows.isSuccess && `all ${plural(loaded, "row")}`}
+                : rows.isSuccess && `all ${plural(loaded, noun)}`}
           </span>
           {editing && !table.editable && (
             <span>This table can't be edited</span>
@@ -396,7 +421,15 @@ export function TablesView({
           }}
         />
       ) : (
-        selectedRow && (
+        selectedRow &&
+        (isBson(columns[0]?.type_name ?? "") ? (
+          <DocumentDrawer
+            table={table}
+            columns={columns}
+            row={selectedRow}
+            onClose={() => setSelected(null)}
+          />
+        ) : (
           <RowDrawer
             table={table}
             columns={columns}
@@ -404,9 +437,55 @@ export function TablesView({
             onOpen={(target, next) => onQuery({ table: target, filters: next })}
             onClose={() => setSelected(null)}
           />
-        )
+        ))
       )}
     </div>
+  );
+}
+
+/**
+ * MongoDB's find filter (mock A): Extended JSON as typed in the shell,
+ * applied on Enter, ANDed with the filters below it. Esc puts back the
+ * one applied.
+ */
+function WhereBar({
+  where,
+  onWhere,
+}: {
+  where: string;
+  onWhere: (where: string) => void;
+}) {
+  const [text, setText] = useState(where);
+  return (
+    <form
+      className="flex items-center gap-2 px-5 pt-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onWhere(text.trim());
+      }}
+    >
+      <label className="flex h-8 min-w-0 flex-1 items-center overflow-hidden rounded-lg border border-(--g-edge) bg-(--g-raise)">
+        <span className="flex h-full items-center border-r border-(--g-line) px-2 text-2xs text-(--g-faint)">
+          filter
+        </span>
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setText(where);
+          }}
+          placeholder='{ status: "open", total: { $gt: 100 } }'
+          spellCheck={false}
+          autoComplete="off"
+          className="h-full min-w-0 flex-1 bg-transparent px-2 font-mono text-xs outline-none"
+        />
+      </label>
+      {text.trim() !== where && (
+        <Btn type="submit" primary>
+          Apply <Kbd>↵</Kbd>
+        </Btn>
+      )}
+    </form>
   );
 }
 
@@ -449,7 +528,7 @@ function AddRow({
           <label key={c.name} className="flex flex-col gap-1 text-xs">
             <span className="text-(--g-mut)">
               <span className="font-mono text-(--g-text)">{c.name}</span>{" "}
-              {c.type_name}
+              {c.type_name.replace(/^bson:/, "")}
             </span>
             <input
               // biome-ignore lint/a11y/noAutofocus: the form opens on request

@@ -48,6 +48,8 @@ export type DataPanelView = {
   /** A column, "-column" for descending. */
   order?: string;
   filters?: DataFilter[];
+  /** MongoDB: a find filter, Extended JSON as typed in the shell. */
+  where?: string;
   /** The Health tab's view; the overview when unset. */
   insight?: DataInsightView;
   /** Redis: the logical database (0 when unset), the key filter, the open key. */
@@ -82,7 +84,7 @@ export const atLeast = (level: DataLevel, wanted: DataLevel) =>
 // database roles behind it are in Why).
 /** What a level allows, in the engine's words (Redis has keys, not rows). */
 function canText(level: DataLevel, engine: DataEngine) {
-  const rows = engine === "redis" ? "keys" : "rows";
+  const rows = `${engines[engine].nouns.row}s`;
   return {
     none: "You can't open this database",
     schema:
@@ -195,7 +197,7 @@ export function DataPanel({
   // elsewhere.
   const writing = editing && (tab === "tables" || tab === "keys");
   const openTable = (table: string) =>
-    onView({ ...view, table, filters: [], order: undefined });
+    onView({ ...view, table, filters: [], order: undefined, where: undefined });
 
   return shell(
     <>
@@ -308,6 +310,7 @@ export function DataPanel({
           {tableList && (
             <div className="flex w-[240px] shrink-0 flex-col border-r border-(--g-line) bg-(--g-side) p-2">
               <TableList
+                noun={engine.nouns.table}
                 tables={tables}
                 selected={selectedName}
                 onSelect={openTable}
@@ -339,6 +342,7 @@ export function DataPanel({
                 table: selectedName ?? "",
                 order: view.order,
                 filters: view.filters,
+                where: view.where,
               }}
               editing={editing}
               onEditing={canEdit ? setEditing : undefined}

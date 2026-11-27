@@ -63,8 +63,14 @@ func (p *Panel[D]) changesetFor(tg *target[D], cs Changeset) apitypes.DataChange
 	if tg.db.Perm.Sensitive == apitypes.SensitiveVisible {
 		return out
 	}
-	if changes, conflicts, touched := maskChanges(out.Changes, out.Conflicts, tg.sensitive); touched {
+	_, paths := tg.eng.(data.MasksItself)
+	if changes, conflicts, touched := maskChanges(out.Changes, out.Conflicts, tg.sensitive, paths); touched {
 		out.Changes, out.Conflicts, out.SQL = changes, conflicts, p.redact(tg.db.Engine, out.SQL)
+		if paths {
+			// A document's keys can hold data too, and the redacted
+			// command keeps keys: it goes like Redis's.
+			out.SQL = redactedText
+		}
 	}
 	if keys, conflicts, touched := maskKeyChanges(out.KeyChanges, out.Conflicts, tg.sensitiveKeys); touched {
 		out.KeyChanges, out.Conflicts, out.SQL = keys, conflicts, redactedText
@@ -125,35 +131,50 @@ func summarizeKeyChanges(changes []apitypes.DataKeyChange) string {
 }
 
 // touches reports whether a change reads or writes col.
-func touches(ch apitypes.DataChange, col apitypes.DataColumnRef) bool {
+// With paths (MongoDB, whose marks are field paths), a field holding the
+// marked path or held by it touches it too: customer holds
+// customer.email.
+func touches(ch apitypes.DataChange, col apitypes.DataColumnRef, paths bool) bool {
 	if ch.Table != col.Schema+"."+col.Table {
 		return false
 	}
-	_, inKey := ch.Key[col.Column]
-	_, inOld := ch.Old[col.Column]
-	_, inNew := ch.New[col.Column]
-	return inKey || inOld || inNew
+	return hasOverlap(ch.Key, col.Column, paths) || hasOverlap(ch.Old, col.Column, paths) || hasOverlap(ch.New, col.Column, paths)
+}
+
+// overlaps reports whether a change's field and a marked column are one,
+// or (with paths) one holds the other.
+func overlaps(field, col string, paths bool) bool {
+	return field == col || paths && (strings.HasPrefix(col, field+".") || strings.HasPrefix(field, col+"."))
+}
+
+func hasOverlap[V any](m map[string]V, col string, paths bool) bool {
+	for k := range m {
+		if overlaps(k, col, paths) {
+			return true
+		}
+	}
+	return false
 }
 
 // maskChanges returns changes and conflicts without the sensitive
 // columns' values, and whether there were any. It copies what it
 // changes; the arguments stay as they are.
-func maskChanges(changes []apitypes.DataChange, conflicts []apitypes.DataConflict, sensitive []apitypes.DataColumnRef) ([]apitypes.DataChange, []apitypes.DataConflict, bool) {
+func maskChanges(changes []apitypes.DataChange, conflicts []apitypes.DataConflict, sensitive []apitypes.DataColumnRef, paths bool) ([]apitypes.DataChange, []apitypes.DataConflict, bool) {
 	touched := false
 	for i, ch := range changes {
 		for _, col := range sensitive {
-			if !touches(ch, col) {
+			if !touches(ch, col, paths) {
 				continue
 			}
 			if !touched {
 				touched = true
 				changes, conflicts = slices.Clone(changes), slices.Clone(conflicts)
 			}
-			ch.Key, ch.Old, ch.New = without(ch.Key, col.Column), without(ch.Old, col.Column), without(ch.New, col.Column)
+			ch.Key, ch.Old, ch.New = without(ch.Key, col.Column, paths), without(ch.Old, col.Column, paths), without(ch.New, col.Column, paths)
 			changes[i] = ch
 			for j, cf := range conflicts {
 				if cf.Change == i {
-					conflicts[j].Current = without(cf.Current, col.Column)
+					conflicts[j].Current = without(cf.Current, col.Column, paths)
 				}
 			}
 		}
@@ -161,13 +182,14 @@ func maskChanges(changes []apitypes.DataChange, conflicts []apitypes.DataConflic
 	return changes, conflicts, touched
 }
 
-// without returns m without key, copied when it had it.
-func without[V any](m map[string]V, key string) map[string]V {
-	if _, ok := m[key]; !ok {
+// without returns m without the fields that overlap col, copied when it
+// had any.
+func without[V any](m map[string]V, col string, paths bool) map[string]V {
+	if !hasOverlap(m, col, paths) {
 		return m
 	}
 	m = maps.Clone(m)
-	delete(m, key)
+	maps.DeleteFunc(m, func(k string, _ V) bool { return overlaps(k, col, paths) })
 	return m
 }
 
@@ -188,9 +210,10 @@ func checkSensitiveChanges[D any](tg *target[D], changes []apitypes.DataChange) 
 	if tg.db.Perm.Sensitive == apitypes.SensitiveVisible {
 		return nil
 	}
+	_, paths := tg.eng.(data.MasksItself)
 	for _, ch := range changes {
 		for _, col := range tg.sensitive {
-			if touches(ch, col) {
+			if touches(ch, col, paths) {
 				return forbidden("%s.%s is sensitive and masked for you; leave it out of the changes", ch.Table, col.Column)
 			}
 		}

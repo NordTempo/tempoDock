@@ -945,7 +945,8 @@
             "enum": [
               "postgres",
               "mysql",
-              "redis"
+              "redis",
+              "mongodb"
             ],
             "type": "string"
           },
@@ -998,7 +999,8 @@
             "enum": [
               "postgres",
               "mysql",
-              "redis"
+              "redis",
+              "mongodb"
             ],
             "type": "string"
           },
@@ -7675,6 +7677,17 @@
             "name": "filter",
             "schema": {
               "description": "JSON array of DataFilter, ANDed, e.g. [{\"column\":\"status\",\"op\":\"eq\",\"value\":\"paid\"}]",
+              "type": "string"
+            }
+          },
+          {
+            "description": "MongoDB: a find filter, Extended JSON as typed in the shell, e.g. {status: \"open\"}; ANDed with filter",
+            "explode": false,
+            "in": "query",
+            "name": "where",
+            "schema": {
+              "description": "MongoDB: a find filter, Extended JSON as typed in the shell, e.g. {status: \"open\"}; ANDed with filter",
+              "maxLength": 65536,
               "type": "string"
             }
           },

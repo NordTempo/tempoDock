@@ -4,11 +4,13 @@ Browse, query and change the data in a database service: the **Data** tab
 on the service page, or `dock db` in the terminal. Both use the same API
 and the same permissions, and everything is in the audit log. The design
 is [ADR 0016](../decisions/0016-database-panel.md); MySQL and MariaDB are
-[ADR 0072](../decisions/0072-mysql-and-redis-in-the-data-panel.md).
+[ADR 0072](../decisions/0072-mysql-and-redis-in-the-data-panel.md), MongoDB
+[ADR 0110](../decisions/0110-mongodb.md).
 
 Postgres 14 or newer, MySQL 8.0 or newer and MariaDB 10.6 or newer, Redis
-7.0 or newer and Valkey 7.2 or newer. Redis has keys, not tables: see
-[Redis and Valkey](#redis-and-valkey); its Health view comes later.
+7.0 or newer and Valkey 7.2 or newer, MongoDB 6.0 or newer. Redis has
+keys, not tables: see [Redis and Valkey](#redis-and-valkey). MongoDB has
+documents: see [MongoDB](#mongodb).
 
 ## Is it a database?
 
@@ -150,6 +152,47 @@ dock db query 'ZRANGE board 0 9 REV WITHSCORES' --db 0
   memory, so a restart drops them; Dock creates them again as the owner
   on the next use. Browsing never changes eviction order
   (`CLIENT NO-TOUCH`).
+
+## MongoDB
+
+Dock detects `mongo`, `bitnami/mongodb` and
+`mongodb/mongodb-community-server` images, and the MongoDB template marks
+its service itself and sets up access when it starts. The owner is the
+root user (`MONGO_INITDB_ROOT_USERNAME` and `_PASSWORD`, or the user of
+`MONGODB_URI`); single servers.
+
+```sh
+dock db rows app.orders --where '{status: "open", total: {$gt: 100}}' --order -createdAt
+dock db query 'db.orders.aggregate([{$group: {_id: "$status", n: {$sum: 1}}}])'
+dock db query 'db.getSiblingDB("analytics").daily.find().sort({day: -1}).limit(7)'
+```
+
+- A collection is a table named `database.collection`; its documents'
+  top-level fields are the columns (from a sample of 20 documents), and
+  `_id` is the key. The **Documents** view is that grid, with the open
+  document's fields as a tree on the side; a field a document lacks is
+  blank.
+- Values are Extended JSON, as typed in the shell: `{status: "open"}`,
+  `ObjectId("...")`, `ISODate("2026-11-27T09:14:02Z")`,
+  `NumberDecimal("249.00")`. That goes for the filter box (`--where`),
+  filters, keys and changes; a bare word is a string. Pages go 10 000
+  documents deep at most; past that, use **Query**.
+- **Query** runs one read: `find` (with `sort`, `project`, `limit`,
+  `skip`), `findOne`, `aggregate`, `countDocuments`,
+  `estimatedDocumentCount`, `distinct`, `show dbs` and `show
+  collections`. `$out`, `$merge`, `$where`, `$function` and
+  `$accumulator` are refused.
+- A changeset changes one document: a single server has no transactions.
+  An edit matches the document's `_id` and the old values you saw, so a
+  document changed since is a conflict and nothing is written.
+- Sensitive fields are paths (`customer.email`). MongoDB can't deny a user
+  one field, so Dock masks them in pages (`{"$masked": true}` inside a
+  document), refuses filters, sorts and changes that touch them, and
+  gives callers who see them masked no **Query** while any is marked.
+- Dock's users live in `admin`: `dock_reader` (`readAnyDatabase`),
+  `dock_writer` (`readWriteAnyDatabase`), `dock_monitor`
+  (`clusterMonitor`). Health has the overview and the running operations,
+  with Kill.
 
 ## Change data
 

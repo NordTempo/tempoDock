@@ -162,7 +162,8 @@ const mongoPort = 27017
 // authentication on. The WiredTiger cache is held to 256 MB, its smallest,
 // of a 512 MB limit: by default it takes half the memory it sees less a
 // gigabyte. Apps connect as root to the app database; backups dump every
-// database with mongodump, which the image has.
+// database with mongodump, which the image has. The Data panel is set up
+// once it runs, as for the other templates.
 func mongoTemplate(image string) dbTemplate {
 	return dbTemplate{
 		name: apitypes.TemplateMongoDB, title: "MongoDB", license: "SSPL-1.0", image: image,
@@ -172,6 +173,7 @@ func mongoTemplate(image string) dbTemplate {
 		memoryMB:    512,
 		cmd:         "exec docker-entrypoint.sh mongod --wiredTigerCacheSizeGB 0.25",
 		backup:      apitypes.BackupMongoDB,
+		database:    apitypes.DatabaseMongoDB,
 		vars: func(svc, password string) map[string]string {
 			return map[string]string{
 				"MONGO_INITDB_ROOT_USERNAME": "root",

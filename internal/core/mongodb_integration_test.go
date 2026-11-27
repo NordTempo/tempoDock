@@ -44,6 +44,22 @@ func TestIntegrationMongoDB(t *testing.T) {
 	}
 	mongosh(db, `db.notes.insertMany([{title: "hello"}, {title: "world"}]); db.getSiblingDB("other").things.insertOne({n: 1})`)
 
+	// The Data panel is set up once it runs (afterActive) and reads the
+	// collections through Dock's own users.
+	for deadline := time.Now().Add(time.Minute); ; time.Sleep(500 * time.Millisecond) {
+		s, err := c.DataSchema(ctx, testSystem, db, "")
+		if err == nil && userTables(s) == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the Data panel's schema: %+v, %v", s, err)
+		}
+	}
+	page, err := c.DataRows(ctx, testSystem, db, apitypes.DataPageRequest{Table: "app.notes", Order: "title"})
+	if err != nil || len(page.Rows) != 2 || !strings.Contains(string(page.Rows[0]), "hello") {
+		t.Fatalf("a page of notes: %+v, %v", page, err)
+	}
+
 	run, err := c.RunBackup(ctx, testSystem, db)
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +92,7 @@ func TestIntegrationMongoDB(t *testing.T) {
 			t.Fatal(err)
 		}
 		if d := b.Drill; d != nil && d.Status != apitypes.BackupRunning {
-			if d.Status != apitypes.BackupSucceeded || !strings.HasPrefix(d.Detail, "restored and running in ") {
+			if d.Status != apitypes.BackupSucceeded || !strings.HasPrefix(d.Detail, "2 collections in ") {
 				t.Fatalf("drill: %+v", d)
 			}
 			break

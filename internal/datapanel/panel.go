@@ -570,6 +570,9 @@ func (p *Panel[D]) Rows(ctx context.Context, a Actor, db *Database[D], req apity
 	if req.Full && req.Limit != 1 {
 		return apitypes.DataPage{}, invalid("full values are only returned one row at a time; set limit to 1")
 	}
+	if req.Where != "" && db.Engine != apitypes.EngineMongoDB {
+		return apitypes.DataPage{}, invalid("where is a MongoDB find filter; filter %s's rows with filters", db.Engine)
+	}
 	tg, err := p.ready(ctx, db, apitypes.LevelRead, "reading rows")
 	if err != nil {
 		return apitypes.DataPage{}, err
@@ -672,6 +675,11 @@ func (p *Panel[D]) Query(ctx context.Context, a Actor, db *Database[D], req apit
 		// Redis ACLs can't deny a key pattern: the console could read
 		// what the browser masks.
 		return nil, forbidden("the console isn't available while sensitive keys are masked for you (%s)", Why(db.Perm))
+	}
+	if _, ok := tg.eng.(data.MasksItself); ok && len(tg.sensitive) > 0 && db.Perm.Sensitive != apitypes.SensitiveVisible {
+		// MongoDB can't deny a role one field: a query could read what
+		// the pages mask.
+		return nil, forbidden("the console isn't available while sensitive fields are masked for you (%s)", Why(db.Perm))
 	}
 	call := tg.call(a, true)
 	if err := p.ensureGrants(ctx, tg, call); err != nil {
@@ -782,13 +790,19 @@ func (p *Panel[D]) DeleteSavedQuery(ctx context.Context, a Actor, db *Database[D
 }
 
 // columnsExist refuses a column ref the schema doesn't have.
-func columnsExist(s apitypes.DataSchema, refs []apitypes.DataColumnRef) error {
+// With paths (an engine that masks itself, MongoDB), a mark may be a
+// field path inside a column (customer.email): its first part must be one.
+func columnsExist(s apitypes.DataSchema, refs []apitypes.DataColumnRef, paths bool) error {
 	for _, ref := range refs {
 		i := slices.IndexFunc(s.Tables, func(t apitypes.DataTable) bool { return t.Schema == ref.Schema && t.Name == ref.Table })
 		if i < 0 {
 			return invalid("the database has no table %s.%s; name a table as the schema shows it (a new one shows within a minute)", ref.Schema, ref.Table)
 		}
-		if !slices.ContainsFunc(s.Tables[i].Columns, func(c apitypes.DataColumn) bool { return c.Name == ref.Column }) {
+		name := ref.Column
+		if paths {
+			name, _, _ = strings.Cut(name, ".")
+		}
+		if !slices.ContainsFunc(s.Tables[i].Columns, func(c apitypes.DataColumn) bool { return c.Name == name }) {
 			return invalid("table %s.%s has no column %s", ref.Schema, ref.Table, ref.Column)
 		}
 	}
@@ -824,7 +838,8 @@ func (p *Panel[D]) SetSensitiveColumns(ctx context.Context, a Actor, db *Databas
 	}
 	if t, ok := tg.eng.(data.Tables); ok && connErr == nil {
 		if s, err := t.Schema(ctx, tg.t, tg.call(a, false), nil); err == nil {
-			if err := columnsExist(s, req.Columns); err != nil {
+			_, paths := tg.eng.(data.MasksItself)
+			if err := columnsExist(s, req.Columns, paths); err != nil {
 				return nil, err
 			}
 		}

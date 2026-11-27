@@ -8373,7 +8373,7 @@ export interface components {
             confirm: boolean;
             database?: string;
             /** @enum {string} */
-            engine?: "postgres" | "mysql" | "redis";
+            engine?: "postgres" | "mysql" | "redis" | "mongodb";
             /** Format: int64 */
             port: number;
             service: string;
@@ -8807,7 +8807,7 @@ export interface components {
             /** @enum {string} */
             detected_by: "setting" | "image";
             /** @enum {string} */
-            engine: "postgres" | "mysql" | "redis";
+            engine: "postgres" | "mysql" | "redis" | "mongodb";
             reason?: string;
             server_version?: string;
             /** Format: date-time */
@@ -8819,7 +8819,7 @@ export interface components {
         };
         DataInsights: {
             /** @enum {string} */
-            engine: "postgres" | "mysql" | "redis";
+            engine: "postgres" | "mysql" | "redis" | "mongodb";
             hints: components["schemas"]["DataHint"][] | null;
             indexes?: components["schemas"]["DataIndexStats"][] | null;
             keys?: components["schemas"]["DataKeyPrefix"][] | null;
@@ -12073,9 +12073,9 @@ export interface components {
             /** Format: date-time */
             created_at: string;
             /** @enum {string} */
-            data_engine?: "postgres" | "mysql" | "redis";
+            data_engine?: "postgres" | "mysql" | "redis" | "mongodb";
             /** @enum {string} */
-            database: "" | "postgres" | "mysql" | "redis" | "none";
+            database: "" | "postgres" | "mysql" | "redis" | "mongodb" | "none";
             database_url_variable: string;
             dockerfile_path: string;
             /** Format: double */
@@ -13399,7 +13399,7 @@ export interface components {
              * @description Override database detection; empty detects from the image
              * @enum {string}
              */
-            database?: "" | "postgres" | "mysql" | "redis" | "none";
+            database?: "" | "postgres" | "mysql" | "redis" | "mongodb" | "none";
             database_url_variable?: string;
         };
         UpdateIncidentRequest: {
@@ -40715,6 +40715,8 @@ export interface operations {
                 limit?: number;
                 /** @description JSON array of DataFilter, ANDed, e.g. [{"column":"status","op":"eq","value":"paid"}] */
                 filter?: string;
+                /** @description MongoDB: a find filter, Extended JSON as typed in the shell, e.g. {status: "open"}; ANDed with filter */
+                where?: string;
                 /** @description Also count the matching rows exactly (under the statement timeout) */
                 count?: boolean;
                 /** @description Untruncated cells; only with limit 1 */

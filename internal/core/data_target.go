@@ -87,6 +87,21 @@ var engineConns = map[apitypes.DataEngine]engineConn{
 			return data.Credentials{User: "default", Password: env["REDIS_PASSWORD"]}, "0"
 		},
 	},
+	apitypes.EngineMongoDB: {
+		images: map[string]bool{
+			"mongo": true, "bitnami/mongodb": true, "mongodb/mongodb-community-server": true,
+		},
+		schemes: []string{"mongodb"},
+		port:    mongoPort,
+		urlVars: []string{"MONGODB_URI", "MONGO_URL"},
+		// The image's root user (MONGO_INITDB_ROOT_*), who lives in
+		// admin; the console starts in the URL's database, else
+		// MONGO_INITDB_DATABASE.
+		owner: func(env map[string]string) (data.Credentials, string) {
+			user, password := mongoRoot(env)
+			return data.Credentials{User: user, Password: password}, env["MONGO_INITDB_DATABASE"]
+		},
+	},
 }
 
 // detectDatabase says whether a service is a database and how that was

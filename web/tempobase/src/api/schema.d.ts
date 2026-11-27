@@ -1137,7 +1137,7 @@ export interface components {
             /** @enum {string} */
             detected_by: "setting" | "image";
             /** @enum {string} */
-            engine: "postgres" | "mysql" | "redis";
+            engine: "postgres" | "mysql" | "redis" | "mongodb";
             reason?: string;
             server_version?: string;
             /** Format: date-time */
@@ -1149,7 +1149,7 @@ export interface components {
         };
         DataInsights: {
             /** @enum {string} */
-            engine: "postgres" | "mysql" | "redis";
+            engine: "postgres" | "mysql" | "redis" | "mongodb";
             hints: components["schemas"]["DataHint"][] | null;
             indexes?: components["schemas"]["DataIndexStats"][] | null;
             keys?: components["schemas"]["DataKeyPrefix"][] | null;
@@ -4990,6 +4990,8 @@ export interface operations {
                 limit?: number;
                 /** @description JSON array of DataFilter, ANDed, e.g. [{"column":"status","op":"eq","value":"paid"}] */
                 filter?: string;
+                /** @description MongoDB: a find filter, Extended JSON as typed in the shell, e.g. {status: "open"}; ANDed with filter */
+                where?: string;
                 /** @description Also count the matching rows exactly (under the statement timeout) */
                 count?: boolean;
                 /** @description Untruncated cells; only with limit 1 */

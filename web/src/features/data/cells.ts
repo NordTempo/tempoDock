@@ -1,4 +1,5 @@
 import { csv } from "../../ui/csv";
+import { bsonDetail, bsonText, isBson, isBsonNumber } from "./bson";
 import type {
   DataCell,
   DataFilter,
@@ -32,7 +33,8 @@ const numericTypes = new Set([
 ]);
 
 /** Right-aligned in grids: numbers, including int8 and numeric sent as text. */
-export const isNumericType = (typeName: string) => numericTypes.has(typeName);
+export const isNumericType = (typeName: string) =>
+  numericTypes.has(typeName) || isBsonNumber(typeName);
 
 export function cellKind(cell: DataCell, typeName: string): CellKind {
   if (cell === null) return "null";
@@ -40,6 +42,12 @@ export function cellKind(cell: DataCell, typeName: string): CellKind {
     return "masked" in cell ? "masked" : "truncated";
   if (typeof cell === "boolean") return "bool";
   if (typeof cell === "number") return "number";
+  if (isBson(typeName))
+    return typeName === "bson:object" || typeName === "bson:array"
+      ? "json"
+      : isBsonNumber(typeName)
+        ? "number"
+        : "text";
   if (typeName === "json" || typeName === "jsonb") return "json";
   if (typeName === "bytea") return "bytea";
   return isNumericType(typeName) ? "number" : "text";
@@ -65,13 +73,15 @@ const isoTime =
  * second (the grid's header says UTC); the row details have them whole.
  */
 export function cellText(cell: DataCell, typeName: string): string {
-  if (cell === null) return "NULL";
+  // A MongoDB document without the field.
+  if (cell === null) return isBson(typeName) ? "" : "NULL";
   if (typeof cell === "object") {
     return "masked" in cell
       ? "••••••"
       : `${oneLine(cell.truncated)}… ${byteSize(cell.bytes)}`;
   }
   if (typeof cell !== "string") return String(cell);
+  if (isBson(typeName)) return bsonText(cell);
   if (typeName === "timestamptz" || typeName === "timestamp") {
     const m = isoTime.exec(cell);
     if (m) return `${m[1]} ${m[2]}`;
@@ -84,6 +94,8 @@ export function cellText(cell: DataCell, typeName: string): string {
 
 /** The whole value, for the row detail: JSON pretty-printed. */
 export function cellDetail(cell: DataCell, typeName: string): string {
+  if (typeof cell === "string" && isBson(typeName)) return bsonDetail(cell);
+  if (cell === null && isBson(typeName)) return "(no such field)";
   if (
     typeof cell === "string" &&
     (typeName === "json" || typeName === "jsonb")
@@ -158,11 +170,12 @@ export function compactCount({ estimated, exact }: RowCount) {
   return exact == null ? `~${text}` : text;
 }
 
-/** "~12 431 rows" estimated, "830 rows" exact, "rows unknown". */
-export function rowCount({ estimated, exact }: RowCount) {
+/** "~12 431 rows" estimated, "830 rows" exact, "rows unknown"; noun
+ * names them ("document" on MongoDB). */
+export function rowCount({ estimated, exact }: RowCount, noun = "row") {
   const n = exact ?? estimated;
-  if (n < 0) return "rows unknown";
-  return `${exact == null ? "~" : ""}${n.toLocaleString("en").replaceAll(",", " ")} ${n === 1 ? "row" : "rows"}`;
+  if (n < 0) return `${noun}s unknown`;
+  return `${exact == null ? "~" : ""}${n.toLocaleString("en").replaceAll(",", " ")} ${n === 1 ? noun : `${noun}s`}`;
 }
 
 /** A table's row count from the schema. */

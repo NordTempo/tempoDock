@@ -81,6 +81,8 @@ export type DataPageRequest = {
   table: string;
   order?: string;
   filters?: DataFilter[] | null;
+  /** MongoDB: a find filter, Extended JSON as typed in the shell. */
+  where?: string;
   after?: string;
   limit?: number;
   count?: boolean;

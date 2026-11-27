@@ -93,7 +93,87 @@ aggregate and a command linked in). That is past the binary budget
 (baseline + 3%) on its own, and tempoBase's 21 MB limit would go with it.
 So, as for MySQL and Redis (0072), Dock gets its own small client: BSON,
 `OP_MSG` and SCRAM-SHA-256 over `Target.Dial`, no pool, no monitoring
-goroutines, through `conncache` like the other engines.
+goroutines, through `conncache` like the other engines. Measured the
+same way with it: 0.29 MB (64.06 to 64.34 MB).
+
+How it maps onto the panel (Saile's mock pick A, 2026-11-27):
+
+- **Engine `mongodb`** (`internal/data/mongo`) implements `data.Engine`
+  and `data.Tables`: a collection is a table named `database.collection`,
+  its documents' top-level fields are the columns (named from a sample
+  of 20 documents, typed `bson:<type>`, `mixed` when they differ), and
+  `_id` is the key. A cell is the field's canonical Extended JSON text
+  (`{"$numberInt": "2"}` stays an int), null when the document lacks the
+  field. So the existing table API, `dock db` and the MCP data tools work
+  for MongoDB unchanged, and values make the round trip without losing
+  their type.
+- **The Documents tab** (mock A): the collection's grid, cells as the
+  shell shows values (`open`, `249.00`, `{ email, name }`, `[3]`), and
+  the open document as a tree of typed fields in the drawer. A filter box
+  above the grid takes a find filter (`where` on the rows API, `dock db
+  rows --where`), ANDed with the column filters; it refuses what runs
+  code and, for masked callers, any field that touches a masked path
+  (`$expr` and `$jsonSchema` too, which name fields inside strings). The
+  panel says documents and collections for MongoDB.
+- **Filters, keys and changes** take Extended JSON as typed in the
+  shell: unquoted keys, single quotes, `ObjectId("...")`,
+  `ISODate("...")`, `NumberLong(..)`, `NumberDecimal("..")`. A bare word
+  is a string (`status = open`); `like` and `ilike` become an anchored
+  `$regex`. Pages go by offset (sorted by `_id`, or a field then `_id`),
+  10 000 documents deep at most, as MySQL's keyless tables do.
+- **Users:** `dock_reader` (`readAnyDatabase`), `dock_writer`
+  (`readWriteAnyDatabase`) and `dock_monitor` (`clusterMonitor`), in
+  `admin`, created by the root user at setup, SCRAM-SHA-256 only. The
+  template sets `database = mongodb`, so a new MongoDB gets its Data tab
+  set up when it first runs, as Postgres does.
+- **Masking:** MongoDB can't deny a role one field, so the engine masks.
+  A sensitive mark is a field path (`customer.email`); a page shows the
+  top-level field masked, or the path inside it as `{"$masked": true}`,
+  and refuses to filter, sort or change anything that touches it, array
+  positions included (`items.0.email` touches `items.email`). A mark may
+  name a path inside a column, which the panel checks by its first part.
+  A masked caller gets no console while any field is marked
+  (`data.MasksItself`), as Redis does for key patterns, and no view of a
+  database with marks (nor its sampled columns): a view can show a marked
+  field under another name, and Dock doesn't follow its pipeline. A
+  masked caller's filter can't use `$text`, which searches whatever
+  fields a text index covers.
+- **Changes:** one document per changeset. A single server has no
+  transactions, and one `updateOne`, `insertOne` or `deleteOne` is atomic
+  on its own. An update and a delete match `_id` (with `$eq`, so a key
+  shaped like an operator stays a literal) and every old value the
+  editor saw, compared whole with `$expr` (a query's `{x: "B"}` would
+  also match an array holding `"B"`, and null a missing field); a field
+  seen missing must still be missing. A document whose seen fields
+  changed since is a conflict with its current values, and nothing is
+  written. The guard covers the fields the editor saw: an update writes
+  only those, and a delete removes the document even if it gained other
+  fields since. Guards compare strings byte for byte (`collation: simple`),
+  whatever the collection's collation, and a top-level field's BSON
+  type too (`$eq` takes int32 7 for int64 7); inside a document or an
+  array, values compare as `$eq` does, so a nested int32 7 that became
+  int64 7 isn't a conflict. A change names a top-level field, as
+  the grid's columns are: a dotted name would be read as a path (the
+  field `a.b` isn't `a.b` inside `a`, and `tags.0` or `tags.$[]` reach
+  into arrays the guard can't compare), so it changes the whole field. A
+  failed write says the server's error code, never its message, which
+  can quote values (a duplicate key's).
+- **Console** (the Query tab, `dock db query`): one read in the shell's
+  words: `find` (with `sort`, `project`, `limit`, `skip`), `findOne`,
+  `aggregate`, `countDocuments`, `estimatedDocumentCount`, `distinct`,
+  `show dbs` and `show collections`, in the URL's database unless
+  `db.getSiblingDB("x")` says otherwise. `$out`, `$merge`, `$where`,
+  `$function` and `$accumulator` are refused before anything is sent; the
+  reader couldn't write anyway. Columns are the first batch's fields,
+  and a later document's new ones go in a last `(other fields)` column,
+  so the result still streams.
+- **Health:** the overview from `serverStatus` (connections, uptime,
+  size) and the sessions from `currentOp`, with Kill (`killOp`) as the
+  owner. Dock doesn't turn the profiler on, so there is no queries view.
+- **Restore drills** count the restored copy's collections.
+- **tempoBase** registers Postgres only, as for MySQL and Redis (0072);
+  the engine and the panel's MongoDB view are shared, so adding it there
+  is a registration and a look at its budget.
 
 ## Consequences
 

@@ -87,6 +87,7 @@ export function serviceSource(ref: ServiceRef): DataSource {
                 filter: req.filters?.length
                   ? JSON.stringify(req.filters)
                   : undefined,
+                where: req.where || undefined,
                 count: req.count || undefined,
                 full: req.full || undefined,
                 reveal: req.reveal || undefined,

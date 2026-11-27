@@ -119,10 +119,10 @@ func (c *Core) UpdateDatabaseSettings(ctx context.Context, a Actor, ref ServiceR
 	params := store.SetServiceDatabaseSettingsParams{ID: ss.svc.ID, Database: ss.svc.Database, DatabaseUrlVariable: ss.svc.DatabaseUrlVariable}
 	if req.Database != nil {
 		switch *req.Database {
-		case apitypes.DatabaseDetect, apitypes.DatabasePostgres, apitypes.DatabaseMySQL, apitypes.DatabaseRedis, apitypes.DatabaseNone:
+		case apitypes.DatabaseDetect, apitypes.DatabasePostgres, apitypes.DatabaseMySQL, apitypes.DatabaseRedis, apitypes.DatabaseMongoDB, apitypes.DatabaseNone:
 			params.Database = string(*req.Database)
 		default:
-			return apitypes.Service{}, invalid("database must be empty (detect from the image), postgres, mysql, redis or none")
+			return apitypes.Service{}, invalid("database must be empty (detect from the image), postgres, mysql, redis, mongodb or none")
 		}
 	}
 	if req.DatabaseURLVariable != nil {

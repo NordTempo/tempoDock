@@ -34,8 +34,8 @@ func newDBCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{
 		Use:   "db",
 		Short: "Browse, query and change a database service's data",
-		Long: `Work with the data in a database service (Postgres, MySQL, MariaDB, Redis or
-Valkey): tables or keys, schema, rows,
+		Long: `Work with the data in a database service (Postgres, MySQL, MariaDB, Redis,
+Valkey or MongoDB): tables, keys or collections, schema, rows,
 read-only SQL, query history, saved queries and changesets, and how the
 database is doing (health, queries, sessions, storage).
 
@@ -169,7 +169,7 @@ func newDBSettingsCmd(g *globals) *cobra.Command {
 	var database, urlVariable string
 	var cmd *cobra.Command
 	cmd = dbCmd(g, &cobra.Command{
-		Use:   "settings [--database postgres|mysql|redis|none|detect] [--url-variable NAME]",
+		Use:   "settings [--database postgres|mysql|redis|mongodb|none|detect] [--url-variable NAME]",
 		Short: "Mark a service as a database, or name its connection URL variable",
 		Long: `Change Dock-side database settings. They apply immediately and never create
 a release. --database overrides detection from the image (detect goes back to
@@ -184,9 +184,9 @@ POSTGRES_*).`,
 			switch database {
 			case "detect":
 				d = apitypes.DatabaseDetect
-			case "postgres", "mysql", "redis", "none":
+			case "postgres", "mysql", "redis", "mongodb", "none":
 			default:
-				return usageError(fmt.Sprintf("invalid --database %q", database), "Use postgres, mysql, redis, none or detect.")
+				return usageError(fmt.Sprintf("invalid --database %q", database), "Use postgres, mysql, redis, mongodb, none or detect.")
 			}
 			req.Database = &d
 		}
@@ -206,7 +206,7 @@ POSTGRES_*).`,
 			return nil
 		})
 	})
-	cmd.Flags().StringVar(&database, "database", "", "postgres, mysql (MariaDB too), redis (Valkey too), none, or detect (from the image)")
+	cmd.Flags().StringVar(&database, "database", "", "postgres, mysql (MariaDB too), redis (Valkey too), mongodb, none, or detect (from the image)")
 	cmd.Flags().StringVar(&urlVariable, "url-variable", "", "variable with the connection URL, e.g. DATABASE_URL or api.DATABASE_URL")
 	return cmd
 }
@@ -414,7 +414,7 @@ func parseFilter(s string) (apitypes.DataFilter, error) {
 
 func newDBRowsCmd(g *globals) *cobra.Command {
 	var filters []string
-	var order, after string
+	var order, after, where string
 	var limit int
 	var count, reveal bool
 	cmd := dbCmd(g, &cobra.Command{
@@ -424,14 +424,16 @@ func newDBRowsCmd(g *globals) *cobra.Command {
 descending) and the primary key. Pass the printed cursor as --after for the
 next page. Filters are ANDed: column=value, column=op:value with op one of
 eq, ne, lt, lte, gt, gte, like, ilike, in (comma-separated values), or
-column=is_null / column=not_null.
+column=is_null / column=not_null. On MongoDB a table is database.collection,
+values are Extended JSON as in the shell, and --where takes a find filter.
 
 Sensitive columns show as (masked). If your access lets you see them,
 --reveal shows them; each reveal is audited (data.reveal).
 
 With --json, the page as the API returns it, including next.`,
 		Example: `  dock db rows orders --filter status=paid --filter total=gt:100 --order -created_at
-  dock db rows public.orders --after eyJ... --limit 500`,
+  dock db rows public.orders --after eyJ... --limit 500
+  dock db rows app.orders --where '{status: "open", total: {$gt: 100}}'`,
 		Args: cobra.ExactArgs(1),
 	}, func(ctx context.Context, s *session, _ target, data string, args []string) error {
 		q := url.Values{}
@@ -447,7 +449,7 @@ With --json, the page as the API returns it, including next.`,
 			b, _ := json.Marshal(fs)
 			q.Set("filter", string(b))
 		}
-		for k, v := range map[string]string{"order": order, "after": after} {
+		for k, v := range map[string]string{"order": order, "after": after, "where": where} {
 			if v != "" {
 				q.Set(k, v)
 			}
@@ -498,6 +500,7 @@ With --json, the page as the API returns it, including next.`,
 	})
 	cmd.Flags().StringArrayVarP(&filters, "filter", "w", nil, "column=value or column=op:value; repeatable")
 	cmd.Flags().StringVar(&order, "order", "", "sort column, -column for descending (default: the primary key)")
+	cmd.Flags().StringVar(&where, "where", "", "MongoDB: a find filter, Extended JSON as in the shell")
 	cmd.Flags().StringVar(&after, "after", "", "cursor of the previous page")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 0, fmt.Sprintf("rows per page (default %d, at most %d)", apitypes.DataPageLimit, apitypes.DataPageMaxLimit))
 	cmd.Flags().BoolVar(&count, "count", false, "count matching rows exactly")
