@@ -1,5 +1,7 @@
 package apitypes
 
+import "time"
+
 // Shells in a service's running container (`dock exec`, ADR 0111).
 
 // ExecProtocol is the Upgrade token of an exec session: `GET .../exec`
@@ -22,3 +24,15 @@ type ExecEnd struct {
 	Container string `json:"container"`
 	Release   int64  `json:"release"`
 }
+
+// ExecTicket lets a browser open an exec session's WebSocket: `GET
+// .../exec/ws` with the subprotocols `dock-exec` and the ticket. It is
+// good once, for ExecTicketSeconds, for the person and service it was
+// made for.
+type ExecTicket struct {
+	Ticket    string    `json:"ticket"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// ExecTicketSeconds is how long an ExecTicket is good for.
+const ExecTicketSeconds = 30

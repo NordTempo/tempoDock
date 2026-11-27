@@ -273,6 +273,8 @@ type Core struct {
 	volumes volumeWriters
 	// runs counts one-off commands in flight (runs.go).
 	runs runState
+	// execTickets are the exec tickets not yet redeemed (exec_ticket.go).
+	execTickets execTickets
 	// deploys holds the deploys running here, to cancel one (deploy_cancel.go).
 	deploys deployRuns
 	// builds is every builder's build slot and line (build_slots.go).

@@ -368,3 +368,33 @@ func TestExecEndsWhenItsTokenExpires(t *testing.T) {
 		t.Fatal("the session outlived its token")
 	}
 }
+
+// A ticket opens a shell once, in the service it was made for, as the
+// person it was made for; making one checks what the session will.
+func TestExecTicket(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	api := h.service("api", apitypes.CreateServiceRequest{Image: "app:1"})
+	if _, err := h.c.ExecTicket(h.ctx, testSystem, web); CodeOf(err) != apitypes.CodeConflict {
+		t.Fatalf("a ticket without a container: %v", err)
+	}
+	h.deploy(web, "app:1")
+	deployer := h.token(testSystem, apitypes.CreateTokenRequest{Name: "ci", Scope: apitypes.ScopeDeploy})
+	if _, err := h.c.ExecTicket(h.ctx, deployer, web); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("a deploy token's ticket: %v", err)
+	}
+	tk, err := h.c.ExecTicket(h.ctx, testSystem, web)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.RedeemExecTicket(h.ctx, tk.Ticket, api); CodeOf(err) != apitypes.CodeUnauthorized {
+		t.Fatalf("another service: %v", err)
+	}
+	tk, _ = h.c.ExecTicket(h.ctx, testSystem, web)
+	if a, err := h.c.RedeemExecTicket(h.ctx, tk.Ticket, web); err != nil || a.Name != testSystem.Name {
+		t.Fatalf("redeemed as %+v, %v", a, err)
+	}
+	if _, err := h.c.RedeemExecTicket(h.ctx, tk.Ticket, web); CodeOf(err) != apitypes.CodeUnauthorized {
+		t.Fatalf("a used ticket: %v", err)
+	}
+}
