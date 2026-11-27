@@ -463,7 +463,7 @@ func (c *Core) queueComposePushes(ctx context.Context, p pushPayload) ([]string,
 	// A push older than the replay window may have been forgotten by
 	// gitDelivery, so a captured body could be replayed (as queuePush).
 	if at, ok := p.pushedAt(); ok && now().Sub(at) > gitReplayWindow {
-		return []string{fmt.Sprintf("(Compose) push %s: ignored, it was pushed %s, longer ago than deliveries are remembered", shortSHA(p.After), at.UTC().Format(time.DateOnly))}, nil
+		return []string{fmt.Sprintf("(Compose) push %s: ignored, it was pushed %s, longer ago than deliveries are remembered; push again to sync it", shortSHA(p.After), at.UTC().Format(time.DateOnly))}, nil
 	}
 	var msgs []string
 	for _, row := range rows {

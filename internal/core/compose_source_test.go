@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
@@ -80,6 +81,20 @@ func TestComposeFollow(t *testing.T) {
 	}
 	if msg := push("README.md"); !strings.Contains(msg, "shop/production (Compose): push aaaaaaa: ignored, deploy/compose.yaml didn't change") {
 		t.Fatalf("unrelated push: %q", msg)
+	}
+	// A push older than deliveries are remembered could be a replay:
+	// it queues nothing.
+	var stale map[string]any
+	_ = json.Unmarshal(pushBody("refs/heads/main", shaB, "deploy/compose.yaml"), &stale)
+	stale["repository"] = map[string]any{"id": fakeRepoID, "full_name": "acme/shop", "pushed_at": time.Now().Add(-2 * gitReplayWindow).Unix()}
+	stale["installation"] = map[string]any{"id": fakeInstall}
+	body, _ := json.Marshal(stale)
+	msg, err := h.c.GitWebhook(h.ctx, GitDelivery{HookID: appHook, Event: "push", ID: "stale", Signature: sign("app-secret", body), Body: body})
+	if err != nil || !strings.Contains(msg, "(Compose) push bbbbbbb: ignored, it was pushed") {
+		t.Fatalf("stale push: %q, %v", msg, err)
+	}
+	if got, _ := h.c.ComposeSource(h.ctx, testSystem, env); got.Source.Pending != "" {
+		t.Fatalf("a stale push queued %s", got.Source.Pending)
 	}
 
 	// The next version bumps web only: worker's secret isn't restaged.
