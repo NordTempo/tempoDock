@@ -125,6 +125,7 @@ func TestParseUpload(t *testing.T) {
 	expired, expiredKey := p.issue([]string{"old.example.com"}, at.Add(-48*time.Hour), at.Add(-time.Hour))
 	future, futureKey := p.issue([]string{"new.example.com"}, at.Add(time.Hour), at.Add(48*time.Hour))
 	nameless, namelessKey := p.issue(nil, at.Add(-time.Hour), at.Add(time.Hour))
+	dotted, dottedKey := p.issue([]string{"shop.example.com."}, at.Add(-time.Hour), at.Add(time.Hour))
 	oldCA, oldKey := p.sign("Old Issuing CA", nil, true, p.root, p.rootKey, at.Add(-48*time.Hour), at.Add(-time.Hour))
 	underOld, underOldKey := p.sign("under.example.com", []string{"under.example.com"}, false, oldCA, oldKey, at.Add(-time.Hour), at.Add(time.Hour))
 	// Named like a self-signed root, but signed by another CA of that name:
@@ -140,6 +141,7 @@ func TestParseUpload(t *testing.T) {
 		{"expired", pemCerts(expired), pemKey(t, expiredKey), "expired on"},
 		{"not valid yet", pemCerts(future), pemKey(t, futureKey), "isn't valid until"},
 		{"no DNS names", pemCerts(nameless), pemKey(t, namelessKey), "names no DNS hostname"},
+		{"only a name with a trailing dot", pemCerts(dotted), pemKey(t, dottedKey), "names no DNS hostname"},
 		{"a key in the chain", pemCerts(leaf) + keyPEM, keyPEM, "holds a private key"},
 		{"no certificate", "hello", keyPEM, "no PEM certificate"},
 		{"encrypted key", pemCerts(leaf), "-----BEGIN ENCRYPTED PRIVATE KEY-----\nAAAA\n-----END ENCRYPTED PRIVATE KEY-----\n", "is encrypted"},

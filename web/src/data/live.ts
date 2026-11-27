@@ -307,6 +307,10 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
           event.alert.kind === "error_regressed"
         )
           queryClient.invalidateQueries({ queryKey: ["errors"] });
+        // An uploaded certificate's expiry alert: one that expired is no
+        // longer served (ADR 0112), which no audit event says.
+        if (event.alert.kind === "certificate_failed")
+          invalidateCertificates(queryClient);
         // A crash loop or unhealthy service is diagnosed as its alert
         // opens or turns critical (ADR 0071): its overview and live
         // release then name the cause. Rare, so refetched.
@@ -708,6 +712,23 @@ function invalidateStatusPages(queryClient: QueryClient) {
 }
 
 /**
+ * Refetches what shows uploaded certificates (ADR 0112): their list, and
+ * every project's overview, whose domains show the one they are served
+ * with. Overviews a call in flight refetches on settle are left to it.
+ */
+function invalidateCertificates(queryClient: QueryClient) {
+  queryClient.invalidateQueries({
+    predicate: ({ queryKey }) => {
+      const [root, second, part] = queryKey;
+      const shows =
+        (root === "org" && second === "certificates") ||
+        (root === "project" && part === "overview");
+      return shows && !refetchedOnSettle(queryKey);
+    },
+  });
+}
+
+/**
  * Every mutation is audited, so audit events also say what someone else (or
  * the CLI) just changed. Queries a call from this page will refetch once it
  * settles are left to it: its own event arrives before its answer.
@@ -759,11 +780,7 @@ function invalidateForAudit(
     audit.action === "certificate.upload" ||
     audit.action === "certificate.remove"
   ) {
-    invalidate(["org", "certificates"]);
-    queryClient.invalidateQueries({
-      predicate: ({ queryKey: [root, , part] }) =>
-        root === "project" && part === "overview",
-    });
+    invalidateCertificates(queryClient);
   }
   // Registry credentials (features/org/data.ts), set from the CLI too.
   if (audit.action.startsWith("org.registry_credential"))

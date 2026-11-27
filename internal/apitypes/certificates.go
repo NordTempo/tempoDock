@@ -41,7 +41,8 @@ type CertificateStatus string
 const (
 	// CertificateActive: valid for more than 30 days.
 	CertificateActive CertificateStatus = "active"
-	// CertificateExpiring: valid for 30 days or less; Dock has alerted.
+	// CertificateExpiring: valid for 30 days or less; while it serves
+	// domains, its alert opens (at the certificate worker's next pass).
 	CertificateExpiring CertificateStatus = "expiring"
 	// CertificateExpired: no longer served; its domains get certificates
 	// from Let's Encrypt again where it can issue them.
@@ -69,8 +70,9 @@ type AddCertificateRequest struct {
 	// Key is the private key, in PEM (PKCS#8, PKCS#1 or EC). It is sealed
 	// at rest and never returned.
 	Key string `json:"key" maxLength:"16384"`
-	// Domain, when set, must be one of the certificate's names: a check
-	// that the right certificate was picked.
+	// Domain, when set, must be covered by one of the certificate's names
+	// (itself, or a wildcard one label above it): a check that the right
+	// certificate was picked.
 	Domain string `json:"domain,omitempty" maxLength:"253"`
 }
 

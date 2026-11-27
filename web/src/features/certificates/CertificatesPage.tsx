@@ -155,11 +155,16 @@ function CertificateRow({ cert: c }: { cert: Certificate }) {
   return (
     <tr>
       <td className="py-2 font-mono">
-        {c.names.map((n, i) => (
+        {c.names.slice(0, shownDomains).map((n, i) => (
           <div key={n} className={i > 0 ? "text-mut" : ""}>
             {n}
           </div>
         ))}
+        {c.names.length > shownDomains && (
+          <div className="font-sans text-mut">
+            and {c.names.length - shownDomains} more
+          </div>
+        )}
       </td>
       <td className="py-2">
         {c.issuer}

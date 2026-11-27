@@ -203,13 +203,6 @@ func (c *Core) setOwnCerts(by map[int64][]ownCert) {
 	c.own.mu.Unlock()
 }
 
-// ownCertFor is the uploaded certificate org's host is served with now.
-func (c *Core) ownCertFor(org int64, host string) (ownCert, bool) {
-	c.own.mu.Lock()
-	defer c.own.mu.Unlock()
-	return bestCert(c.own.byOrg[org], host, now(), false)
-}
-
 // routeOwnCerts are the uploaded certificates a server's routes carry:
 // for each hostname of rows an org's certificate covers, that one, with
 // the hostnames it serves there as its names. Only exact hostnames go
@@ -377,10 +370,10 @@ func parseUpload(chainPEM, keyPEM string, at time.Time, roots *x509.CertPool) (p
 
 	var names []string
 	for _, n := range leaf.DNSNames {
-		if strings.ContainsFunc(n, unicode.IsSpace) {
-			continue // no client matches it; serving it would claim a name it doesn't hold
+		if strings.ContainsFunc(n, unicode.IsSpace) || strings.HasSuffix(n, ".") {
+			continue // clients don't match it to the name; serving it would claim a name it doesn't hold
 		}
-		n = strings.ToLower(strings.TrimSuffix(n, "."))
+		n = strings.ToLower(n)
 		if _, err := normalizeHostname(strings.TrimPrefix(n, "*.")); err == nil && !slices.Contains(names, n) {
 			names = append(names, n)
 		}
@@ -601,16 +594,26 @@ func (c *Core) ownCertsChanged(ctx context.Context) {
 // orgDomains are an org's verified domains that uploads can reach
 // (uploadReach): two queries, the org's domains and the servers.
 func (c *Core) orgDomains(ctx context.Context, org int64) ([]store.ListOrgVerifiedDomainsRow, error) {
+	var reach map[int64]serverReach
+	return c.orgDomainsReach(ctx, org, &reach)
+}
+
+// orgDomainsReach is orgDomains reading the servers (uploadReach) into
+// *reach the first time an org has domains, and reusing it after: a pass
+// over several orgs reads them once.
+func (c *Core) orgDomainsReach(ctx context.Context, org int64, reach *map[int64]serverReach) ([]store.ListOrgVerifiedDomainsRow, error) {
 	domains, err := c.store.ListOrgVerifiedDomains(ctx, org)
 	if err != nil || len(domains) == 0 {
 		return domains, err
 	}
-	reach, err := c.uploadReach(ctx)
-	if err != nil {
-		return nil, err
+	if *reach == nil {
+		if *reach, err = c.uploadReach(ctx); err != nil {
+			return nil, err
+		}
 	}
+	reachable := *reach
 	return slices.DeleteFunc(domains, func(d store.ListOrgVerifiedDomainsRow) bool {
-		r, ok := reach[d.ServerID]
+		r, ok := reachable[d.ServerID]
 		return !ok || tunnelOnly(d.Hostname, d.TunnelStatus, r.base)
 	}), nil
 }
@@ -779,8 +782,9 @@ func (c *Core) ownCertPass(ctx context.Context) time.Time {
 	// The domains each certificate is (or, expired, was last) the one for:
 	// a query per org with uploads, in this background pass.
 	serves := map[int64][]string{}
+	var reach map[int64]serverReach // read once, by the first org with domains
 	for org, certs := range byOrg {
-		domains, err := c.orgDomains(ctx, org)
+		domains, err := c.orgDomainsReach(ctx, org, &reach)
 		if err != nil {
 			if ctx.Err() == nil {
 				c.log.Error("uploaded certificates", "err", err)
