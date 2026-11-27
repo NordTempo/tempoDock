@@ -518,6 +518,52 @@ func TestRenderAnalytics(t *testing.T) {
 	}
 }
 
+// Groups with Script get dock_inject for their hostnames, right before
+// the upstream; redirects, stopped routes and a stock Caddy don't.
+func TestRenderScriptInject(t *testing.T) {
+	opts := testOptions()
+	opts.AnalyticsAddr = "127.0.0.1:7077"
+	route := node.Route{
+		Hostnames: []string{"shop.example.com", "www.shop.example.com", "admin.example.com"}, Upstream: "127.0.0.1:20001",
+		Analytics: []node.AnalyticsHosts{
+			{Hostnames: []string{"shop.example.com", "www.shop.example.com"}, Tag: "3.40.981", Script: true},
+			{Hostnames: []string{"admin.example.com"}, Tag: "4.40.981"},
+		},
+	}
+	inject := func(o Options, r node.Route) *handler {
+		rs := render(t, o, []node.Route{r}).Apps.HTTP.Servers["https"].Routes
+		for _, r := range rs {
+			for i, h := range r.Handle {
+				if h.Handler == "dock_inject" {
+					if i != len(r.Handle)-2 || r.Handle[i+1].Handler != "reverse_proxy" {
+						t.Errorf("dock_inject at %d of %+v", i, r.Handle)
+					}
+					return &h
+				}
+			}
+		}
+		return nil
+	}
+	h := inject(opts, route)
+	if h == nil || !slices.Equal(h.Hosts, []string{"shop.example.com", "www.shop.example.com"}) || h.Src != "/_dock/a/s.js" {
+		t.Fatalf("dock_inject = %+v", h)
+	}
+	stopped := route
+	stopped.Upstream, stopped.Stopped = "", "web"
+	redirect := route
+	redirect.Upstream, redirect.RedirectTo = "", "example.com"
+	stock := opts
+	stock.noInject = true
+	for name, c := range map[string]struct {
+		o Options
+		r node.Route
+	}{"stopped": {opts, stopped}, "redirect": {opts, redirect}, "stock Caddy": {stock, route}, "no ingest": {testOptions(), route}} {
+		if h := inject(c.o, c.r); h != nil {
+			t.Errorf("%s: %+v", name, h)
+		}
+	}
+}
+
 func TestRenderRefusesARouteWithoutHostnames(t *testing.T) {
 	// Not a panic: the access check reads the first hostname for its
 	// message.

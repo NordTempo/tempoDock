@@ -11,10 +11,20 @@
 // consent with dock.consent(true), before this script loads with
 // window.dock = { consent: true }, or with data-consent="granted" on the
 // script tag; dock.consent(false) withdraws it and stops the recorder.
+//
+// Dock's Caddy adds the tag to pages itself, marked data-dock-auto (ADR
+// 0106). That tag takes itself out of the page, so a framework hydrating
+// the whole document never meets it, and gives way to a tag the page has
+// of its own, whose data-consent counts.
 (function (c) {
   var w = window, d = document, l = location, n = navigator, last = "", first = true, rec, pre = w.dock && w.dock.consent;
+  var tag = d.currentScript;
+  if (tag && tag.hasAttribute("data-dock-auto")) {
+    tag.remove();
+    if (d.querySelector('script[src*="/_dock/a/s.js"]:not([data-dock-auto])')) return;
+  }
   if (w.dock && w.dock.track) return;
-  var tag = d.currentScript, ok = pre === true || (tag && tag.getAttribute("data-consent") === "granted") || (!c.c && pre !== false);
+  var ok = pre === true || (tag && tag.getAttribute("data-consent") === "granted") || (!c.c && pre !== false);
   var sampled = c.r && w.CompressionStream && Math.random() * 100 < c.r;
   function send(k, x) {
     if (c.c > 1 && !ok) return;

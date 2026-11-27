@@ -1208,10 +1208,13 @@ const HoldFor = 60 * time.Second
 // AnalyticsHosts are hostnames of a route that collect analytics, and the
 // tag the ingest gets with their events: "site.service.release", the IDs
 // of the site the hostnames belong to and the service and release that
-// serve them.
+// serve them. Script has Caddy add the analytics script to their HTML
+// pages (ADR 0106); without it a page loads the script itself. An older
+// node ignores it.
 type AnalyticsHosts struct {
 	Hostnames []string
 	Tag       string
+	Script    bool
 }
 
 // Access is how a route is protected: a password (PasswordHash set) or a

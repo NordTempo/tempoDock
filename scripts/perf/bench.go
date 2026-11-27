@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -354,18 +355,39 @@ func runBenchmarks(o options, dir string, pkgs []string, pattern string) (benchR
 		}
 	}
 	calib := []float64{calibrate(), calibrate()}
-	args := append([]string{"test", "-run", "^$", "-bench", pattern, "-benchmem",
-		"-benchtime", o.benchTime, "-count", strconv.Itoa(o.benchCount)}, pkgs...)
-	fmt.Fprintf(os.Stderr, "perf: go %s\n", strings.Join(args, " "))
+	// A package of a nested module (cmd/dock-caddy) is tested from its
+	// module's directory: the root module doesn't have it.
+	byModule := map[string][]string{}
+	for _, p := range pkgs {
+		m := moduleOf(dir, p)
+		rel, _ := filepath.Rel(m, path.Clean(p))
+		byModule[m] = append(byModule[m], "./"+filepath.ToSlash(rel))
+	}
 	var out bytes.Buffer
-	cmd := exec.Command("go", args...)
-	cmd.Dir, cmd.Stdout, cmd.Stderr = dir, &out, os.Stderr
-	if err := cmd.Run(); err != nil {
-		return benchRuns{}, 0, fmt.Errorf("go test -bench: %w\n%s", err, out.String())
+	for _, m := range slices.Sorted(maps.Keys(byModule)) {
+		args := append([]string{"test", "-run", "^$", "-bench", pattern, "-benchmem",
+			"-benchtime", o.benchTime, "-count", strconv.Itoa(o.benchCount)}, byModule[m]...)
+		fmt.Fprintf(os.Stderr, "perf: (in %s) go %s\n", m, strings.Join(args, " "))
+		cmd := exec.Command("go", args...)
+		cmd.Dir, cmd.Stdout, cmd.Stderr = filepath.Join(dir, m), &out, os.Stderr
+		if err := cmd.Run(); err != nil {
+			return benchRuns{}, 0, fmt.Errorf("go test -bench: %w\n%s", err, out.String())
+		}
 	}
 	calib = append(calib, calibrate(), calibrate(), calibrate())
 	runs, err := parseBench(out.String())
 	return runs, slices.Min(calib), err
+}
+
+// moduleOf is the directory of the module package pkg (./a/b) is in,
+// below root: a nested module's (one with its own go.mod), else ".".
+func moduleOf(root, pkg string) string {
+	for d := path.Clean(pkg); d != "." && d != "/"; d = path.Dir(d) {
+		if _, err := os.Stat(filepath.Join(root, d, "go.mod")); err == nil {
+			return d
+		}
+	}
+	return "."
 }
 
 // benchAtRev runs the benchmarks pattern matches in pkgs, as

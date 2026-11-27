@@ -248,8 +248,13 @@ func (c *Core) checkSite(ctx context.Context, hosts []string) apitypes.SiteCheck
 	return out
 }
 
-// scriptTagRe finds script tags' src attributes in a page.
-var scriptTagRe = regexp.MustCompile(`(?is)<script\b[^>]*?\bsrc\s*=\s*["']?([^"'\s>]+)`)
+// scriptTagRe finds script tags' attributes in a page; srcRe and nonceRe
+// read two of them. The one Dock's Caddy adds is marked data-dock-auto.
+var (
+	scriptTagRe = regexp.MustCompile(`(?is)<script\b([^>]*)>`)
+	srcRe       = regexp.MustCompile(`(?is)(?:^|\s)src\s*=\s*["']?([^"'\s>]+)`)
+	nonceRe     = regexp.MustCompile(`(?is)(?:^|\s)nonce\s*=\s*["']?([^"'\s>]+)`)
+)
 
 // checkSiteHost checks one hostname of a site: its page (a redirect to
 // another of the site's hostnames is followed once), the script tag, the
@@ -295,16 +300,22 @@ func (c *Core) checkSiteHost(ctx context.Context, host string, siteHosts []strin
 	}
 	step(apitypes.CheckOK, "", "", "the page answers %d", resp.status)
 
-	found := false
+	found, nonce := false, ""
 	for _, m := range scriptTagRe.FindAllSubmatch(resp.body, -1) {
-		src := string(m[1])
-		if !strings.Contains(src, ingest.ScriptPath) {
+		s := srcRe.FindSubmatch(m[1])
+		if s == nil || !strings.Contains(string(s[1]), ingest.ScriptPath) {
 			continue
+		}
+		src := string(s[1])
+		if n := nonceRe.FindSubmatch(m[1]); n != nil {
+			nonce = string(n[1])
 		}
 		found = true
 		if u, err := url.Parse(src); err == nil && u.Host != "" && !strings.EqualFold(u.Hostname(), host) {
 			step(apitypes.CheckFail, apitypes.TrackingWrongHost, `<script src="`+ingest.ScriptPath+`" defer></script>`,
 				"the script tag loads it from %s; use the relative address so each hostname serves its own", u.Hostname())
+		} else if strings.Contains(string(m[1]), "data-dock-auto") {
+			step(apitypes.CheckOK, "", "", "Dock adds the script tag to the page")
 		} else {
 			step(apitypes.CheckOK, "", "", "the page has the script tag")
 		}
@@ -312,10 +323,15 @@ func (c *Core) checkSiteHost(ctx context.Context, host string, siteHosts []strin
 	}
 	if !found {
 		step(apitypes.CheckFail, apitypes.TrackingNoScript, `<script src="`+ingest.ScriptPath+`" defer></script>`,
-			"no Dock script tag in the page's HTML; add it to its <head> (an app that adds it from JavaScript shows active once events arrive)")
+			"no Dock script tag in the page's HTML. Dock adds it to a page with a <head> unless the site's auto_script is off, the page is marked no-transform or its Content-Security-Policy blocks the script, or the server's Caddy isn't Dock's (an update installs it); otherwise add it to the page's <head> (an app that adds it from JavaScript shows active once events arrive)")
 	}
 	if csp := resp.header.Get("Content-Security-Policy"); csp != "" {
-		if d := cspBlocks(csp); d != "" {
+		switch d, strict := cspBlocks(csp, nonce); {
+		case d == "":
+		case strict:
+			step(apitypes.CheckFail, apitypes.TrackingBlocked, "give the script tag the page's nonce (nonce=\"...\"), or take 'strict-dynamic' out of "+d,
+				"the page's Content-Security-Policy has 'strict-dynamic' in %s, which lets in only script tags with its nonce or hash", d)
+		default:
 			step(apitypes.CheckFail, apitypes.TrackingBlocked, "add 'self' to "+d,
 				"the page's Content-Security-Policy leaves 'self' out of %s, so the browser blocks the script", d)
 		}
@@ -376,9 +392,12 @@ func (c *Core) siteGet(ctx context.Context, target string, read bool) (sitePage,
 }
 
 // cspBlocks returns the directive of a Content-Security-Policy that keeps
-// the script out (script-src, or connect-src for its events), falling
-// back to default-src as browsers do; "" when it allows them.
-func cspBlocks(csp string) string {
+// the script out (script-src-elem or script-src, or connect-src for its
+// events), falling back to default-src as browsers do; "" when it allows
+// them. The script tag's nonce lets the script in when script-src names
+// it, never its events. strict is whether 'strict-dynamic' is what keeps
+// the tag out.
+func cspBlocks(csp, nonce string) (directive string, strict bool) {
 	dirs := map[string][]string{}
 	for part := range strings.SplitSeq(csp, ";") {
 		f := strings.Fields(strings.TrimSpace(part))
@@ -386,27 +405,41 @@ func cspBlocks(csp string) string {
 			dirs[strings.ToLower(f[0])] = f[1:]
 		}
 	}
-	allows := func(vals []string) bool {
+	// allows: the tag's nonce first; then 'self', * or https:, which
+	// 'strict-dynamic' turns off for a script tag in the page's HTML.
+	allows := func(vals []string, nonce string, script bool) (ok, byStrict bool) {
+		host, strict := false, false
 		for _, v := range vals {
 			switch strings.ToLower(v) {
 			case "'self'", "*", "https:":
-				return true
+				host = true
+			case "'strict-dynamic'":
+				strict = script
+			}
+			if nonce != "" && v == "'nonce-"+nonce+"'" {
+				return true, false
 			}
 		}
-		return false
+		return host && !strict, strict
 	}
-	for _, d := range []string{"script-src", "connect-src"} {
-		vals, ok := dirs[d]
-		name := d
-		if !ok {
-			if vals, ok = dirs["default-src"]; !ok {
-				continue
+	// Each governs with the first of its directives the policy has:
+	// script-src-elem goes before script-src for a script tag.
+	for _, c := range []struct {
+		dirs   []string
+		script bool // a nonce covers the script, never its events
+	}{{[]string{"script-src-elem", "script-src", "default-src"}, true}, {[]string{"connect-src", "default-src"}, false}} {
+		for _, name := range c.dirs {
+			if vals, ok := dirs[name]; ok {
+				n := ""
+				if c.script {
+					n = nonce
+				}
+				if ok, byStrict := allows(vals, n, c.script); !ok {
+					return name, byStrict
+				}
+				break
 			}
-			name = "default-src"
-		}
-		if !allows(vals) {
-			return name
 		}
 	}
-	return ""
+	return "", false
 }

@@ -44,6 +44,57 @@ func (h *harness) countVisits(ref ServiceRef) apitypes.Site {
 	return site
 }
 
+// A site's pages get the script from Caddy unless its auto_script is off,
+// on the site or as the platform's default, or its consent is none (ADR
+// 0106).
+func TestSiteAutoScript(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Port: 8080})
+	h.deploy(web, "nginx:1")
+	h.domain(web, "shop.example.com")
+	site := h.countVisits(web)
+	script := func() bool {
+		r, ok := analyticsRoute(h, "shop.example.com")
+		if !ok {
+			t.Fatal("no analytics route")
+		}
+		return r.Script
+	}
+	if !script() || site.Settings.AutoScript == nil || !*site.Settings.AutoScript {
+		t.Fatalf("on by default: route %t, settings %+v", script(), site.Settings)
+	}
+	off := false
+	if _, err := h.c.UpdateSite(h.ctx, testSystem, "shop", site.Name, apitypes.UpdateSiteRequest{Settings: apitypes.SiteSettings{AutoScript: &off}}); err != nil {
+		t.Fatal(err)
+	}
+	if script() {
+		t.Error("the site turned it off; the route still adds the script")
+	}
+	if _, err := h.c.UpdateSite(h.ctx, testSystem, "shop", site.Name, apitypes.UpdateSiteRequest{Reset: []string{"auto_script"}}); err != nil {
+		t.Fatal(err)
+	}
+	// A consent none site's pages load the script once the visitor agrees.
+	none := apitypes.ConsentNone
+	if _, err := h.c.UpdateSite(h.ctx, testSystem, "shop", site.Name, apitypes.UpdateSiteRequest{Settings: apitypes.SiteSettings{Consent: &none}}); err != nil {
+		t.Fatal(err)
+	}
+	if script() {
+		t.Error("consent none, and the route adds the script")
+	}
+	if _, err := h.c.UpdateSite(h.ctx, testSystem, "shop", site.Name, apitypes.UpdateSiteRequest{Reset: []string{"consent"}}); err != nil {
+		t.Fatal(err)
+	}
+	if !script() {
+		t.Error("consent back to the default, and no script")
+	}
+	if _, err := h.c.SetSiteDefaults(h.ctx, testSystem, apitypes.SiteSettings{AutoScript: &off}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if script() {
+		t.Error("the platform's default turned it off; the route still adds the script")
+	}
+}
+
 func TestSites(t *testing.T) {
 	h := newHarness(t)
 	web := h.service("web", apitypes.CreateServiceRequest{Port: 8080})

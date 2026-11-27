@@ -43,7 +43,7 @@ func TestWireRoundTrip(t *testing.T) {
 	check(t, node.ContainerEvent{ContainerID: "abc", Labels: labels, Action: "health_status", ExitCode: 1, Health: node.HealthUnhealthy, Time: at, Request: "GET /", Role: node.RoleSidecar},
 		toWireEvent, wireEvent.node)
 	check(t, node.Route{Hostnames: []string{"a.example.com"}, Upstream: "127.0.0.1:1", RedirectTo: "b.example.com", PathPrefix: "/p/", Traffic: true, TunnelOnly: true, Stopped: "web", Hold: true, Wake: "7", QuietProbes: true, Trace: "dtr1.x", Key: "s7",
-		Analytics: []node.AnalyticsHosts{{Hostnames: []string{"a.example.com"}, Tag: "3.40.981"}},
+		Analytics: []node.AnalyticsHosts{{Hostnames: []string{"a.example.com"}, Tag: "3.40.981", Script: true}},
 		Access:    &node.Access{Username: "u", PasswordHash: "$2a$06$x", Key: []byte{1}, LoginURL: "https://dock.example.com/access"}},
 		func(r node.Route) []wireRoute { return toWireRoutes([]node.Route{r}) },
 		func(w []wireRoute) node.Route { return fromWireRoutes(w)[0] },

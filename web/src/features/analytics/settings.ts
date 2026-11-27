@@ -10,6 +10,13 @@ type Kind = "list" | "days" | "percent" | "switch" | "choice";
 
 export const fields = [
   {
+    key: "auto_script",
+    kind: "switch",
+    flag: "--auto-script",
+    label: "Add the script",
+    help: "Dock puts the tag in each page; off, the pages do.",
+  },
+  {
     key: "excluded_paths",
     kind: "list",
     flag: "--exclude-path",

@@ -90,8 +90,35 @@ func TestCSPBlocks(t *testing.T) {
 		"default-src 'none'; script-src 'self'":      "default-src",
 		"img-src *":                                  "",
 	} {
-		if got := cspBlocks(csp); got != want {
+		if got, _ := cspBlocks(csp, ""); got != want {
 			t.Errorf("%q: %q, want %q", csp, got, want)
+		}
+	}
+	// 'strict-dynamic' turns 'self' off for the tag, not for its events.
+	for csp, want := range map[string]string{
+		"script-src 'none'; script-src-elem 'self' 'nonce-xyz' 'strict-dynamic'; connect-src 'self'": "script-src-elem",
+		"script-src 'self'; connect-src 'self' 'strict-dynamic'":                                     "",
+	} {
+		if got, _ := cspBlocks(csp, ""); got != want {
+			t.Errorf("no nonce, %q: %q, want %q", csp, got, want)
+		}
+	}
+	if d, strict := cspBlocks("script-src 'self' 'nonce-abc' 'strict-dynamic'; connect-src 'self'", ""); d != "script-src" || !strict {
+		t.Errorf("strict-dynamic without the nonce: %q, strict %t", d, strict)
+	}
+	if _, strict := cspBlocks("script-src https://cdn.example", ""); strict {
+		t.Error("no strict-dynamic, and strict")
+	}
+	// The tag's nonce lets the script in, never its events.
+	for csp, want := range map[string]string{
+		"script-src 'nonce-abc' 'strict-dynamic'; connect-src 'self'":             "",
+		"script-src 'nonce-xyz'; connect-src 'self'":                              "script-src",
+		"default-src 'nonce-abc'":                                                 "default-src",
+		"script-src 'nonce-abc'; script-src-elem 'none'; connect-src 'self'":      "script-src-elem",
+		"script-src-elem 'self' 'nonce-abc' 'strict-dynamic'; connect-src 'self'": "",
+	} {
+		if got, _ := cspBlocks(csp, "abc"); got != want {
+			t.Errorf("nonce abc, %q: %q, want %q", csp, got, want)
 		}
 	}
 }

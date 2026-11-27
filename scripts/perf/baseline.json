@@ -90,6 +90,16 @@
       "bytes_op": 2778,
       "allocs_op": 18
     },
+    "cmd/dock-caddy/inject.BenchmarkInject/encoding=": {
+      "ns_op": 1385.5,
+      "bytes_op": 776,
+      "allocs_op": 12
+    },
+    "cmd/dock-caddy/inject.BenchmarkInject/encoding=gzip": {
+      "ns_op": 27361.9,
+      "bytes_op": 988,
+      "allocs_op": 13
+    },
     "core.BenchmarkAlertEvent": {
       "ns_op": 70.42,
       "bytes_op": 24,

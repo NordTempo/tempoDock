@@ -23,7 +23,7 @@ concurrency:
 # .github/actions/setup-go); scripts/go-public.sh deletes it. A pull
 # request from a fork never runs on CI_RUNNER: its code would reach the
 # shared host cache that main's runs and releases build from.
-# Tools from GitHub releases (golangci-lint, Caddy, sqlc) come through
+# Tools from GitHub releases (golangci-lint, sqlc) come through
 # scripts/ci/fetch-release.sh, which checks each against its digest and
 # keeps it in the host cache when there is one.
 #
@@ -102,6 +102,8 @@ jobs:
       - run: make tempobase-deps
       # dock must not link DuckDB (ADR 0037).
       - run: make analytics-deps
+      # Dock's Caddy, its own module (ADR 0106).
+      - run: make lint-caddy
 
   test:
     needs: changes
@@ -121,10 +123,16 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-go
-      - name: Install Caddy
-        run: sudo tar -xzf "$(scripts/ci/fetch-release.sh caddyserver/caddy v2.11.7 caddy_2.11.7_linux_amd64.tar.gz 727b91701a392de6ebc5027509f548bf39979e5216340d0faed8fa5e69c84f8b)" -C /usr/local/bin caddy
-        env:
-          GH_TOKEN: ${{ github.token }}
+        with:
+          cache-dependency-path: |
+            go.sum
+            cmd/dock-caddy/go.sum
+      # Dock's Caddy, as servers run it (ADR 0106): its handlers' tests,
+      # then the integration tests drive it.
+      - name: Dock's Caddy
+        run: |
+          make test-caddy caddy-binary
+          sudo install -m 0755 bin/dock-caddy /usr/local/bin/caddy
       # The analytics store's container test runs its binary (ADR 0037).
       - run: make analytics-binary VERSION=dev
       # Temp dirs under the job's workspace: the tests bind-mount them into

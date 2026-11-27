@@ -39,9 +39,10 @@ type System interface {
 	DaemonReload(ctx context.Context) error
 	// BinaryVersion runs bin --version and returns the version it says.
 	BinaryVersion(ctx context.Context, bin string) (string, error)
-	// Install runs a release's install.sh with DOCK_BINARY=bin and a
-	// clean environment, its output going to log.
-	Install(ctx context.Context, script, bin string, log io.Writer) error
+	// Install runs a release's install.sh with DOCK_BINARY=bin,
+	// DOCK_CADDY=caddy unless that is empty, and a clean environment, its
+	// output going to log.
+	Install(ctx context.Context, script, bin, caddy string, log io.Writer) error
 	// Healthy waits until the daemon runs version, started after since,
 	// and works: the API answers on a control plane, the node reached its
 	// control plane on a node. It gives up after the timeout.
@@ -171,7 +172,9 @@ type run struct {
 	tail *tailWriter
 	// release is the verified copy of the release; prev what it replaces.
 	release, prev string
-	backup        string
+	// caddy is the release's verified Dock Caddy, or "" for none staged.
+	caddy  string
+	backup string
 }
 
 func (r *run) say(format string, args ...any) { _, _ = fmt.Fprintf(r.log, "==> "+format+"\n", args...) }
@@ -211,7 +214,7 @@ func (r *run) apply(ctx context.Context) update.Result {
 	_ = update.RemoveIfExists(update.Dir(r.o.DataDir), update.ConnectedFile)
 	since := r.o.Now()
 	r.say("install.sh from %s", r.req.Version)
-	err := r.o.System.Install(ctx, filepath.Join(r.release, "deploy", "install.sh"), filepath.Join(r.release, update.BinaryAsset(r.o.Arch)), r.log)
+	err := r.o.System.Install(ctx, filepath.Join(r.release, "deploy", "install.sh"), filepath.Join(r.release, update.BinaryAsset(r.o.Arch)), r.caddy, r.log)
 	if err != nil {
 		err = fmt.Errorf("install.sh failed (%w): %s", err, r.tail.lastLine())
 	} else {
@@ -252,8 +255,9 @@ func (r *run) check() error {
 
 // verify copies the staged release into StateDir and checks the copies:
 // SHA256SUMS against its signature, the files against SHA256SUMS, and
-// the binary against the version it says. Then it
-// unpacks the install tarball's deploy/ next to them.
+// the binary against the version it says, and Dock's Caddy when it was
+// staged (verifyCaddy). Then it unpacks the install tarball's deploy/
+// next to them.
 func (r *run) verify(ctx context.Context) error {
 	v := r.req.Version
 	staged := update.ReleaseDir(r.o.DataDir, v)
@@ -289,6 +293,9 @@ func (r *run) verify(ctx context.Context) error {
 			return err
 		}
 	}
+	if err := r.verifyCaddy(staged, sums); err != nil {
+		return err
+	}
 	bin := filepath.Join(r.release, update.BinaryAsset(r.o.Arch))
 	got, err := r.o.System.BinaryVersion(ctx, bin)
 	if err != nil {
@@ -298,6 +305,28 @@ func (r *run) verify(ctx context.Context) error {
 		return fmt.Errorf("the binary says it is %q, not %s", got, v)
 	}
 	return untarDeploy(filepath.Join(r.release, update.InstallAsset(v)), r.release)
+}
+
+// verifyCaddy copies the release's Dock Caddy when one was staged and
+// checks it against the sums. None staged (a control plane from before
+// it sent the update) leaves install.sh to fetch it.
+func (r *run) verifyCaddy(staged string, sums update.Sums) error {
+	name := update.CaddyAsset(r.o.Arch)
+	if _, ok := sums[name]; !ok {
+		return nil
+	}
+	_, err := update.CopyFile(filepath.Join(staged, name), filepath.Join(r.release, name), 0o700)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return nil
+	case err != nil:
+		return fmt.Errorf("copy the staged %s: %w", name, err)
+	}
+	if err := sums.Check(r.release, name); err != nil {
+		return err
+	}
+	r.caddy = filepath.Join(r.release, name)
+	return nil
 }
 
 // save copies what install.sh replaces into StateDir/previous: the

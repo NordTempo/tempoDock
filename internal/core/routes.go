@@ -17,7 +17,8 @@ import (
 // to its active release's host port, with the service's access protection
 // (ADR 0030), its requests counted (ADR 0033) and, for hostnames of an
 // analytics site, /_dock/a/* sent to the server's ingest tagged with the
-// site, service and release (ADR 0037); services that moved away are
+// site, service and release (ADR 0037) and, unless the site's auto_script
+// is off, the script added to their pages (ADR 0106); services that moved away are
 // forwarded with their domains, except generated ones under another
 // server's base (ADR 0063); redirect domains redirect, and
 // those of a stopped service answer 503 saying so (ADR 0050). Those of an
@@ -87,11 +88,23 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 	if err != nil {
 		return err
 	}
-	// A counted service's site, by service (ADR 0104).
-	siteOf := make(map[int64]int64, len(counted))
-	for _, s := range counted {
-		if s.ServiceID != nil {
-			siteOf[*s.ServiceID] = s.SiteID
+	// A counted service's site, by service (ADR 0104), and whether its
+	// pages get the script from Caddy (ADR 0106).
+	type countedSite struct {
+		id     int64
+		script bool
+	}
+	siteOf := make(map[int64]countedSite, len(counted))
+	if len(counted) > 0 {
+		defaults, err := c.siteDefaults(ctx)
+		if err != nil {
+			return err
+		}
+		for _, s := range counted {
+			if s.ServiceID != nil {
+				o := siteOverrides(store.Site{Settings: s.Settings})
+				siteOf[*s.ServiceID] = countedSite{s.SiteID, addsScript(mergeSettings(defaults, o))}
+			}
 		}
 	}
 	traced, err := c.edgeTraced(ctx, rows, override)
@@ -149,7 +162,7 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 			r.Hostnames = append(r.Hostnames, d.Hostname)
 			// A stopped service's 503 page has no analytics script.
 			if site, ok := siteOf[d.ServiceID]; ok && !stopped {
-				addAnalyticsHost(r, d.Hostname, fmt.Sprintf("%d.%d.%d", site, d.ServiceID, release))
+				addAnalyticsHost(r, d.Hostname, fmt.Sprintf("%d.%d.%d", site.id, d.ServiceID, release), site.script)
 			}
 		}
 	}
@@ -203,15 +216,15 @@ func (c *Core) tunnelOnlyHosts(ctx context.Context, serverID int64) (map[string]
 }
 
 // addAnalyticsHost adds hostname to r's analytics group with tag, making
-// one when there is none.
-func addAnalyticsHost(r *node.Route, hostname, tag string) {
+// one when there is none; script is the group's site's auto_script.
+func addAnalyticsHost(r *node.Route, hostname, tag string, script bool) {
 	for i := range r.Analytics {
 		if r.Analytics[i].Tag == tag {
 			r.Analytics[i].Hostnames = append(r.Analytics[i].Hostnames, hostname)
 			return
 		}
 	}
-	r.Analytics = append(r.Analytics, node.AnalyticsHosts{Hostnames: []string{hostname}, Tag: tag})
+	r.Analytics = append(r.Analytics, node.AnalyticsHosts{Hostnames: []string{hostname}, Tag: tag, Script: script})
 }
 
 // applyAllRoutes applies the routes of every online server, for a change

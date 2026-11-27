@@ -25,7 +25,7 @@ import {
   publicDraft,
 } from "./PublicSection";
 import { count } from "./parts";
-import { scriptTag } from "./ServiceSite";
+import { addsScript, scriptTag } from "./ServiceSite";
 import { SettingInput } from "./SettingInput";
 import { useSiteView } from "./SitePage";
 import {
@@ -92,10 +92,30 @@ export function SettingsPage() {
             {project} / {site.environment}
           </span>
         </Row>
-        <Row label="Script" hint="On every page of the site.">
+        <SettingRow
+          project={project}
+          site={site}
+          field={fieldOf.auto_script}
+          cmd={cmd}
+          canEdit={canEdit}
+        />
+        <Row
+          label="Script"
+          hint={
+            addsScript(site.settings)
+              ? "Dock adds it to every page."
+              : site.settings.consent === "none"
+                ? "Load it once the visitor consents."
+                : "On every page of the site."
+          }
+        >
           <span className="flex flex-wrap items-center gap-3">
-            <code className="text-xs break-all">{scriptTag}</code>
-            <CopyButton text={scriptTag} />
+            {!addsScript(site.settings) && (
+              <>
+                <code className="text-xs break-all">{scriptTag}</code>
+                <CopyButton text={scriptTag} />
+              </>
+            )}
             <TrackingStatus project={project} site={site.name} />
           </span>
         </Row>

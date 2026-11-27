@@ -2,6 +2,7 @@ package caddy
 
 import (
 	"context"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -82,5 +83,50 @@ func TestLoadResendsDroppedConnection(t *testing.T) {
 				t.Errorf("Caddy answered %d loads, want 1", got)
 			}
 		})
+	}
+}
+
+// A stock Caddy refuses dock_inject: the routes load without it, and
+// later applies leave it out from the start.
+func TestApplyRoutesOnStockCaddy(t *testing.T) {
+	dir, err := os.MkdirTemp("", "caddystock") // short path for the socket
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "admin.sock")
+	l, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var loads, refused atomic.Int64
+	s := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		loads.Add(1)
+		body, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(body), `"dock_inject"`) {
+			refused.Add(1)
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"loading http app module: provision http: server https: setting up route handlers: route 1: loading handler modules: position 0: loading module 'dock_inject': unknown module: http.handlers.dock_inject"}`))
+		}
+	}))
+	s.Listener = l
+	s.Start()
+	t.Cleanup(s.Close)
+
+	opts := testOptions()
+	opts.AdminSocket = sock
+	opts.AnalyticsAddr = "127.0.0.1:7077"
+	p, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes := []node.Route{{Hostnames: []string{"a.test"}, Upstream: "127.0.0.1:1", Analytics: []node.AnalyticsHosts{{Hostnames: []string{"a.test"}, Tag: "1.2.3", Script: true}}}}
+	for range 2 {
+		if err := p.ApplyRoutes(context.Background(), routes, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if loads.Load() != 3 || refused.Load() != 1 {
+		t.Errorf("%d loads, %d refused; want 3 and 1", loads.Load(), refused.Load())
 	}
 }

@@ -29,6 +29,8 @@ type fakeSystem struct {
 	install error
 	// unhealthy fails the health check of this version.
 	unhealthy string
+	// caddy is the DOCK_CADDY install.sh got.
+	caddy string
 }
 
 func (f *fakeSystem) call(c string) { f.calls = append(f.calls, c) }
@@ -43,8 +45,9 @@ func (f *fakeSystem) BinaryVersion(_ context.Context, bin string) (string, error
 	return strings.TrimPrefix(string(b), "dock "), err
 }
 
-func (f *fakeSystem) Install(_ context.Context, script, bin string, log io.Writer) error {
+func (f *fakeSystem) Install(_ context.Context, script, bin, caddy string, log io.Writer) error {
 	f.call("install")
+	f.caddy = caddy
 	if _, err := os.Stat(script); err != nil {
 		return err
 	}
@@ -127,9 +130,10 @@ func request(t *testing.T, dataDir, v string, at time.Time) {
 	}
 }
 
-// stageRelease writes a release's binary, install tarball, SHA256SUMS and
-// its signature by a key trusted for the test.
-func stageRelease(t *testing.T, dir, v, binary string) {
+// stageRelease writes a release's binary, install tarball, the extra
+// files (name, content pairs), SHA256SUMS and its signature by a key
+// trusted for the test.
+func stageRelease(t *testing.T, dir, v, binary string, extra ...string) {
 	t.Helper()
 	var tgz bytes.Buffer
 	gz := gzip.NewWriter(&tgz)
@@ -143,6 +147,9 @@ func stageRelease(t *testing.T, dir, v, binary string) {
 	_ = tw.Close()
 	_ = gz.Close()
 	files := map[string][]byte{update.BinaryAsset("amd64"): []byte(binary), update.InstallAsset(v): tgz.Bytes()}
+	for i := 0; i+1 < len(extra); i += 2 {
+		files[extra[i]] = []byte(extra[i+1])
+	}
 	var sums strings.Builder
 	for name, b := range files {
 		write(t, filepath.Join(dir, name), string(b))
@@ -211,6 +218,45 @@ func TestRunUpdatesControlPlane(t *testing.T) {
 	// Nothing more to do: the path unit may start it again.
 	if _, ok, err := Run(context.Background(), o); ok || err != nil {
 		t.Errorf("second run: %v, %v", ok, err)
+	}
+}
+
+// A release's Dock Caddy goes to install.sh once it matches the sums; a
+// release without one, or one whose control plane didn't send it, gets
+// none.
+func TestRunPassesDockCaddy(t *testing.T) {
+	caddy := update.CaddyAsset("amd64")
+	for name, c := range map[string]struct {
+		extra  []string
+		remove bool
+		want   string
+	}{
+		"staged":         {extra: []string{caddy, "caddy"}, want: caddy},
+		"not in release": {},
+		"not sent":       {extra: []string{caddy, "caddy"}, remove: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			o, f := setup(t)
+			dir := update.ReleaseDir(o.DataDir, "v1.1.0")
+			stageRelease(t, dir, "v1.1.0", "dock v1.1.0", c.extra...)
+			if c.remove {
+				_ = os.Remove(filepath.Join(dir, caddy))
+			}
+			if res, _, err := Run(context.Background(), o); err != nil || res.Status != update.Succeeded {
+				t.Fatalf("%+v, %v", res, err)
+			}
+			if c.want == "" && f.caddy != "" || c.want != "" && filepath.Base(f.caddy) != c.want {
+				t.Errorf("DOCK_CADDY = %q, want %q", f.caddy, c.want)
+			}
+		})
+	}
+	// One that doesn't match the sums stops the update.
+	o, _ := setup(t)
+	dir := update.ReleaseDir(o.DataDir, "v1.1.0")
+	stageRelease(t, dir, "v1.1.0", "dock v1.1.0", caddy, "caddy")
+	write(t, filepath.Join(dir, caddy), "tampered")
+	if res, _, _ := Run(context.Background(), o); res.Status != update.Failed || !strings.Contains(res.Error, caddy) {
+		t.Errorf("tampered caddy: %+v", res)
 	}
 }
 

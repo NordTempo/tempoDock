@@ -359,7 +359,7 @@ func (q *Queries) ListAllSites(ctx context.Context) ([]ListAllSitesRow, error) {
 }
 
 const listAnalyticsServices = `-- name: ListAnalyticsServices :many
-SELECT sites.service_id, sites.id AS site_id
+SELECT sites.service_id, sites.id AS site_id, sites.settings
 FROM sites
 JOIN environments ON environments.id = sites.environment_id
 WHERE environments.server_id = +? AND sites.archived_at IS NULL AND sites.service_id IS NOT NULL
@@ -368,10 +368,11 @@ WHERE environments.server_id = +? AND sites.archived_at IS NULL AND sites.servic
 type ListAnalyticsServicesRow struct {
 	ServiceID *int64
 	SiteID    int64
+	Settings  string
 }
 
 // ListAnalyticsServices returns, for routing, the counted services on a
-// server's environments with their live site.
+// server's environments with their live site and its settings.
 func (q *Queries) ListAnalyticsServices(ctx context.Context, serverID int64) ([]ListAnalyticsServicesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listAnalyticsServices, serverID)
 	if err != nil {
@@ -381,7 +382,7 @@ func (q *Queries) ListAnalyticsServices(ctx context.Context, serverID int64) ([]
 	var items []ListAnalyticsServicesRow
 	for rows.Next() {
 		var i ListAnalyticsServicesRow
-		if err := rows.Scan(&i.ServiceID, &i.SiteID); err != nil {
+		if err := rows.Scan(&i.ServiceID, &i.SiteID, &i.Settings); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
