@@ -33,10 +33,22 @@ func TestExecSocket(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	dial := func(tk, origin string) (*websocket.Conn, *http.Response, error) {
-		return websocket.Dial(ctx, "ws"+strings.TrimPrefix(f.srv.URL, "http")+path+"/ws?cols=80&rows=24", &websocket.DialOptions{
+	// dial opens the shell's socket with tk from origin; status is the
+	// refusal's, 0 once it opened.
+	dial := func(tk, origin string) (*websocket.Conn, int, error) {
+		ws, resp, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(f.srv.URL, "http")+path+"/ws?cols=80&rows=24", &websocket.DialOptions{
 			Subprotocols: []string{apitypes.ExecProtocol, tk}, HTTPHeader: http.Header{"Origin": {origin}},
 		})
+		status := 0
+		if resp != nil {
+			if resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+			if err != nil {
+				status = resp.StatusCode
+			}
+		}
+		return ws, status, err
 	}
 
 	tk := ticket()
@@ -70,11 +82,11 @@ func TestExecSocket(t *testing.T) {
 		t.Fatalf("output %q, end %+v", out.String(), end)
 	}
 
-	if _, resp, err := dial(tk, f.srv.URL); err == nil || resp == nil || resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("a used ticket: %v %+v", err, resp)
+	if _, status, err := dial(tk, f.srv.URL); err == nil || status != http.StatusUnauthorized {
+		t.Fatalf("a used ticket: %v, %d", err, status)
 	}
-	if _, resp, err := dial(ticket(), "https://evil.example"); err == nil || resp == nil || resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("another origin: %v %+v", err, resp)
+	if _, status, err := dial(ticket(), "https://evil.example"); err == nil || status != http.StatusForbidden {
+		t.Fatalf("another origin: %v, %d", err, status)
 	}
 	if resp, _ := f.do("deploy", http.MethodPost, path+"-tickets", nil); resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("a deploy token gets a ticket: %d", resp.StatusCode)

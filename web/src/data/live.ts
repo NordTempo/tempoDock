@@ -872,7 +872,7 @@ const backupCheckActions: ReadonlySet<string> = new Set([
 const auditedReads: ReadonlySet<string> = new Set([
   "analytics.replay_view",
   "org.variables_reveal",
-  // A shell opened (ADR 0108): what it does in the container isn't
+  // A shell opened (ADR 0110): what it does in the container isn't
   // anything Dock shows.
   "service.exec",
   "user.login",

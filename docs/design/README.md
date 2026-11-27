@@ -44,7 +44,7 @@ starts from these files.
 
 Later files hold the mocks a feature's direction was picked from:
 `environment-lock.html` (ADR 0044), `jobs.html` (ADR 0054),
-`run-command.html` (ADR 0048) and `container-terminal.html` (ADR 0108,
+`run-command.html` (ADR 0048) and `container-terminal.html` (ADR 0110,
 A picked). `ui-direction.html` is the superseded v2
 direction.
 
