@@ -41,6 +41,12 @@ function buildsOf(s: Server): Builds {
   return s.builds_production ? "production" : "non_production";
 }
 
+/**
+ * Whether another server still takes builds and scans: a revoked one
+ * keeps its switches but gets no calls (canBuild on the daemon).
+ */
+const builds = (s: Server) => s.builder && s.status !== "revoked";
+
 const buildsProduction = (b: Builds) => b === "production" || b === "all";
 
 const scansField = {
@@ -233,13 +239,13 @@ export function useServerSwitches(server: Server) {
               const was = buildsOf(server);
               // Builders left for production when this one stops.
               const prodOthers = servers.filter(
-                (s) => s.name !== name && s.builder && s.builds_production,
+                (s) => s.name !== name && builds(s) && s.builds_production,
               );
               const losesProduction =
                 buildsProduction(was) && !buildsProduction(to);
               if (to === "off") {
                 const others = servers.filter(
-                  (s) => s.name !== name && s.builder,
+                  (s) => s.name !== name && builds(s),
                 );
                 const noProduction =
                   losesProduction &&
@@ -334,7 +340,7 @@ export function useServerSwitches(server: Server) {
                 .map((k) => ({
                   kind: k,
                   others: servers.filter(
-                    (s) => s.name !== name && s.builder && s[scansField[k]],
+                    (s) => s.name !== name && builds(s) && s[scansField[k]],
                   ),
                 }));
               const others = [
