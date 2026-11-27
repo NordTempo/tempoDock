@@ -32,7 +32,7 @@ type Session =
   | { at: "ended"; end: ExecEnd | null; byYou: boolean };
 
 /**
- * The service's Shell tab (ADR 0110, mock A): a terminal in the container
+ * The service's Shell tab (ADR 0111, mock A): a terminal in the container
  * of its active release. Nothing connects until Connect: the console gets
  * a single-use ticket (a CSRF-guarded call that checks admin and the
  * lock), then opens the shell's WebSocket with it. The socket carries the

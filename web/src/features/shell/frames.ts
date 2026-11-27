@@ -1,5 +1,5 @@
 // The runframe framing (internal/runframe) of a shell's WebSocket (ADR
-// 0110): one type byte, a big-endian uint32 payload length, the payload.
+// 0111): one type byte, a big-endian uint32 payload length, the payload.
 // Up: stdin ("i"), close-stdin ("c"), resize ("r": cols, rows as uint16).
 // Down: stdout ("o"), stderr ("e"), then one exit ("x", JSON).
 

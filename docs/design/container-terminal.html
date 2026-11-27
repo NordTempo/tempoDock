@@ -81,7 +81,7 @@
 <body>
 <main>
 <h1>Container terminal</h1>
-<p class="note">ADR 0110. A shell inside the service's running container (the web side of <span class="mono">dock exec</span>). Every mock shows the same state: <span class="mono">web</span> in shop/production, release r42 running, a session open in its container. The terminal is xterm.js, loaded only when it opens, cursor not blinking. Admins on the environment only; each session is in the audit log as <span class="mono">service.exec</span>, and closing the page ends it.</p>
+<p class="note">ADR 0111. A shell inside the service's running container (the web side of <span class="mono">dock exec</span>). Every mock shows the same state: <span class="mono">web</span> in shop/production, release r42 running, a session open in its container. The terminal is xterm.js, loaded only when it opens, cursor not blinking. Admins on the environment only; each session is in the audit log as <span class="mono">service.exec</span>, and closing the page ends it.</p>
 
 <!-- ============================== A ============================== -->
 <h2>A. Its own tab, Shell, between Jobs and Data</h2>
