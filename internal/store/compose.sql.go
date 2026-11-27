@@ -22,12 +22,13 @@ func (q *Queries) DeleteComposeSource(ctx context.Context, environmentID int64) 
 	return result.RowsAffected()
 }
 
-const finishComposeSync = `-- name: FinishComposeSync :execrows
+const finishComposeSync = `-- name: FinishComposeSync :one
 UPDATE compose_sources
 SET last_sha = ?1, last_message = ?2, last_author = ?3,
     last_at = ?4, outcome = ?5, summary = ?6, reads = ?7,
     pending_sha = CASE WHEN pending_sha = ?8 THEN '' ELSE pending_sha END
 WHERE id = +?9
+RETURNING id, environment_id, installation_id, repo_id, repo, branch, path, reads, prune, auto_apply, pending_sha, pending_by, last_sha, last_message, last_author, last_at, outcome, summary, created_by, created_at
 `
 
 type FinishComposeSyncParams struct {
@@ -45,8 +46,8 @@ type FinishComposeSyncParams struct {
 // Records a sync's outcome and clears the queued commit if it is still
 // the one synced (a newer push may have replaced it meanwhile, and runs
 // next).
-func (q *Queries) FinishComposeSync(ctx context.Context, arg FinishComposeSyncParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, finishComposeSync,
+func (q *Queries) FinishComposeSync(ctx context.Context, arg FinishComposeSyncParams) (ComposeSource, error) {
+	row := q.db.QueryRowContext(ctx, finishComposeSync,
 		arg.LastSha,
 		arg.LastMessage,
 		arg.LastAuthor,
@@ -57,10 +58,30 @@ func (q *Queries) FinishComposeSync(ctx context.Context, arg FinishComposeSyncPa
 		arg.Synced,
 		arg.ID,
 	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
+	var i ComposeSource
+	err := row.Scan(
+		&i.ID,
+		&i.EnvironmentID,
+		&i.InstallationID,
+		&i.RepoID,
+		&i.Repo,
+		&i.Branch,
+		&i.Path,
+		&i.Reads,
+		&i.Prune,
+		&i.AutoApply,
+		&i.PendingSha,
+		&i.PendingBy,
+		&i.LastSha,
+		&i.LastMessage,
+		&i.LastAuthor,
+		&i.LastAt,
+		&i.Outcome,
+		&i.Summary,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const getComposeSource = `-- name: GetComposeSource :one
@@ -209,20 +230,36 @@ func (q *Queries) ListRepoComposeSources(ctx context.Context, arg ListRepoCompos
 	return items, nil
 }
 
-const setComposePending = `-- name: SetComposePending :exec
-UPDATE compose_sources SET pending_sha = ?, pending_by = ? WHERE id = +?
+const setComposePending = `-- name: SetComposePending :execrows
+UPDATE compose_sources SET pending_sha = ?, pending_by = ?
+WHERE id = +?3 AND repo_id = +?4 AND branch = +?5 AND path = +?6
 `
 
 type SetComposePendingParams struct {
 	PendingSha string
 	PendingBy  string
 	ID         int64
+	RepoID     int64
+	Branch     string
+	Path       string
 }
 
-// Queues a commit to sync, replacing any older one that hasn't started.
-func (q *Queries) SetComposePending(ctx context.Context, arg SetComposePendingParams) error {
-	_, err := q.db.ExecContext(ctx, setComposePending, arg.PendingSha, arg.PendingBy, arg.ID)
-	return err
+// Queues a commit to sync, replacing any older one that hasn't started,
+// if the source still follows the branch and path the push was matched
+// against (it may have been changed meanwhile).
+func (q *Queries) SetComposePending(ctx context.Context, arg SetComposePendingParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setComposePending,
+		arg.PendingSha,
+		arg.PendingBy,
+		arg.ID,
+		arg.RepoID,
+		arg.Branch,
+		arg.Path,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const upsertComposeSource = `-- name: UpsertComposeSource :one
@@ -232,6 +269,10 @@ ON CONFLICT (environment_id) DO UPDATE SET
     installation_id = excluded.installation_id, repo_id = excluded.repo_id, repo = excluded.repo,
     reads = CASE WHEN compose_sources.repo_id = excluded.repo_id AND compose_sources.branch = excluded.branch
                   AND compose_sources.path = excluded.path THEN compose_sources.reads ELSE '' END,
+    pending_sha = CASE WHEN compose_sources.repo_id = excluded.repo_id AND compose_sources.branch = excluded.branch
+                  AND compose_sources.path = excluded.path THEN compose_sources.pending_sha ELSE '' END,
+    pending_by = CASE WHEN compose_sources.repo_id = excluded.repo_id AND compose_sources.branch = excluded.branch
+                  AND compose_sources.path = excluded.path THEN compose_sources.pending_by ELSE '' END,
     branch = excluded.branch, path = excluded.path, prune = excluded.prune, auto_apply = excluded.auto_apply
 RETURNING id, environment_id, installation_id, repo_id, repo, branch, path, reads, prune, auto_apply, pending_sha, pending_by, last_sha, last_message, last_author, last_at, outcome, summary, created_by, created_at
 `
@@ -249,8 +290,8 @@ type UpsertComposeSourceParams struct {
 }
 
 // Sets what an environment follows. A change of repository, branch or
-// path forgets what the last sync read; its outcome stays until the
-// next sync replaces it.
+// path forgets what the last sync read and any queued push (it was the
+// old target's); its outcome stays until the next sync replaces it.
 func (q *Queries) UpsertComposeSource(ctx context.Context, arg UpsertComposeSourceParams) (ComposeSource, error) {
 	row := q.db.QueryRowContext(ctx, upsertComposeSource,
 		arg.EnvironmentID,

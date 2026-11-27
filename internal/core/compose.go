@@ -34,7 +34,7 @@ func (c *Core) ImportCompose(ctx context.Context, a Actor, project string, req a
 		return out, err
 	}
 	ar.Deploy = !req.StageOnly
-	applied, err := c.applyProject(ctx, a, project, ar, pr)
+	applied, _, err := c.applyProject(ctx, a, project, ar, pr)
 	if err != nil {
 		return out, err
 	}

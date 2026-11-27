@@ -173,9 +173,12 @@ type Core struct {
 	// closed when it ends (holdDomainCheck); guarded by checksMu.
 	checking map[int64]chan struct{}
 	// composeSyncing holds, by Compose source ID, the sync running now,
-	// closed when it ends (holdComposeSync); guarded by composeMu.
+	// closed when it ends (holdComposeSync); composeWorkers the source's
+	// background worker, if one runs, and whether a push came while it
+	// synced (kickComposeSync). Both guarded by composeMu.
 	composeMu      sync.Mutex
 	composeSyncing map[int64]chan struct{}
+	composeWorkers map[int64]*bool
 	// lookupTXT is Options.LookupTXT, or the system resolver's.
 	lookupTXT func(ctx context.Context, name string) ([]string, error)
 	// lookupIP is Options.LookupIP, or the system resolver's.
@@ -399,6 +402,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		checks:          map[int64]domainCheck{},
 		checking:        map[int64]chan struct{}{},
 		composeSyncing:  map[int64]chan struct{}{},
+		composeWorkers:  map[int64]*bool{},
 		lookupTXT:       o.LookupTXT,
 		lookupIP:        o.LookupIP,
 		status:          map[int64]storedStatus{},

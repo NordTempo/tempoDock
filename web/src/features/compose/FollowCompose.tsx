@@ -11,6 +11,9 @@ import { useGitHubRepos } from "../git/api";
 import { type ComposeSource, useFollowCompose } from "./data";
 import { SyncOutcome } from "./SyncOutcome";
 
+/** The most warnings the dialog lists. */
+const maxWarnings = 50;
+
 /**
  * Follow a Compose file in GitHub (ADR 0108): the repository (one the
  * org's GitHub App reads), branch and path, whether removals are staged
@@ -135,7 +138,7 @@ export default function FollowCompose({
             <SyncOutcome env={env} source={done.source} onReview={onClose} />
             {(done.warnings ?? []).length > 0 && (
               <Section title="Not mapped exactly">
-                {(done.warnings ?? []).map((w, i) => (
+                {(done.warnings ?? []).slice(0, maxWarnings).map((w, i) => (
                   <Warn key={`${w.service}:${w.key}:${i}`}>
                     {w.service && (
                       <span className="font-mono text-faint">{w.service} </span>
@@ -143,6 +146,13 @@ export default function FollowCompose({
                     {w.message}
                   </Warn>
                 ))}
+                {(done.warnings ?? []).length > maxWarnings && (
+                  <p className="text-mut">
+                    and {(done.warnings ?? []).length - maxWarnings} more;{" "}
+                    <code className="font-mono">dock compose sync</code> prints
+                    them all
+                  </p>
+                )}
               </Section>
             )}
             {changes.length > 0 && (

@@ -170,8 +170,10 @@ func newComposeUnfollowCmd(g *globals) *cobra.Command {
 			if _, err := send[struct{}](cmd.Context(), s, http.MethodDelete, t.envPath()+"/compose", nil); err != nil {
 				return err
 			}
-			g.io.Successf("%s/%s no longer follows a Compose file", t.Project, t.Environment)
-			return nil
+			return g.io.Print(struct{}{}, func() error {
+				g.io.Successf("%s/%s no longer follows a Compose file", t.Project, t.Environment)
+				return nil
+			})
 		},
 	}
 	f.add(cmd, needEnvironment)

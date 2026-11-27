@@ -268,9 +268,12 @@ func (c *Core) gitAppWebhook(ctx context.Context, app store.GithubApp, d GitDeli
 		return "", err
 	}
 	// Environments that follow a Compose file in it (ADR 0108).
+	// A failure there is said in the answer; the services' pushes still
+	// go, since the delivery is recorded and a redelivery is ignored.
 	composed, err := c.queueComposePushes(ctx, p)
 	if err != nil {
-		return "", err
+		c.log.Error("queue a push on followed Compose files", "repo", p.Repository.FullName, "err", err)
+		composed = append(composed, "(Compose) not queued: "+c.errorLine(err))
 	}
 	if len(conns) == 0 && len(composed) == 0 {
 		return "ignored: no service deploys " + cleanLine(p.Repository.FullName, 140), nil

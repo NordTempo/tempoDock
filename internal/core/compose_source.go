@@ -7,6 +7,7 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/store"
@@ -106,13 +107,26 @@ func (c *Core) FollowCompose(ctx context.Context, a Actor, ref EnvRef, req apity
 	return c.syncComposeNow(ctx, a, es, row)
 }
 
-// UnfollowCompose stops an environment following its Compose file. What
-// syncs staged stays staged. Needs deploy.
+// UnfollowCompose stops an environment following its Compose file, once
+// a sync running now has finished, so nothing stages after it returns.
+// What syncs staged stays staged. Needs deploy.
 func (c *Core) UnfollowCompose(ctx context.Context, a Actor, ref EnvRef) error {
 	es, err := c.envFor(ctx, a, ref, apitypes.ScopeDeploy, "following a Compose file")
 	if err != nil {
 		return err
 	}
+	row, err := c.store.GetComposeSource(ctx, es.env.ID)
+	if store.IsNotFound(err) {
+		return notFound("%s doesn't follow a Compose file", es)
+	}
+	if err != nil {
+		return err
+	}
+	release, ok := c.holdComposeSync(ctx, row.ID)
+	if !ok {
+		return ctx.Err()
+	}
+	defer release()
 	n, err := c.store.DeleteComposeSource(ctx, es.env.ID)
 	if err != nil {
 		return err
@@ -172,17 +186,18 @@ func (c *Core) syncCompose(ctx context.Context, es envScope, row store.ComposeSo
 		commit.SHA = row.PendingSha // what the push named, if a push
 	}
 	at := now()
-	if _, err := c.store.FinishComposeSync(ctx, store.FinishComposeSyncParams{
+	stored, err := c.store.FinishComposeSync(ctx, store.FinishComposeSyncParams{
 		LastSha: commit.SHA, LastMessage: commit.Message, LastAuthor: commit.Author, LastAt: &at,
 		Outcome: string(outcome), Summary: summary, Reads: strings.Join(reads, "\n"), Synced: row.PendingSha, ID: row.ID,
-	}); err != nil {
+	})
+	if err != nil {
+		// Unrecorded: the queued commit stays queued, for the next push,
+		// sync or start; staging it again is a no-op.
 		c.log.Error("record a Compose sync", "env", es.String(), "err", err)
+		stored = row
+		stored.LastSha, stored.LastMessage, stored.LastAuthor, stored.LastAt, stored.Outcome, stored.Summary = commit.SHA, commit.Message, commit.Author, &at, string(outcome), summary
 	}
-	row.LastSha, row.LastMessage, row.LastAuthor, row.LastAt, row.Outcome, row.Summary = commit.SHA, commit.Message, commit.Author, &at, string(outcome), summary
-	if row.PendingSha == commit.SHA {
-		row.PendingSha = ""
-	}
-	out.Source = toComposeSource(es, row)
+	out.Source = toComposeSource(es, stored)
 	c.audit(ctx, c.composeActor(es, row, by), "compose.sync", &es.project, &es.env, es.String(),
 		fmt.Sprintf("Compose file at %s: %s", shortSHA(commit.SHA), summary))
 	return out
@@ -227,6 +242,9 @@ func (c *Core) runComposeSync(ctx context.Context, es envScope, row store.Compos
 		if len(reads) >= maxComposeReads {
 			return invalid("%s reads more than %d files", row.Path, maxComposeReads)
 		}
+		// Read or missing, it is one of the source's files: a push that
+		// adds a missing one syncs too.
+		reads = append(reads, full)
 		f, err := c.git.github.file(ctx, row.Repo, commit.SHA, full, cred, maxComposeSize)
 		if CodeOf(err) == apitypes.CodeNotFound {
 			return nil // the conversion says what is missing
@@ -234,7 +252,6 @@ func (c *Core) runComposeSync(ctx context.Context, es envScope, row store.Compos
 		if err != nil {
 			return err
 		}
-		reads = append(reads, full)
 		req.EnvFiles[name] = string(f)
 		return nil
 	}
@@ -259,31 +276,12 @@ func (c *Core) runComposeSync(ctx context.Context, es envScope, row store.Compos
 	}
 
 	actor := c.composeActor(es, row, by)
-	pr := composePruning(row.Prune)
 	// A secret's value comes from the file only for a variable that
-	// doesn't exist yet: one set in Dock since (a rotated password) keeps
-	// its value. The plan without values lists those that need one.
-	given := ar.Values
-	ar.Values = nil
-	plan, err := c.planProject(ctx, actor, es.project.Name, ar, pr)
-	if err != nil {
-		return fail(commit, err)
-	}
-	for _, m := range plan.Manual {
-		if m.Kind != apitypes.PlanVariable || m.Action != apitypes.ChangeAdd {
-			continue
-		}
-		if i := slices.IndexFunc(given, func(v apitypes.VariableValue) bool {
-			return v.Environment == m.Environment && v.Service == m.Service && v.Key == m.Name
-		}); i >= 0 {
-			ar.Values = append(ar.Values, given[i])
-		}
-	}
-	before, err := c.pendingChanges(ctx, c.store.Queries, es, false)
-	if err != nil {
-		return fail(commit, err)
-	}
-	staged, err := c.applyProject(ctx, actor, es.project.Name, ar, pr)
+	// doesn't exist yet, live or staged, checked as it is staged: one set
+	// in Dock since (a rotated password) keeps its value.
+	pr := composePruning(row.Prune)
+	pr.initValues = true
+	staged, waiting, err := c.applyProject(ctx, actor, es.project.Name, ar, pr)
 	if err != nil {
 		return fail(commit, err)
 	}
@@ -292,7 +290,15 @@ func (c *Core) runComposeSync(ctx context.Context, es envScope, row store.Compos
 	if len(staged.Unchanged) > 0 {
 		return commit, reads, apitypes.ComposeUnchanged, summary
 	}
-	if why := composeAutoApply(row, es.env, staged.Plan, before.Count); why != "" {
+	why := composeAutoApply(row, es.env, staged.Plan, waiting[es.env.Name])
+	if why == "" {
+		// Nothing else may have been staged since this sync's own
+		// transaction: applying takes every staged change along.
+		if cur, err := c.pendingChanges(ctx, c.store.Queries, es, false); err != nil || len(staged.Staged) == 0 || cur.Count != staged.Staged[0].Count {
+			why = "other changes were staged meanwhile"
+		}
+	}
+	if why != "" {
 		if row.AutoApply {
 			summary += "; not applied: " + why
 		}
@@ -408,6 +414,9 @@ func (c *Core) findComposeFile(ctx context.Context, cred githubCred, repo, branc
 			return "", err
 		}
 		if isDir {
+			if p == "" {
+				continue // a default name taken by a directory; try the next
+			}
 			return "", invalid("%s is a directory on %s of %s; pass the Compose file's path, e.g. %s/compose.yaml", name, branch, repo, name)
 		}
 		_, err = c.git.github.file(ctx, repo, branch, name, cred, maxComposeSize)
@@ -451,19 +460,33 @@ func (c *Core) queueComposePushes(ctx context.Context, p pushPayload) ([]string,
 	if err != nil || len(rows) == 0 {
 		return nil, err
 	}
+	// A push older than the replay window may have been forgotten by
+	// gitDelivery, so a captured body could be replayed (as queuePush).
+	if at, ok := p.pushedAt(); ok && now().Sub(at) > gitReplayWindow {
+		return []string{fmt.Sprintf("(Compose) push %s: ignored, it was pushed %s, longer ago than deliveries are remembered", shortSHA(p.After), at.UTC().Format(time.DateOnly))}, nil
+	}
 	var msgs []string
 	for _, row := range rows {
 		es, err := c.envByID(ctx, row.EnvironmentID)
 		if err != nil {
-			return nil, err
+			return msgs, err
 		}
 		msg := es.String() + " (Compose): "
 		switch sha, ignored := composePushDecision(row, p); {
 		case ignored != "":
 			msg += ignored
 		default:
-			if err := c.store.SetComposePending(ctx, store.SetComposePendingParams{PendingSha: sha, PendingBy: "github:" + loginOf(p.Pusher.Name), ID: row.ID}); err != nil {
-				return nil, err
+			// Only if it still follows what the push was matched against.
+			n, err := c.store.SetComposePending(ctx, store.SetComposePendingParams{
+				PendingSha: sha, PendingBy: "github:" + loginOf(p.Pusher.Name),
+				ID: row.ID, RepoID: row.RepoID, Branch: row.Branch, Path: row.Path,
+			})
+			if err != nil {
+				return msgs, err
+			}
+			if n == 0 {
+				msg += "push " + shortSHA(sha) + ": ignored, what it follows changed meanwhile"
+				break
 			}
 			c.kickComposeSync(row.ID)
 			msg += "push " + shortSHA(sha) + ": queued"
@@ -515,54 +538,81 @@ func touchesFile(commits []pushCommit, files []string) bool {
 	return false
 }
 
-// kickComposeSync syncs source id's queued commit in the background.
-// Each push starts one; holdComposeSync runs them one at a time, and one
-// that finds nothing queued (an earlier one took it) returns.
+// kickComposeSync makes sure a worker syncs source id's queued commit:
+// one worker per source (composeWorkers); a push while it runs makes it
+// look at the row once more when it is done, whatever came meanwhile.
 func (c *Core) kickComposeSync(id int64) {
+	c.composeMu.Lock()
+	defer c.composeMu.Unlock()
 	if c.ctx.Err() != nil {
 		return
 	}
+	if again, running := c.composeWorkers[id]; running {
+		*again = true
+		return
+	}
+	c.composeWorkers[id] = new(false)
 	c.goCounted("syncing a Compose file", func() { c.composeWork(id) })
 }
 
-// composeWork syncs source id's queued commit, until none is queued.
+// composeWork is source id's worker: it syncs the queued commit, and
+// again while pushes came during a sync. It ends when nothing new came,
+// also when a sync couldn't record its end (the commit stays queued for
+// the next push, sync or start).
 func (c *Core) composeWork(id int64) {
+	defer func() {
+		c.composeMu.Lock()
+		delete(c.composeWorkers, id)
+		c.composeMu.Unlock()
+	}()
+	for {
+		c.composeMu.Lock()
+		*c.composeWorkers[id] = false
+		c.composeMu.Unlock()
+		c.composeOnce(id)
+		c.composeMu.Lock()
+		again := *c.composeWorkers[id]
+		c.composeMu.Unlock()
+		if !again || c.ctx.Err() != nil {
+			return
+		}
+	}
+}
+
+// composeOnce syncs source id's queued commit, if any, under the
+// source's hold (a sync asked for by hand may be running).
+func (c *Core) composeOnce(id int64) {
 	ctx := c.ctx
 	release, ok := c.holdComposeSync(ctx, id)
 	if !ok {
 		return
 	}
 	defer release()
-	for range 3 { // a newer push during a sync is synced next; more wait for their own kick
-		row, err := c.store.GetComposeSourceByID(ctx, id)
-		if err != nil {
-			if !store.IsNotFound(err) && ctx.Err() == nil {
-				c.log.Error("Compose sync", "source", id, "err", err)
-			}
-			return
-		}
-		if row.PendingSha == "" {
-			return
-		}
-		es, err := c.envByID(ctx, row.EnvironmentID)
-		if err != nil {
+	row, err := c.store.GetComposeSourceByID(ctx, id)
+	if err != nil {
+		if !store.IsNotFound(err) && ctx.Err() == nil {
 			c.log.Error("Compose sync", "source", id, "err", err)
-			return
 		}
-		// The repository's file is read and converted here: a panic on
-		// it is this sync's failure, recorded like any other.
-		if _, err := caught(c.log, "syncing a Compose file", func() (apitypes.ComposeSyncResult, error) {
-			return c.syncCompose(ctx, es, row, row.PendingSha, row.PendingBy), nil
+		return
+	}
+	if row.PendingSha == "" {
+		return
+	}
+	es, err := c.envByID(ctx, row.EnvironmentID)
+	if err != nil {
+		c.log.Error("Compose sync", "source", id, "err", err)
+		return
+	}
+	// The repository's file is read and converted here: a panic on it is
+	// this sync's failure, recorded like any other.
+	if _, err := caught(c.log, "syncing a Compose file", func() (apitypes.ComposeSyncResult, error) {
+		return c.syncCompose(ctx, es, row, row.PendingSha, row.PendingBy), nil
+	}); err != nil {
+		if _, err := c.store.FinishComposeSync(ctx, store.FinishComposeSyncParams{
+			LastSha: row.PendingSha, LastAt: new(now()), Outcome: string(apitypes.ComposeFailed),
+			Summary: "the sync failed inside Dock; sync again with `dock compose sync`", Reads: row.Reads, Synced: row.PendingSha, ID: row.ID,
 		}); err != nil {
-			if _, err := c.store.FinishComposeSync(ctx, store.FinishComposeSyncParams{
-				LastSha: row.PendingSha, LastAt: new(now()), Outcome: string(apitypes.ComposeFailed),
-				Summary: "the sync failed inside Dock; sync again with `dock compose sync`", Reads: row.Reads, Synced: row.PendingSha, ID: row.ID,
-			}); err != nil {
-				c.log.Error("record a Compose sync", "source", id, "err", err)
-			}
-		}
-		if ctx.Err() != nil {
-			return
+			c.log.Error("record a Compose sync", "source", id, "err", err)
 		}
 	}
 }
