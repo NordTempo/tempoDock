@@ -56,7 +56,7 @@ way to say so. Now:
 - Overlap stays as the short form: skip is concurrency 1, allow
   without a concurrency is 4, what it meant before. A concurrency above
   1 implies allow, and is refused with an explicit skip. Existing jobs
-  got those values (migration 0137).
+  got those values (migration 0138).
 - A job's runs count against its own concurrency, not against the
   service's 4 slots for one-off commands (`dock run`), so an agent's
   commands can't starve a schedule. Every run of a service, jobs and
