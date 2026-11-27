@@ -107,6 +107,7 @@ var backupMethod = map[apitypes.BackupKind]string{
 	apitypes.BackupPostgres: "pg_dump",
 	apitypes.BackupRedis:    "Redis snapshot",
 	apitypes.BackupMySQL:    "mysqldump",
+	apitypes.BackupMongoDB:  "mongodump",
 	apitypes.BackupVolume:   "volume files",
 }
 

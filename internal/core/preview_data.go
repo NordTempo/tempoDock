@@ -58,6 +58,8 @@ func copyEngine(s store.Service) (dbcopy.Engine, bool) {
 		return dbcopy.MySQL, true
 	case apitypes.BackupRedis:
 		return dbcopy.Redis, true
+	case apitypes.BackupMongoDB:
+		return dbcopy.Mongo, true
 	}
 	return "", false
 }
@@ -216,7 +218,7 @@ func (c *Core) fillPreviewDB(ctx context.Context, a Actor, dst envScope, pv stor
 }
 
 // run copies the data in. A database restored with its own tools
-// (Postgres, MySQL) is deployed first and loaded while it runs; volumes
+// (Postgres, MySQL, MongoDB) is deployed first and loaded while it runs; volumes
 // (a snapshot, Redis) are filled before it starts.
 func (pc *previewCopy) run(ctx context.Context, refresh bool) error {
 	c := pc.c
@@ -354,12 +356,27 @@ func (pc *previewCopy) source(ctx context.Context, engine dbcopy.Engine) (dbcopy
 		if err != nil {
 			return src, notRunning(err)
 		}
-		src.Password = mysqlRootPassword(env)
-		if engine == dbcopy.Redis {
+		switch engine {
+		case dbcopy.Redis:
 			src.Password = env["REDIS_PASSWORD"]
+		case dbcopy.Mongo:
+			src.User, src.Password = mongoRoot(env)
+		default:
+			src.Password = mysqlRootPassword(env)
 		}
 	}
 	if pc.set.mode != apitypes.PreviewDataMasked {
+		return src, nil
+	}
+	if engine == dbcopy.Mongo {
+		// Its documents have no columns to mask yet (ADR 0110).
+		marks, err := c.store.ListSensitiveColumns(ctx, pc.from.svc.ID)
+		if err != nil {
+			return src, err
+		}
+		if len(marks) > 0 {
+			return src, conflict("%s has sensitive fields marked, which a masked copy of MongoDB can't replace yet, so it starts empty; copy it unmasked or start it from its newest snapshot", pc.from)
+		}
 		return src, nil
 	}
 	if engine == dbcopy.Redis {
@@ -400,6 +417,10 @@ func (pc *previewCopy) target(ctx context.Context, engine dbcopy.Engine) (dbcopy
 	env, err := c.activeEnv(ctx, to)
 	if err != nil {
 		return dbcopy.Target{}, notRunningErr(to, err)
+	}
+	if engine == dbcopy.Mongo {
+		user, password := mongoRoot(env)
+		return dbcopy.Target{Host: to.svc.Name, Port: t.port, User: user, Password: password}, nil
 	}
 	return dbcopy.Target{Host: to.svc.Name, Port: t.port, Password: mysqlRootPassword(env)}, nil
 }

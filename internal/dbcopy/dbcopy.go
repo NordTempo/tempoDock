@@ -6,8 +6,10 @@
 // so their values never reach the scratch volume or the preview.
 //
 // The scripts run in the template's pinned image (pg_dump, mysqldump,
-// redis-cli), never the service's own. Core runs them; this package only
-// says what to run and reads what they print.
+// redis-cli, mongodump), never the service's own. MongoDB copies aren't
+// masked (ADR 0110): core refuses a masked copy of one with marks. Core
+// runs them; this package only says what to run and reads what they
+// print.
 package dbcopy
 
 import (
@@ -25,6 +27,7 @@ const (
 	Postgres Engine = "postgres"
 	MySQL    Engine = "mysql"
 	Redis    Engine = "redis"
+	Mongo    Engine = "mongodb"
 )
 
 // Path is where the scratch volume is mounted in both jobs.
@@ -45,8 +48,8 @@ type Source struct {
 	Port     int
 	User     string
 	Password string
-	// Database is the Postgres database copied; MySQL copies every one
-	// but the server's own, Redis everything.
+	// Database is the Postgres database copied; MySQL and MongoDB copy
+	// every one but the server's own, Redis everything.
 	Database string
 	// Masked are the columns replaced in the copy; empty copies as is.
 	Masked []Column
@@ -79,6 +82,8 @@ func DumpScript(e Engine) (string, error) {
 		return prelude + mysqlTools + room + mysqlDump, nil
 	case Redis:
 		return prelude + room + redisDump, nil
+	case Mongo:
+		return prelude + mongoAuth + room + mongoDump, nil
 	}
 	return "", fmt.Errorf("no copies of %s databases", e)
 }
@@ -92,6 +97,8 @@ func LoadScript(e Engine) (string, error) {
 		return prelude + mysqlTools + mysqlLoad, nil
 	case Redis:
 		return prelude + redisLoad, nil
+	case Mongo:
+		return prelude + mongoAuth + mongoLoad, nil
 	}
 	return "", fmt.Errorf("no copies of %s databases", e)
 }
@@ -117,6 +124,8 @@ func DumpEnv(e Engine, src Source) map[string]string {
 		env["DOCK_PLAN_SQL"] = mysqlPlanSQL
 	case Redis:
 		env["DOCK_DB_HOST"], env["DOCK_DB_PORT"], env["REDISCLI_AUTH"] = src.Host, strconv.Itoa(src.Port), src.Password
+	case Mongo:
+		env["DOCK_DB_HOST"], env["DOCK_DB_PORT"], env["DOCK_DB_USER"], env[MongoPassword] = src.Host, strconv.Itoa(src.Port), src.User, src.Password
 	}
 	return env
 }
@@ -130,12 +139,19 @@ func LoadEnv(e Engine, to Target) map[string]string {
 		return map[string]string{"DOCK_DB_HOST": to.Host, "DOCK_DB_PORT": strconv.Itoa(to.Port), "MYSQL_PWD": to.Password}
 	case Redis:
 		return map[string]string{"DOCK_DATA": to.DataDir}
+	case Mongo:
+		return map[string]string{"DOCK_DB_HOST": to.Host, "DOCK_DB_PORT": strconv.Itoa(to.Port), "DOCK_DB_USER": to.User, MongoPassword: to.Password}
 	}
 	return nil
 }
 
+// MongoPassword is the jobs' environment key for a MongoDB user's
+// password, which the tools read from a config file (mongoAuth). The same
+// as backup.MongoPassword.
+const MongoPassword = "DOCK_MONGO_PASSWORD"
+
 // Secrets are the environment keys a job's log must not show.
-var Secrets = []string{"PGPASSWORD", "MYSQL_PWD", "REDISCLI_AUTH"}
+var Secrets = []string{"PGPASSWORD", "MYSQL_PWD", "REDISCLI_AUTH", MongoPassword}
 
 // Stats is what a dump job reports: the database's size, and how many
 // tables and columns it masked.
@@ -450,4 +466,47 @@ const redisLoad = `find "$DOCK_DATA" -mindepth 1 -delete
 mkdir -p "$DOCK_DATA/appendonlydir"
 cp "$D/dump.rdb" "$DOCK_DATA/appendonlydir/appendonly.aof.1.base.rdb"
 printf 'file appendonly.aof.1.base.rdb seq 1 type b\n' >"$DOCK_DATA/appendonlydir/appendonly.aof.manifest"
+`
+
+// mongoAuth writes DOCK_DB_USER's password to the config file the
+// MongoDB tools read and sets $AT to how they reach the server, as
+// backup's does: the password never is an argument.
+const mongoAuth = `umask 077
+printf "password: '%s'\n" "$(printf '%s' "$` + MongoPassword + `" | sed "s/'/''/g")" >/tmp/dock-mongo.yaml
+AT="--host=$DOCK_DB_HOST --port=$DOCK_DB_PORT --authenticationDatabase=admin --config=/tmp/dock-mongo.yaml"
+`
+
+// mongoDump dumps every database into one archive, as backups do; the
+// load leaves out admin and config, whose users and settings are the
+// preview server's own. The size bounds what the copy writes: the
+// archive, which is uncompressed (the databases' dbStats dataSize, plus a
+// tenth for its framing; indexes go in as definitions only), and the
+// indexes the load builds again (indexSize). mongosh reads it with the
+// password from the job's environment, never an argument.
+const mongoDump = `size=$(mongosh --quiet --nodb --eval '
+  const pw = process.env.` + MongoPassword + `;
+  const conn = new Mongo("mongodb://" + process.env.DOCK_DB_HOST + ":" + process.env.DOCK_DB_PORT);
+  const admin = conn.getDB("admin");
+  admin.auth(process.env.DOCK_DB_USER, pw);
+  let n = 0;
+  for (const d of admin.adminCommand({listDatabases: 1}).databases) {
+    if (["admin", "config", "local"].includes(d.name)) continue;
+    const s = conn.getDB(d.name).stats();
+    n += s.dataSize * 1.1 + s.indexSize;
+  }
+  print(Math.ceil(n))')
+room
+mongodump $AT --username="$DOCK_DB_USER" --archive="$D/db.archive" --quiet
+echo "` + statsMarker + ` bytes=$size tables=0 columns=0"
+`
+
+// mongoLoad restores the archive into the preview's new, empty server
+// once it answers on its network (the image's entrypoint first creates
+// its root user on a server that listens on its loopback alone).
+const mongoLoad = `i=0
+until mongosh --quiet --host "$DOCK_DB_HOST" --port "$DOCK_DB_PORT" --eval 'db.runCommand({ping: 1}).ok' >/dev/null 2>&1; do
+  i=$((i + 1)); [ "$i" -lt 120 ] || { echo "dock: the preview's database didn't accept connections in 2 minutes" >&2; exit 1; }
+  sleep 1
+done
+mongorestore $AT --username="$DOCK_DB_USER" --archive="$D/db.archive" --nsExclude='admin.*' --nsExclude='config.*' --stopOnError
 `

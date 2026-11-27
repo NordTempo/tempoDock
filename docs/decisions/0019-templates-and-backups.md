@@ -1,6 +1,6 @@
 # 0019: Database templates and backups
 
-Status: accepted (decided by the agent, M5); superseded in part by [0039](0039-backups-on-storage-connections.md) (where backups go), [0061](0061-one-restore-model.md) (restores and switching to them); amended by [0069](0069-database-insights.md) (the Postgres template loads `pg_stat_statements` for query stats), [0093](0093-point-in-time-restore.md) (point-in-time restore for Postgres), [0074](0074-image-vulnerability-scanning.md) (a template database's image follows its tag: Update, and new ones start on the newest image)
+Status: accepted (decided by the agent, M5); superseded in part by [0039](0039-backups-on-storage-connections.md) (where backups go), [0061](0061-one-restore-model.md) (restores and switching to them); amended by [0069](0069-database-insights.md) (the Postgres template loads `pg_stat_statements` for query stats), [0093](0093-point-in-time-restore.md) (point-in-time restore for Postgres), [0074](0074-image-vulnerability-scanning.md) (a template database's image follows its tag: Update, and new ones start on the newest image), [0110](0110-mongodb.md) (the MongoDB template)
 
 ## Context
 

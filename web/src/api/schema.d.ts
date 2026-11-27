@@ -7748,7 +7748,7 @@ export interface components {
             /** Format: int64 */
             port?: number;
             /** @enum {string} */
-            template?: "postgres" | "redis" | "mysql" | "mariadb" | "valkey" | "pgvector";
+            template?: "postgres" | "redis" | "mysql" | "mariadb" | "valkey" | "pgvector" | "mongodb";
             volumes?: string[] | null;
         };
         AppliedChanges: {
@@ -7886,7 +7886,7 @@ export interface components {
             /** Format: int64 */
             id: number;
             /** @enum {string} */
-            kind: "postgres" | "redis" | "mysql" | "volume" | "pitr";
+            kind: "postgres" | "redis" | "mysql" | "mongodb" | "volume" | "pitr";
             not_restorable?: string;
             off_box: boolean;
             /** @enum {string} */
@@ -8469,7 +8469,7 @@ export interface components {
              * @description Create a database from a template; other settings are ignored
              * @enum {string}
              */
-            template?: "postgres" | "redis" | "mysql" | "mariadb" | "valkey" | "pgvector";
+            template?: "postgres" | "redis" | "mysql" | "mariadb" | "valkey" | "pgvector" | "mongodb";
         };
         CreateSnapshotRequest: {
             note?: string;
@@ -12035,14 +12035,14 @@ export interface components {
             stopped_at?: string;
             stopped_by?: string;
             /** @enum {string} */
-            template?: "postgres" | "redis" | "mysql" | "mariadb" | "valkey" | "pgvector";
+            template?: "postgres" | "redis" | "mysql" | "mariadb" | "valkey" | "pgvector" | "mongodb";
             usage?: components["schemas"]["ServiceUsage"];
         };
         ServiceBackups: {
             check?: components["schemas"]["BackupCheck"];
             drill?: components["schemas"]["BackupCheck"];
             /** @enum {string} */
-            kind: "postgres" | "redis" | "mysql" | "volume";
+            kind: "postgres" | "redis" | "mysql" | "mongodb" | "volume";
             /** Format: date-time */
             next_check_at?: string;
             off_box: boolean;
@@ -13009,7 +13009,7 @@ export interface components {
             memory_mb: number;
             mount_path: string;
             /** @enum {string} */
-            name: "postgres" | "redis" | "mysql" | "mariadb" | "valkey" | "pgvector";
+            name: "postgres" | "redis" | "mysql" | "mariadb" | "valkey" | "pgvector" | "mongodb";
         };
         TemplateInput: {
             choices?: string[] | null;

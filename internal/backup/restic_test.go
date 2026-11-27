@@ -38,7 +38,7 @@ func TestBackupScript(t *testing.T) {
 			}
 		}
 	}
-	if _, err := BackupScript("mongodb"); err == nil {
+	if _, err := BackupScript("nope"); err == nil {
 		t.Error("unknown kind: no error")
 	}
 }

@@ -86,7 +86,7 @@ Previews, Data in previews):
 | `snapshot` | The base service's newest volume snapshot on the same server (`dock volume snapshot -s db`), as it is; any service with a volume. It keeps the base's credentials, which the data files need |
 
 `copy` and `masked` are for template databases (Postgres, MySQL,
-MariaDB, Redis, Valkey). The base keeps running and is only read:
+MariaDB, Redis, Valkey, MongoDB). The base keeps running and is only read:
 Postgres and MySQL are dumped from a consistent snapshot, without locks.
 A preview with data to copy deploys its databases first, and the pull
 request's code builds and starts only once they are filled.
@@ -94,7 +94,8 @@ request's code builds and starts only once they are filled.
 - **Mark first.** A masked copy masks what is marked sensitive in the
   base's Data panel, nothing else: a value repeated in an unmarked column
   is copied as it is. A Redis with sensitive key patterns starts empty
-  in masked mode, for now.
+  in masked mode, for now; MongoDB has nothing to mark yet, so its
+  masked copy is a plain copy.
 - **Unmasked is real data.** `copy` and `snapshot` hand the pull
   request's code the real data, and need the sensitive columns visible to
   you to choose.

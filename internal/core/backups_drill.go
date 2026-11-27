@@ -300,6 +300,11 @@ func (c *Core) drillResult(ctx context.Context, from, to svcScope, restoreErr er
 // release goes live (afterActive); a copy that has none yet is set up
 // here, once.
 func (c *Core) drillQuery(ctx context.Context, from, to svcScope) (string, error) {
+	if t, _ := templateOf(to.svc); t.database == "" {
+		// No Data panel for its engine yet (MongoDB, ADR 0110): the
+		// restore loaded the snapshot without an error and the copy runs.
+		return "restored and running", nil
+	}
 	sys := System.InOrg(to.project.OrgID)
 	ref := ServiceRef{to.project.Name, to.env.Name, to.svc.Name}
 	s, err := c.DataSchema(ctx, sys, ref, "")

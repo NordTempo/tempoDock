@@ -80,7 +80,7 @@ type AppTemplateService struct {
 	Name     string   `json:"name"`
 	Main     bool     `json:"main,omitempty"`
 	Image    string   `json:"image,omitempty"`
-	Template Template `json:"template,omitempty" enum:"postgres,redis,mysql,mariadb,valkey,pgvector"`
+	Template Template `json:"template,omitempty" enum:"postgres,redis,mysql,mariadb,valkey,pgvector,mongodb"`
 	Port     int      `json:"port,omitempty"`
 	MemoryMB int      `json:"memory_mb"`
 	// Generated are the variables Dock generates for it (secrets).

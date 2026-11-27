@@ -44,7 +44,33 @@ const (
 	PostgresFile = "/postgres.dump"
 	RedisFile    = "/redis.rdb"
 	MySQLFile    = "/mysql.sql"
+	MongoFile    = "/mongodb.archive"
 )
+
+// MongoPassword is the job environment's key for a MongoDB user's
+// password. The tools read it from a config file the script writes
+// (mongoAuth), never from their arguments, where any process on the
+// server could read it.
+const MongoPassword = "DOCK_MONGO_PASSWORD"
+
+// mongoAuth writes the password of DOCK_DB_USER to a config file the
+// MongoDB tools read (--config), as YAML in single quotes, and sets $AT to
+// how they reach the server: as that user, of the admin database, where
+// the image's entrypoint creates its root user. dbcopy has the same.
+const mongoAuth = `umask 077
+printf "password: '%s'\n" "$(printf '%s' "$` + MongoPassword + `" | sed "s/'/''/g")" > /tmp/dock-mongo.yaml
+AT="--host=$DOCK_DB_HOST --port=$DOCK_DB_PORT --authenticationDatabase=admin --config=/tmp/dock-mongo.yaml"
+`
+
+// mongoReady waits for a new MongoDB to answer on its network. Until it
+// does, the image's entrypoint is still creating the root user, on a
+// server that listens on its loopback alone; ping needs no login.
+const mongoReady = `i=0
+until mongosh --quiet --host "$DOCK_DB_HOST" --port "$DOCK_DB_PORT" --eval 'db.runCommand({ping: 1}).ok' >/dev/null 2>&1; do
+  i=$((i + 1)); [ "$i" -lt 120 ] || { echo "dock: the new database didn't accept connections in 2 minutes" >&2; exit 1; }
+  sleep 1
+done
+`
 
 // A Postgres snapshot's one file holds the server's roles ahead of the
 // dump, since restic stores one stream per snapshot and a dump that names
@@ -255,11 +281,11 @@ type Source struct {
 	// ServiceID tags the snapshots.
 	ServiceID int64
 	// Host and Port reach the database on the environment network
-	// (postgres, redis).
+	// (postgres, redis, mysql, mongodb).
 	Host string
 	Port int
 	// User, Password and Database are the owner's credentials (postgres;
-	// redis uses Password only).
+	// mongodb uses User and Password, redis and mysql Password only).
 	User, Password, Database string
 }
 
@@ -387,6 +413,14 @@ rm -f /tmp/dock.rdb
 [ -n "$DBS" ] || { echo "dock: the server has no databases to back up" >&2; exit 1; }
 ` + mysqlNames + `$R backup ` + backupFlags + ` --stdin-filename ` + strings.TrimPrefix(MySQLFile, "/") + ` --stdin-from-command -- $DUMP $AT --single-transaction --routines --triggers --events --databases "$@"
 `
+	case apitypes.BackupMongoDB:
+		// Every database, as one archive stream. A standalone server has
+		// no oplog, so the dump isn't one moment in time: writes while it
+		// runs can leave it inconsistent, within a collection too (ADR
+		// 0110).
+		run = mongoAuth + `$R backup ` + backupFlags + ` --stdin-filename ` + strings.TrimPrefix(MongoFile, "/") + ` --stdin-from-command -- mongodump $AT --username="$DOCK_DB_USER" --archive --quiet
+rm -f /tmp/dock-mongo.yaml
+`
 	case apitypes.BackupVolume:
 		run = `cd ` + VolumesPath + `
 $R backup ` + backupFlags + ` .
@@ -445,7 +479,7 @@ func BackupEnv(src Source, repo Repo, ret Retention, manual bool) map[string]str
 
 // dbEnv is how a job reaches the database: libpq's PG* variables for
 // pg_dump and pg_restore, REDISCLI_AUTH for redis-cli, MYSQL_PWD for the
-// MySQL and MariaDB tools.
+// MySQL and MariaDB tools, MongoPassword for the MongoDB tools.
 func dbEnv(src Source) map[string]string {
 	switch src.Kind {
 	case apitypes.BackupPostgres:
@@ -457,13 +491,17 @@ func dbEnv(src Source) map[string]string {
 		return map[string]string{"DOCK_DB_HOST": src.Host, "DOCK_DB_PORT": strconv.Itoa(src.Port), "REDISCLI_AUTH": src.Password}
 	case apitypes.BackupMySQL:
 		return map[string]string{"DOCK_DB_HOST": src.Host, "DOCK_DB_PORT": strconv.Itoa(src.Port), "MYSQL_PWD": src.Password}
+	case apitypes.BackupMongoDB:
+		return map[string]string{"DOCK_DB_HOST": src.Host, "DOCK_DB_PORT": strconv.Itoa(src.Port), "DOCK_DB_USER": src.User, MongoPassword: src.Password}
 	}
 	return nil
 }
 
 // RestoreScript is the job script that restores a snapshot (DOCK_SNAPSHOT)
 // into a new service: pg_restore into the running new Postgres, the dump
-// into the running new MySQL or MariaDB, or the
+// into the running new MySQL or MariaDB, mongorestore into the running new
+// MongoDB (every database but admin and config, whose users and settings
+// are the new server's own), or the
 // RDB as the AOF base of the new Redis's volume, mounted at dataDir, before
 // it first starts (Redis with appendonly ignores a plain dump.rdb then).
 func RestoreScript(kind apitypes.BackupKind, dataDir string) (string, error) {
@@ -473,6 +511,9 @@ func RestoreScript(kind apitypes.BackupKind, dataDir string) (string, error) {
 		return prelude + dump + PostgresFile + ` | ` + pgUnpack, nil
 	case apitypes.BackupMySQL:
 		return prelude + mysqlTools + dump + MySQLFile + ` | $CLIENT $AT
+`, nil
+	case apitypes.BackupMongoDB:
+		return prelude + mongoReady + mongoAuth + dump + MongoFile + ` | mongorestore $AT --username="$DOCK_DB_USER" --archive --nsExclude='admin.*' --nsExclude='config.*' --stopOnError
 `, nil
 	case apitypes.BackupRedis:
 		dir := dataDir + "/appendonlydir"
@@ -509,7 +550,7 @@ echo "dock: restored $names"
 `
 
 // RestoreEnv is the job environment for restoring snapshot from repo into
-// target (the new service; postgres only, redis writes its volume).
+// target (the new service; redis writes its volume instead).
 func RestoreEnv(snapshot string, target Source, repo Repo) map[string]string {
 	env := repo.Env()
 	env["DOCK_SNAPSHOT"] = snapshot

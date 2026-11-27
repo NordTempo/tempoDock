@@ -287,14 +287,9 @@ func (c *Core) recoverService(ctx context.Context, a Actor, ss svcScope, org str
 	}
 	// A database that loads a dump does it now, running and alone.
 	if isTemplate && t.backup != apitypes.BackupRedis {
-		if t.backup == apitypes.BackupMySQL {
-			err = r.mysqlRestore(ctx)
-		} else {
-			err = r.pgRestore(ctx)
-		}
-		if err != nil {
+		if err = r.load(ctx); err != nil {
 			c.finishRecoveryRestore(ctx, r, err)
-			return fail("it runs, but loading backup %s failed: %v. It is empty; `dock backup restore` loads a backup into a new service", short(planned.Snapshot), err)
+			return fail("it runs, but loading backup %s failed: %v. The load stopped there, so it may hold part of the backup; `dock backup restore` loads a backup into a new service", short(planned.Snapshot), err)
 		}
 	}
 	c.finishRecoveryRestore(ctx, r, nil)
