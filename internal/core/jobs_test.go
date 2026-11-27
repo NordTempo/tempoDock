@@ -178,6 +178,7 @@ func TestJobOverlap(t *testing.T) {
 		for _, bad := range []apitypes.SetJobRequest{
 			{Schedule: "@daily", Command: "x", Concurrency: apitypes.MaxJobConcurrency + 1},
 			{Schedule: "@daily", Command: "x", Concurrency: 2, Overlap: apitypes.OverlapSkip},
+			{Schedule: "@daily", Command: "x", Concurrency: 2, Overlap: "queue"},
 		} {
 			if _, err := h.c.SetJob(h.ctx, testSystem, web, "bad", bad); CodeOf(err) != apitypes.CodeValidation {
 				t.Errorf("%+v: %v", bad, err)

@@ -1,5 +1,6 @@
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { api, body } from "../../api/client";
+import { refetchedOnSettle } from "../../data/action";
 import type { Release, ServiceRef } from "../../data/types";
 import { type DeployQueue, withRelease } from "./queue";
 
@@ -34,7 +35,11 @@ export const queueQuery = (console: boolean) =>
  * the queues read again, only while a page shows them.
  */
 export function applyQueueEvent(queryClient: QueryClient) {
-  queryClient.invalidateQueries({ queryKey: queueKeys.all });
+  // A cancel from the panel refetches its own queue once it ends.
+  queryClient.invalidateQueries({
+    queryKey: queueKeys.all,
+    predicate: (q) => !refetchedOnSettle(q.queryKey),
+  });
 }
 
 /**

@@ -84,7 +84,7 @@ export default function QueuePanel({ console }: { console: boolean }) {
             {deploying.length > 0 && (
               <section aria-label="Past a builder">
                 <h3 className="mt-4 mb-1 font-semibold">Deploying</h3>
-                {deploying.map((it) => (
+                {deploying.slice(0, SHOWN).map((it) => (
                   <Row
                     key={key(it)}
                     item={it}
@@ -93,6 +93,7 @@ export default function QueuePanel({ console }: { console: boolean }) {
                     now={now}
                   />
                 ))}
+                <More count={deploying.length - SHOWN} />
               </section>
             )}
           </>
@@ -122,7 +123,7 @@ function Builder({
   const line = b.waiting ?? [];
   // Others' releases in a row are one line: "2 releases of others".
   const groups: (QueueItem | number)[] = [];
-  for (const it of line) {
+  for (const it of line.slice(0, SHOWN)) {
     const last = groups.at(-1);
     if (!it.hidden) groups.push(it);
     else if (typeof last === "number") groups[groups.length - 1] = last + 1;
@@ -147,6 +148,7 @@ function Builder({
           </p>
         ) : (
           <Row
+            key={key(b.building)}
             item={b.building}
             mark={<Dot />}
             console={console}
@@ -185,7 +187,22 @@ function Builder({
           />
         );
       })}
+      <More count={line.length - SHOWN} />
     </section>
+  );
+}
+
+/** Rows a list shows; the rest are a count (`dock queue` lists them all). */
+const SHOWN = 50;
+
+/** The count of a list's rows past SHOWN; nothing when none are. */
+function More({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <p className="py-2 text-mut">
+      {plural(count, "more release")}, listed by{" "}
+      <code className="font-mono">dock queue</code>
+    </p>
   );
 }
 

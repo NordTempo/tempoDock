@@ -1024,7 +1024,10 @@ export function useLiveUpdates() {
         void (
           reconnected || attempt > 0
             ? recover()
-            : reconcileProjectNames(queryClient, router, org)
+            : reconcileProjectNames(queryClient, router, org).then(() =>
+                // The top bar's queue was read before the stream listened.
+                applyQueueEvent(queryClient),
+              )
         ).catch(() => router.invalidate());
       },
       onDrop: () => setLiveStatus("dropped"),

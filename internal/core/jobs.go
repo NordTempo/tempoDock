@@ -212,6 +212,9 @@ func checkJob(name string, req *apitypes.SetJobRequest) error {
 	if _, _, err := parseJobSchedule(req.Schedule, req.Timezone); err != nil {
 		return invalid("schedule %q in %s: %v", req.Schedule, req.Timezone, err)
 	}
+	if req.Overlap != "" && req.Overlap != apitypes.OverlapSkip && req.Overlap != apitypes.OverlapAllow {
+		return invalid("overlap must be skip or allow")
+	}
 	switch n := req.Concurrency; {
 	case n < 0 || n > apitypes.MaxJobConcurrency:
 		return invalid("concurrency is 1 to %d runs at once, got %d", apitypes.MaxJobConcurrency, n)
@@ -219,12 +222,12 @@ func checkJob(name string, req *apitypes.SetJobRequest) error {
 		return invalid("concurrency %d runs side by side, which overlap skip refuses; leave overlap out or set it to allow", n)
 	case n > 1:
 		req.Overlap = apitypes.OverlapAllow
+	case n == 1:
+		// One at a time is what skip means, whatever overlap said.
+		req.Overlap = apitypes.OverlapSkip
 	}
 	if req.Overlap == "" {
 		req.Overlap = apitypes.OverlapSkip
-	}
-	if req.Overlap != apitypes.OverlapSkip && req.Overlap != apitypes.OverlapAllow {
-		return invalid("overlap must be skip or allow")
 	}
 	if req.Concurrency == 0 {
 		req.Concurrency = defaultConcurrency(req.Overlap)

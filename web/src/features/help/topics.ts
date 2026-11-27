@@ -391,7 +391,7 @@ export const topics: Record<TopicId, Topic> = {
     watch: [
       "A run uses the live release's image and variables.",
       "Schedules are read in UTC unless the job sets --timezone.",
-      "A job still running when it comes due again is skipped, unless --concurrency lets more run at once.",
+      "A job still running when it comes due again is skipped; --overlap allow runs up to 4 at once, --concurrency sets how many.",
     ],
     related: ["deploying", "logs", "data"],
     guide: "deploying#scheduled-jobs",

@@ -53,7 +53,7 @@ export function CancelDeploy({
   const r = `r${number}`;
   const cli =
     releaseId === undefined
-      ? `dock release cancel ${number} -s ${ref.service} -e ${ref.environment}`
+      ? `dock release cancel ${number} -p ${ref.project} -s ${ref.service} -e ${ref.environment}`
       : undefined;
   const error = <ErrorText error={cancel.error} />;
 

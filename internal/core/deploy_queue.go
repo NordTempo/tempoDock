@@ -191,7 +191,26 @@ func (c *Core) OperatorCancelRelease(ctx context.Context, a Actor, releaseID int
 	if err != nil {
 		return apitypes.Release{}, err
 	}
-	return c.cancelRelease(ctx, a, ss, rel, func(summary string) {
+	got, err := c.cancelRelease(ctx, a, ss, rel, func(summary string) {
 		c.auditBoth(ctx, a, o, "release.cancel", fmt.Sprintf("%s: %s", ss, summary))
 	})
+	if err != nil {
+		return apitypes.Release{}, err
+	}
+	// The release as the console's queue shows it: its place and outcome,
+	// not its config's variable names or its commit's words (ADR 0062).
+	return apitypes.Release{
+		ID: got.ID, Number: got.Number, Project: got.Project, Environment: got.Environment, Service: got.Service,
+		Status: got.Status, Source: got.Source, FromRelease: got.FromRelease, Error: got.Error, ErrorCode: got.ErrorCode,
+		CreatedBy: got.CreatedBy, CreatedAt: got.CreatedAt, FinishedAt: got.FinishedAt,
+		Commit: queueCommit(commitSHA(got.Commit), "", "", true),
+	}, nil
+}
+
+// commitSHA is a commit's SHA, "" without one.
+func commitSHA(c *apitypes.Commit) string {
+	if c == nil {
+		return ""
+	}
+	return c.SHA
 }
