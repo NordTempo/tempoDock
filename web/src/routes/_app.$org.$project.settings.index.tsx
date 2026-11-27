@@ -84,6 +84,9 @@ function Settings() {
     );
   }
   const env = { project, environment: view.environment.name };
+  // Rows with state of their own (an open dialog, a draft) remount when
+  // the environment or the project changes: the page itself stays mounted.
+  const envKey = `${project}/${env.environment}`;
   // Staging needs deploy here: a read session, another project's token
   // or another environment's sees the row without its actions.
   const canChange =
@@ -101,19 +104,19 @@ function Settings() {
       </h2>
       <div>
         <SettingRow id="variables" label="Shared variables">
-          <VariablesEditor key={env.environment} env={env} service={null} />
+          <VariablesEditor key={envKey} env={env} service={null} />
         </SettingRow>
         <SettingRow id="server" label="Server">
           <EnvironmentServer environment={view.environment} />
         </SettingRow>
         {!view.environment.preview && (
           <SettingRow id="compose" label="Compose">
-            <ComposeRow key={env.environment} env={env} canChange={canChange} />
+            <ComposeRow key={envKey} env={env} canChange={canChange} />
           </SettingRow>
         )}
         <SettingRow id="log-drains" label="Log drains">
           <Suspense fallback={null}>
-            <LogDrains key={env.environment} env={env} />
+            <LogDrains key={envKey} env={env} />
           </Suspense>
         </SettingRow>
         {!view.environment.preview && (
