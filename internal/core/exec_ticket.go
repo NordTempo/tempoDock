@@ -69,23 +69,25 @@ func (c *Core) ExecTicket(ctx context.Context, a Actor, ref ServiceRef) (apitype
 }
 
 // RedeemExecTicket returns the actor a ticket was made for, once, if it
-// is for ref's service and hasn't expired. The session is then opened
-// with OpenExec as that actor, which checks everything again.
-func (c *Core) RedeemExecTicket(ctx context.Context, ticket string, ref ServiceRef) (Actor, error) {
+// is for ref's service and hasn't expired, and the ID of the release it
+// named. The session is then opened with OpenExec as that actor, which
+// checks everything again; a session in another release (a deploy in
+// between) is refused by the caller (Exec.Release).
+func (c *Core) RedeemExecTicket(ctx context.Context, ticket string, ref ServiceRef) (Actor, int64, error) {
 	t := &c.execTickets
 	t.mu.Lock()
 	found, ok := t.m[ticket]
 	delete(t.m, ticket)
 	t.mu.Unlock()
 	if !ok || !now().Before(found.expires) {
-		return Actor{}, errf(apitypes.CodeUnauthorized, "the shell's ticket is unknown, used or expired; open the shell again")
+		return Actor{}, 0, errf(apitypes.CodeUnauthorized, "the shell's ticket is unknown, used or expired; open the shell again")
 	}
 	ss, err := c.loadService(ctx, found.actor.OrgID, ref)
 	if err != nil || ss.svc.ID != found.service {
-		return Actor{}, errf(apitypes.CodeUnauthorized, "the shell's ticket is for another service; open the shell again")
+		return Actor{}, 0, errf(apitypes.CodeUnauthorized, "the shell's ticket is for another service; open the shell again")
 	}
 	if rel, err := c.store.GetActiveRelease(ctx, ss.svc.ID); err != nil || rel.ID != found.release {
-		return Actor{}, conflict("a deploy replaced %s's container since the shell was asked for; open it again", ss.svc.Name)
+		return Actor{}, 0, conflict("a deploy replaced %s's container since the shell was asked for; open it again", ss.svc.Name)
 	}
-	return found.actor, nil
+	return found.actor, found.release, nil
 }

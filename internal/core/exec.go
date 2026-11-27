@@ -130,6 +130,9 @@ func execLine(cmd []string) string {
 // shortID is a container ID as Docker shows it, 12 characters.
 func shortID(id string) string { return id[:min(len(id), 12)] }
 
+// Release is the ID of the release whose container the session opens in.
+func (e *Exec) Release() int64 { return e.rel.ID }
+
 // Abandon gives up a session that never ran. It does nothing once Wait
 // was called.
 func (e *Exec) Abandon() { e.once.Do(e.release) }
@@ -185,9 +188,12 @@ func (e *Exec) wait(ctx context.Context, stream *node.JobStream) apitypes.ExecEn
 		cur, err = c.actorNow(ctx, e.actor)
 	}
 	// A shell opened from a browser session (an exec ticket) needs that
-	// session still signed in: a password reset or a sign-out ends it.
+	// session still signed in (a password reset or a sign-out deletes it)
+	// and ends when it expires.
+	var sessionEnds time.Time
 	if err == nil && e.actor.SessionID != 0 {
-		if n, serr := c.store.SessionLive(ctx, store.SessionLiveParams{ID: e.actor.SessionID, Now: now()}); serr != nil || n == 0 {
+		var serr error
+		if sessionEnds, serr = c.store.SessionExpiry(ctx, store.SessionExpiryParams{ID: e.actor.SessionID, Now: now()}); serr != nil {
 			err = errors.New("the session ended")
 		}
 	}
@@ -224,6 +230,9 @@ func (e *Exec) wait(ctx context.Context, stream *node.JobStream) apitypes.ExecEn
 			deadline, expires = *row.Token.ExpiresAt, true
 		}
 	}
+	if !sessionEnds.IsZero() && sessionEnds.Before(deadline) {
+		deadline, expires = sessionEnds, true
+	}
 	sctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	stop := context.AfterFunc(c.ctx, cancel)
@@ -255,7 +264,7 @@ func (e *Exec) wait(ctx context.Context, stream *node.JobStream) apitypes.ExecEn
 	case ctx.Err() != nil:
 		err = errors.New("the session's caller went away, so it was closed")
 	case errors.Is(sctx.Err(), context.DeadlineExceeded) && expires:
-		err = errf(apitypes.CodeForbidden, "your token expired while the session was open, so it was closed")
+		err = errf(apitypes.CodeForbidden, "your token or sign-in expired while the session was open, so it was closed")
 	case errors.Is(sctx.Err(), context.DeadlineExceeded):
 		err = fmt.Errorf("the session was open for %s, the longest one may be, and was closed", maxExecSeconds*time.Second)
 	case errors.Is(err, node.ErrNotRunning):

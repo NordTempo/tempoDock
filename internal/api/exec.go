@@ -95,7 +95,7 @@ func (s *Server) execSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ref := ServicePath{EnvPath: EnvPath{ProjectPath: ProjectPath{Project: r.PathValue("project")}, Environment: r.PathValue("environment")}, Service: r.PathValue("service")}
-	actor, err := s.core.RedeemExecTicket(r.Context(), ticket, ref.ref())
+	actor, release, err := s.core.RedeemExecTicket(r.Context(), ticket, ref.ref())
 	if err != nil {
 		s.writeProblem(w, s.problem(err))
 		return
@@ -103,6 +103,14 @@ func (s *Server) execSocket(w http.ResponseWriter, r *http.Request) {
 	ex, err := s.core.OpenExec(r.Context(), actor, ref.ref(), nil, true)
 	if err != nil {
 		s.writeProblem(w, s.problem(err))
+		return
+	}
+	// A deploy between the ticket and now: the console showed another
+	// release than the shell would open in.
+	if ex.Release() != release {
+		ex.Abandon()
+		s.writeProblem(w, &apitypes.Error{Status: http.StatusConflict, Title: http.StatusText(http.StatusConflict), Code: apitypes.CodeConflict,
+			Detail: "a deploy replaced the service's container since the shell was asked for; open it again"})
 		return
 	}
 	// The server's header timeout set a deadline; a session has its own.

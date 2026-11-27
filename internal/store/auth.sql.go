@@ -883,22 +883,23 @@ func (q *Queries) RevokeUserTokens(ctx context.Context, arg RevokeUserTokensPara
 	return items, nil
 }
 
-const sessionLive = `-- name: SessionLive :one
-SELECT count(*) FROM sessions WHERE id = +?1 AND NOT pending AND expires_at > +?2
+const sessionExpiry = `-- name: SessionExpiry :one
+SELECT expires_at FROM sessions WHERE id = +?1 AND NOT pending AND expires_at > +?2
 `
 
-type SessionLiveParams struct {
+type SessionExpiryParams struct {
 	ID  int64
 	Now time.Time
 }
 
-// SessionLive is 1 while the session (by ID) exists, is signed in and
-// hasn't expired: what a shell opened from it checks before it starts.
-func (q *Queries) SessionLive(ctx context.Context, arg SessionLiveParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, sessionLive, arg.ID, arg.Now)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
+// SessionExpiry is when a session (by ID) that exists, is signed in and
+// hasn't expired ends; no row once it has. A shell opened from it checks
+// this before it starts and ends by then.
+func (q *Queries) SessionExpiry(ctx context.Context, arg SessionExpiryParams) (time.Time, error) {
+	row := q.db.QueryRowContext(ctx, sessionExpiry, arg.ID, arg.Now)
+	var expires_at time.Time
+	err := row.Scan(&expires_at)
+	return expires_at, err
 }
 
 const setTokenOperator = `-- name: SetTokenOperator :exec

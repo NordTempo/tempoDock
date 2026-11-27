@@ -361,7 +361,7 @@ func TestExecEndsWhenItsTokenExpires(t *testing.T) {
 		// start within the 2 s refuses the expired token there instead.
 		// Either way the session doesn't outlive its token.
 		if end.ExitCode != nil || end.Code != apitypes.CodeForbidden ||
-			!strings.Contains(end.Error, "token expired") && !strings.Contains(end.Error, "before the session started") {
+			!strings.Contains(end.Error, "expired while the session was open") && !strings.Contains(end.Error, "before the session started") {
 			t.Fatalf("ended %+v", end)
 		}
 	case <-time.After(15 * time.Second):
@@ -387,21 +387,21 @@ func TestExecTicket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.c.RedeemExecTicket(h.ctx, tk.Ticket, api); CodeOf(err) != apitypes.CodeUnauthorized {
+	if _, _, err := h.c.RedeemExecTicket(h.ctx, tk.Ticket, api); CodeOf(err) != apitypes.CodeUnauthorized {
 		t.Fatalf("another service: %v", err)
 	}
 	tk, _ = h.c.ExecTicket(h.ctx, testSystem, web)
-	if a, err := h.c.RedeemExecTicket(h.ctx, tk.Ticket, web); err != nil || a.Name != testSystem.Name {
+	if a, _, err := h.c.RedeemExecTicket(h.ctx, tk.Ticket, web); err != nil || a.Name != testSystem.Name {
 		t.Fatalf("redeemed as %+v, %v", a, err)
 	}
-	if _, err := h.c.RedeemExecTicket(h.ctx, tk.Ticket, web); CodeOf(err) != apitypes.CodeUnauthorized {
+	if _, _, err := h.c.RedeemExecTicket(h.ctx, tk.Ticket, web); CodeOf(err) != apitypes.CodeUnauthorized {
 		t.Fatalf("a used ticket: %v", err)
 	}
 	// A deploy since the ticket makes it stale: the console showed the
 	// release it named.
 	tk, _ = h.c.ExecTicket(h.ctx, testSystem, web)
 	h.deploy(web, "app:2")
-	if _, err := h.c.RedeemExecTicket(h.ctx, tk.Ticket, web); CodeOf(err) != apitypes.CodeConflict {
+	if _, _, err := h.c.RedeemExecTicket(h.ctx, tk.Ticket, web); CodeOf(err) != apitypes.CodeConflict {
 		t.Fatalf("a ticket from before a deploy: %v", err)
 	}
 }
