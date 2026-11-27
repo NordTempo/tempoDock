@@ -108,6 +108,9 @@ func TestComposeFollow(t *testing.T) {
 	if s := got.Source.Last; s.Outcome != apitypes.ComposeStaged || !strings.Contains(s.Summary, "−1 service") || !strings.Contains(s.Summary, "not applied: it removes something") {
 		t.Fatalf("sync with prune: %+v", s)
 	}
+	// worker's own releases settle first: an archive waits for a deploy.
+	wrels := h.waitReleases(worker, 1)
+	h.wait(worker, wrels[0].Number)
 	if _, err := h.c.ApplyChanges(h.ctx, testSystem, env); err != nil {
 		t.Fatal(err)
 	}
