@@ -24,7 +24,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// Uploaded certificates (ADR 0110). An org uploads a chain and key for
+// Uploaded certificates (ADR 0112). An org uploads a chain and key for
 // names ACME can't cover: a Cloudflare origin certificate (Full strict),
 // an internal or corporate CA's for LAN or Tailscale names, a CA the org
 // must use. A certificate serves every verified domain of its org that

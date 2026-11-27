@@ -422,7 +422,7 @@ function detail(d: Domain) {
 }
 
 /**
- * The uploaded certificate a domain is served with (ADR 0110): until
+ * The uploaded certificate a domain is served with (ADR 0112): until
  * when, in the warning colour within 30 days, and a link to Settings ›
  * Certificates, where it is replaced.
  */

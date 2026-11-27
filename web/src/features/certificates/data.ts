@@ -3,7 +3,7 @@ import { api, body, done, list } from "../../api/client";
 import type { components } from "../../api/schema";
 import { useAction } from "../../data/mutations";
 
-// The organization's uploaded TLS certificates (ADR 0110): Settings ›
+// The organization's uploaded TLS certificates (ADR 0112): Settings ›
 // Certificates. Domains show the one they are served with on their own
 // rows (Domain.certificate), from the project overview.
 

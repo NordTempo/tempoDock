@@ -1,4 +1,4 @@
--- Certificates an org uploads for its domains (ADR 0110), for names ACME
+-- Certificates an org uploads for its domains (ADR 0112), for names ACME
 -- can't cover: Cloudflare origin certificates, an internal or corporate
 -- CA. One serves every verified domain of its org that its names cover;
 -- they don't renew, so Dock alerts before they expire.

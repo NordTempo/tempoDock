@@ -73,7 +73,7 @@ export const settingsGroups: { label: string; sections: Section[] }[] = [
       { to: "/$org/settings/cloudflare", label: "Cloudflare", admin: true },
       { to: "/$org/settings/registries", label: "Registries", admin: true },
       // Domains edit on the whole org manages them, not only admins; the
-      // page says so to anyone else (ADR 0110).
+      // page says so to anyone else (ADR 0112).
       {
         to: "/$org/settings/certificates",
         label: "Certificates",
@@ -152,7 +152,7 @@ export function OrgSettingsColumn() {
     "/$org/settings/archived": archived?.length || undefined,
     "/$org/settings/tokens": tokens?.filter((t) => !t.revoked_at).length,
     "/$org/settings/cloudflare": failing("cloudflare") ? "!" : undefined,
-    // An uploaded certificate close to its end or past it (ADR 0110).
+    // An uploaded certificate close to its end or past it (ADR 0112).
     "/$org/settings/certificates": alerts.some(
       (a) => a.kind === "certificate_failed",
     )

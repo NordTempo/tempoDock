@@ -126,7 +126,7 @@ var permTable = [permCount]permInfo{
 	PermDomainsRead:         {"domains.read", PermEnv, false, true},
 	PermDomainsWrite:        {"domains.write", PermEnv, false, false},
 	// An uploaded certificate serves every project's domains it covers
-	// (ADR 0110), so managing them takes the whole org.
+	// (ADR 0112), so managing them takes the whole org.
 	PermCertificatesManage: {"certificates.manage", PermOrg, false, false},
 	PermAnalyticsRead:      {"analytics.read", PermEnv, false, true},
 	// Replays show what visitors saw and did: the pages' text unless the

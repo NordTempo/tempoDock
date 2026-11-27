@@ -158,7 +158,7 @@ var errNoCertYet = errors.New("no certificate yet")
 
 // checkCertificate handshakes with the local Caddy as hostname. The
 // certificate must chain to a trusted root, unless it is the uploaded one
-// loaded for hostname (ADR 0110): that one may come from a CA only
+// loaded for hostname (ADR 0112): that one may come from a CA only
 // Cloudflare or the org's own machines trust, so it only has to be the
 // one served, and current.
 func (p *Proxy) checkCertificate(ctx context.Context, hostname string) error {

@@ -1361,7 +1361,7 @@ func TestRoutesCarryCertificates(t *testing.T) {
 		t.Fatalf("older node: %v, has certificates %v and routes %v", err, h.rt.Certificates(), h.rt.Routes())
 	}
 
-	// An org's own certificate (ADR 0110) goes only to a node whose domain
+	// An org's own certificate (ADR 0112) goes only to a node whose domain
 	// checks accept it.
 	own := node.Certificate{Names: []string{"shop.example.com"}, ChainPEM: []byte("OWN"), KeyPEM: []byte("OWNKEY"), Uploaded: true}
 	both := append(slices.Clone(certs), own)

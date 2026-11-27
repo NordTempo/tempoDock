@@ -90,7 +90,7 @@ const (
 	// AlertCertificate: the wildcard certificate of a base domain can't be
 	// issued or renewed (ADR 0090), and the next success resolves it; or
 	// a certificate an org uploaded expires within 30 days or has expired
-	// (ADR 0110), until it is replaced or removed.
+	// (ADR 0112), until it is replaced or removed.
 	AlertCertificate AlertKind = "certificate_failed"
 	// AlertHostSecurity: a server's host check found something to fix
 	// (ADR 0109): one alert per server for its open warning and critical

@@ -21,7 +21,7 @@ type hostSet map[string]struct{}
 type askSet struct {
 	hosts   hostSet
 	covered []string
-	// uploaded are the leaves of uploaded certificates (ADR 0110) by the
+	// uploaded are the leaves of uploaded certificates (ADR 0112) by the
 	// hostnames they are loaded for, which CheckDomain accepts as they
 	// are. Unknown before the first ApplyRoutes after a start.
 	uploaded map[string][]byte

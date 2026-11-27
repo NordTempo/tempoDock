@@ -216,7 +216,7 @@ type (
 		Names []string `json:"names"`
 		Chain string   `json:"chain"`
 		Key   string   `json:"key"`
-		// Uploaded marks an org's own certificate (protocol 39).
+		// Uploaded marks an org's own certificate (protocol 40).
 		Uploaded bool `json:"uploaded,omitempty"`
 	}
 	domainRequest struct {

@@ -202,7 +202,7 @@ func (c *Core) wildcardBases(ctx context.Context) (map[string][]store.Server, er
 
 // runWildcards is the certificate worker. It runs from Start until Close,
 // for the wildcards and the orgs' uploaded certificates (ownCertPass,
-// ADR 0110).
+// ADR 0112).
 //
 // Its timer (a doc comment is required for every timer, see
 // docs/performance.md) exists while a certificate is issued or uploaded,

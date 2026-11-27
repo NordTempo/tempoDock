@@ -1170,7 +1170,7 @@ type PushTarget struct {
 // Certificate is a certificate the proxy loads instead of issuing its own
 // for the names it covers: the wildcard of a server's base domain (ADR
 // 0090), which keeps generated hostnames out of certificate-transparency
-// logs, or one an org uploaded for its domains (ADR 0110). Caddy serves
+// logs, or one an org uploaded for its domains (ADR 0112). Caddy serves
 // it for every hostname matching Names, routed or not, and issues no
 // on-demand certificate for them. Certificates come in order: the first
 // whose names match a hostname is served.

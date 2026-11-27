@@ -483,8 +483,8 @@ const WildcardProtocol = 31
 
 // UploadedCertProtocol is the first node protocol whose domain checks
 // accept an uploaded certificate from a CA the server doesn't trust (ADR
-// 0110).
-const UploadedCertProtocol = 39
+// 0112).
+const UploadedCertProtocol = 40
 
 // ApplyRoutes implements node.Proxy. An older node gets no certificates:
 // it keeps issuing on demand, and a key never goes where it isn't used.

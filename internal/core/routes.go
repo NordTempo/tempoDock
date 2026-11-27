@@ -28,7 +28,7 @@ import (
 // server, domains Dock routes through its Cloudflare tunnel are served
 // to the tunnel only (ADR 0036). The server's base domain's wildcard
 // certificate goes with them (ADR 0090, wildcards.go), and the orgs'
-// uploaded certificates for the domains they cover (ADR 0110,
+// uploaded certificates for the domains they cover (ADR 0112,
 // certificates.go).
 func (c *Core) applyRoutes(ctx context.Context, serverID int64) error {
 	c.routesMu.Lock()

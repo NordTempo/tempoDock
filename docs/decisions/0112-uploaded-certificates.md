@@ -1,4 +1,4 @@
-# 0110: Uploaded certificates
+# 0112: Uploaded certificates
 
 Status: accepted (decided by the custom certificates thread, 2026-11-27;
 Saile prefers these decided and recorded). Amends
@@ -70,7 +70,7 @@ certificate.
 or a needed intermediate ends, so `not_after` is the earlier of the two,
 and serving, the list and the alerts all go by it.
 
-**Stored sealed.** `custom_certificates` (migration 0140): the names, the
+**Stored sealed.** `custom_certificates` (migration 0142): the names, the
 ordered chain, the key sealed with `c.box` and bound to the org and the
 leaf's SHA-256 ([0041](0041-sealed-values-bound-to-their-place.md)), issuer,
 validity, the last expiry alert, who uploaded it. Keys are never returned.
@@ -92,12 +92,12 @@ and not routed through a Cloudflare tunnel (as
 the IP until its record is ready). The domain itself shows what its
 server's last routes carried for it.
 
-**Node protocol 39: the domain check.** A node's domain check handshakes
+**Node protocol 40: the domain check.** A node's domain check handshakes
 with its Caddy and verifies against the system roots, which an origin or
 internal CA fails. Apply-routes' certificates gain `uploaded`; a node
 accepts the uploaded leaf it loaded for that hostname as it is (still
 checking it is current), and verifies anything else as before. A node
-older than 39 gets no uploads (its domains keep Let's Encrypt), since it
+older than 40 gets no uploads (its domains keep Let's Encrypt), since it
 would report them as failing. (Reserved as 39, and this ADR as 0111;
 protocol, migration and ADR numbers grow in merge order, so each took
 main's next.)

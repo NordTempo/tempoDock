@@ -446,7 +446,7 @@ func (c *Core) AllowCertificate(ctx context.Context, hostname string) (bool, err
 		return false, nil
 	}
 	if _, own := c.ownCertFor(ss.project.OrgID, host); own {
-		return false, nil // Caddy serves the org's uploaded certificate (ADR 0110)
+		return false, nil // Caddy serves the org's uploaded certificate (ADR 0112)
 	}
 	// Served to the Cloudflare tunnel only: Cloudflare's edge has its
 	// certificate (ADR 0036).

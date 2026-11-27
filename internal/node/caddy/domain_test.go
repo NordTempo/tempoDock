@@ -151,7 +151,7 @@ func TestCheckDomainProxied(t *testing.T) {
 
 // TestCheckDomainUploaded: a certificate from a CA the server doesn't
 // trust fails the check, unless it is the uploaded one loaded for the
-// hostname (ADR 0110). The httptest certificate stands in for it.
+// hostname (ADR 0112). The httptest certificate stands in for it.
 func TestCheckDomainUploaded(t *testing.T) {
 	srv := httptest.NewTLSServer(http.NotFoundHandler())
 	defer srv.Close()

@@ -166,7 +166,7 @@ func testCertificate(t *testing.T, caName, base string) (*x509.Certificate, node
 	return ca, c
 }
 
-// TestIntegrationUploaded loads an org's uploaded certificates (ADR 0110)
+// TestIntegrationUploaded loads an org's uploaded certificates (ADR 0112)
 // into a real Caddy, next to a wildcard: each is served for its exact
 // hostnames, ahead of the wildcard that also covers one of them, nothing
 // is issued on demand for them, and CheckDomain accepts them although

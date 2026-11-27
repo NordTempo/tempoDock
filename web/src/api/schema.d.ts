@@ -2691,13 +2691,13 @@ export interface paths {
         };
         /**
          * List uploaded certificates
-         * @description The TLS certificates the organization uploaded for its domains (ADR 0110), newest first, with the domains each serves now and its expiry. Keys are never returned. Scope: deploy, unlimited; certificates.manage (domains edit on the whole org).
+         * @description The TLS certificates the organization uploaded for its domains (ADR 0112), newest first, with the domains each serves now and its expiry. Keys are never returned. Scope: deploy, unlimited; certificates.manage (domains edit on the whole org).
          */
         get: operations["list-certificates"];
         put?: never;
         /**
          * Upload a certificate
-         * @description Uploads a chain and private key in PEM for names ACME can't cover: a Cloudflare origin certificate, an internal or corporate CA. It serves every verified domain of the organization one of its names covers, instead of a Let's Encrypt certificate, as soon as each domain's server loads its routes again (right after the upload when it is online): servers with TLS and node protocol 39 or later, not domains routed through a Cloudflare tunnel. Of several that cover a domain, the one that expires last. It doesn't renew: Dock alerts 30 and 7 days before it expires and then stops serving it. Checked: the key matches, the chain is the leaf's (put in order), it names DNS hostnames and is valid now. Scope: deploy, unlimited; certificates.manage (domains edit on the whole org).
+         * @description Uploads a chain and private key in PEM for names ACME can't cover: a Cloudflare origin certificate, an internal or corporate CA. It serves every verified domain of the organization one of its names covers, instead of a Let's Encrypt certificate, as soon as each domain's server loads its routes again (right after the upload when it is online): servers with TLS and node protocol 40 or later, not domains routed through a Cloudflare tunnel. Of several that cover a domain, the one that expires last. It doesn't renew: Dock alerts 30 and 7 days before it expires and then stops serving it. Checked: the key matches, the chain is the leaf's (put in order), it names DNS hostnames and is valid now. Scope: deploy, unlimited; certificates.manage (domains edit on the whole org).
          */
         post: operations["add-certificate"];
         delete?: never;

@@ -104,7 +104,7 @@ var actionPerms = map[actionKey]Perm{
 	{apitypes.ScopeRead, "checking a site's tracking"}:                          PermAnalyticsRead,
 	{apitypes.ScopeRead, "reading a site's public dashboard"}:                   PermAnalyticsRead,
 	{apitypes.ScopeDeploy, "adding a domain"}:                                   PermDomainsWrite,
-	// Uploaded certificates (ADR 0110) serve every project's domains, so
+	// Uploaded certificates (ADR 0112) serve every project's domains, so
 	// they take an org permission, held on the whole org.
 	{apitypes.ScopeDeploy, "uploading a certificate"}:                                    PermCertificatesManage,
 	{apitypes.ScopeDeploy, "removing a certificate"}:                                     PermCertificatesManage,

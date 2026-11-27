@@ -1011,7 +1011,7 @@ type Domain struct {
 	// service's domain list and domain changes.
 	DNS *DomainDNS `json:"dns,omitempty"`
 	// Certificate is set while the domain is served with a certificate
-	// its org uploaded (ADR 0110) instead of one Dock gets itself.
+	// its org uploaded (ADR 0112) instead of one Dock gets itself.
 	Certificate *DomainCertificate `json:"certificate,omitempty"`
 }
 

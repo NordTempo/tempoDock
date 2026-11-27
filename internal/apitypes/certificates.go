@@ -2,7 +2,7 @@ package apitypes
 
 import "time"
 
-// Certificate is a TLS certificate an org uploaded (ADR 0110), for names
+// Certificate is a TLS certificate an org uploaded (ADR 0112), for names
 // ACME can't cover: a Cloudflare origin certificate, an internal or
 // corporate CA. It serves every verified domain of the org its names
 // cover, instead of a certificate from Let's Encrypt, until it expires.

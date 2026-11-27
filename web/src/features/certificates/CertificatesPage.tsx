@@ -22,7 +22,7 @@ import {
 } from "./data";
 
 /**
- * Settings › Certificates (ADR 0110, mock B): the organization's own TLS
+ * Settings › Certificates (ADR 0112, mock B): the organization's own TLS
  * certificates for names Let's Encrypt can't cover. One table of them
  * with their expiry and the domains each serves, a line over it while one
  * that serves domains is close to its end, and Upload in the bar, which

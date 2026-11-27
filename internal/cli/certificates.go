@@ -15,7 +15,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/cli/output"
 )
 
-// Uploaded TLS certificates (ADR 0110): an org's own certificates for
+// Uploaded TLS certificates (ADR 0112): an org's own certificates for
 // names ACME can't cover, served for every domain of the org they cover.
 
 // certificatesPath is where the org's uploaded certificates are.

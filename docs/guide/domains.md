@@ -350,7 +350,7 @@ protocol 31 keeps a certificate per hostname until it is upgraded.
 ### Your own certificates
 
 For names Let's Encrypt can't cover, upload a certificate
-([ADR 0110](../decisions/0110-uploaded-certificates.md)): a Cloudflare
+([ADR 0112](../decisions/0112-uploaded-certificates.md)): a Cloudflare
 origin certificate (SSL mode Full (strict)), one from an internal or
 corporate CA for LAN or Tailscale names, or one your company requires.
 
@@ -381,7 +381,7 @@ dock certificate remove 3
   CA.
 - An organization keeps at most 100.
 - Managing them needs domains edit on the whole organization (not just a
-  project): `certificates.manage`. Servers older than protocol 39 keep Let's Encrypt for
+  project): `certificates.manage`. Servers older than protocol 40 keep Let's Encrypt for
   those domains until they are updated.
 
 ## Rules

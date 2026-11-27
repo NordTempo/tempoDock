@@ -41,7 +41,7 @@ var (
 	sealedTunnelToken     = secrets.Column{Table: "cloudflare_tunnels", Name: "token", Key: []string{"tunnel_id"}}                             // the tunnel's, wherever its row points
 	sealedWildcardKey     = secrets.Column{Table: "wildcard_certificates", Name: "key", Key: []string{"base_domain"}}                          // ADR 0090
 	sealedACMEKey         = secrets.Column{Table: "acme_accounts", Name: "key", Key: []string{"directory"}}
-	// sealedCertificateKey is an uploaded certificate's key (ADR 0110).
+	// sealedCertificateKey is an uploaded certificate's key (ADR 0112).
 	sealedCertificateKey = secrets.Column{Table: "custom_certificates", Name: "key", Key: []string{"org_id", "fingerprint"}}
 	sealedAnalyticsSalt  = secrets.Column{Table: "analytics_salts", Name: "salt", Key: []string{"day"}}
 	sealedBackupKeys     = secrets.Column{Table: "backup_settings", Name: "credentials"}
