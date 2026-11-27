@@ -29,6 +29,7 @@ export const servicePlaces = {
     label: "Metrics",
   },
   jobs: { to: "/$org/$project/$environment/$service/jobs", label: "Jobs" },
+  shell: { to: "/$org/$project/$environment/$service/shell", label: "Shell" },
   data: { to: "/$org/$project/$environment/$service/data", label: "Data" },
   variables: {
     to: "/$org/$project/$environment/$service/variables",

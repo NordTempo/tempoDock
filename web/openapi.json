@@ -8949,9 +8949,16 @@
       "ExecTicket": {
         "additionalProperties": false,
         "properties": {
+          "container": {
+            "type": "string"
+          },
           "expires_at": {
             "format": "date-time",
             "type": "string"
+          },
+          "release": {
+            "format": "int64",
+            "type": "integer"
           },
           "ticket": {
             "type": "string"
@@ -8959,7 +8966,9 @@
         },
         "required": [
           "ticket",
-          "expires_at"
+          "expires_at",
+          "container",
+          "release"
         ],
         "type": "object"
       },

@@ -33,6 +33,8 @@
     "@rrweb/replay": "2.2.0",
     "@tanstack/react-query": "5.104.5",
     "@tanstack/react-router": "1.170.45",
+    "@xterm/addon-fit": "0.10.0",
+    "@xterm/xterm": "5.5.0",
     "lodash": "4.18.1",
     "openapi-fetch": "0.17.0",
     "react": "19.3.1",

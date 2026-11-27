@@ -10,6 +10,7 @@ import {
   useSeesPlatform,
   useServersIfOperator,
   useSession,
+  whyNot,
 } from "../data/queries";
 import { type ConsolePage, consoleNav } from "../features/console/nav";
 import {
@@ -363,7 +364,10 @@ export function useCommands({
           weight,
           run: open,
         });
-        for (const tab of tabsFor(svc)) {
+        for (const tab of tabsFor(
+          svc,
+          whyNot(session, "admin", params) === undefined,
+        )) {
           if (tab.label === "Overview") continue;
           add({
             id: `go:${id}:${tab.label}`,

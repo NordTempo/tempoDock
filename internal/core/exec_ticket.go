@@ -41,7 +41,8 @@ func (c *Core) ExecTicket(ctx context.Context, a Actor, ref ServiceRef) (apitype
 	if err != nil {
 		return apitypes.ExecTicket{}, err
 	}
-	if _, err := c.execRelease(ctx, ss); err != nil {
+	rel, err := c.execRelease(ctx, ss)
+	if err != nil {
 		return apitypes.ExecTicket{}, err
 	}
 	t := &c.execTickets
@@ -59,7 +60,7 @@ func (c *Core) ExecTicket(ctx context.Context, a Actor, ref ServiceRef) (apitype
 	if t.m == nil {
 		t.m = map[string]execTicket{}
 	}
-	out := apitypes.ExecTicket{Ticket: rand.Text(), ExpiresAt: at.Add(apitypes.ExecTicketSeconds * time.Second)}
+	out := apitypes.ExecTicket{Ticket: rand.Text(), ExpiresAt: at.Add(apitypes.ExecTicketSeconds * time.Second), Container: shortID(rel.ContainerID), Release: rel.Number}
 	t.m[out.Ticket] = execTicket{actor: a, service: ss.svc.ID, expires: out.ExpiresAt}
 	return out, nil
 }

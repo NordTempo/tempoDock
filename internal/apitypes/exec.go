@@ -32,6 +32,10 @@ type ExecEnd struct {
 type ExecTicket struct {
 	Ticket    string    `json:"ticket"`
 	ExpiresAt time.Time `json:"expires_at"`
+	// Container is the short ID of the container the shell opens in,
+	// Release the release it runs.
+	Container string `json:"container"`
+	Release   int64  `json:"release"`
 }
 
 // ExecTicketSeconds is how long an ExecTicket is good for.

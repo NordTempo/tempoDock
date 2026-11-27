@@ -9900,8 +9900,11 @@ export interface components {
             usage?: components["schemas"]["UsageUpdate"];
         };
         ExecTicket: {
+            container: string;
             /** Format: date-time */
             expires_at: string;
+            /** Format: int64 */
+            release: number;
             ticket: string;
         };
         Factor: {

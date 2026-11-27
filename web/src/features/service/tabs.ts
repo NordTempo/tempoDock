@@ -58,6 +58,14 @@ export const serviceTabs = [
     key: "g j",
     group: "operate",
   },
+  // A terminal in the running container (ADR 0107), for those with admin
+  // there (canShell). G X, "exec".
+  {
+    label: "Shell",
+    to: "/$org/$project/$environment/$service/shell",
+    key: "g x",
+    group: "operate",
+  },
   // Database services only (isDatabase). G B, "base".
   {
     label: "Data",
@@ -92,10 +100,18 @@ export const serviceTabs = [
 
 export type ServiceTab = (typeof serviceTabs)[number];
 
-/** The tabs this service has: Data, Errors and Requests only where they apply. */
-export const tabsFor = (view: Pick<ServiceView, "service" | "domains">) =>
+/**
+ * The tabs this service has: Data, Errors and Requests only where they
+ * apply, Shell only for those who may open one (canShell).
+ */
+export const tabsFor = (
+  view: Pick<ServiceView, "service" | "domains">,
+  canShell: boolean,
+) =>
   serviceTabs.filter((tab) => {
     switch (tab.label) {
+      case "Shell":
+        return canShell;
       case "Data":
         return isDatabase(view.service);
       case "Errors":

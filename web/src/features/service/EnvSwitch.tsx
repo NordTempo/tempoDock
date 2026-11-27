@@ -1,5 +1,5 @@
 import { Link, useMatchRoute } from "@tanstack/react-router";
-import { useProjectOverview } from "../../data/queries";
+import { useProjectOverview, useSession, whyNot } from "../../data/queries";
 import type { Environment, ServiceView } from "../../data/types";
 import { envSegment, envSwitchBox, ToneDot } from "../../shell/context";
 import { useOrg } from "../../shell/location";
@@ -27,6 +27,7 @@ export function EnvSwitch({
 }) {
   const org = useOrg();
   const tab = useServiceTab();
+  const session = useSession();
   const twins = useProjectOverview(project).environments.flatMap((e) => {
     const view = e.services.find((s) => s.service.name === service);
     return view ? [{ env: e.environment, view }] : [];
@@ -47,7 +48,15 @@ export function EnvSwitch({
     return (
       <Link
         key={env.id}
-        to={tabsFor(view).includes(tab) ? tab.to : serviceTabs[0].to}
+        to={
+          tabsFor(
+            view,
+            whyNot(session, "admin", { project, environment: env.name }) ===
+              undefined,
+          ).includes(tab)
+            ? tab.to
+            : serviceTabs[0].to
+        }
         params={{ org, project, environment: env.name, service }}
         aria-current={here ? "page" : undefined}
         onClick={close}
