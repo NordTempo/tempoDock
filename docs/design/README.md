@@ -42,9 +42,10 @@ starts from these files.
 | G8 Access | `t3-style/data/G8-access.html` |
 | G9 Activity | `t3-style/data/G9-activity.html` |
 
-Three later files hold the mocks a feature's direction was picked from:
-`environment-lock.html` (ADR 0044), `jobs.html` (ADR 0054) and
-`run-command.html` (ADR 0048). `ui-direction.html` is the superseded v2
+Later files hold the mocks a feature's direction was picked from:
+`environment-lock.html` (ADR 0044), `jobs.html` (ADR 0054),
+`run-command.html` (ADR 0048) and `container-terminal.html` (ADR 0111,
+A picked). `ui-direction.html` is the superseded v2
 direction.
 
 B1 and B2 are structure references (what the operator console holds, which

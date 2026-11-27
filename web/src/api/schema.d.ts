@@ -4693,6 +4693,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/exec-tickets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get a ticket for a shell
+         * @description A single-use ticket, good for 30 seconds, that opens a shell in the service's running container over a WebSocket: `GET /api/v1/projects/{project}/environments/{environment}/services/{service}/exec/ws?cols=&rows=` with the subprotocols `dock-exec` and the ticket, from the console's own origin. The socket's binary messages carry runframe frames, as `dock exec` does. Checks what the session will: admin on the environment (the shell permission), the lock, a running container. The session is audited as service.exec when it opens. With a token, `dock exec` (`GET .../exec`) needs no ticket.
+         */
+        post: operations["create-exec-ticket"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/environments/{environment}/services/{service}/git": {
         parameters: {
             query?: never;
@@ -9878,6 +9898,14 @@ export interface components {
             update?: components["schemas"]["UpdateStatus"];
             uptime?: components["schemas"]["UptimeUpdate"];
             usage?: components["schemas"]["UsageUpdate"];
+        };
+        ExecTicket: {
+            container: string;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: int64 */
+            release: number;
+            ticket: string;
         };
         Factor: {
             /** Format: date-time */
@@ -41181,6 +41209,111 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Domain"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "create-exec-ticket": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecTicket"];
                 };
             };
             /** @description Bad Request */

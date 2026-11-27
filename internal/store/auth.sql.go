@@ -883,6 +883,25 @@ func (q *Queries) RevokeUserTokens(ctx context.Context, arg RevokeUserTokensPara
 	return items, nil
 }
 
+const sessionExpiry = `-- name: SessionExpiry :one
+SELECT expires_at FROM sessions WHERE id = +?1 AND NOT pending AND expires_at > +?2
+`
+
+type SessionExpiryParams struct {
+	ID  int64
+	Now time.Time
+}
+
+// SessionExpiry is when a session (by ID) that exists, is signed in and
+// hasn't expired ends; no row once it has. A shell opened from it checks
+// this before it starts and ends by then.
+func (q *Queries) SessionExpiry(ctx context.Context, arg SessionExpiryParams) (time.Time, error) {
+	row := q.db.QueryRowContext(ctx, sessionExpiry, arg.ID, arg.Now)
+	var expires_at time.Time
+	err := row.Scan(&expires_at)
+	return expires_at, err
+}
+
 const setTokenOperator = `-- name: SetTokenOperator :exec
 UPDATE tokens SET operator = ? WHERE id = +?
 `

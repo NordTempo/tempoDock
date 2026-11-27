@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Container terminal mocks</title>
+<style>
+  :root {
+    --bg: #000; --panel: #0b0b0c; --hover: #141416; --sel: #1c1c1f;
+    --line: #1f1f22; --soft: #161618; --ctl: #2c2c30;
+    --fg: #fafafa; --sec: #e4e4e7; --mut: #b9b9c1; --dis: #8b8b94;
+    --ok: #4ade80; --warn: #fbbf24; --warn-text: #fcd77a; --warn-tint: #17140b; --warn-line: #3a2f12;
+    --fail: #f87171; --info: #93c5fd;
+  }
+  * { box-sizing: border-box; }
+  html, body { background: var(--bg); }
+  body { margin: 0; color: var(--fg); font: 14px/1.5 Inter, ui-sans-serif, system-ui, sans-serif; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; }
+  main { max-width: 1400px; margin: 0 auto; padding: 28px 16px 80px; }
+  h1 { font-size: 24px; font-weight: 600; margin: 0 0 6px; }
+  h2 { font-size: 16px; font-weight: 600; margin: 48px 0 6px; }
+  p.note { color: var(--mut); margin: 0 0 12px; max-width: 900px; }
+  .board { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--bg); }
+  .top { display: flex; align-items: center; gap: 18px; height: 44px; padding: 0 16px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--mut); }
+  .top b { color: var(--fg); font-weight: 600; }
+  .top .on { color: var(--fg); }
+  .top .grow { flex: 1; }
+  .shell { display: grid; grid-template-columns: 52px minmax(0, 1fr); }
+  .rail { border-right: 1px solid var(--line); padding: 10px 8px; display: flex; flex-direction: column; gap: 8px; }
+  .tile { width: 34px; height: 34px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); display: grid; place-items: center; font-size: 12px; color: var(--sec); position: relative; }
+  .tile.on { background: var(--sel); color: var(--fg); }
+  .tile i { position: absolute; right: -2px; top: -2px; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+  .page { min-width: 0; }
+  .hdr { display: flex; align-items: center; gap: 12px; padding: 18px 28px 12px; flex-wrap: wrap; }
+  .hdr .crumb { color: var(--mut); font-size: 13px; width: 100%; }
+  .hdr .name { font-size: 24px; font-weight: 600; }
+  .state { color: var(--ok); font-size: 14px; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; vertical-align: 1px; margin-right: 5px; }
+  .hdr .grow { flex: 1; }
+  .btn { border: 1px solid var(--ctl); background: transparent; color: var(--fg); border-radius: 6px; padding: 5px 11px; font: 500 13px/1.4 Inter, ui-sans-serif, system-ui, sans-serif; white-space: nowrap; }
+  .btn.primary { background: var(--fg); color: #0a0a0b; border-color: var(--fg); font-weight: 600; }
+  .btn.sm { padding: 2px 8px; font-size: 12px; }
+  .btn.danger { color: var(--fail); }
+  .tabs { display: flex; gap: 2px; padding: 0 22px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--mut); flex-wrap: wrap; }
+  .tabs span { padding: 9px 9px; border-bottom: 2px solid transparent; }
+  .tabs span.on { color: var(--fg); border-bottom-color: var(--fg); font-weight: 500; }
+  .tabs .sep { width: 1px; background: var(--line); margin: 8px 6px; padding: 0; }
+  .views { display: flex; gap: 16px; padding: 12px 28px 0; font-size: 13px; color: var(--mut); }
+  .views span.on { color: var(--fg); text-decoration: underline; text-underline-offset: 6px; }
+  .body { padding: 16px 28px 24px; display: flex; flex-direction: column; gap: 10px; }
+  .strip { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13px; color: var(--mut); }
+  .strip .v { color: var(--sec); }
+  .strip .grow { flex: 1; }
+  .field { background: var(--panel); border: 1px solid var(--ctl); border-radius: 6px; color: var(--fg); padding: 4px 9px; font: 13px "JetBrains Mono", ui-monospace, monospace; width: 220px; }
+  .term { background: #000; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font: 13px/1.5 "JetBrains Mono", ui-monospace, Menlo, monospace; color: var(--sec); white-space: pre; overflow: hidden; }
+  .term .p { color: var(--ok); }
+  .term .d { color: var(--info); }
+  .term .cur { background: var(--sec); color: #000; }
+  .foot { font-size: 12px; color: var(--mut); display: flex; gap: 16px; flex-wrap: wrap; }
+  .kbd { border: 1px solid var(--ctl); border-radius: 4px; padding: 0 4px; font-size: 12px; color: var(--sec); }
+  .warn { border: 1px solid var(--warn-line); background: var(--warn-tint); color: var(--warn-text); border-radius: 6px; padding: 6px 10px; font-size: 13px; }
+  .menu { position: absolute; right: 28px; top: 56px; width: 230px; background: #0b0b0c; border: 1px solid var(--ctl); border-radius: 8px; padding: 4px; font-size: 13px; z-index: 2; }
+  .menu div { padding: 5px 9px; border-radius: 5px; color: var(--sec); display: flex; justify-content: space-between; }
+  .menu div.hl { background: var(--sel); color: var(--fg); }
+  .menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+  .menu .k { color: var(--mut); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; }
+  .logs { font: 12.5px/1.6 "JetBrains Mono", ui-monospace, monospace; color: var(--sec); white-space: pre; overflow: hidden; }
+  .logs .t { color: var(--mut); }
+  .drawer { border-top: 1px solid var(--ctl); background: #000; }
+  .dtabs { display: flex; align-items: center; gap: 4px; padding: 0 12px; height: 34px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--mut); }
+  .dtabs .t { padding: 3px 9px; border-radius: 6px; }
+  .dtabs .t.on { background: var(--sel); color: var(--fg); }
+  .dtabs .grow { flex: 1; }
+  .grip { height: 5px; cursor: row-resize; border-top: 1px solid var(--line); }
+  .pick { margin-top: 10px; color: var(--sec); font-size: 13px; max-width: 900px; }
+  .pick b { color: var(--fg); }
+  ul.pros { margin: 6px 0 0; padding-left: 18px; color: var(--mut); font-size: 13px; max-width: 900px; }
+  @media (max-width: 760px) { .shell { grid-template-columns: minmax(0, 1fr); } .rail { display: none; } .field { width: 140px; } }
+</style>
+</head>
+<body>
+<main>
+<h1>Container terminal</h1>
+<p class="note">ADR 0111. A shell inside the service's running container (the web side of <span class="mono">dock exec</span>). Every mock shows the same state: <span class="mono">web</span> in shop/production, release r42 running, a session open in its container. The terminal is xterm.js, loaded only when it opens, cursor not blinking. Admins on the environment only; each session is in the audit log as <span class="mono">service.exec</span>, and closing the page ends it.</p>
+
+<!-- ============================== A ============================== -->
+<h2>A. Its own tab, Shell, between Jobs and Data</h2>
+<p class="note">Operating group grows to Jobs, Shell, Data, Variables. The tab is the terminal: one line of what it is attached to, then the terminal to the bottom of the window. Nothing connects until you press Connect (or Enter), so opening the tab by accident starts nothing.</p>
+<div class="board">
+  <div class="top"><b>NordTempo</b><span class="on">Projects</span><span>Errors</span><span>Analytics</span><span>Images</span><span>Status pages</span><span class="grow"></span><span>Inbox 2</span><span>Settings</span><span>?</span></div>
+  <div class="shell">
+    <div class="rail"><div class="tile on">SH<i></i></div><div class="tile">HP<i></i></div><div class="tile">DM<i></i></div></div>
+    <div class="page">
+      <div class="hdr"><span class="crumb">shop / production</span><span class="name">web</span><span class="state"><span class="dot"></span>running</span><span class="mono" style="color:var(--mut);font-size:13px">r42</span><span class="grow"></span><button class="btn primary">Deploy</button><button class="btn">Restart</button><button class="btn">···</button></div>
+      <div class="tabs"><span>Overview</span><span>Logs</span><span>Requests</span><span>Errors</span><span>Metrics</span><span class="sep"></span><span>Jobs</span><span class="on">Shell</span><span>Data</span><span>Variables</span><span class="sep"></span><span>History</span><span>Settings</span></div>
+      <div class="body">
+        <div class="strip">
+          <span>Container <span class="v mono">3f9a2c1b4e07</span></span>
+          <span>release <span class="v mono">r42</span></span>
+          <span>up <span class="v">2h 14m</span></span>
+          <span>user <span class="v mono">app</span></span>
+          <span class="grow"></span>
+          <span class="mono">dock exec web</span>
+          <input class="field" value="/bin/sh" aria-label="Command">
+          <button class="btn danger">Disconnect</button>
+        </div>
+<div class="term" style="height:360px"><span class="p">app@3f9a2c1b4e07</span>:<span class="d">/app</span>$ ls
+Gemfile  Gemfile.lock  app  bin  config  db  lib  log  public  tmp
+<span class="p">app@3f9a2c1b4e07</span>:<span class="d">/app</span>$ bin/rails runner 'puts Order.pending.count'
+17
+<span class="p">app@3f9a2c1b4e07</span>:<span class="d">/app</span>$ tail -n 3 log/production.log
+I, [2026-11-27T10:41:07] INFO -- : Completed 200 OK in 12ms
+I, [2026-11-27T10:41:09] INFO -- : Started GET "/health"
+I, [2026-11-27T10:41:09] INFO -- : Completed 200 OK in 1ms
+<span class="p">app@3f9a2c1b4e07</span>:<span class="d">/app</span>$ <span class="cur"> </span></div>
+        <div class="foot"><span>Connected 4 min, as you, audited</span><span>Ends when you leave this tab or the container restarts</span><span><span class="kbd">Ctrl</span> <span class="kbd">Shift</span> <span class="kbd">C</span> copy</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+<ul class="pros"><li>Easiest to find: a tab, a key (<span class="mono">g s</span>), a palette entry "Shell · web production".</li><li>Leaving the tab ends the session, so you can't watch Logs and type at the same time.</li></ul>
+
+<!-- ============================== B ============================== -->
+<h2>B. A view inside Jobs: Commands, Scheduled, Shell</h2>
+<p class="note">No new tab. Jobs already holds "run something in this service" (one-off commands, scheduled jobs), so the shell is its third view, underlined like Requests' views. The line under the views says how it differs from a command.</p>
+<div class="board">
+  <div class="top"><b>NordTempo</b><span class="on">Projects</span><span>Errors</span><span>Analytics</span><span>Images</span><span>Status pages</span><span class="grow"></span><span>Inbox 2</span><span>Settings</span><span>?</span></div>
+  <div class="shell">
+    <div class="rail"><div class="tile on">SH<i></i></div><div class="tile">HP<i></i></div><div class="tile">DM<i></i></div></div>
+    <div class="page">
+      <div class="hdr"><span class="crumb">shop / production</span><span class="name">web</span><span class="state"><span class="dot"></span>running</span><span class="mono" style="color:var(--mut);font-size:13px">r42</span><span class="grow"></span><button class="btn primary">Deploy</button><button class="btn">Restart</button><button class="btn">···</button></div>
+      <div class="tabs"><span>Overview</span><span>Logs</span><span>Requests</span><span>Errors</span><span>Metrics</span><span class="sep"></span><span class="on">Jobs</span><span>Data</span><span>Variables</span><span class="sep"></span><span>History</span><span>Settings</span></div>
+      <div class="views"><span>Commands</span><span>Scheduled</span><span class="on">Shell</span></div>
+      <div class="body">
+        <div class="strip"><span>In the running container <span class="v mono">3f9a2c1b4e07</span> (r42). A command runs in a new container instead.</span><span class="grow"></span><span class="mono">dock exec web</span></div>
+<div class="term" style="height:320px"><span class="p">app@3f9a2c1b4e07</span>:<span class="d">/app</span>$ ps aux | head -4
+USER   PID %CPU %MEM    VSZ   RSS TTY STAT START TIME COMMAND
+app      1  0.4  6.1 412880 124k ?   Ssl  08:27 0:31 puma 6.4 (tcp://0.0.0.0:3000)
+app     41  0.0  0.1   2580   912 pts/0 Ss 10:37 0:00 /bin/sh
+<span class="p">app@3f9a2c1b4e07</span>:<span class="d">/app</span>$ df -h /app/storage
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda1        38G   21G   16G  57% /app/storage
+<span class="p">app@3f9a2c1b4e07</span>:<span class="d">/app</span>$ <span class="cur"> </span></div>
+        <div class="strip"><span>Connected 4 min, audited</span><span class="grow"></span><button class="btn">Reconnect</button><button class="btn danger">Disconnect</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+<ul class="pros"><li>Keeps the tab strip as it is, and puts the shell next to the thing people confuse it with (a one-off command).</li><li>One level deeper to reach; same limit as A while on another tab.</li></ul>
+
+<!-- ============================== C ============================== -->
+<h2>C. A drawer under the page, opened from ···</h2>
+<p class="note">··· gets "Open shell" in its connect group (key <span class="mono">g s</span>). The terminal docks at the bottom of the service page and stays open while you move between the service's tabs, so Logs or Metrics sit above what you type. Drag the line to resize; up to three sessions as small tabs. Leaving the service closes it.</p>
+<div class="board" style="position:relative">
+  <div class="top"><b>NordTempo</b><span class="on">Projects</span><span>Errors</span><span>Analytics</span><span>Images</span><span>Status pages</span><span class="grow"></span><span>Inbox 2</span><span>Settings</span><span>?</span></div>
+  <div class="shell">
+    <div class="rail"><div class="tile on">SH<i></i></div><div class="tile">HP<i></i></div><div class="tile">DM<i></i></div></div>
+    <div class="page">
+      <div class="hdr"><span class="crumb">shop / production</span><span class="name">web</span><span class="state"><span class="dot"></span>running</span><span class="mono" style="color:var(--mut);font-size:13px">r42</span><span class="grow"></span><button class="btn primary">Deploy</button><button class="btn">Restart</button><button class="btn" style="background:var(--sel)">···</button></div>
+      <div class="menu"><div>Stop</div><div>Run a command</div><hr><div class="hl">Open shell <span class="k">g s</span></div><div>Connect from your machine</div><div>Open data panel</div><hr><div style="color:var(--fail)">Archive</div></div>
+      <div class="tabs"><span>Overview</span><span class="on">Logs</span><span>Requests</span><span>Errors</span><span>Metrics</span><span class="sep"></span><span>Jobs</span><span>Data</span><span>Variables</span><span class="sep"></span><span>History</span><span>Settings</span></div>
+      <div class="body" style="padding-bottom:12px">
+<div class="logs"><span class="t">10:41:07</span> Completed 200 OK in 12ms
+<span class="t">10:41:09</span> Started GET "/health" for 172.18.0.1
+<span class="t">10:41:09</span> Completed 200 OK in 1ms
+<span class="t">10:41:12</span> Started POST "/orders" for 10.0.4.17
+<span class="t">10:41:12</span> Completed 201 Created in 48ms</div>
+      </div>
+      <div class="drawer">
+        <div class="grip"></div>
+        <div class="dtabs"><span class="t on mono">sh 1</span><span class="t mono">sh 2</span><span class="t">+</span><span class="grow"></span><span class="mono" style="font-size:12px">3f9a2c1b4e07 · r42 · audited</span><button class="btn sm danger" style="margin-left:10px">Disconnect</button><button class="btn sm" style="margin-left:6px">Close</button></div>
+<div class="term" style="height:230px;border:0;border-radius:0"><span class="p">app@3f9a2c1b4e07</span>:<span class="d">/app</span>$ curl -s localhost:3000/orders -d '{}' -H 'content-type: application/json'
+{"id":9121,"status":"pending"}
+<span class="p">app@3f9a2c1b4e07</span>:<span class="d">/app</span>$ <span class="cur"> </span></div>
+      </div>
+    </div>
+  </div>
+</div>
+<ul class="pros"><li>Type and watch at once (the request above shows up in Logs as you send it), several sessions.</li><li>More to build (resizing, session tabs, state that outlives a tab), and a drawer is a new pattern in the app.</li></ul>
+
+<h2>Locked or not allowed</h2>
+<p class="note">Same in every mock. Not an admin on the environment: the tab, view or menu item isn't shown. A locked environment holds tokens, not your UI session, so the UI connects; the public demo shows the place and refuses to connect.</p>
+<div class="board" style="padding:16px 28px">
+  <div class="warn">The demo is view-only: shells into containers are off here. <span class="mono">dock exec</span> opens one on your own Dock.</div>
+</div>
+
+<p class="pick">Pick one: <b>A</b> (its own tab), <b>B</b> (a view in Jobs) or <b>C</b> (a drawer across the service's tabs). My lean is <b>A</b>: one place, one key, the simplest to build and the clearest about when a session is open.</p>
+</main>
+</body>
+</html>

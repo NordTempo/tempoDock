@@ -3,6 +3,7 @@ module github.com/NordTempo/tempoDock
 go 1.27.4
 
 require (
+	github.com/coder/websocket v1.8.14
 	github.com/containerd/errdefs v1.0.0
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/danielgtaylor/huma/v2 v2.39.1

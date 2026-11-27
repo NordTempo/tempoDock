@@ -26,6 +26,7 @@ const helpAt = {
   "/_app/$org/$project/$environment/$service/errors": "errors",
   "/_app/$org/$project/$environment/$service/metrics": "metrics",
   "/_app/$org/$project/$environment/$service/jobs": "jobs",
+  "/_app/$org/$project/$environment/$service/shell": "jobs",
   "/_app/$org/$project/$environment/$service/data": "data",
   "/_app/$org/$project/$environment/$service/variables": "variables",
   "/_app/$org/$project/$environment/$service/settings": "services",

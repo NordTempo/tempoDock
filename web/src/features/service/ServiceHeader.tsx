@@ -151,7 +151,7 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const view = useService(ref);
   const changes = useChanges(ref);
   const navigate = useNavigate();
-  const shown = tabsFor(view);
+  const shown = tabsFor(view, useWhyNot("admin", ref) === undefined);
   useShortcuts([
     ...shown.map((tab) => ({
       key: tab.key,

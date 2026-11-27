@@ -8,7 +8,8 @@ function check(ok: boolean, message: string) {
 
 // Which tabs a service has decides the palette's "Logs · api" commands.
 type Shape = Parameters<typeof tabsFor>[0];
-const labels = (view: Shape) => tabsFor(view).map((t) => t.label);
+const labels = (view: Shape, canShell = false) =>
+  tabsFor(view, canShell).map((t) => t.label);
 const app = {
   service: { image: "nginx", stateful: false },
   domains: [],
@@ -32,7 +33,11 @@ check(
   "a database with a domain has Data, Settings and Errors",
 );
 check(
-  tabsFor(app).every((t) => t.to.startsWith("/$org/")),
+  !labels(app).includes("Shell") && labels(app, true).includes("Shell"),
+  "Shell only for those who may open one",
+);
+check(
+  tabsFor(app, true).every((t) => t.to.startsWith("/$org/")),
   "every tab route is under the organization",
 );
 
