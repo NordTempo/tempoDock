@@ -108,23 +108,6 @@ type server struct {
 	ClientIPHeaders []string `json:"client_ip_headers,omitempty"`
 	// Logs logs the requests of counted routes (ADR 0033).
 	Logs *serverLogs `json:"logs,omitempty"`
-	// Errors handles a handler's error (an authentication's 401), which
-	// Caddy writes outside the route that failed (securityHeaders).
-	Errors *serverErrors `json:"errors,omitempty"`
-}
-
-// serverErrors are the routes an error response goes through; one that
-// writes nothing leaves Caddy's own (the error's status, empty body).
-type serverErrors struct {
-	Routes []route `json:"routes"`
-}
-
-// errorsOf is a server's Errors for its routes' error routes, nil for none.
-func errorsOf(routes []route) *serverErrors {
-	if len(routes) == 0 {
-		return nil
-	}
-	return &serverErrors{Routes: routes}
 }
 
 // ipRanges is Caddy's static IP source module.
@@ -442,9 +425,6 @@ func Render(opts Options, routes []node.Route, certs []node.Certificate) ([]byte
 	tunnelListener := !opts.tunnel() && opts.TunnelPort > 0 &&
 		slices.ContainsFunc(routes, func(r node.Route) bool { return r.TunnelOnly })
 	var main, viaTunnel []route
-	// mainErrors and tunnelErrors give error responses of routes with
-	// SecurityHeaders their headers too.
-	var mainErrors, tunnelErrors []route
 	if opts.ServerMarker != "" {
 		main = append(main, markerRoute(opts.ServerMarker))
 		viaTunnel = append(viaTunnel, markerRoute(opts.ServerMarker))
@@ -485,6 +465,17 @@ func Render(opts Options, routes []node.Route, certs []node.Certificate) ([]byte
 		if r.PathPrefix != "" {
 			m.Path = []string{r.PathPrefix + "*"}
 		}
+		// Security headers wrap everything after them: the app's
+		// responses, and Dock's own (a password's 401, a login, a 503)
+		// too. Tunnel visitors are on HTTPS, whatever this server's own
+		// scheme.
+		var headers, headersVia []handler
+		if r.SecurityHeaders && r.RedirectTo == "" {
+			headers, headersVia = headersHTTP, headersHTTPS
+			if scheme == "https" {
+				headers = headersHTTPS
+			}
+		}
 		var handle []handler
 		if r.Traffic && r.RedirectTo == "" && opts.TrafficAddr != "" {
 			if counted == nil {
@@ -504,7 +495,7 @@ func Render(opts Options, routes []node.Route, certs []node.Certificate) ([]byte
 			if r.Access.Login() {
 				handle = append(handle, loginAccess(opts.accessCheck, r.Access)...)
 			} else {
-				handle = append(handle, passwordAccess(opts.accessCheck, r.Access)...)
+				handle = append(handle, passwordAccess(opts.accessCheck, r.Access, headers)...)
 			}
 		}
 		if r.Wake != "" && r.RedirectTo == "" && r.Stopped == "" {
@@ -548,29 +539,11 @@ func Render(opts Options, routes []node.Route, certs []node.Certificate) ([]byte
 				}
 			}
 		}
-		// Security headers wrap everything after them: the app's
-		// responses, and Dock's own (a login, a 503) too. An error (a
-		// password's 401) is written outside the route, so the server's
-		// error routes add them as well. Tunnel visitors are on HTTPS,
-		// whatever this server's own scheme.
-		var headers, headersVia []handler
-		if r.SecurityHeaders && r.RedirectTo == "" {
-			headers, headersVia = headersHTTP, headersHTTPS
-			if scheme == "https" {
-				headers = headersHTTPS
-			}
-		}
 		if public {
 			main = append(main, route{Match: []match{m}, Handle: slices.Concat(headers, handle, []handler{h}), Terminal: true})
-			if headers != nil {
-				mainErrors = append(mainErrors, route{Match: []match{{Host: r.Hostnames}}, Handle: headers})
-			}
 		}
 		if tunnelListener {
 			viaTunnel = append(viaTunnel, route{Match: []match{m}, Handle: slices.Concat(headersVia, handle, []handler{ht}), Terminal: true})
-			if headersVia != nil {
-				tunnelErrors = append(tunnelErrors, route{Match: []match{{Host: r.Hostnames}}, Handle: headersVia})
-			}
 		}
 	}
 	// Apps' OTLP exports, plain HTTP from the server's own containers:
@@ -610,7 +583,6 @@ func Render(opts Options, routes []node.Route, certs []node.Certificate) ([]byte
 			Routes:         main,
 			AutomaticHTTPS: automaticHTTPS{Disable: true},
 			Logs:           logs,
-			Errors:         errorsOf(mainErrors),
 		}
 		if opts.tunnel() {
 			// Only the local cloudflared connects; nothing is public.
@@ -619,7 +591,7 @@ func Render(opts Options, routes []node.Route, certs []node.Certificate) ([]byte
 			srv.ClientIPHeaders = []string{"CF-Connecting-IP", "X-Forwarded-For"}
 		}
 		cfg.Apps.HTTP.Servers = map[string]server{"http": srv}
-		addTunnelServer(cfg.Apps.HTTP.Servers, opts, tunnelListener, viaTunnel, tunnelErrors, logs)
+		addTunnelServer(cfg.Apps.HTTP.Servers, opts, tunnelListener, viaTunnel, logs)
 		return json.Marshal(cfg)
 	}
 
@@ -646,7 +618,6 @@ func Render(opts Options, routes []node.Route, certs []node.Certificate) ([]byte
 			TLSConnectionPolicies: connectionPolicies(certs),
 			AutomaticHTTPS:        automaticHTTPS{Disable: true},
 			Logs:                  logs,
-			Errors:                errorsOf(mainErrors),
 		},
 		"http": {
 			Listen:         []string{listenAddr(opts.HTTPPort)},
@@ -655,7 +626,7 @@ func Render(opts Options, routes []node.Route, certs []node.Certificate) ([]byte
 		},
 	}
 
-	addTunnelServer(cfg.Apps.HTTP.Servers, opts, tunnelListener, viaTunnel, tunnelErrors, logs)
+	addTunnelServer(cfg.Apps.HTTP.Servers, opts, tunnelListener, viaTunnel, logs)
 
 	iss := issuer{Module: "acme", Email: opts.ACMEEmail}
 	if opts.internalCA {
@@ -728,9 +699,8 @@ const tunnelServer = "tunnel"
 
 // addTunnelServer adds a direct server's tunnel listener (Options.
 // TunnelPort) when on is set: plain HTTP on loopback, where only the local
-// cloudflared connects, trusting its forwarding headers, with errs as its
-// error routes.
-func addTunnelServer(servers map[string]server, opts Options, on bool, routes, errs []route, logs *serverLogs) {
+// cloudflared connects, trusting its forwarding headers.
+func addTunnelServer(servers map[string]server, opts Options, on bool, routes []route, logs *serverLogs) {
 	if !on {
 		return
 	}
@@ -741,7 +711,6 @@ func addTunnelServer(servers map[string]server, opts Options, on bool, routes, e
 		Logs:            logs,
 		TrustedProxies:  &ipRanges{Source: "static", Ranges: loopback},
 		ClientIPHeaders: []string{"CF-Connecting-IP", "X-Forwarded-For"},
-		Errors:          errorsOf(errs),
 	}
 }
 
@@ -884,9 +853,10 @@ const userHeaderAlias = "X_Dock_User"
 // key, a request that says it is Dock's uptime probe and brings a session
 // cookie is asked for no password: the access check decides it instead
 // (probeAccess). Everyone else meets basic auth exactly as without the
-// key, at no extra cost.
-func passwordAccess(check accessCheck, a *node.Access) []handler {
-	basic := basicAuth(a)
+// key, at no extra cost. headers are the route's security headers
+// handlers, if it has them; basic auth's 401 gets them too (basicAuth).
+func passwordAccess(check accessCheck, a *node.Access, headers []handler) []handler {
+	basic := basicAuth(a, headers)
 	if len(a.ProbeKey) == 0 || check.dial == "" {
 		return basic
 	}
@@ -924,9 +894,16 @@ func probeAccess(check accessCheck, a *node.Access) []handler {
 	}
 }
 
-// basicAuth is passwordAccess for everyone but the probe.
-func basicAuth(a *node.Access) []handler {
-	return []handler{
+// basicAuth is passwordAccess for everyone but the probe. With headers
+// (securityHeaders), their headers are set on the response before the
+// check and deleted once it passes. Its 401 is an error, which Caddy
+// writes outside the route's deferred handlers but with what is set by
+// then; a request that signs in reaches the app with none of them, so the
+// deferred handlers still let the app's own win. (Server-wide error
+// routes would reach the 401 too, but with any of them Caddy logs every
+// handled error, a 502 too, at debug level.)
+func basicAuth(a *node.Access, headers []handler) []handler {
+	auth := []handler{
 		{Handler: "authentication", Providers: &authProviders{HTTPBasic: httpBasic{
 			Accounts:  []account{{Username: a.Username, Password: a.PasswordHash}},
 			Hash:      hashAlg{Algorithm: "bcrypt"},
@@ -935,6 +912,17 @@ func basicAuth(a *node.Access) []handler {
 		}}},
 		{Handler: "headers", Request: &headerOps{Delete: []string{userHeaderAlias}, Set: map[string][]string{access.UserHeader: {"{http.auth.user.id}"}}}},
 	}
+	if len(headers) == 0 {
+		return auth
+	}
+	set, unset := &headerOps{Set: map[string][]string{}}, &headerOps{}
+	for _, h := range headers {
+		for name, v := range h.Response.Set {
+			set.Set[name] = v
+			unset.Delete = append(unset.Delete, name)
+		}
+	}
+	return slices.Concat([]handler{{Handler: "headers", Response: set}}, auth[:1], []handler{{Handler: "headers", Response: unset}}, auth[1:])
 }
 
 // loginAccess is Caddy's forward_auth, spelled out: the request's method,

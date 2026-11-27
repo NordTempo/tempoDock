@@ -1161,10 +1161,11 @@ func TestIntegrationSecurityHeaders(t *testing.T) {
 	}))
 	t.Cleanup(app.Close)
 	upstream := strings.TrimPrefix(app.URL, "http://")
+	hash, _ := bcrypt.GenerateFromPassword([]byte("correct horse battery"), 4)
 	tc.applyRoutes(t, []node.Route{
 		{Hostnames: []string{"app.test"}, Upstream: upstream, SecurityHeaders: true},
 		{Hostnames: []string{"plain.test"}, Upstream: upstream},
-		{Hostnames: []string{"locked.test"}, Upstream: upstream, SecurityHeaders: true, Access: &node.Access{Username: "u", PasswordHash: "$2a$06$x"}},
+		{Hostnames: []string{"locked.test"}, Upstream: upstream, SecurityHeaders: true, Access: &node.Access{Username: "team", PasswordHash: string(hash)}},
 	})
 	tc.trustInternalCA(t)
 
@@ -1181,6 +1182,17 @@ func TestIntegrationSecurityHeaders(t *testing.T) {
 	code, h, _ := tc.get(t, tc.url("https", "locked.test", "/"))
 	if code != http.StatusUnauthorized || h.Get("Www-Authenticate") == "" || h.Get("X-Frame-Options") != "SAMEORIGIN" || h.Get("Strict-Transport-Security") == "" {
 		t.Errorf("unauthenticated: %d %v", code, h)
+	}
+	// Signed in, the app's own header is the only one.
+	req, _ := http.NewRequest(http.MethodGet, tc.url("https", "locked.test", "/"), nil)
+	req.SetBasicAuth("team", "correct horse battery")
+	resp, err := tc.client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if got := resp.Header.Values("X-Frame-Options"); resp.StatusCode != 200 || len(got) != 1 || got[0] != "DENY" || resp.Header.Get("Referrer-Policy") == "" {
+		t.Errorf("signed in: %d %v", resp.StatusCode, resp.Header)
 	}
 	_, h, _ = tc.get(t, tc.url("https", "plain.test", "/"))
 	if got := h.Get("X-Content-Type-Options"); got != "" {

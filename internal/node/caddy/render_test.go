@@ -651,17 +651,16 @@ func TestRenderSecurityHeaders(t *testing.T) {
 		{Hostnames: []string{"old.example.com"}, RedirectTo: "shop.example.com", SecurityHeaders: true},
 		{Hostnames: []string{"plain.example.com"}, Upstream: "127.0.0.1:9002"},
 	}
-	// added lists the headers a route's handlers add, in order.
+	// added lists the headers a route's deferred handlers add, in order.
 	added := func(r route) []string {
 		var out []string
 		for i, h := range r.Handle {
-			if h.Handler != "headers" || h.Response == nil {
+			if h.Handler != "headers" || h.Response == nil || !h.Response.Deferred {
 				continue
 			}
 			for name, v := range h.Response.Set {
-				req, ok := h.Response.Require.Headers[name]
-				if !h.Response.Deferred || !ok || req != nil || len(h.Response.Set) != 1 {
-					t.Errorf("%s handler %+v doesn't wait for the response or overwrites the app's", name, *h.Response)
+				if req, ok := h.Response.Require.Headers[name]; !ok || req != nil || len(h.Response.Set) != 1 {
+					t.Errorf("%s handler %+v overwrites the app's", name, *h.Response)
 				}
 				if i >= len(node.SecurityHeaders) {
 					t.Errorf("%s set at handler %d, after the access check", name, i)
@@ -676,18 +675,16 @@ func TestRenderSecurityHeaders(t *testing.T) {
 		"Referrer-Policy: strict-origin-when-cross-origin", "X-Frame-Options: SAMEORIGIN",
 	}
 
-	srv := render(t, testOptions(), routes).Apps.HTTP.Servers["https"]
-	https := srv.Routes
+	https := render(t, testOptions(), routes).Apps.HTTP.Servers["https"].Routes
 	if got := added(https[0]); !slices.Equal(got, all) {
 		t.Errorf("headers on https = %v, want %v", got, all)
 	}
-	// An error (the password's 401) is written outside the route: the
-	// server's error routes add them for that route's hostnames only.
-	if srv.Errors == nil || len(srv.Errors.Routes) != 1 || !slices.Equal(srv.Errors.Routes[0].Match[0].Host, []string{"shop.example.com"}) {
-		t.Fatalf("error routes = %+v", srv.Errors)
-	}
-	if got := added(srv.Errors.Routes[0]); !slices.Equal(got, all) {
-		t.Errorf("headers on errors = %v, want %v", got, all)
+	// Basic auth's 401 is written outside the route: the headers are set
+	// before the check, and deleted once it passes.
+	h := https[0].Handle[len(node.SecurityHeaders):]
+	if len(h) < 3 || h[0].Response == nil || len(h[0].Response.Set) != len(all) || h[0].Response.Deferred ||
+		h[1].Handler != "authentication" || h[2].Response == nil || len(h[2].Response.Delete) != len(all) {
+		t.Errorf("around basic auth: %+v", h)
 	}
 	if got := https[0].Handle[len(https[0].Handle)-1].Handler; got != "reverse_proxy" {
 		t.Errorf("last handler = %s, want the proxy", got)
@@ -700,15 +697,9 @@ func TestRenderSecurityHeaders(t *testing.T) {
 
 	opts := testOptions()
 	opts.DisableTLS, opts.AskURL = true, ""
-	plainSrv := render(t, opts, routes).Apps.HTTP.Servers["http"]
-	if got := added(plainSrv.Routes[0]); !slices.Equal(got, all[1:]) {
+	plain := render(t, opts, routes).Apps.HTTP.Servers["http"].Routes
+	if got := added(plain[0]); !slices.Equal(got, all[1:]) {
 		t.Errorf("headers on plain HTTP = %v, want %v", got, all[1:])
-	}
-	if plainSrv.Errors == nil || !slices.Equal(added(plainSrv.Errors.Routes[0]), all[1:]) {
-		t.Errorf("error routes on plain HTTP = %+v", plainSrv.Errors)
-	}
-	if srv := render(t, testOptions(), routes[1:]).Apps.HTTP.Servers["https"]; srv.Errors != nil {
-		t.Errorf("no route with security headers, error routes = %+v", srv.Errors)
 	}
 }
 
