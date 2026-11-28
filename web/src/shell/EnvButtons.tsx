@@ -49,7 +49,7 @@ export function EnvButtons({
       ))}
       {previews.length > 0 && (
         <Menu
-          label="Previews"
+          label={current ? `Previews: ${current.name}` : "Previews"}
           className={regular.length > 0 ? "border-l border-edge" : ""}
           button={
             <span aria-current={!!current} className={envSegment}>

@@ -81,7 +81,7 @@ export function EnvSwitch({
         )}
         {previews.length > 0 && (
           <Menu
-            label="Previews"
+            label={current ? `Previews: ${current.env.name}` : "Previews"}
             className={regular.length > 0 ? "border-l border-edge" : ""}
             button={
               <span
