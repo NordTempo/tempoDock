@@ -618,7 +618,7 @@ export function Fact({
  * role="presentation", dividers role="separator". Arrow keys move
  * between items. It is fixed to the viewport, so a
  * panel's overflow can't clip it; scrolling, Escape or a click outside
- * closes it. `dialog` makes it a small panel of details and buttons
+ * closes it (Escape only it, not a dialog it sits in). `dialog` makes it a small panel of details and buttons
  * instead (role="dialog"), as the environment lock's pill opens: it takes
  * focus when it opens and gives it back to its button when an action in
  * it closes it. Either is capped at the viewport's height and scrolls
@@ -696,6 +696,8 @@ export function Menu({
         return;
       }
       if (event.key !== "Escape") return;
+      // Only the menu: a <dialog> around it would cancel on the same key.
+      event.preventDefault();
       close();
       trigger.current?.focus();
     };

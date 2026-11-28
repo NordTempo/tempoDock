@@ -13,11 +13,14 @@ import { serverState, type Tone, toneText } from "../ui/status";
  * aria-current ("true" on a button, "page" on a link).
  */
 export const envSegment =
-  "inline-flex min-h-[26px] items-center gap-1.5 px-2.5 text-ctl text-mut no-underline hover:text-fg aria-[current=page]:bg-sel aria-[current=page]:text-fg aria-[current=true]:bg-sel aria-[current=true]:text-fg";
+  "inline-flex min-h-[26px] items-center gap-1.5 whitespace-nowrap px-2.5 text-ctl text-mut no-underline hover:text-fg aria-[current=page]:bg-sel aria-[current=page]:text-fg aria-[current=true]:bg-sel aria-[current=true]:text-fg";
 
-/** The box around an environment switch's buttons. */
+/**
+ * The box around an environment switch's buttons. On a narrow screen
+ * they wrap to more lines instead of running off it.
+ */
 export const envSwitchBox =
-  "inline-flex overflow-hidden rounded-ctl border border-edge";
+  "inline-flex max-w-full flex-wrap overflow-hidden rounded-ctl border border-edge";
 
 /**
  * A small dot in a problem's colour on an environment's button, named

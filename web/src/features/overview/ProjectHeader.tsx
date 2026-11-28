@@ -9,24 +9,12 @@ import {
   useSession,
 } from "../../data/queries";
 import type { EnvironmentView } from "../../data/types";
-import {
-  envSegment,
-  envSwitchBox,
-  ServerDots,
-  ToneDot,
-} from "../../shell/context";
+import { envSegment, ServerDots } from "../../shell/context";
+import { EnvButtons } from "../../shell/EnvButtons";
 import { useShortcuts } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
 import { Icon } from "../../ui/icons";
-import {
-  Act,
-  Menu,
-  MoreItem,
-  MoreMenu,
-  MoreSeparator,
-  menuItem,
-  PageBar,
-} from "../../ui/kit";
+import { Act, MoreItem, MoreMenu, MoreSeparator, PageBar } from "../../ui/kit";
 import { sitesQuery } from "../analytics/loaders";
 import { canCreateEnvironment } from "../create/access";
 import { openCreate } from "../create/open";
@@ -157,7 +145,17 @@ export function ProjectHeader({
       <div className="sticky top-(--shell-top) z-10 bg-page">
         <PageBar
           title={project}
-          after={<ServerDots project={project} />}
+          after={
+            <>
+              <EnvironmentSwitch
+                project={project}
+                environment={environment}
+                tab={tab}
+                canNew={canNewEnv}
+              />
+              <ServerDots project={project} />
+            </>
+          }
           actions={
             <>
               <Link
@@ -214,13 +212,6 @@ export function ProjectHeader({
           }
         />
         <div className="flex flex-wrap items-center gap-x-2 gap-y-2 border-b border-line px-4 py-2 sm:px-7">
-          <EnvironmentSwitch
-            project={project}
-            environment={environment}
-            tab={tab}
-            canNew={canNewEnv}
-          />
-          <span aria-hidden className="mx-1 hidden h-5 w-px bg-line sm:block" />
           <ProjectTabs project={project} environment={environment} tab={tab} />
           {!projectWide && (
             <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -390,10 +381,10 @@ function EnvironmentStrips({
 }
 
 /**
- * The project's environments side by side, the picked one marked; a dot
- * on one with a problem, so trouble in staging shows while production is
- * open. Previews, which can be many, sit in one menu at the end; "+"
- * makes a new environment. Each keeps the tab you're on.
+ * The project's environments, next to its name in the header
+ * (EnvButtons): a dot on one with a problem, so trouble in staging shows
+ * while production is open; "+" makes a new environment. Each keeps the
+ * tab you're on.
  */
 function EnvironmentSwitch({
   project,
@@ -425,56 +416,14 @@ function EnvironmentSwitch({
           params: { org, project, environment: name },
           search: tab === "activity" ? { tab } : {},
         });
-  const regular = environments.filter((e) => !e.environment.preview);
-  const previews = environments.filter((e) => e.environment.preview);
-  const current = off
-    ? undefined
-    : previews.find((e) => e.environment.name === environment);
   return (
-    <nav aria-label="Environment" className={envSwitchBox}>
-      {regular.map((e) => (
-        <button
-          key={e.environment.id}
-          type="button"
-          aria-current={!off && e.environment.name === environment}
-          onClick={() => go(e.environment.name)}
-          className={`${envSegment} not-first:border-l not-first:border-edge`}
-        >
-          {e.environment.name}
-          <ToneDot tone={tones.get(e.environment.name)} />
-        </button>
-      ))}
-      {previews.length > 0 && (
-        <Menu
-          label="Previews"
-          className="border-l border-edge"
-          button={
-            <span aria-current={!!current} className={envSegment}>
-              {current ? current.environment.name : "previews"}
-              <span className="text-faint">{previews.length}</span>
-              <Icon name="chevronDown" size={12} />
-            </span>
-          }
-        >
-          {(close) =>
-            previews.map((e) => (
-              <button
-                key={e.environment.id}
-                type="button"
-                role="menuitem"
-                className={menuItem}
-                onClick={() => {
-                  close();
-                  go(e.environment.name);
-                }}
-              >
-                {e.environment.name}
-                <ToneDot tone={tones.get(e.environment.name)} />
-              </button>
-            ))
-          }
-        </Menu>
-      )}
+    <EnvButtons
+      nav
+      environments={environments.map((e) => e.environment)}
+      picked={off ? undefined : environment}
+      onPick={go}
+      tones={tones}
+    >
       {canNew && (
         <button
           type="button"
@@ -486,7 +435,7 @@ function EnvironmentSwitch({
           +
         </button>
       )}
-    </nav>
+    </EnvButtons>
   );
 }
 

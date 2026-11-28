@@ -16,6 +16,7 @@ import { canCreateProject } from "../features/create/access";
 import { openCreate } from "../features/create/open";
 import { ProjectGrid } from "../features/overview/ProjectGrid";
 import { stages, step } from "../features/overview/pipeline";
+import { dockBuilt } from "../features/service/builtImage";
 import { useOrg } from "../shell/location";
 import { cliInstallLine } from "../ui/cliInstall";
 import { ago, plural } from "../ui/format";
@@ -419,16 +420,16 @@ const shortImage = (ref: string) =>
 
 /**
  * A deploy's audit event as a sentence after the service's name:
- * "r9 rolled back to r7", "deployed r1 from shop-web:1.4.0".
+ * "r9 rolled back to r7", "deployed r1 from shop-web:1.4.0", "deployed r3"
+ * for a build (dockBuilt).
  */
 function deployWords(e: AuditEvent) {
   const back = e.summary.match(/^release (\d+) rolls back to release (\d+)/);
   if (back) return `r${back[1]} rolled back to r${back[2]}`;
   const rest = e.summary
     .replace(/\brelease (\d+)/g, "r$1")
-    .replace(
-      /from image (\S+)/,
-      (_, image: string) => `from ${shortImage(image)}`,
+    .replace(/ from image (\S+)/, (_, image: string) =>
+      dockBuilt(image) ? "" : ` from ${shortImage(image)}`,
     );
   return `${pastLabel(e.action)} ${rest}`;
 }

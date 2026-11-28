@@ -3,6 +3,7 @@ import type { ProjectOverview, ServiceView } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { LockMark, Panel, SectionHead, StateText } from "../../ui/kit";
 import { serviceState } from "../../ui/status";
+import { dockBuilt } from "../service/builtImage";
 import { shortImage } from "../service/releases";
 import { type Step, stages, step } from "./pipeline";
 
@@ -194,7 +195,9 @@ function LaneCells({
             <StateText state={serviceState(view)} className="text-xs" />
             {serving && (
               <span className="font-mono text-xs text-sec">
-                r{serving.number} {shortImage(serving.image_ref)}
+                r{serving.number}
+                {!dockBuilt(serving.image_ref) &&
+                  ` ${shortImage(serving.image_ref)}`}
               </span>
             )}
           </Link>
