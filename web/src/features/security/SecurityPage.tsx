@@ -134,8 +134,8 @@ export function SecurityPage() {
                 <thead>
                   <tr>
                     <th className="w-6" aria-label="Severity" />
-                    <th>Finding</th>
                     <th>Server</th>
+                    <th>Finding</th>
                     <th>What to do</th>
                     <th>Found</th>
                     {operator && <th aria-label="Actions" />}
@@ -147,15 +147,7 @@ export function SecurityPage() {
                       <td>
                         <Dot check={r.check} />
                       </td>
-                      <td>
-                        <div>{r.check.title}</div>
-                        {r.check.detail && (
-                          <div className="text-xs text-mut">
-                            {r.check.detail}
-                          </div>
-                        )}
-                      </td>
-                      <td className="font-mono whitespace-nowrap">
+                      <td className="font-mono">
                         <Link
                           to="/console/servers/$server"
                           params={{ server: r.server }}
@@ -164,7 +156,15 @@ export function SecurityPage() {
                           {r.server}
                         </Link>
                       </td>
-                      <td className="text-xs text-sec">
+                      <td className="min-w-[240px] whitespace-normal">
+                        <div>{r.check.title}</div>
+                        {r.check.detail && (
+                          <div className="text-xs text-mut">
+                            {r.check.detail}
+                          </div>
+                        )}
+                      </td>
+                      <td className="min-w-[200px] text-xs whitespace-normal text-sec">
                         <Commands text={r.check.fix ?? ""} />
                       </td>
                       <td className="whitespace-nowrap text-mut">
@@ -202,9 +202,17 @@ export function SecurityPage() {
                 <tbody>
                   {dismissed.slice(0, maxRows).map((r) => (
                     <tr key={`${r.server}/${r.check.key}`}>
+                      <td className="font-mono">
+                        <Link
+                          to="/console/servers/$server"
+                          params={{ server: r.server }}
+                          className="hover:text-fg"
+                        >
+                          {r.server}
+                        </Link>
+                      </td>
                       <td>{r.check.title}</td>
-                      <td className="font-mono">{r.server}</td>
-                      <td className="text-mut">
+                      <td className="min-w-[200px] whitespace-normal text-mut">
                         "{r.check.dismissed?.reason}" · {r.check.dismissed?.by},{" "}
                         {r.check.dismissed && ago(r.check.dismissed.at)}
                       </td>
