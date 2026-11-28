@@ -14,6 +14,7 @@ import {
   StateText,
 } from "../../ui/kit";
 import { releaseState, releaseWhat } from "../../ui/status";
+import { dockBuilt } from "./builtImage";
 import {
   copiedConfig,
   errorSummary,
@@ -25,7 +26,8 @@ import {
 } from "./releases";
 
 /**
- * Release history: one line per release (what, short image, who, when),
+ * Release history: one line per release (what, short image unless Dock
+ * built it, who, when),
  * a failure's cause under it in full, Details on a failed row and a small
  * Roll back button on every superseded row (left out while a deploy runs,
  * and where the serving release already is a copy of it).
@@ -119,10 +121,15 @@ export function ReleasesTable({
                       className="line-clamp-2 break-words"
                       title={`${releaseWhat(r)} ${image}`}
                     >
-                      {releaseWhat(r)}{" "}
-                      <span className="font-mono text-xs whitespace-nowrap text-mut">
-                        {shortImage(image)}
-                      </span>
+                      {releaseWhat(r)}
+                      {!dockBuilt(image) && (
+                        <>
+                          {" "}
+                          <span className="font-mono text-xs whitespace-nowrap text-mut">
+                            {shortImage(image)}
+                          </span>
+                        </>
+                      )}
                     </span>
                     {r.status === "failed" && r.error && !quiet && (
                       // Its diagnosis's likely cause when a rule matched
