@@ -828,7 +828,7 @@ function NewInProject({
                 openCreate({ kind: "service", env: service });
               }}
             >
-              New service in {service.environment}
+              New service
             </button>
           )}
           {newEnv && (

@@ -7,7 +7,8 @@ import {
   useProjectOverview,
   useSession,
 } from "../../data/queries";
-import type { EnvRef, Service } from "../../data/types";
+import type { Environment, EnvRef, Service } from "../../data/types";
+import { EnvButtons } from "../../shell/EnvButtons";
 import { useOrg } from "../../shell/location";
 import { Dialog } from "../../ui/Dialog";
 import { plural } from "../../ui/format";
@@ -107,8 +108,8 @@ export function NewService({
   const env = { project: opened.project, environment };
   const session = useSession();
   const choices = useProjectOverview(env.project)
-    .environments.map((e) => e.environment.name)
-    .filter((name) => canDeploy(session, { ...env, environment: name }));
+    .environments.map((e) => e.environment)
+    .filter((e) => canDeploy(session, { ...env, environment: e.name }));
   const title = `New service in ${env.project} ${environment}`;
   return (
     <Dialog
@@ -141,7 +142,7 @@ function ServiceForm({
 }: {
   env: EnvRef;
   /** The environments the caller may add a service to. */
-  choices: readonly string[];
+  choices: readonly Environment[];
   onEnvironment: (environment: string) => void;
   source: ServiceSource;
   setSource: (source: ServiceSource) => void;
@@ -228,24 +229,25 @@ function ServiceForm({
     return <Created env={env} done={done} onClose={onClose} />;
   }
 
+  // The environment row, the project header's buttons, where there is a
+  // choice.
+  const pickEnvironment = choices.length > 1 && (
+    <Group label="Environment">
+      <EnvButtons
+        environments={choices}
+        picked={env.environment}
+        onPick={(name) => {
+          onEnvironment(name);
+          create.reset();
+        }}
+      />
+    </Group>
+  );
+
   // The environment and source pickers, above a form of their own.
   const head = (
     <Fields>
-      {choices.length > 1 && (
-        <Field label="Environment">
-          <select
-            value={env.environment}
-            onChange={(e) => onEnvironment(e.target.value)}
-            className="w-fit font-mono"
-          >
-            {choices.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </Field>
-      )}
+      {pickEnvironment}
       <Group label="Source">
         <Choice
           label="Source"
@@ -367,24 +369,7 @@ function ServiceForm({
       }}
     >
       <Fields>
-        {choices.length > 1 && (
-          <Field label="Environment">
-            <select
-              value={env.environment}
-              onChange={(e) => {
-                onEnvironment(e.target.value);
-                create.reset();
-              }}
-              className="w-fit font-mono"
-            >
-              {choices.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </Field>
-        )}
+        {pickEnvironment}
         <Field label="Name" error={nameError}>
           <input
             ref={autofocus}
