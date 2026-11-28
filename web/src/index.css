@@ -380,7 +380,9 @@
 
   /*
    * Cells line up on their first line's baseline, so mono values (times,
-   * targets, ids) and sans text sit on one line across a row.
+   * targets, ids) and sans text sit on one line across a row. They don't
+   * wrap: a cell holding sentences (a detail, a fix, a reason) sets
+   * whitespace-normal, or the table grows past the page and scrolls.
    */
   td {
     padding: 9px 14px 9px 0;
