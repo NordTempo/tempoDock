@@ -58,6 +58,10 @@ certificate.
   intermediate: a client that needs one refuses it expired, trusted CA
   or not. Only a last certificate that really signed itself counts as a
   root and isn't checked.
+- For servers: the leaf's extended key usage, if it has one, includes
+  serverAuth (or any), and so does every certificate above it that has
+  one. A client-authentication-only certificate is refused: browsers
+  would refuse it for a website.
 - The same leaf twice in one org is refused.
 - Whether it chains to a CA the control plane trusts is recorded and
   shown (`public`), never required: origin and internal CAs usually
