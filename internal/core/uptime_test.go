@@ -310,7 +310,7 @@ func TestUptimeRollsUpHoursAndTrims(t *testing.T) {
 	// Straight into the store: the scheduler and the statistics tick
 	// don't know it, so only this test rolls its rows up.
 	chk, err := h.store.CreateUptimeCheck(h.ctx, store.CreateUptimeCheckParams{
-		ServiceID: h.serviceID(web), Url: "https://shop.example.com/", ExpectStatus: 200, IntervalS: 60, TimeoutMs: 1000, CreatedAt: now(),
+		ServiceID: ptr(h.serviceID(web)), Url: "https://shop.example.com/", ExpectStatus: 200, IntervalS: 60, TimeoutMs: 1000, CreatedAt: now(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -526,7 +526,7 @@ func TestUptimeProbePassesItsServicesLogin(t *testing.T) {
 	}
 	const foreign = "https://shop.example.com/foreign"
 	if _, err := h.c.store.CreateUptimeCheck(h.ctx, store.CreateUptimeCheckParams{
-		ServiceID: apiSvc.svc.ID, Url: foreign, ExpectStatus: 200, IntervalS: 30, TimeoutMs: 10000, CreatedAt: now(), CreatedBy: "test",
+		ServiceID: &apiSvc.svc.ID, Url: foreign, ExpectStatus: 200, IntervalS: 30, TimeoutMs: 10000, CreatedAt: now(), CreatedBy: "test",
 	}); err != nil {
 		t.Fatal(err)
 	}

@@ -1,6 +1,6 @@
 # 0055: Uptime checks from another server
 
-Status: accepted (decided by the agent); amended by [0059](0059-analytics-area-and-slimmer-service-page.md) (checks that set themselves up), [0070](0070-sleeping-environments.md) (checks pause while the environment sleeps) and [0073](0073-public-status-pages.md) (day rows for 90 days)
+Status: accepted (decided by the agent); amended by [0059](0059-analytics-area-and-slimmer-service-page.md) (checks that set themselves up), [0070](0070-sleeping-environments.md) (checks pause while the environment sleeps), [0073](0073-public-status-pages.md) (day rows for 90 days) and [outside checks](#outside-checks) (2026-11-28)
 
 ## Context
 
@@ -88,3 +88,24 @@ and resolutions are the same.
 - A single-server install probes itself from the control plane: it sees
   the app and Caddy failing, not the network or DNS. The UI says which
   server probes.
+
+## Outside checks
+
+Amendment, 2026-11-28 (asked by Saile; mocks A and C picked, Postplan
+`rxe3tn0phyfi`). A status page component (ADR 0073) could only show
+Dock's own services, so a vendor's API or a site served elsewhere had
+to be a manual component. An organization now checks sites outside
+Dock too.
+
+| Topic | Decision |
+|---|---|
+| What | An uptime check with no service: `uptime_checks.service_id` is null and `org_id` names the organization (one of the two, a CHECK). It uses the same scheduler, history, percentages and `uptime_down` alerts |
+| Guards | No domain to verify, so the rest hold: the prober's address check (public addresses only, ports 80 and 443), an IP literal must be public and a hostname must have a dot when added, an interval of at least 60 s, no URL twice, and the organization's cap of 50 checks (service checks and outside ones together) |
+| Who | Organization admins with an unlimited token or session add, change and remove them (`status_pages.manage`); everyone who reads status pages sees them |
+| Where it runs | Any server, spread by the check's ID like a service's check; there is no environment's server to avoid. No session is ever sent: a URL on a protected domain of a Dock service is probed as a stranger |
+| Alerts | `uptime_down` to the organization's channels, with no project or service, whether or not a component shows the check. A published page that takes drafts drafts an incident for the components that show it |
+| Status pages | A component's sources may name an outside check; removing the check removes it from them, and the remove asks first, naming each page and component (`used_by`) |
+| API, CLI, MCP, UI | `GET`/`POST /outside-uptime-checks`, `PATCH`/`DELETE /outside-uptime-checks/{id}`; `dock uptime list\|add\|update\|remove --outside`; the `outside_uptime_checks` tool; the **Outside checks** table on Status and an **Outside Dock** group in the component dialog, whose "+ Check a URL" stages a URL that is added when the dialog saves. Audited as `uptime.add`, `.update` and `.remove` with the target `outside checks` |
+| Org deleted | Its outside checks go with it |
+| Migration | 0143: `uptime_checks` rebuilt with `org_id` and a nullable `service_id`, and with `AUTOINCREMENT`, started past every check ID an alert names: a check's alerts (keyed `uptime:<id>`) outlive it, so its ID is never another check's, another organization's included |
+

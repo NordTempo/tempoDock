@@ -6,7 +6,7 @@ import { IncidentEditor } from "../features/status/IncidentEditor";
 // timeline and what its components say now. It reads its page, which
 // carries the page's incidents.
 export const Route = createFileRoute(
-  "/_app/$org/status-pages/$page_/incidents/$incident",
+  "/_app/$org/status/$page_/incidents/$incident",
 )({
   loader: ({ context: { queryClient }, params }) =>
     queryClient.ensureQueryData(statusQueries.page(params.page)),

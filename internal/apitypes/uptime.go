@@ -3,7 +3,8 @@ package apitypes
 import "time"
 
 // Uptime checks (ADR 0055): a URL on one of a service's domains, probed
-// from another server.
+// from another server, or an organization's outside check of a site
+// outside Dock, for status pages.
 
 // UptimeState is what a check's latest probes say.
 type UptimeState string
@@ -16,16 +17,18 @@ const (
 	UptimeUnknown UptimeState = "unknown"
 )
 
-// AddUptimeCheckRequest adds an uptime check to a service.
+// AddUptimeCheckRequest adds an uptime check to a service, or an outside
+// check to an organization.
 type AddUptimeCheckRequest struct {
 	// URL is http:// or https:// on one of the service's domains, any
-	// path.
+	// path; for an outside check, any public site on ports 80 and 443.
 	URL string `json:"url" minLength:"1" maxLength:"2048" example:"https://shop.example.com/health"`
 	// ExpectStatus is the status that means up: a code, or 2xx or 3xx for
 	// any code of the class. Default 200.
 	ExpectStatus string `json:"expect_status,omitempty" pattern:"^([1-5][0-9][0-9]|2xx|3xx)$" doc:"A status code, or 2xx or 3xx; default 200"`
-	// IntervalSeconds is how often it is probed: 30 to 3600, default 60.
-	IntervalSeconds int `json:"interval_seconds,omitempty" minimum:"0" maximum:"3600" doc:"30 to 3600; default 60"`
+	// IntervalSeconds is how often it is probed: 30 (60 for an outside
+	// check) to 3600, default 60.
+	IntervalSeconds int `json:"interval_seconds,omitempty" minimum:"0" maximum:"3600" doc:"30 to 3600 (outside checks 60 to 3600); default 60"`
 	// TimeoutSeconds bounds a probe: 1 to 30 and below the interval,
 	// default 10.
 	TimeoutSeconds int `json:"timeout_seconds,omitempty" minimum:"0" maximum:"30" doc:"1 to 30, below the interval; default 10"`
@@ -71,6 +74,17 @@ type UptimeCheck struct {
 	// Incidents are the check's newest uptime_down alerts, newest first
 	// (at most 5).
 	Incidents []UptimeIncident `json:"incidents"`
+	// UsedBy, for an outside check, is the status page components that
+	// show it, by page and name. Removing the check drops it from
+	// them.
+	UsedBy []UptimeCheckUse `json:"used_by,omitempty"`
+}
+
+// UptimeCheckUse is a status page component an outside check feeds.
+type UptimeCheckUse struct {
+	// Page is the status page's slug.
+	Page      string `json:"page"`
+	Component string `json:"component"`
 }
 
 // UptimeProbe is one probe's result.
@@ -113,7 +127,8 @@ type ServiceUptime struct {
 }
 
 // UptimeUpdate is a check whose state changed (up or down), in an
-// uptime event, which names its project, environment and service.
+// uptime event, which names its project, environment and service; none
+// for an outside check.
 type UptimeUpdate struct {
 	ID        int64        `json:"id"`
 	State     UptimeState  `json:"state" enum:"up,down,unknown"`

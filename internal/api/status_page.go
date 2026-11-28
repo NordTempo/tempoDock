@@ -53,7 +53,7 @@ section{padding:9px 0 10px;border-bottom:1px solid #161618}
 .operational{color:#4ade80}.idle{color:#8b8b94}.maintenance{color:#60a5fa}.degraded{color:#fbbf24}.partial_outage{color:#fb923c}.major_outage{color:#f87171}
 .bar{display:flex;gap:2px;height:28px}
 .bar i{flex:1;min-width:1px;border-radius:1px;background:#1c1c1f}
-.bar .g{background:#1d4d31}.bar .w{background:#fbbf24}.bar .o{background:#fb923c}.bar .b{background:#2563eb}.bar .r{background:#f87171}
+.bar .g{background:#5cdd8b}.bar .w{background:#f8a306}.bar .b{background:#1747f5}.bar .r{background:#dc3545}
 .inc{border-left:2px solid #3f3f46;padding:2px 0 2px 14px;margin:0 0 16px}
 .inc.b-degraded{border-color:#fbbf24}.inc.b-partial_outage{border-color:#fb923c}.inc.b-major_outage{border-color:#f87171}.inc.b-maintenance{border-color:#60a5fa}
 .inc-t{font-weight:600;margin-bottom:4px}
@@ -437,50 +437,49 @@ func statusDate(d string) string {
 	return strings.TrimPrefix(d[8:], "0") + " " + statusMonths[m-1]
 }
 
-// dayClasses order a day's colours from no data to red; an incident's
-// impact makes a day at least its colour.
-var (
-	dayClasses  = map[string]int{"n": 0, "g": 1, "w": 2, "o": 3, "r": 4}
-	impactClass = map[apitypes.ComponentStatus]string{apitypes.StatusDegraded: "w", apitypes.StatusPartialOutage: "o", apitypes.StatusMajorOutage: "r"}
-)
-
 // statusDayOf is a day's colour and hover text, escaped for an
-// attribute. A page that hides percentages says only whether there was
-// downtime.
+// attribute (ADR 0073, day colours, 2026-11-28): by what happened, not by
+// a percentage. Red for a confirmed outage (an uptime check down) or an
+// incident that was an outage, blue for maintenance otherwise, amber when
+// a probe failed or an incident degraded the component, green when every
+// probe passed, gray without probes. The hover gives the day's
+// percentage (or, on a page that hides them, whether probes failed) and
+// what happened.
 func statusDayOf(d apitypes.StatusDay, numbers bool) statusDay {
 	date := statusDate(d.Date)
+	failed := d.Uptime != nil && *d.Uptime < 100
+	outage := d.Outage || d.Impact == apitypes.StatusPartialOutage || d.Impact == apitypes.StatusMajorOutage
 	out := statusDay{Class: "n"}
-	if d.Uptime == nil {
-		out.Title = date + ": no data"
-	} else {
-		u := *d.Uptime
+	switch {
+	case outage:
 		out.Class = "r"
-		switch {
-		case u >= 100:
-			out.Class = "g"
-		case u >= 99:
-			out.Class = "w"
-		}
-		switch {
-		case numbers:
-			out.Title = date + ": " + statusPercent(u)
-		case out.Class == "g":
-			out.Title = date + ": no downtime"
-		default:
-			out.Title = date + ": downtime"
-		}
+	case d.Maintenance:
+		out.Class = "b"
+	case failed || d.Impact == apitypes.StatusDegraded:
+		out.Class = "w"
+	case d.Uptime != nil:
+		out.Class = "g"
+	}
+	switch {
+	case d.Uptime == nil:
+		out.Title = date + ": no data"
+	case numbers:
+		out.Title = date + ": " + statusPercent(*d.Uptime)
+	case failed:
+		out.Title = date + ": some probes failed"
+	default:
+		out.Title = date + ": every probe passed"
+	}
+	switch {
+	case d.Outage:
+		out.Title += ", down"
+	case failed && numbers:
+		out.Title += ", some probes failed"
 	}
 	if d.Incident != "" {
-		if c := impactClass[d.Impact]; dayClasses[c] > dayClasses[out.Class] {
-			out.Class = c
-		}
 		out.Title += ", " + template.HTMLEscapeString(d.Incident)
 	}
 	if d.Maintenance {
-		// Planned work is blue unless something worse happened.
-		if out.Class == "n" || out.Class == "g" {
-			out.Class = "b"
-		}
 		out.Title += ", maintenance"
 	}
 	return out

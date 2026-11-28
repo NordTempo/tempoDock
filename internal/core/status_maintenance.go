@@ -331,7 +331,8 @@ func (c *Core) checkMaintenanceLocks(ctx context.Context, a Actor, p store.Statu
 	}
 	seen := map[int64]bool{}
 	for _, s := range srcs {
-		if !covered[s.ComponentID] || seen[s.EnvironmentID] {
+		// An outside check (environment 0) is in no environment to lock.
+		if !covered[s.ComponentID] || s.EnvironmentID == 0 || seen[s.EnvironmentID] {
 			continue
 		}
 		seen[s.EnvironmentID] = true

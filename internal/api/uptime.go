@@ -10,7 +10,8 @@ import (
 	"github.com/NordTempo/tempoDock/internal/core"
 )
 
-// registerUptime registers a service's uptime checks (ADR 0055).
+// registerUptime registers a service's uptime checks and the
+// organization's outside checks (ADR 0055).
 func registerUptime(s *Server, a huma.API) {
 	tags := []string{"uptime"}
 	authed(s, a, huma.Operation{
@@ -61,5 +62,44 @@ func registerUptime(s *Server, a huma.API) {
 		ID int64 `path:"id"`
 	}) (*struct{}, error) {
 		return nil, s.core.RemoveUptimeCheck(ctx, actor, in.ref(), in.ID)
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "list-outside-uptime-checks", Method: http.MethodGet, Path: Prefix + "/outside-uptime-checks",
+		Summary:     "List outside uptime checks",
+		Description: "The organization's checks of sites outside Dock, for status page components: each with its results, as a service's checks, and the components that show it (used_by).",
+		Tags:        tags,
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[[]apitypes.UptimeCheck], error) {
+		return reply(s.core.ListOutsideUptimeChecks(ctx, actor))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "add-outside-uptime-check", Method: http.MethodPost, Path: Prefix + "/outside-uptime-checks",
+		Summary:     "Add an outside uptime check",
+		Description: "A URL of a public site outside Dock (ports 80 and 443), probed with GET from one of the servers every 60 seconds or more. Two failed probes in a row open an uptime_down alert to the organization's channels, whether or not a status page shows it. Counts toward the organization's 50 checks. Organization admins.",
+		Tags:        tags, DefaultStatus: http.StatusCreated,
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Body apitypes.AddUptimeCheckRequest
+	}) (*out[apitypes.UptimeCheck], error) {
+		return reply(s.core.AddOutsideUptimeCheck(ctx, actor, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "update-outside-uptime-check", Method: http.MethodPatch, Path: Prefix + "/outside-uptime-checks/{id}",
+		Summary:     "Change an outside uptime check",
+		Description: "Its interval (60 to 3600 seconds) or expected status, in place. Organization admins.",
+		Tags:        tags,
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ID   int64 `path:"id"`
+		Body apitypes.UpdateUptimeCheckRequest
+	}) (*out[apitypes.UptimeCheck], error) {
+		return reply(s.core.UpdateOutsideUptimeCheck(ctx, actor, in.ID, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "remove-outside-uptime-check", Method: http.MethodDelete, Path: Prefix + "/outside-uptime-checks/{id}",
+		Summary:     "Remove an outside uptime check",
+		Description: "With its history; its open alert resolves and the status page components that show it (used_by) lose it as a source. Organization admins.",
+		Tags:        tags, DefaultStatus: http.StatusNoContent,
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ID int64 `path:"id"`
+	}) (*struct{}, error) {
+		return nil, s.core.RemoveOutsideUptimeCheck(ctx, actor, in.ID)
 	})
 }

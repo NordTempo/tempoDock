@@ -17,7 +17,7 @@ dock status-page component add acme "Web app" --service shop/production/web --gr
 dock status-page publish acme
 ```
 
-Or in the UI: **Status pages** in the sidebar, then **New status page**.
+Or in the UI: **Status** in the top bar, then **New status page**.
 Organization admins make and change pages; every member sees them.
 
 - **The name** is unique in your organization; another organization may
@@ -31,6 +31,8 @@ Organization admins make and change pages; every member sees them.
 - **What a component shows** is private: services (all their uptime
   checks and their health) or single uptime checks (`dock uptime list`
   shows their IDs). Preview environments can't be on a status page.
+- **Sites outside Dock** (a vendor's API, a site served elsewhere) are
+  outside checks: see below.
 - A page starts unpublished; its address answers 404 until you publish it.
 
 ## What it says
@@ -43,13 +45,38 @@ Organization admins make and change pages; every member sees them.
 | Major outage | all its checks are down |
 | Idle | its environment is asleep: not counted as downtime |
 
-The page's headline is its worst component. The bars show 90 UTC days:
-dark green for a perfect day, amber below 100%, red below 99%, gray
-without probes. `dock status-page update acme --show-uptime=false` hides
+The page's headline is its worst component. The bars show 90 UTC days,
+coloured by what happened: green when every probe passed, amber when a
+probe failed but the site wasn't down, red when it was down (two failed
+probes in a row, which raise an alert) or an incident was an outage,
+blue for maintenance, gray without probes. Hover a day for its
+percentage. `dock status-page update acme --show-uptime=false` hides
 the percentages; the colours stay.
 
 A component added with `--manual` reads operational whatever its
 services do; only incidents change it.
+
+## Sites outside Dock
+
+A component can also show a site Dock doesn't serve. Your organization
+checks it like a service's URL, from one of the servers:
+
+```sh
+dock uptime add https://status.vendor.example/ --outside
+dock uptime list --outside
+dock status-page component add acme Payments --check <its id>
+```
+
+Or in the UI: **Check a URL** under **Outside checks** on Status, or
+**+ Check a URL** in a component's dialog, which adds the check when the
+component saves. Organization admins add them. Only public sites on
+ports 80 and 443, probed every 60 s or more; they count toward the
+organization's 50 uptime checks.
+
+An outside check that fails twice in a row raises an `uptime_down` alert
+to your organization's alert channels, whether or not a page shows it.
+Removing the check takes it off every component that shows it; Dock asks
+first and names them.
 
 ## Your own hostname
 

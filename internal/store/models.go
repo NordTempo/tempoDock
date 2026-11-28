@@ -1456,7 +1456,8 @@ type TrafficStat struct {
 
 type UptimeCheck struct {
 	ID           int64
-	ServiceID    int64
+	ServiceID    *int64
+	OrgID        *int64
 	Url          string
 	ExpectStatus int64
 	IntervalS    int64

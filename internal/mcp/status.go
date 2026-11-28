@@ -12,9 +12,10 @@ import (
 )
 
 // addStatusTools registers status_pages (ADR 0073): what the
-// organization's public status pages say now, and status_incident_open
-// and status_incident_update for incidents on them. Changing pages and
-// components stays with people (UI, CLI, API).
+// organization's public status pages say now, status_incident_open and
+// status_incident_update for incidents on them, and outside_uptime_checks
+// for the checks of sites outside Dock components can show (ADR 0055).
+// Changing pages and components stays with people (UI, CLI, API).
 func (h *handler) addStatusTools(s *mcpkit.Server[core.Actor]) {
 	mcpkit.AddTool(s, "status_pages", "Read status pages",
 		"The organization's status pages and their components' status.",
@@ -152,6 +153,72 @@ func (h *handler) addStatusTools(s *mcpkit.Server[core.Actor]) {
 			}
 			return mcpkit.Reply{Summary: incidentLine(inc), Data: inc}, nil
 		})
+}
+
+// addOutsideCheckTool registers outside_uptime_checks: the organization's
+// uptime checks of sites outside Dock (ADR 0055), one tool for the four
+// actions to keep the tool list short.
+func (h *handler) addOutsideCheckTool(s *mcpkit.Server[core.Actor]) {
+	mcpkit.AddTool(s, "outside_uptime_checks", "Check sites outside Dock",
+		"List, add, update or remove the organization's uptime checks of public sites outside Dock. Down alerts go to the organization's alert channels; status page components can show them. A service's own URLs are checked by Dock already.",
+		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
+			Action          string `json:"action" enum:"list,add,update,remove"`
+			ID              int64  `json:"id,omitempty" doc:"For update and remove."`
+			URL             string `json:"url,omitempty" maxLength:"2048" doc:"For add: http(s), ports 80 and 443."`
+			ExpectStatus    string `json:"expect_status,omitempty" pattern:"^([1-5][0-9][0-9]|2xx|3xx)$" doc:"Default 200."`
+			IntervalSeconds int    `json:"interval_seconds,omitempty" minimum:"0" maximum:"3600" doc:"60 to 3600, default 60."`
+		}) (mcpkit.Reply, error) {
+			switch in.Action {
+			case "list":
+				checks, err := h.core.ListOutsideUptimeChecks(ctx, c.Actor)
+				if err != nil {
+					return mcpkit.Reply{}, err
+				}
+				lines := make([]string, len(checks))
+				for i, ch := range checks {
+					lines[i] = checkLine(ch)
+				}
+				return mcpkit.Reply{Summary: fmt.Sprintf("%d outside uptime checks: %s.", len(checks), list(lines)), Data: checks}, nil
+			case "add":
+				ch, err := h.core.AddOutsideUptimeCheck(ctx, c.Actor, apitypes.AddUptimeCheckRequest{URL: in.URL, ExpectStatus: in.ExpectStatus, IntervalSeconds: in.IntervalSeconds})
+				if err != nil {
+					return mcpkit.Reply{}, err
+				}
+				return mcpkit.Reply{Summary: "Added " + checkLine(ch) + ".", Data: ch}, nil
+			case "update":
+				req := apitypes.UpdateUptimeCheckRequest{}
+				if in.ExpectStatus != "" {
+					req.ExpectStatus = &in.ExpectStatus
+				}
+				if in.IntervalSeconds != 0 {
+					req.IntervalSeconds = &in.IntervalSeconds
+				}
+				ch, err := h.core.UpdateOutsideUptimeCheck(ctx, c.Actor, in.ID, req)
+				if err != nil {
+					return mcpkit.Reply{}, err
+				}
+				return mcpkit.Reply{Summary: "Updated " + checkLine(ch) + ".", Data: ch}, nil
+			case "remove":
+				if err := h.core.RemoveOutsideUptimeCheck(ctx, c.Actor, in.ID); err != nil {
+					return mcpkit.Reply{}, err
+				}
+				return mcpkit.Reply{Summary: fmt.Sprintf("Removed outside uptime check %d with its history.", in.ID)}, nil
+			}
+			return mcpkit.Reply{}, mcpkit.Invalid("action is list, add, update or remove")
+		})
+}
+
+// checkLine is an uptime check in a phrase for the model.
+func checkLine(ch apitypes.UptimeCheck) string {
+	s := fmt.Sprintf("check %d of %s (%s, every %ds, expects %s", ch.ID, ch.URL, ch.State, ch.IntervalSeconds, ch.ExpectStatus)
+	if len(ch.UsedBy) > 0 {
+		uses := make([]string, len(ch.UsedBy))
+		for i, u := range ch.UsedBy {
+			uses[i] = u.Page + "/" + u.Component
+		}
+		s += ", shown by " + strings.Join(uses, ", ")
+	}
+	return s + ")"
 }
 
 // incidentLine is an incident in a sentence for the model.

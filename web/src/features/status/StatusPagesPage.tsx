@@ -15,6 +15,7 @@ import {
   StateText,
 } from "../../ui/kit";
 import { publishState, statusQueries, useCreateStatusPage } from "./data";
+import { OutsideChecks } from "./OutsideChecks";
 
 /**
  * The organization's public status pages (ADR 0073): each lists
@@ -34,7 +35,7 @@ export function StatusPagesPage() {
   return (
     <>
       <PageBar
-        title="Status pages"
+        title="Status"
         actions={
           admin &&
           !adding && (
@@ -71,7 +72,7 @@ export function StatusPagesPage() {
                   <tr key={p.slug} className="row-link">
                     <td className="py-2 font-mono">
                       <Link
-                        to="/$org/status-pages/$page"
+                        to="/$org/status/$page"
                         params={{ org, page: p.slug }}
                         className="row-main font-medium hover:underline"
                       >
@@ -103,6 +104,9 @@ export function StatusPagesPage() {
             </table>
           </Panel>
         )}
+        <div className="mt-7">
+          <OutsideChecks />
+        </div>
       </Page>
     </>
   );
@@ -126,7 +130,7 @@ function NewPage({ onClose }: { onClose: () => void }) {
           {
             onSuccess: (p) =>
               navigate({
-                to: "/$org/status-pages/$page",
+                to: "/$org/status/$page",
                 params: { org, page: p.slug },
               }),
           },

@@ -13,44 +13,79 @@ import (
 	"github.com/NordTempo/tempoDock/internal/cli/output"
 )
 
-// newUptimeCmd is `dock uptime`: a service's uptime checks (ADR 0055).
+// newUptimeCmd is `dock uptime`: a service's uptime checks, and with
+// --outside the organization's checks of sites outside Dock (ADR 0055).
 func newUptimeCmd(g *globals) *cobra.Command {
-	cmd := group(&cobra.Command{Use: "uptime", Short: "Check a service's URLs from another server"})
+	cmd := group(&cobra.Command{Use: "uptime", Short: "Check a service's URLs, or sites outside Dock, from another server"})
 	cmd.AddCommand(newUptimeListCmd(g), newUptimeAddCmd(g), newUptimeDomainsCmd(g), newUptimeUpdateCmd(g), newUptimeRemoveCmd(g))
 	return cmd
 }
 
+// uptimeOpen connects for an uptime command: to the service's checks, or
+// with outside to the organization's outside checks. It returns the
+// checks' API path and what they belong to, for messages.
+func uptimeOpen(g *globals, f targetFlags, outside bool) (*session, string, string, error) {
+	if outside {
+		s, err := g.connect()
+		return s, apiPrefix + "/outside-uptime-checks", "the organization's outside checks", err
+	}
+	s, t, err := g.open(f, needService)
+	return s, t.servicePath() + "/uptime-checks", t.String(), err
+}
+
+// addOutsideFlag adds --outside to an uptime command.
+func addOutsideFlag(cmd *cobra.Command, outside *bool) {
+	cmd.Flags().BoolVar(outside, "outside", false, "the organization's checks of sites outside Dock, for status pages, instead of a service's")
+}
+
 func newUptimeListCmd(g *globals) *cobra.Command {
 	var f targetFlags
+	var outside bool
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List uptime checks with their state and uptime",
 		Long: `List the service's uptime checks: state, the share of probes that were up
-over 24 hours, 7 and 30 days, the last probe and the server that probes.`,
+over 24 hours, 7 and 30 days, the last probe and the server that probes.
+With --outside, the organization's checks of sites outside Dock and the
+status page components that show them.`,
+		Example: `  dock uptime list -s web
+  dock uptime list --outside`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			s, t, err := g.open(f, needService)
+			s, path, where, err := uptimeOpen(g, f, outside)
 			if err != nil {
 				return err
 			}
-			checks, err := get[[]apitypes.UptimeCheck](cmd.Context(), s, t.servicePath()+"/uptime-checks")
+			checks, err := get[[]apitypes.UptimeCheck](cmd.Context(), s, path)
 			if err != nil {
 				return err
 			}
 			return g.io.Print(checks, func() error {
 				if len(checks) == 0 {
-					g.io.Successf("%s has no uptime checks. Add one with `dock uptime add <url>`.", t)
+					add := "dock uptime add <url>"
+					if outside {
+						where, add = "The organization", "dock uptime add <url> --outside"
+					}
+					g.io.Successf("%s has no uptime checks. Add one with `%s`.", where, add)
 					return nil
 				}
-				tb := g.io.Table("id", "url", "state", "24h", "7d", "30d", "last probe", "from", "every")
+				cols := []string{"id", "url", "state", "24h", "7d", "30d", "last probe", "from", "every"}
+				if outside {
+					cols = append(cols, "used by")
+				}
+				tb := g.io.Table(cols...)
 				for _, c := range checks {
 					url := c.URL
 					if c.Auto {
 						url += " (auto)"
 					}
-					tb.Row(strconv.FormatInt(c.ID, 10), url, string(c.State), pct(c.Uptime24h), pct(c.Uptime7d), pct(c.Uptime30d),
-						lastProbe(c.LastProbe), c.Server, (time.Duration(c.IntervalSeconds) * time.Second).String())
+					row := []string{strconv.FormatInt(c.ID, 10), url, string(c.State), pct(c.Uptime24h), pct(c.Uptime7d), pct(c.Uptime30d),
+						lastProbe(c.LastProbe), c.Server, (time.Duration(c.IntervalSeconds) * time.Second).String()}
+					if outside {
+						row = append(row, usedBy(c.UsedBy))
+					}
+					tb.Row(row...)
 				}
 				if err := tb.Flush(); err != nil {
 					return err
@@ -67,7 +102,21 @@ over 24 hours, 7 and 30 days, the last probe and the server that probes.`,
 		},
 	}
 	f.add(cmd, needService)
+	addOutsideFlag(cmd, &outside)
 	return cmd
+}
+
+// usedBy lists the components an outside check feeds as page/component,
+// "-" for none.
+func usedBy(uses []apitypes.UptimeCheckUse) string {
+	if len(uses) == 0 {
+		return "-"
+	}
+	out := make([]string, len(uses))
+	for i, u := range uses {
+		out[i] = u.Page + "/" + u.Component
+	}
+	return strings.Join(out, ", ")
 }
 
 // pct formats an uptime percentage, "-" without probes.
@@ -103,19 +152,26 @@ func newUptimeAddCmd(g *globals) *cobra.Command {
 	var f targetFlags
 	var status string
 	var interval, timeout time.Duration
+	var outside bool
 	cmd := &cobra.Command{
 		Use:   "add <url>",
-		Short: "Probe a URL on one of the service's domains",
+		Short: "Probe a URL on one of the service's domains, or outside Dock",
 		Long: `Add an uptime check: Dock sends GET to the URL every --interval from another
 server (the control plane when there is no other) and expects --status
 within --timeout. Redirects aren't followed. Two failures in a row open an
 uptime_down alert; the next success resolves it. The URL's host must be one
-of the service's domains. Project admins only; at most 10 per service.`,
+of the service's domains. Project admins only; at most 10 per service.
+
+With --outside the check is the organization's, of a public site outside
+Dock (ports 80 and 443, every 60s or more), for status page components:
+its alerts go to the organization's channels whether or not a page shows
+it. Organization admins only. An organization has at most 50 checks.`,
 		Example: `  dock uptime add https://shop.example.com/health -s web
-  dock uptime add https://shop.example.com/ --status 3xx --interval 5m`,
+  dock uptime add https://shop.example.com/ --status 3xx --interval 5m
+  dock uptime add https://api.stripe.com/healthcheck --outside`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, t, err := g.open(f, needService)
+			s, path, _, err := uptimeOpen(g, f, outside)
 			if err != nil {
 				return err
 			}
@@ -126,7 +182,7 @@ of the service's domains. Project admins only; at most 10 per service.`,
 				URL: args[0], ExpectStatus: status,
 				IntervalSeconds: int(interval / time.Second), TimeoutSeconds: int(timeout / time.Second),
 			}
-			c, err := send[apitypes.UptimeCheck](cmd.Context(), s, "POST", t.servicePath()+"/uptime-checks", req)
+			c, err := send[apitypes.UptimeCheck](cmd.Context(), s, "POST", path, req)
 			if err != nil {
 				return err
 			}
@@ -138,8 +194,9 @@ of the service's domains. Project admins only; at most 10 per service.`,
 	}
 	f.add(cmd, needService)
 	cmd.Flags().StringVar(&status, "status", "200", "the status that means up: a code, 2xx or 3xx")
-	cmd.Flags().DurationVar(&interval, "interval", time.Minute, "how often to probe, 30s to 1h")
+	cmd.Flags().DurationVar(&interval, "interval", time.Minute, "how often to probe, 30s (60s outside) to 1h")
 	cmd.Flags().DurationVar(&timeout, "timeout", 10*time.Second, "how long a probe may take, 1s to 30s and below the interval")
+	addOutsideFlag(cmd, &outside)
 	return cmd
 }
 
@@ -179,13 +236,15 @@ func newUptimeUpdateCmd(g *globals) *cobra.Command {
 	var f targetFlags
 	var status string
 	var interval time.Duration
+	var outside bool
 	cmd := &cobra.Command{
 		Use:   "update <id> [--interval 5m] [--status 2xx]",
 		Short: "Change an uptime check's interval or expected status",
 		Long: `Change a check in place: its history stays and the new interval applies at
-once. Project admins only.`,
+once. Project admins only; organization admins for --outside checks.`,
 		Example: `  dock uptime update 3 --interval 5m
-  dock uptime update 3 --status 3xx -s web`,
+  dock uptime update 3 --status 3xx -s web
+  dock uptime update 7 --outside --interval 5m`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := strconv.ParseInt(strings.TrimSpace(args[0]), 10, 64)
@@ -206,11 +265,11 @@ once. Project admins only.`,
 			if req.IntervalSeconds == nil && req.ExpectStatus == nil {
 				return &output.Error{Exit: output.ExitUsage, Message: "nothing to change", Hint: "Give --interval, --status or both."}
 			}
-			s, t, err := g.open(f, needService)
+			s, path, _, err := uptimeOpen(g, f, outside)
 			if err != nil {
 				return err
 			}
-			c, err := send[apitypes.UptimeCheck](cmd.Context(), s, http.MethodPatch, t.servicePath()+"/uptime-checks/"+strconv.FormatInt(id, 10), req)
+			c, err := send[apitypes.UptimeCheck](cmd.Context(), s, http.MethodPatch, path+"/"+strconv.FormatInt(id, 10), req)
 			if err != nil {
 				return err
 			}
@@ -222,27 +281,34 @@ once. Project admins only.`,
 	}
 	f.add(cmd, needService)
 	cmd.Flags().StringVar(&status, "status", "", "the status that means up: a code, 2xx or 3xx")
-	cmd.Flags().DurationVar(&interval, "interval", 0, "how often to probe, 30s to 1h")
+	cmd.Flags().DurationVar(&interval, "interval", 0, "how often to probe, 30s (60s outside) to 1h")
+	addOutsideFlag(cmd, &outside)
 	return cmd
 }
 
 func newUptimeRemoveCmd(g *globals) *cobra.Command {
 	var f targetFlags
+	var outside bool
 	cmd := &cobra.Command{
 		Use:     "remove <id>",
 		Aliases: []string{"rm"},
 		Short:   "Remove an uptime check and its history",
-		Args:    cobra.ExactArgs(1),
+		Long: `Remove an uptime check and its history; its open alert resolves. With
+--outside, an organization's outside check: the status page components
+that show it lose it as a source (` + "`dock uptime list --outside`" + ` names them).`,
+		Example: `  dock uptime remove 3 -s web
+  dock uptime remove 7 --outside`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := strconv.ParseInt(strings.TrimSpace(args[0]), 10, 64)
 			if err != nil {
 				return &output.Error{Exit: output.ExitUsage, Message: fmt.Sprintf("%q is not a check ID", args[0]), Hint: "`dock uptime list` shows the IDs."}
 			}
-			s, t, err := g.open(f, needService)
+			s, path, where, err := uptimeOpen(g, f, outside)
 			if err != nil {
 				return err
 			}
-			if err := del(cmd.Context(), s, t.servicePath()+"/uptime-checks/"+strconv.FormatInt(id, 10)); err != nil {
+			if err := del(cmd.Context(), s, path+"/"+strconv.FormatInt(id, 10)); err != nil {
 				return err
 			}
 			v := struct {
@@ -250,11 +316,12 @@ func newUptimeRemoveCmd(g *globals) *cobra.Command {
 				Removed bool  `json:"removed"`
 			}{id, true}
 			return g.io.Print(v, func() error {
-				g.io.Successf("Removed uptime check %d from %s", id, t)
+				g.io.Successf("Removed uptime check %d from %s", id, where)
 				return nil
 			})
 		},
 	}
 	f.add(cmd, needService)
+	addOutsideFlag(cmd, &outside)
 	return cmd
 }

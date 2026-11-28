@@ -1,6 +1,7 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import type { components } from "../../api/schema";
 import { listenPort, useService } from "../../data/queries";
 import type { ServiceRef } from "../../data/types";
 import { useOrg } from "../../shell/location";
@@ -49,12 +50,37 @@ const every = (seconds: number) =>
   intervals.find(([s]) => s === seconds)?.[1] ?? `${seconds}s`;
 
 /** 100% only for a perfect record; else at most 99.99%, as the CLI. */
-function percent(p: number | undefined) {
+export function percent(p: number | undefined) {
   if (p === undefined) return "–";
   return p >= 100 ? "100%" : `${Math.min(p, 99.99).toFixed(2)}%`;
 }
 
 const stateWord = { up: "Up", down: "Down", unknown: "Unknown" };
+
+/** A check's state as StateText shows it. */
+export const checkState = (state: UptimeCheck["state"]) =>
+  ({
+    tone: state === "up" ? "ok" : state === "down" ? "fail" : "mut",
+    glyph: state === "up" ? "●" : state === "down" ? "✕" : "○",
+    label: stateWord[state],
+  }) as const;
+
+/**
+ * What changes a check in place: a service's (useUpdateUptimeCheck) or
+ * an organization's outside check (features/status/data.ts).
+ */
+type UptimeCheckPatch = components["schemas"]["UpdateUptimeCheckRequest"];
+
+type CheckEdit = {
+  mutate: (
+    v: { id: number } & UptimeCheckPatch,
+    o?: { onSuccess?: () => void },
+  ) => void;
+  reset: () => void;
+  isPending: boolean;
+  isSuccess: boolean;
+  error: Error | null;
+};
 
 /**
  * The uptime checks, under the health check rows in Settings: Add check
@@ -236,7 +262,7 @@ export function UptimeSummary({ serviceRef: ref }: { serviceRef: ServiceRef }) {
 }
 
 /** The last day in 48 half-hour cells: green, red, amber when mixed. */
-function Strip({ series }: { series: UptimeCheck["series"] }) {
+export function Strip({ series }: { series: UptimeCheck["series"] }) {
   return (
     <span className="flex gap-px" role="img" aria-label="Last 24 hours">
       {series.map((b) => {
@@ -264,7 +290,7 @@ function Strip({ series }: { series: UptimeCheck["series"] }) {
  * A URL as host and path: the host faint (cut first when space runs out),
  * the path in full. The scheme is left out unless it isn't https.
  */
-function CheckUrl({ url }: { url: string }) {
+export function CheckUrl({ url }: { url: string }) {
   const u = new URL(url);
   const path = `${u.pathname}${u.search}`;
   return (
@@ -303,16 +329,12 @@ function CheckRow({
   const remove = useRemoveUptimeCheck(ref);
   const [confirming, setConfirming] = useState(false);
   const p = c.last_probe;
+  const useUpdate = () => useUpdateUptimeCheck(ref);
+  const target = `-s ${ref.service} -e ${ref.environment}`;
   return (
     <tr className={fresh ? "[&>td]:bg-sel" : ""}>
       <td>
-        <StateText
-          state={{
-            tone: c.state === "up" ? "ok" : c.state === "down" ? "fail" : "mut",
-            glyph: c.state === "up" ? "●" : c.state === "down" ? "✕" : "○",
-            label: stateWord[c.state],
-          }}
-        />
+        <StateText state={checkState(c.state)} />
       </td>
       <td
         className="whitespace-nowrap"
@@ -330,10 +352,10 @@ function CheckRow({
         )}
       </td>
       <td className="whitespace-nowrap">
-        <IntervalEdit serviceRef={ref} check={c} />
+        <IntervalEdit check={c} useUpdate={useUpdate} target={target} />
       </td>
       <td className="whitespace-nowrap">
-        <StatusEdit serviceRef={ref} check={c} />
+        <StatusEdit check={c} useUpdate={useUpdate} target={target} />
       </td>
       <td>
         <Strip series={c.series} />
@@ -344,9 +366,7 @@ function CheckRow({
       <td
         className={`w-full min-w-[120px] whitespace-normal ${p && !p.up ? "text-fail" : "text-mut"}`}
       >
-        {p
-          ? `${p.up ? `${p.status} in ${p.latency_ms} ms` : p.error} · ${ago(p.at)}`
-          : `first probe within ${every(c.interval_seconds)}`}
+        <LastProbe check={c} />
       </td>
       <td className="text-mut">{c.server}</td>
       <td className="w-px py-1 text-right whitespace-nowrap">
@@ -386,29 +406,52 @@ function CheckRow({
   );
 }
 
+/** A check's last probe in words, or when the first one runs. */
+export function LastProbe({
+  check: c,
+}: {
+  check: Pick<UptimeCheck, "last_probe" | "interval_seconds">;
+}) {
+  const p = c.last_probe;
+  return p
+    ? `${p.up ? `${p.status} in ${p.latency_ms} ms` : p.error} · ${ago(p.at)}`
+    : `first probe within ${every(c.interval_seconds)}`;
+}
+
+/** The props of a check's in-place edits. */
+type EditProps = {
+  check: Pick<UptimeCheck, "id" | "url" | "interval_seconds" | "expect_status">;
+  /** The edit's own mutation, so each cell has its own Saved. */
+  useUpdate: () => CheckEdit;
+  /** The CLI's flags for where the check is: "-s web -e production". */
+  target: string;
+  /** The shortest interval offered (outside checks: 60). */
+  floor?: number;
+};
+
 /**
  * A check's interval as a select that saves on change, with Saved beside
  * it (the app's save model for selects).
  */
-function IntervalEdit({
-  serviceRef: ref,
+export function IntervalEdit({
   check: c,
-}: {
-  serviceRef: ServiceRef;
-  check: UptimeCheck;
-}) {
-  const update = useUpdateUptimeCheck(ref);
+  useUpdate,
+  target,
+  floor = 0,
+}: EditProps) {
+  const update = useUpdate();
   // An interval set from the CLI that the list doesn't offer stays choosable.
-  const options: (readonly [number, string])[] = intervals.some(
+  const offered = intervals.filter(([s]) => s >= floor);
+  const options: (readonly [number, string])[] = offered.some(
     ([s]) => s === c.interval_seconds,
   )
-    ? [...intervals]
-    : [...intervals, [c.interval_seconds, `${c.interval_seconds}s`]];
+    ? offered
+    : [...offered, [c.interval_seconds, `${c.interval_seconds}s`]];
   return (
     <span className="flex items-center gap-1.5">
       <select
         aria-label={`Interval of ${c.url}`}
-        title={`dock uptime update ${c.id} --interval <d> -s ${ref.service} -e ${ref.environment}`}
+        title={`dock uptime update ${c.id} --interval <d> ${target}`}
         value={c.interval_seconds}
         disabled={update.isPending}
         onChange={(e) =>
@@ -432,14 +475,8 @@ function IntervalEdit({
  * A check's expected status, a text value: click to edit, Enter saves,
  * Esc cancels (the app's save model for text).
  */
-function StatusEdit({
-  serviceRef: ref,
-  check: c,
-}: {
-  serviceRef: ServiceRef;
-  check: UptimeCheck;
-}) {
-  const update = useUpdateUptimeCheck(ref);
+export function StatusEdit({ check: c, useUpdate, target }: EditProps) {
+  const update = useUpdate();
   const [draft, setDraft] = useState<string | null>(null);
   const cancel = () => {
     update.reset();
@@ -451,7 +488,7 @@ function StatusEdit({
         <button
           type="button"
           className="lnk font-mono"
-          title={`Change the status that means up: dock uptime update ${c.id} --status <code> -s ${ref.service} -e ${ref.environment}`}
+          title={`Change the status that means up: dock uptime update ${c.id} --status <code> ${target}`}
           onClick={() => setDraft(c.expect_status)}
         >
           {c.expect_status}

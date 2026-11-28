@@ -118,7 +118,7 @@ export const columnClass = (wide: boolean) =>
  * page inside a project (its services, environments, settings). Those
  * have the project tree or rail down their left side and Projects marked
  * in the top bar; the organization's other views (Errors, Analytics,
- * Images, Status pages, Inbox, Settings) get the full width (Saile).
+ * Images, Status, Inbox, Settings) get the full width (Saile).
  */
 export const useProjectsColumn = () =>
   useMatches({
@@ -308,7 +308,7 @@ export const orgViews = [
   ["/$org/errors", "Errors"],
   ["/$org/analytics", "Analytics"],
   ["/$org/images", "Images"],
-  ["/$org/status-pages", "Status pages"],
+  ["/$org/status", "Status"],
 ] as const;
 
 /** The top bar's views below md: one menu, named after the current view. */

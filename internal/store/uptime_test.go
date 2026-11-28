@@ -28,6 +28,13 @@ func TestUptimeQueryPlans(t *testing.T) {
 		{"UptimeProjectSummary", uptimeProjectSummary, []any{0, 1}, "s USING PRIMARY KEY (check_id=? AND res=? AND at>?)"},
 		{"ListProtectedDomains", listProtectedDomains, nil, "domains USING INDEX domains_service (service_id=?)"},
 		{"ListUptimeIncidents", listUptimeIncidents, []any{1, 5}, "alerts USING INDEX alerts_key (key=?)"},
+		{"ListOutsideUptimeChecks", listOutsideUptimeChecks, []any{1}, "uptime_checks_org (org_id=?)"},
+		{"CountOrgUptimeChecks", countOrgUptimeChecks, []any{1}, "uptime_checks_org (org_id=?)"},
+		{"OutsideUptimeTotals", outsideUptimeTotals, []any{1, 2, 3, 1, 0}, "s USING PRIMARY KEY (check_id=?)"},
+		{"OutsideUptimeSeries", outsideUptimeSeries, []any{1, 0}, "s USING PRIMARY KEY (check_id=? AND res=? AND at>?)"},
+		{"ListOutsideUptimeIncidents", listOutsideUptimeIncidents, []any{1, 5}, "alerts USING INDEX alerts_key (key=?)"},
+		{"ListOutsideUptimeUses", listOutsideUptimeUses, []any{1}, "status_sources_check (check_id=?)"},
+		{"StatusPageOutages", statusPageOutages, []any{"2026-01-01", 1}, "a USING INDEX alerts_key (key=?)"},
 	} {
 		rows, err := f.s.DB.Query("EXPLAIN QUERY PLAN "+tc.sql, tc.args...)
 		if err != nil {

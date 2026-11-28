@@ -54,7 +54,21 @@ const statusKeys = {
   list: ["status-pages", "list"],
   page: (slug: string) => ["status-pages", "page", slug],
   sources: ["status-pages", "sources"],
+  outside: ["status-pages", "outside"],
 };
+
+/** An organization's outside uptime check (ADR 0055), its lists as arrays. */
+export type OutsideCheck = Omit<Schema["UptimeCheck"], "used_by" | "series"> & {
+  used_by: NonNullable<Schema["UptimeCheck"]["used_by"]>;
+  series: NonNullable<Schema["UptimeCheck"]["series"]>;
+};
+
+/** The API's check, its lists as arrays. */
+const toOutside = (c: Schema["UptimeCheck"]): OutsideCheck => ({
+  ...c,
+  used_by: c.used_by ?? [],
+  series: c.series ?? [],
+});
 
 /** The API's incident, its lists as arrays. */
 const toIncident = (i: IncidentSchema): StatusIncident => ({
@@ -113,7 +127,55 @@ export const statusQueries = {
           rows.map((r) => ({ ...r, checks: r.checks ?? [] })),
         ),
     }),
+  /**
+   * The organization's checks of sites outside Dock, for components. In
+   * the pages' subtree, so uptime events refetch it (data/live.ts).
+   */
+  outside: () =>
+    queryOptions({
+      queryKey: statusKeys.outside,
+      queryFn: () =>
+        list(api.GET("/api/v1/outside-uptime-checks")).then((rows) =>
+          rows.map(toOutside),
+        ),
+    }),
 };
+
+export const useAddOutsideCheck = () =>
+  useAction(
+    (req: Schema["AddUptimeCheckRequest"]) =>
+      body(api.POST("/api/v1/outside-uptime-checks", { body: req })).then(
+        toOutside,
+      ),
+    () => [statusKeys.outside],
+    (_, c) => `Checking ${c.url}`,
+  );
+
+export const useUpdateOutsideCheck = () =>
+  useAction(
+    ({ id, ...req }: Schema["UpdateUptimeCheckRequest"] & { id: number }) =>
+      body(
+        api.PATCH("/api/v1/outside-uptime-checks/{id}", {
+          params: { path: { id } },
+          body: req,
+        }),
+      ).then(toOutside),
+    () => [statusKeys.outside],
+    (_, c) => `Saved the check of ${c.url}`,
+  );
+
+/** Removing a check takes it out of the components that show it. */
+export const useRemoveOutsideCheck = () =>
+  useAction(
+    (c: OutsideCheck) =>
+      done(
+        api.DELETE("/api/v1/outside-uptime-checks/{id}", {
+          params: { path: { id: c.id } },
+        }),
+      ),
+    () => [statusKeys.all],
+    (c) => `Removed the check of ${c.url}`,
+  );
 
 export const useCreateStatusPage = () =>
   useAction(

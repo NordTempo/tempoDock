@@ -481,7 +481,7 @@ export function useCommands({
     ["Analytics", "/$org/analytics", "dock analytics sites"],
     ["Images", "/$org/images", "dock images"],
     ["Vulnerability ignores", "/$org/images/ignores", "dock vulns ignores"],
-    ["Status pages", "/$org/status-pages", "dock status-page list"],
+    ["Status", "/$org/status", "dock status-page list"],
   ] as const;
   for (const [label, to, cli] of orgPages) {
     add({

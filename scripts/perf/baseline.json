@@ -1,7 +1,7 @@
 {
   "about": "Recorded by `make perf-baseline` (scripts/perf). Commit it with the change that moved the numbers; see docs/performance.md.",
   "go": "go1.27.4",
-  "binary_bytes": 66424992,
+  "binary_bytes": 68464800,
   "tempobase_binary_bytes": 19869856,
   "calibration_ns": 354541.53232979815,
   "benchmarks": {
@@ -72,8 +72,8 @@
     },
     "api.BenchmarkRenderStatusPage": {
       "ns_op": 3422327,
-      "bytes_op": 2914294,
-      "allocs_op": 21620
+      "bytes_op": 2673032,
+      "allocs_op": 21857
     },
     "api.BenchmarkSSEWrite/batch=1": {
       "ns_op": 208,

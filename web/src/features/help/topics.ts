@@ -676,6 +676,10 @@ export const topics: Record<TopicId, Topic> = {
         what: "Show a service on it",
         cli: "dock status-page component add status API --service {service}",
       },
+      {
+        what: "Check a site outside Dock, to show it too",
+        cli: "dock uptime add https://status.example.com/ --outside",
+      },
       { what: "Publish it", cli: "dock status-page publish status" },
       {
         what: "Open an incident",
@@ -688,11 +692,12 @@ export const topics: Record<TopicId, Topic> = {
     ],
     watch: [
       "Uptime comes from Dock's uptime checks: a component without one shows no history.",
+      "An outside check alerts your channels when the site goes down, shown on a page or not.",
       "Nothing is public until you publish.",
     ],
     related: ["metrics", "alerts", "domains"],
     guide: "status-pages",
-    words: "incident maintenance uptime public subscribe",
+    words: "incident maintenance uptime public subscribe outside vendor",
   },
 
   alerts: {

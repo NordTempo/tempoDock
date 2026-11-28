@@ -73,6 +73,7 @@ var toolPerms = map[string]core.Perm{
 	"status_incident_open":      core.PermStatusPagesPost,
 	"status_incident_update":    core.PermStatusPagesPost,
 	"status_maintenance":        core.PermStatusPagesPost,
+	"outside_uptime_checks":     core.PermStatusPagesManage,
 	"list_registry_credentials": core.PermConnectionsManage,
 }
 

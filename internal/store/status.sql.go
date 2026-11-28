@@ -1211,16 +1211,19 @@ func (q *Queries) ListStatusPageHosts(ctx context.Context) ([]ListStatusPageHost
 
 const listStatusPageSources = `-- name: ListStatusPageSources :many
 SELECT src.id AS source_id, src.component_id, src.check_id AS source_check,
-  sv.id AS service_id, sv.name AS service, sv.archived_at, p.archived_at AS project_archived_at,
-  e.id AS environment_id, e.name AS environment, p.id AS project_id, p.name AS project, p.org_id,
+  CAST(coalesce(sv.id, 0) AS INTEGER) AS service_id, CAST(coalesce(sv.name, '') AS TEXT) AS service,
+  sv.archived_at, p.archived_at AS project_archived_at,
+  CAST(coalesce(e.id, 0) AS INTEGER) AS environment_id, CAST(coalesce(e.name, '') AS TEXT) AS environment,
+  CAST(coalesce(p.id, 0) AS INTEGER) AS project_id, CAST(coalesce(p.name, '') AS TEXT) AS project,
+  CAST(coalesce(p.org_id, one.org_id) AS INTEGER) AS org_id,
   CAST(EXISTS (SELECT 1 FROM previews WHERE previews.environment_id = e.id) AS BOOLEAN) AS preview,
   CAST(coalesce(one.id, uc.id, 0) AS INTEGER) AS check_id
 FROM status_components AS sc
 JOIN status_sources AS src ON src.component_id = sc.id
 LEFT JOIN uptime_checks AS one ON one.id = src.check_id
-JOIN services AS sv ON sv.id = coalesce(src.service_id, one.service_id)
-JOIN environments AS e ON e.id = sv.environment_id
-JOIN projects AS p ON p.id = e.project_id
+LEFT JOIN services AS sv ON sv.id = coalesce(src.service_id, one.service_id)
+LEFT JOIN environments AS e ON e.id = sv.environment_id
+LEFT JOIN projects AS p ON p.id = e.project_id
 LEFT JOIN uptime_checks AS uc ON src.service_id IS NOT NULL AND uc.service_id = src.service_id
 WHERE sc.page_id = +?1
 ORDER BY src.id
@@ -1246,7 +1249,8 @@ type ListStatusPageSourcesRow struct {
 // A page's sources with the service each stands for (a check's own
 // service for a check source), where it runs and whether it is a
 // preview, and the uptime checks it covers: one row per check, or one
-// row with check_id 0 for a service without any.
+// row with check_id 0 for a service without any. An outside check
+// (ADR 0055) has no service: 0 and ” for that part, its own org_id.
 func (q *Queries) ListStatusPageSources(ctx context.Context, pageID int64) ([]ListStatusPageSourcesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listStatusPageSources, pageID)
 	if err != nil {
@@ -1683,6 +1687,61 @@ func (q *Queries) StatusPageDays(ctx context.Context, arg StatusPageDaysParams) 
 			&i.Up,
 			&i.Total,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const statusPageOutages = `-- name: StatusPageOutages :many
+WITH checks AS (
+  SELECT src.component_id, src.check_id AS check_id
+  FROM status_components AS sc JOIN status_sources AS src ON src.component_id = sc.id
+  WHERE sc.page_id = +?2 AND src.check_id IS NOT NULL
+  UNION ALL
+  SELECT src.component_id, uc.id AS check_id
+  FROM status_components AS sc JOIN status_sources AS src ON src.component_id = sc.id
+  JOIN uptime_checks AS uc ON uc.service_id = src.service_id
+  WHERE sc.page_id = +?2
+)
+SELECT checks.component_id, a.opened_at, a.resolved_at
+FROM checks CROSS JOIN alerts AS a ON a.key = 'uptime:' || checks.check_id
+WHERE a.kind = 'uptime_down' AND (a.resolved_at IS NULL OR a.resolved_at >= +?1)
+`
+
+type StatusPageOutagesParams struct {
+	Since  *time.Time
+	PageID int64
+}
+
+type StatusPageOutagesRow struct {
+	ComponentID int64
+	OpenedAt    time.Time
+	ResolvedAt  *time.Time
+}
+
+// When a page's components' uptime checks were down (ADR 0073, day
+// colours): their uptime_down alerts, open or resolved since since.
+// Resolved alerts are kept retention.alert_days (90 by default), the
+// page's days. Each check's alerts are read through alerts_key; a check
+// a component names twice comes twice, which marks the same days.
+func (q *Queries) StatusPageOutages(ctx context.Context, arg StatusPageOutagesParams) ([]StatusPageOutagesRow, error) {
+	rows, err := q.db.QueryContext(ctx, statusPageOutages, arg.Since, arg.PageID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []StatusPageOutagesRow
+	for rows.Next() {
+		var i StatusPageOutagesRow
+		if err := rows.Scan(&i.ComponentID, &i.OpenedAt, &i.ResolvedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

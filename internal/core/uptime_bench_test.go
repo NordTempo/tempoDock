@@ -21,7 +21,7 @@ func benchChecks(b *testing.B, bc *benchCore, n int) []store.ListUptimeScheduleR
 	out := make([]store.ListUptimeScheduleRow, n)
 	for i := range out {
 		r, err := bc.c.store.CreateUptimeCheck(bc.ctx, store.CreateUptimeCheckParams{
-			ServiceID: ss.svc.ID, Url: "https://svc-00.example.com/health", ExpectStatus: 200, IntervalS: 30, TimeoutMs: 10000, CreatedAt: now(), CreatedBy: "bench",
+			ServiceID: &ss.svc.ID, Url: "https://svc-00.example.com/health", ExpectStatus: 200, IntervalS: 30, TimeoutMs: 10000, CreatedAt: now(), CreatedBy: "bench",
 		})
 		if err != nil {
 			b.Fatal(err)
