@@ -77,7 +77,9 @@ import { Route as AppOrgSettingsRolesRouteImport } from './routes/_app.$org.sett
 import { Route as AppOrgSettingsTokensRouteImport } from './routes/_app.$org.settings.tokens'
 import { Route as AppOrgSettingsVariablesRouteImport } from './routes/_app.$org.settings.variables'
 import { Route as AppOrgStatusPagesIndexRouteImport } from './routes/_app.$org.status-pages.index'
-import { Route as AppOrgStatusPagesPageRouteImport } from './routes/_app.$org.status-pages.$page'
+import { Route as AppOrgStatusPagesSplatRouteImport } from './routes/_app.$org.status-pages.$'
+import { Route as AppOrgStatusIndexRouteImport } from './routes/_app.$org.status.index'
+import { Route as AppOrgStatusPageRouteImport } from './routes/_app.$org.status.$page'
 import { Route as AppConsoleServersServerRouteImport } from './routes/_app.console.servers_.$server'
 import { Route as AppOrgProjectEnvironmentIndexRouteImport } from './routes/_app.$org.$project.$environment.index'
 import { Route as AppOrgProjectEnvironmentServiceRouteImport } from './routes/_app.$org.$project.$environment.$service'
@@ -114,7 +116,7 @@ import { Route as AppOrgAnalyticsProjectSiteFunnelsRouteImport } from './routes/
 import { Route as AppOrgAnalyticsProjectSiteGlobeRouteImport } from './routes/_app.$org.analytics.$project.$site.globe'
 import { Route as AppOrgAnalyticsProjectSiteSettingsRouteImport } from './routes/_app.$org.analytics.$project.$site.settings'
 import { Route as AppOrgAnalyticsProjectSiteVitalsRouteImport } from './routes/_app.$org.analytics.$project.$site.vitals'
-import { Route as AppOrgStatusPagesPageIncidentsIncidentRouteImport } from './routes/_app.$org.status-pages.$page_.incidents.$incident'
+import { Route as AppOrgStatusPageIncidentsIncidentRouteImport } from './routes/_app.$org.status.$page_.incidents.$incident'
 import { Route as AppOrgProjectEnvironmentServiceAnalyticsSplatRouteImport } from './routes/_app.$org.$project.$environment.$service.analytics_.$'
 import { Route as AppOrgProjectEnvironmentServiceHistoryIndexRouteImport } from './routes/_app.$org.$project.$environment.$service.history.index'
 import { Route as AppOrgProjectEnvironmentServiceHistoryNumberRouteImport } from './routes/_app.$org.$project.$environment.$service.history.$number'
@@ -473,9 +475,19 @@ const AppOrgStatusPagesIndexRoute = AppOrgStatusPagesIndexRouteImport.update({
   path: '/status-pages/',
   getParentRoute: () => AppOrgRoute,
 } as any)
-const AppOrgStatusPagesPageRoute = AppOrgStatusPagesPageRouteImport.update({
-  id: '/status-pages/$page',
-  path: '/status-pages/$page',
+const AppOrgStatusPagesSplatRoute = AppOrgStatusPagesSplatRouteImport.update({
+  id: '/status-pages/$',
+  path: '/status-pages/$',
+  getParentRoute: () => AppOrgRoute,
+} as any)
+const AppOrgStatusIndexRoute = AppOrgStatusIndexRouteImport.update({
+  id: '/status/',
+  path: '/status/',
+  getParentRoute: () => AppOrgRoute,
+} as any)
+const AppOrgStatusPageRoute = AppOrgStatusPageRouteImport.update({
+  id: '/status/$page',
+  path: '/status/$page',
   getParentRoute: () => AppOrgRoute,
 } as any)
 const AppConsoleServersServerRoute = AppConsoleServersServerRouteImport.update({
@@ -692,10 +704,10 @@ const AppOrgAnalyticsProjectSiteVitalsRoute =
     path: '/vitals',
     getParentRoute: () => AppOrgAnalyticsProjectSiteRoute,
   } as any)
-const AppOrgStatusPagesPageIncidentsIncidentRoute =
-  AppOrgStatusPagesPageIncidentsIncidentRouteImport.update({
-    id: '/status-pages/$page_/incidents/$incident',
-    path: '/status-pages/$page/incidents/$incident',
+const AppOrgStatusPageIncidentsIncidentRoute =
+  AppOrgStatusPageIncidentsIncidentRouteImport.update({
+    id: '/status/$page_/incidents/$incident',
+    path: '/status/$page/incidents/$incident',
     getParentRoute: () => AppOrgRoute,
   } as any)
 const AppOrgProjectEnvironmentServiceAnalyticsSplatRoute =
@@ -839,7 +851,8 @@ export interface FileRoutesByFullPath {
   '/$org/settings/roles': typeof AppOrgSettingsRolesRoute
   '/$org/settings/tokens': typeof AppOrgSettingsTokensRoute
   '/$org/settings/variables': typeof AppOrgSettingsVariablesRoute
-  '/$org/status-pages/$page': typeof AppOrgStatusPagesPageRoute
+  '/$org/status-pages/$': typeof AppOrgStatusPagesSplatRoute
+  '/$org/status/$page': typeof AppOrgStatusPageRoute
   '/console/servers/$server': typeof AppConsoleServersServerRoute
   '/$org/$project/': typeof AppOrgProjectIndexRoute
   '/$org/analytics/': typeof AppOrgAnalyticsIndexRoute
@@ -847,6 +860,7 @@ export interface FileRoutesByFullPath {
   '/$org/images/': typeof AppOrgImagesIndexRoute
   '/$org/settings/': typeof AppOrgSettingsIndexRoute
   '/$org/status-pages/': typeof AppOrgStatusPagesIndexRoute
+  '/$org/status/': typeof AppOrgStatusIndexRoute
   '/$org/$project/$environment/$service': typeof AppOrgProjectEnvironmentServiceRouteWithChildren
   '/$org/$project/settings/log-drains': typeof AppOrgProjectSettingsLogDrainsRoute
   '/$org/$project/settings/previews': typeof AppOrgProjectSettingsPreviewsRoute
@@ -879,7 +893,7 @@ export interface FileRoutesByFullPath {
   '/$org/analytics/$project/$site/globe': typeof AppOrgAnalyticsProjectSiteGlobeRoute
   '/$org/analytics/$project/$site/settings': typeof AppOrgAnalyticsProjectSiteSettingsRoute
   '/$org/analytics/$project/$site/vitals': typeof AppOrgAnalyticsProjectSiteVitalsRoute
-  '/$org/status-pages/$page/incidents/$incident': typeof AppOrgStatusPagesPageIncidentsIncidentRoute
+  '/$org/status/$page/incidents/$incident': typeof AppOrgStatusPageIncidentsIncidentRoute
   '/$org/$project/$environment/$service/': typeof AppOrgProjectEnvironmentServiceIndexRoute
   '/$org/$project/settings/variables/': typeof AppOrgProjectSettingsVariablesIndexRoute
   '/$org/analytics/$project/$site/': typeof AppOrgAnalyticsProjectSiteIndexRoute
@@ -954,7 +968,8 @@ export interface FileRoutesByTo {
   '/$org/settings/roles': typeof AppOrgSettingsRolesRoute
   '/$org/settings/tokens': typeof AppOrgSettingsTokensRoute
   '/$org/settings/variables': typeof AppOrgSettingsVariablesRoute
-  '/$org/status-pages/$page': typeof AppOrgStatusPagesPageRoute
+  '/$org/status-pages/$': typeof AppOrgStatusPagesSplatRoute
+  '/$org/status/$page': typeof AppOrgStatusPageRoute
   '/console/servers/$server': typeof AppConsoleServersServerRoute
   '/$org/$project': typeof AppOrgProjectIndexRoute
   '/$org/analytics': typeof AppOrgAnalyticsIndexRoute
@@ -962,6 +977,7 @@ export interface FileRoutesByTo {
   '/$org/images': typeof AppOrgImagesIndexRoute
   '/$org/settings': typeof AppOrgSettingsIndexRoute
   '/$org/status-pages': typeof AppOrgStatusPagesIndexRoute
+  '/$org/status': typeof AppOrgStatusIndexRoute
   '/$org/$project/settings/log-drains': typeof AppOrgProjectSettingsLogDrainsRoute
   '/$org/$project/settings/previews': typeof AppOrgProjectSettingsPreviewsRoute
   '/$org/help/guide/$page': typeof AppOrgHelpGuidePageRoute
@@ -990,7 +1006,7 @@ export interface FileRoutesByTo {
   '/$org/analytics/$project/$site/globe': typeof AppOrgAnalyticsProjectSiteGlobeRoute
   '/$org/analytics/$project/$site/settings': typeof AppOrgAnalyticsProjectSiteSettingsRoute
   '/$org/analytics/$project/$site/vitals': typeof AppOrgAnalyticsProjectSiteVitalsRoute
-  '/$org/status-pages/$page/incidents/$incident': typeof AppOrgStatusPagesPageIncidentsIncidentRoute
+  '/$org/status/$page/incidents/$incident': typeof AppOrgStatusPageIncidentsIncidentRoute
   '/$org/$project/$environment/$service': typeof AppOrgProjectEnvironmentServiceIndexRoute
   '/$org/$project/settings/variables': typeof AppOrgProjectSettingsVariablesIndexRoute
   '/$org/analytics/$project/$site': typeof AppOrgAnalyticsProjectSiteIndexRoute
@@ -1072,7 +1088,8 @@ export interface FileRoutesById {
   '/_app/$org/settings/roles': typeof AppOrgSettingsRolesRoute
   '/_app/$org/settings/tokens': typeof AppOrgSettingsTokensRoute
   '/_app/$org/settings/variables': typeof AppOrgSettingsVariablesRoute
-  '/_app/$org/status-pages/$page': typeof AppOrgStatusPagesPageRoute
+  '/_app/$org/status-pages/$': typeof AppOrgStatusPagesSplatRoute
+  '/_app/$org/status/$page': typeof AppOrgStatusPageRoute
   '/_app/console/servers_/$server': typeof AppConsoleServersServerRoute
   '/_app/$org/$project/': typeof AppOrgProjectIndexRoute
   '/_app/$org/analytics/': typeof AppOrgAnalyticsIndexRoute
@@ -1080,6 +1097,7 @@ export interface FileRoutesById {
   '/_app/$org/images/': typeof AppOrgImagesIndexRoute
   '/_app/$org/settings/': typeof AppOrgSettingsIndexRoute
   '/_app/$org/status-pages/': typeof AppOrgStatusPagesIndexRoute
+  '/_app/$org/status/': typeof AppOrgStatusIndexRoute
   '/_app/$org/$project/$environment/$service': typeof AppOrgProjectEnvironmentServiceRouteWithChildren
   '/_app/$org/$project/settings/log-drains': typeof AppOrgProjectSettingsLogDrainsRoute
   '/_app/$org/$project/settings/previews': typeof AppOrgProjectSettingsPreviewsRoute
@@ -1112,7 +1130,7 @@ export interface FileRoutesById {
   '/_app/$org/analytics/$project/$site/globe': typeof AppOrgAnalyticsProjectSiteGlobeRoute
   '/_app/$org/analytics/$project/$site/settings': typeof AppOrgAnalyticsProjectSiteSettingsRoute
   '/_app/$org/analytics/$project/$site/vitals': typeof AppOrgAnalyticsProjectSiteVitalsRoute
-  '/_app/$org/status-pages/$page_/incidents/$incident': typeof AppOrgStatusPagesPageIncidentsIncidentRoute
+  '/_app/$org/status/$page_/incidents/$incident': typeof AppOrgStatusPageIncidentsIncidentRoute
   '/_app/$org/$project/$environment/$service/': typeof AppOrgProjectEnvironmentServiceIndexRoute
   '/_app/$org/$project/settings/variables/': typeof AppOrgProjectSettingsVariablesIndexRoute
   '/_app/$org/analytics/$project/$site/': typeof AppOrgAnalyticsProjectSiteIndexRoute
@@ -1194,7 +1212,8 @@ export interface FileRouteTypes {
     | '/$org/settings/roles'
     | '/$org/settings/tokens'
     | '/$org/settings/variables'
-    | '/$org/status-pages/$page'
+    | '/$org/status-pages/$'
+    | '/$org/status/$page'
     | '/console/servers/$server'
     | '/$org/$project/'
     | '/$org/analytics/'
@@ -1202,6 +1221,7 @@ export interface FileRouteTypes {
     | '/$org/images/'
     | '/$org/settings/'
     | '/$org/status-pages/'
+    | '/$org/status/'
     | '/$org/$project/$environment/$service'
     | '/$org/$project/settings/log-drains'
     | '/$org/$project/settings/previews'
@@ -1234,7 +1254,7 @@ export interface FileRouteTypes {
     | '/$org/analytics/$project/$site/globe'
     | '/$org/analytics/$project/$site/settings'
     | '/$org/analytics/$project/$site/vitals'
-    | '/$org/status-pages/$page/incidents/$incident'
+    | '/$org/status/$page/incidents/$incident'
     | '/$org/$project/$environment/$service/'
     | '/$org/$project/settings/variables/'
     | '/$org/analytics/$project/$site/'
@@ -1309,7 +1329,8 @@ export interface FileRouteTypes {
     | '/$org/settings/roles'
     | '/$org/settings/tokens'
     | '/$org/settings/variables'
-    | '/$org/status-pages/$page'
+    | '/$org/status-pages/$'
+    | '/$org/status/$page'
     | '/console/servers/$server'
     | '/$org/$project'
     | '/$org/analytics'
@@ -1317,6 +1338,7 @@ export interface FileRouteTypes {
     | '/$org/images'
     | '/$org/settings'
     | '/$org/status-pages'
+    | '/$org/status'
     | '/$org/$project/settings/log-drains'
     | '/$org/$project/settings/previews'
     | '/$org/help/guide/$page'
@@ -1345,7 +1367,7 @@ export interface FileRouteTypes {
     | '/$org/analytics/$project/$site/globe'
     | '/$org/analytics/$project/$site/settings'
     | '/$org/analytics/$project/$site/vitals'
-    | '/$org/status-pages/$page/incidents/$incident'
+    | '/$org/status/$page/incidents/$incident'
     | '/$org/$project/$environment/$service'
     | '/$org/$project/settings/variables'
     | '/$org/analytics/$project/$site'
@@ -1426,7 +1448,8 @@ export interface FileRouteTypes {
     | '/_app/$org/settings/roles'
     | '/_app/$org/settings/tokens'
     | '/_app/$org/settings/variables'
-    | '/_app/$org/status-pages/$page'
+    | '/_app/$org/status-pages/$'
+    | '/_app/$org/status/$page'
     | '/_app/console/servers_/$server'
     | '/_app/$org/$project/'
     | '/_app/$org/analytics/'
@@ -1434,6 +1457,7 @@ export interface FileRouteTypes {
     | '/_app/$org/images/'
     | '/_app/$org/settings/'
     | '/_app/$org/status-pages/'
+    | '/_app/$org/status/'
     | '/_app/$org/$project/$environment/$service'
     | '/_app/$org/$project/settings/log-drains'
     | '/_app/$org/$project/settings/previews'
@@ -1466,7 +1490,7 @@ export interface FileRouteTypes {
     | '/_app/$org/analytics/$project/$site/globe'
     | '/_app/$org/analytics/$project/$site/settings'
     | '/_app/$org/analytics/$project/$site/vitals'
-    | '/_app/$org/status-pages/$page_/incidents/$incident'
+    | '/_app/$org/status/$page_/incidents/$incident'
     | '/_app/$org/$project/$environment/$service/'
     | '/_app/$org/$project/settings/variables/'
     | '/_app/$org/analytics/$project/$site/'
@@ -1974,11 +1998,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgStatusPagesIndexRouteImport
       parentRoute: typeof AppOrgRoute
     }
-    '/_app/$org/status-pages/$page': {
-      id: '/_app/$org/status-pages/$page'
-      path: '/status-pages/$page'
-      fullPath: '/$org/status-pages/$page'
-      preLoaderRoute: typeof AppOrgStatusPagesPageRouteImport
+    '/_app/$org/status-pages/$': {
+      id: '/_app/$org/status-pages/$'
+      path: '/status-pages/$'
+      fullPath: '/$org/status-pages/$'
+      preLoaderRoute: typeof AppOrgStatusPagesSplatRouteImport
+      parentRoute: typeof AppOrgRoute
+    }
+    '/_app/$org/status/': {
+      id: '/_app/$org/status/'
+      path: '/status'
+      fullPath: '/$org/status/'
+      preLoaderRoute: typeof AppOrgStatusIndexRouteImport
+      parentRoute: typeof AppOrgRoute
+    }
+    '/_app/$org/status/$page': {
+      id: '/_app/$org/status/$page'
+      path: '/status/$page'
+      fullPath: '/$org/status/$page'
+      preLoaderRoute: typeof AppOrgStatusPageRouteImport
       parentRoute: typeof AppOrgRoute
     }
     '/_app/console/servers_/$server': {
@@ -2233,11 +2271,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgAnalyticsProjectSiteVitalsRouteImport
       parentRoute: typeof AppOrgAnalyticsProjectSiteRoute
     }
-    '/_app/$org/status-pages/$page_/incidents/$incident': {
-      id: '/_app/$org/status-pages/$page_/incidents/$incident'
-      path: '/status-pages/$page/incidents/$incident'
-      fullPath: '/$org/status-pages/$page/incidents/$incident'
-      preLoaderRoute: typeof AppOrgStatusPagesPageIncidentsIncidentRouteImport
+    '/_app/$org/status/$page_/incidents/$incident': {
+      id: '/_app/$org/status/$page_/incidents/$incident'
+      path: '/status/$page/incidents/$incident'
+      fullPath: '/$org/status/$page/incidents/$incident'
+      preLoaderRoute: typeof AppOrgStatusPageIncidentsIncidentRouteImport
       parentRoute: typeof AppOrgRoute
     }
     '/_app/$org/$project/$environment/$service/analytics_/$': {
@@ -2591,15 +2629,17 @@ interface AppOrgRouteChildren {
   AppOrgProjectSettingsRoute: typeof AppOrgProjectSettingsRouteWithChildren
   AppOrgImagesIdRoute: typeof AppOrgImagesIdRoute
   AppOrgImagesIgnoresRoute: typeof AppOrgImagesIgnoresRoute
-  AppOrgStatusPagesPageRoute: typeof AppOrgStatusPagesPageRoute
+  AppOrgStatusPagesSplatRoute: typeof AppOrgStatusPagesSplatRoute
+  AppOrgStatusPageRoute: typeof AppOrgStatusPageRoute
   AppOrgProjectIndexRoute: typeof AppOrgProjectIndexRoute
   AppOrgAnalyticsIndexRoute: typeof AppOrgAnalyticsIndexRoute
   AppOrgImagesIndexRoute: typeof AppOrgImagesIndexRoute
   AppOrgStatusPagesIndexRoute: typeof AppOrgStatusPagesIndexRoute
+  AppOrgStatusIndexRoute: typeof AppOrgStatusIndexRoute
   AppOrgProjectEnvironmentServiceRoute: typeof AppOrgProjectEnvironmentServiceRouteWithChildren
   AppOrgAnalyticsProjectSiteRoute: typeof AppOrgAnalyticsProjectSiteRouteWithChildren
   AppOrgProjectEnvironmentIndexRoute: typeof AppOrgProjectEnvironmentIndexRoute
-  AppOrgStatusPagesPageIncidentsIncidentRoute: typeof AppOrgStatusPagesPageIncidentsIncidentRoute
+  AppOrgStatusPageIncidentsIncidentRoute: typeof AppOrgStatusPageIncidentsIncidentRoute
   AppOrgProjectEnvironmentServiceReleasesNumberRoute: typeof AppOrgProjectEnvironmentServiceReleasesNumberRoute
 }
 
@@ -2617,17 +2657,19 @@ const AppOrgRouteChildren: AppOrgRouteChildren = {
   AppOrgProjectSettingsRoute: AppOrgProjectSettingsRouteWithChildren,
   AppOrgImagesIdRoute: AppOrgImagesIdRoute,
   AppOrgImagesIgnoresRoute: AppOrgImagesIgnoresRoute,
-  AppOrgStatusPagesPageRoute: AppOrgStatusPagesPageRoute,
+  AppOrgStatusPagesSplatRoute: AppOrgStatusPagesSplatRoute,
+  AppOrgStatusPageRoute: AppOrgStatusPageRoute,
   AppOrgProjectIndexRoute: AppOrgProjectIndexRoute,
   AppOrgAnalyticsIndexRoute: AppOrgAnalyticsIndexRoute,
   AppOrgImagesIndexRoute: AppOrgImagesIndexRoute,
   AppOrgStatusPagesIndexRoute: AppOrgStatusPagesIndexRoute,
+  AppOrgStatusIndexRoute: AppOrgStatusIndexRoute,
   AppOrgProjectEnvironmentServiceRoute:
     AppOrgProjectEnvironmentServiceRouteWithChildren,
   AppOrgAnalyticsProjectSiteRoute: AppOrgAnalyticsProjectSiteRouteWithChildren,
   AppOrgProjectEnvironmentIndexRoute: AppOrgProjectEnvironmentIndexRoute,
-  AppOrgStatusPagesPageIncidentsIncidentRoute:
-    AppOrgStatusPagesPageIncidentsIncidentRoute,
+  AppOrgStatusPageIncidentsIncidentRoute:
+    AppOrgStatusPageIncidentsIncidentRoute,
   AppOrgProjectEnvironmentServiceReleasesNumberRoute:
     AppOrgProjectEnvironmentServiceReleasesNumberRoute,
 }

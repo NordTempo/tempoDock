@@ -95,18 +95,22 @@ INSERT INTO status_sources (component_id, service_id, check_id) VALUES (?, ?, ?)
 -- A page's sources with the service each stands for (a check's own
 -- service for a check source), where it runs and whether it is a
 -- preview, and the uptime checks it covers: one row per check, or one
--- row with check_id 0 for a service without any.
+-- row with check_id 0 for a service without any. An outside check
+-- (ADR 0055) has no service: 0 and '' for that part, its own org_id.
 SELECT src.id AS source_id, src.component_id, src.check_id AS source_check,
-  sv.id AS service_id, sv.name AS service, sv.archived_at, p.archived_at AS project_archived_at,
-  e.id AS environment_id, e.name AS environment, p.id AS project_id, p.name AS project, p.org_id,
+  CAST(coalesce(sv.id, 0) AS INTEGER) AS service_id, CAST(coalesce(sv.name, '') AS TEXT) AS service,
+  sv.archived_at, p.archived_at AS project_archived_at,
+  CAST(coalesce(e.id, 0) AS INTEGER) AS environment_id, CAST(coalesce(e.name, '') AS TEXT) AS environment,
+  CAST(coalesce(p.id, 0) AS INTEGER) AS project_id, CAST(coalesce(p.name, '') AS TEXT) AS project,
+  CAST(coalesce(p.org_id, one.org_id) AS INTEGER) AS org_id,
   CAST(EXISTS (SELECT 1 FROM previews WHERE previews.environment_id = e.id) AS BOOLEAN) AS preview,
   CAST(coalesce(one.id, uc.id, 0) AS INTEGER) AS check_id
 FROM status_components AS sc
 JOIN status_sources AS src ON src.component_id = sc.id
 LEFT JOIN uptime_checks AS one ON one.id = src.check_id
-JOIN services AS sv ON sv.id = coalesce(src.service_id, one.service_id)
-JOIN environments AS e ON e.id = sv.environment_id
-JOIN projects AS p ON p.id = e.project_id
+LEFT JOIN services AS sv ON sv.id = coalesce(src.service_id, one.service_id)
+LEFT JOIN environments AS e ON e.id = sv.environment_id
+LEFT JOIN projects AS p ON p.id = e.project_id
 LEFT JOIN uptime_checks AS uc ON src.service_id IS NOT NULL AND uc.service_id = src.service_id
 WHERE sc.page_id = +sqlc.arg(page_id)
 ORDER BY src.id;

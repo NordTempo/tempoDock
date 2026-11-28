@@ -36,7 +36,7 @@ const helpAt = {
   "/_app/$org/requests": "requests",
   "/_app/$org/analytics": "analytics",
   "/_app/$org/images": "images",
-  "/_app/$org/status-pages": "status-pages",
+  "/_app/$org/status": "status-pages",
   "/_app/$org/inbox": "alerts",
   "/_app/$org/alerts": "alerts",
   "/_app/$org/audit": "organizations",

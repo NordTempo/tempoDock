@@ -175,7 +175,7 @@ instead; that is your login, so don't hand it to an agent.
 | Ship | `deploy_image`, `redeploy`, `cancel_deploy`, `stop_service`, `start_service`, `rollback`, `promote`, `clone_environment`, `wait_for_release`, `run_command`, `list_runs` |
 | Jobs | `list_jobs` (with `job`, its latest runs), `set_job`, `run_job`, `remove_job` |
 | Previews | `get_previews`, `get_preview` |
-| Status pages | `status_incident_open` (a draft unless told to post), `status_incident_update` (post, publish a draft, resolve, or change a draft's words), `status_maintenance` (schedule, start, complete, extend, cancel) |
+| Status pages | `status_incident_open` (a draft unless told to post), `status_incident_update` (post, publish a draft, resolve, or change a draft's words), `status_maintenance` (schedule, start, complete, extend, cancel), `outside_uptime_checks` (list, add, update or remove the organization's checks of sites outside Dock; admin) |
 | Configure | `create_service`, `update_service`, `set_pre_deploy_command`, `list_variables`, `set_variables`, `show_changes`, `apply_changes`, `discard_changes`, `list_domains`, `add_domain` (without hostname: a generated one), `check_domain`, `remove_domain` |
 | Volumes | `list_volumes`, `add_volume`, `list_snapshots`, `create_snapshot`, `restore_snapshot` (into a new service only) |
 | Project files | `plan_project_file`, `apply_project_file`, `import_compose` |

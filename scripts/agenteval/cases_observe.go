@@ -121,6 +121,23 @@ func observeCases() []Case {
 				}), "no maintenance on %s 02:00-03:00 UTC: %+v", maintenanceDay, in)
 			},
 		},
+		{
+			// A site outside Dock is the organization's outside check
+			// (ADR 0055), not a service's.
+			Name:   "outside-check",
+			Prompt: "Our checkout depends on our payment vendor's API. Have Dock watch https://api.payvendor.example/health so we get an alert when it goes down.",
+			Token:  TokenSpec{Unlimited: true},
+			Setup:  seedStatusPage,
+			Check: func(w *World, _ Transcript) error {
+				checks, err := get[[]apitypes.UptimeCheck](w.daemon, "/outside-uptime-checks")
+				if err != nil {
+					return err
+				}
+				return expect(slices.ContainsFunc(checks, func(c apitypes.UptimeCheck) bool {
+					return strings.HasPrefix(c.URL, "https://api.payvendor.example/health")
+				}), "no outside check of the vendor's API: %+v", checks)
+			},
+		},
 	}
 }
 

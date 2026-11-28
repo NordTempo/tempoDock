@@ -4,7 +4,7 @@ import { StatusPageEditor } from "../features/status/StatusPageEditor";
 
 // One status page (ADR 0073): its components, their status and history,
 // and its settings.
-export const Route = createFileRoute("/_app/$org/status-pages/$page")({
+export const Route = createFileRoute("/_app/$org/status/$page")({
   loader: ({ context: { queryClient }, params }) =>
     queryClient.ensureQueryData(statusQueries.page(params.page)),
   component: Editor,

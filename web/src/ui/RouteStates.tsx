@@ -25,7 +25,7 @@ const orgPages: Record<string, string> = {
   inbox: "Inbox",
   requests: "Requests",
   settings: "Settings",
-  "status-pages": "Status pages",
+  status: "Status",
 };
 
 // The org Settings sections' titles, by the word after /settings/, for

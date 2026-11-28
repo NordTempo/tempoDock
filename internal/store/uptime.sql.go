@@ -36,30 +36,33 @@ func (q *Queries) AddUptimeProbe(ctx context.Context, arg AddUptimeProbeParams) 
 }
 
 const countOrgUptimeChecks = `-- name: CountOrgUptimeChecks :one
-SELECT count(*) FROM uptime_checks
-JOIN services ON services.id = uptime_checks.service_id
-JOIN environments ON environments.id = services.environment_id
-JOIN projects ON projects.id = environments.project_id
-WHERE projects.org_id = +?
+SELECT (SELECT count(*) FROM uptime_checks
+  JOIN services ON services.id = uptime_checks.service_id
+  JOIN environments ON environments.id = services.environment_id
+  JOIN projects ON projects.id = environments.project_id
+  WHERE projects.org_id = +?1)
+  + (SELECT count(*) FROM uptime_checks WHERE uptime_checks.org_id = +CAST(?1 AS INTEGER))
 `
 
-// An organization's uptime checks, for its cap.
+// An organization's uptime checks, its services' and its outside ones,
+// for its cap.
 func (q *Queries) CountOrgUptimeChecks(ctx context.Context, orgID int64) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countOrgUptimeChecks, orgID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const createUptimeCheck = `-- name: CreateUptimeCheck :one
 
-INSERT INTO uptime_checks (service_id, url, expect_status, interval_s, timeout_ms, created_at, created_by, auto)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, service_id, url, expect_status, interval_s, timeout_ms, created_at, created_by, auto
+INSERT INTO uptime_checks (service_id, org_id, url, expect_status, interval_s, timeout_ms, created_at, created_by, auto)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, service_id, org_id, url, expect_status, interval_s, timeout_ms, created_at, created_by, auto
 `
 
 type CreateUptimeCheckParams struct {
-	ServiceID    int64
+	ServiceID    *int64
+	OrgID        *int64
 	Url          string
 	ExpectStatus int64
 	IntervalS    int64
@@ -70,9 +73,12 @@ type CreateUptimeCheckParams struct {
 }
 
 // Uptime checks (ADR 0055).
+// A service's check (service_id) or an organization's outside check
+// (org_id), never both.
 func (q *Queries) CreateUptimeCheck(ctx context.Context, arg CreateUptimeCheckParams) (UptimeCheck, error) {
 	row := q.db.QueryRowContext(ctx, createUptimeCheck,
 		arg.ServiceID,
+		arg.OrgID,
 		arg.Url,
 		arg.ExpectStatus,
 		arg.IntervalS,
@@ -85,6 +91,7 @@ func (q *Queries) CreateUptimeCheck(ctx context.Context, arg CreateUptimeCheckPa
 	err := row.Scan(
 		&i.ID,
 		&i.ServiceID,
+		&i.OrgID,
 		&i.Url,
 		&i.ExpectStatus,
 		&i.IntervalS,
@@ -94,6 +101,17 @@ func (q *Queries) CreateUptimeCheck(ctx context.Context, arg CreateUptimeCheckPa
 		&i.Auto,
 	)
 	return i, err
+}
+
+const deleteOrgUptimeChecks = `-- name: DeleteOrgUptimeChecks :exec
+DELETE FROM uptime_checks WHERE org_id = +CAST(?1 AS INTEGER)
+`
+
+// An organization's outside checks, when it is deleted; their statistics
+// and sources go with them.
+func (q *Queries) DeleteOrgUptimeChecks(ctx context.Context, orgID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteOrgUptimeChecks, orgID)
+	return err
 }
 
 const deleteUptimeCheck = `-- name: DeleteUptimeCheck :exec
@@ -107,7 +125,7 @@ func (q *Queries) DeleteUptimeCheck(ctx context.Context, id int64) error {
 }
 
 const getUptimeCheck = `-- name: GetUptimeCheck :one
-SELECT id, service_id, url, expect_status, interval_s, timeout_ms, created_at, created_by, auto FROM uptime_checks WHERE id = +?
+SELECT id, service_id, org_id, url, expect_status, interval_s, timeout_ms, created_at, created_by, auto FROM uptime_checks WHERE id = +?
 `
 
 func (q *Queries) GetUptimeCheck(ctx context.Context, id int64) (UptimeCheck, error) {
@@ -116,6 +134,7 @@ func (q *Queries) GetUptimeCheck(ctx context.Context, id int64) (UptimeCheck, er
 	err := row.Scan(
 		&i.ID,
 		&i.ServiceID,
+		&i.OrgID,
 		&i.Url,
 		&i.ExpectStatus,
 		&i.IntervalS,
@@ -138,6 +157,139 @@ func (q *Queries) LastUptimeDay(ctx context.Context) (int64, error) {
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const listOutsideUptimeChecks = `-- name: ListOutsideUptimeChecks :many
+SELECT id, service_id, org_id, url, expect_status, interval_s, timeout_ms, created_at, created_by, auto FROM uptime_checks WHERE org_id = +CAST(?1 AS INTEGER) ORDER BY id
+`
+
+// An organization's outside checks (no service), oldest first.
+func (q *Queries) ListOutsideUptimeChecks(ctx context.Context, orgID int64) ([]UptimeCheck, error) {
+	rows, err := q.db.QueryContext(ctx, listOutsideUptimeChecks, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []UptimeCheck
+	for rows.Next() {
+		var i UptimeCheck
+		if err := rows.Scan(
+			&i.ID,
+			&i.ServiceID,
+			&i.OrgID,
+			&i.Url,
+			&i.ExpectStatus,
+			&i.IntervalS,
+			&i.TimeoutMs,
+			&i.CreatedAt,
+			&i.CreatedBy,
+			&i.Auto,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOutsideUptimeIncidents = `-- name: ListOutsideUptimeIncidents :many
+SELECT alerts.id, alerts.key, alerts.title, alerts.message, alerts.server, alerts.opened_at, alerts.resolved_at
+FROM alerts
+WHERE alerts.key IN (SELECT 'uptime:' || uptime_checks.id FROM uptime_checks WHERE uptime_checks.org_id = +CAST(?1 AS INTEGER))
+  AND (SELECT count(*) FROM alerts AS newer WHERE newer.key = alerts.key AND newer.id > alerts.id) < CAST(?2 AS INTEGER)
+`
+
+type ListOutsideUptimeIncidentsParams struct {
+	OrgID    int64
+	PerCheck int64
+}
+
+type ListOutsideUptimeIncidentsRow struct {
+	ID         int64
+	Key        string
+	Title      string
+	Message    string
+	Server     string
+	OpenedAt   time.Time
+	ResolvedAt *time.Time
+}
+
+// ListUptimeIncidents for an organization's outside checks.
+func (q *Queries) ListOutsideUptimeIncidents(ctx context.Context, arg ListOutsideUptimeIncidentsParams) ([]ListOutsideUptimeIncidentsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOutsideUptimeIncidents, arg.OrgID, arg.PerCheck)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOutsideUptimeIncidentsRow
+	for rows.Next() {
+		var i ListOutsideUptimeIncidentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.Title,
+			&i.Message,
+			&i.Server,
+			&i.OpenedAt,
+			&i.ResolvedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOutsideUptimeUses = `-- name: ListOutsideUptimeUses :many
+SELECT src.check_id, sp.slug AS page, sc.name AS component
+FROM uptime_checks AS c
+JOIN status_sources AS src ON src.check_id = c.id
+JOIN status_components AS sc ON sc.id = src.component_id
+JOIN status_pages AS sp ON sp.id = sc.page_id
+WHERE c.org_id = +CAST(?1 AS INTEGER)
+`
+
+type ListOutsideUptimeUsesRow struct {
+	CheckID   *int64
+	Page      string
+	Component string
+}
+
+// The status page components each of an organization's outside checks
+// feeds, in no order (a few rows, sorted by the caller).
+func (q *Queries) ListOutsideUptimeUses(ctx context.Context, orgID int64) ([]ListOutsideUptimeUsesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOutsideUptimeUses, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOutsideUptimeUsesRow
+	for rows.Next() {
+		var i ListOutsideUptimeUsesRow
+		if err := rows.Scan(&i.CheckID, &i.Page, &i.Component); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listProtectedDomains = `-- name: ListProtectedDomains :many
@@ -188,7 +340,7 @@ func (q *Queries) ListProtectedDomains(ctx context.Context) ([]ListProtectedDoma
 }
 
 const listServiceUptimeChecks = `-- name: ListServiceUptimeChecks :many
-SELECT id, service_id, url, expect_status, interval_s, timeout_ms, created_at, created_by, auto FROM uptime_checks WHERE service_id = +? ORDER BY id
+SELECT id, service_id, org_id, url, expect_status, interval_s, timeout_ms, created_at, created_by, auto FROM uptime_checks WHERE service_id = +CAST(?1 AS INTEGER) ORDER BY id
 `
 
 func (q *Queries) ListServiceUptimeChecks(ctx context.Context, serviceID int64) ([]UptimeCheck, error) {
@@ -203,6 +355,7 @@ func (q *Queries) ListServiceUptimeChecks(ctx context.Context, serviceID int64) 
 		if err := rows.Scan(
 			&i.ID,
 			&i.ServiceID,
+			&i.OrgID,
 			&i.Url,
 			&i.ExpectStatus,
 			&i.IntervalS,
@@ -227,7 +380,7 @@ func (q *Queries) ListServiceUptimeChecks(ctx context.Context, serviceID int64) 
 const listUptimeIncidents = `-- name: ListUptimeIncidents :many
 SELECT alerts.id, alerts.key, alerts.title, alerts.message, alerts.server, alerts.opened_at, alerts.resolved_at
 FROM alerts
-WHERE alerts.key IN (SELECT 'uptime:' || uptime_checks.id FROM uptime_checks WHERE uptime_checks.service_id = +?1)
+WHERE alerts.key IN (SELECT 'uptime:' || uptime_checks.id FROM uptime_checks WHERE uptime_checks.service_id = +CAST(?1 AS INTEGER))
   AND (SELECT count(*) FROM alerts AS newer WHERE newer.key = alerts.key AND newer.id > alerts.id) < CAST(?2 AS INTEGER)
 `
 
@@ -281,14 +434,18 @@ func (q *Queries) ListUptimeIncidents(ctx context.Context, arg ListUptimeInciden
 }
 
 const listUptimeSchedule = `-- name: ListUptimeSchedule :many
-SELECT uptime_checks.id, uptime_checks.service_id, uptime_checks.url, uptime_checks.expect_status,
-  uptime_checks.interval_s, uptime_checks.timeout_ms,
-  environments.server_id, environments.id AS environment_id, projects.id AS project_id, projects.org_id,
-  projects.name AS project, environments.name AS environment, services.name AS service
+SELECT uptime_checks.id, CAST(coalesce(uptime_checks.service_id, 0) AS INTEGER) AS service_id,
+  uptime_checks.url, uptime_checks.expect_status, uptime_checks.interval_s, uptime_checks.timeout_ms,
+  CAST(coalesce(environments.server_id, 0) AS INTEGER) AS server_id,
+  CAST(coalesce(environments.id, 0) AS INTEGER) AS environment_id,
+  CAST(coalesce(projects.id, 0) AS INTEGER) AS project_id,
+  CAST(coalesce(projects.org_id, uptime_checks.org_id) AS INTEGER) AS org_id,
+  CAST(coalesce(projects.name, '') AS TEXT) AS project, CAST(coalesce(environments.name, '') AS TEXT) AS environment,
+  CAST(coalesce(services.name, '') AS TEXT) AS service
 FROM uptime_checks
-JOIN services ON services.id = uptime_checks.service_id
-JOIN environments ON environments.id = services.environment_id
-JOIN projects ON projects.id = environments.project_id
+LEFT JOIN services ON services.id = uptime_checks.service_id
+LEFT JOIN environments ON environments.id = services.environment_id
+LEFT JOIN projects ON projects.id = environments.project_id
 WHERE services.archived_at IS NULL AND projects.archived_at IS NULL
 `
 
@@ -310,7 +467,8 @@ type ListUptimeScheduleRow struct {
 
 // Every check the scheduler probes: those of live services in live
 // projects, with where their service runs and its names for alerts and
-// events.
+// events, and the organizations' outside checks, with 0 and ” for the
+// service's part.
 func (q *Queries) ListUptimeSchedule(ctx context.Context) ([]ListUptimeScheduleRow, error) {
 	rows, err := q.db.QueryContext(ctx, listUptimeSchedule)
 	if err != nil {
@@ -334,6 +492,127 @@ func (q *Queries) ListUptimeSchedule(ctx context.Context) ([]ListUptimeScheduleR
 			&i.Project,
 			&i.Environment,
 			&i.Service,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const outsideUptimeSeries = `-- name: OutsideUptimeSeries :many
+SELECT s.check_id, CAST(s.at / 1800 * 1800 AS INTEGER) AS bucket,
+  CAST(sum(s.up) AS INTEGER) AS up, CAST(sum(s.total) AS INTEGER) AS total
+FROM uptime_checks AS c
+CROSS JOIN uptime_stats AS s ON s.check_id = c.id
+WHERE c.org_id = +CAST(?1 AS INTEGER) AND s.res = 60 AND s.at >= +?2
+GROUP BY s.check_id, bucket
+`
+
+type OutsideUptimeSeriesParams struct {
+	OrgID int64
+	Since int64
+}
+
+type OutsideUptimeSeriesRow struct {
+	CheckID int64
+	Bucket  int64
+	Up      int64
+	Total   int64
+}
+
+// UptimeSeries for an organization's outside checks.
+func (q *Queries) OutsideUptimeSeries(ctx context.Context, arg OutsideUptimeSeriesParams) ([]OutsideUptimeSeriesRow, error) {
+	rows, err := q.db.QueryContext(ctx, outsideUptimeSeries, arg.OrgID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OutsideUptimeSeriesRow
+	for rows.Next() {
+		var i OutsideUptimeSeriesRow
+		if err := rows.Scan(
+			&i.CheckID,
+			&i.Bucket,
+			&i.Up,
+			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const outsideUptimeTotals = `-- name: OutsideUptimeTotals :many
+SELECT s.check_id,
+  CAST(coalesce(sum(CASE WHEN s.res = 60 AND s.at >= ?1 THEN s.up END), 0) AS INTEGER) AS up_day,
+  CAST(coalesce(sum(CASE WHEN s.res = 60 AND s.at >= ?1 THEN s.total END), 0) AS INTEGER) AS total_day,
+  CAST(coalesce(sum(CASE WHEN s.at >= ?2 AND (s.res = 3600 OR s.at >= ?3) THEN s.up END), 0) AS INTEGER) AS up_week,
+  CAST(coalesce(sum(CASE WHEN s.at >= ?2 AND (s.res = 3600 OR s.at >= ?3) THEN s.total END), 0) AS INTEGER) AS total_week,
+  CAST(coalesce(sum(CASE WHEN s.res = 3600 OR s.at >= ?3 THEN s.up END), 0) AS INTEGER) AS up_month,
+  CAST(coalesce(sum(CASE WHEN s.res = 3600 OR s.at >= ?3 THEN s.total END), 0) AS INTEGER) AS total_month
+FROM uptime_checks AS c
+CROSS JOIN uptime_stats AS s ON s.check_id = c.id
+WHERE c.org_id = +CAST(?4 AS INTEGER)
+  AND ((s.res = 3600 AND s.at >= +?5 AND s.at < +?3) OR (s.res = 60 AND s.at >= +?1))
+GROUP BY c.id
+`
+
+type OutsideUptimeTotalsParams struct {
+	SinceDay   int64
+	SinceWeek  int64
+	MinuteFrom int64
+	OrgID      int64
+	SinceMonth int64
+}
+
+type OutsideUptimeTotalsRow struct {
+	CheckID    int64
+	UpDay      int64
+	TotalDay   int64
+	UpWeek     int64
+	TotalWeek  int64
+	UpMonth    int64
+	TotalMonth int64
+}
+
+// UptimeTotals for an organization's outside checks.
+func (q *Queries) OutsideUptimeTotals(ctx context.Context, arg OutsideUptimeTotalsParams) ([]OutsideUptimeTotalsRow, error) {
+	rows, err := q.db.QueryContext(ctx, outsideUptimeTotals,
+		arg.SinceDay,
+		arg.SinceWeek,
+		arg.MinuteFrom,
+		arg.OrgID,
+		arg.SinceMonth,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OutsideUptimeTotalsRow
+	for rows.Next() {
+		var i OutsideUptimeTotalsRow
+		if err := rows.Scan(
+			&i.CheckID,
+			&i.UpDay,
+			&i.TotalDay,
+			&i.UpWeek,
+			&i.TotalWeek,
+			&i.UpMonth,
+			&i.TotalMonth,
 		); err != nil {
 			return nil, err
 		}
@@ -403,7 +682,7 @@ func (q *Queries) RollupUptimeHour(ctx context.Context, arg RollupUptimeHourPara
 
 const updateUptimeCheck = `-- name: UpdateUptimeCheck :one
 UPDATE uptime_checks SET interval_s = ?, expect_status = ? WHERE id = +?
-RETURNING id, service_id, url, expect_status, interval_s, timeout_ms, created_at, created_by, auto
+RETURNING id, service_id, org_id, url, expect_status, interval_s, timeout_ms, created_at, created_by, auto
 `
 
 type UpdateUptimeCheckParams struct {
@@ -419,6 +698,7 @@ func (q *Queries) UpdateUptimeCheck(ctx context.Context, arg UpdateUptimeCheckPa
 	err := row.Scan(
 		&i.ID,
 		&i.ServiceID,
+		&i.OrgID,
 		&i.Url,
 		&i.ExpectStatus,
 		&i.IntervalS,
@@ -431,7 +711,7 @@ func (q *Queries) UpdateUptimeCheck(ctx context.Context, arg UpdateUptimeCheckPa
 }
 
 const uptimeProjectSummary = `-- name: UptimeProjectSummary :many
-SELECT c.id, c.service_id,
+SELECT c.id, CAST(c.service_id AS INTEGER) AS service_id,
   CAST(coalesce(sum(s.up), 0) AS INTEGER) AS up, CAST(coalesce(sum(s.total), 0) AS INTEGER) AS total
 FROM uptime_checks AS c
 JOIN services ON services.id = c.service_id
@@ -488,7 +768,7 @@ SELECT s.check_id, CAST(s.at / 1800 * 1800 AS INTEGER) AS bucket,
   CAST(sum(s.up) AS INTEGER) AS up, CAST(sum(s.total) AS INTEGER) AS total
 FROM uptime_checks AS c
 CROSS JOIN uptime_stats AS s ON s.check_id = c.id
-WHERE c.service_id = +?1 AND s.res = 60 AND s.at >= +?2
+WHERE c.service_id = +CAST(?1 AS INTEGER) AND s.res = 60 AND s.at >= +?2
 GROUP BY s.check_id, bucket
 `
 
@@ -545,7 +825,7 @@ SELECT s.check_id,
   CAST(coalesce(sum(CASE WHEN s.res = 3600 OR s.at >= ?3 THEN s.total END), 0) AS INTEGER) AS total_month
 FROM uptime_checks AS c
 CROSS JOIN uptime_stats AS s ON s.check_id = c.id
-WHERE c.service_id = +?4
+WHERE c.service_id = +CAST(?4 AS INTEGER)
   AND ((s.res = 3600 AND s.at >= +?5 AND s.at < +?3) OR (s.res = 60 AND s.at >= +?1))
 GROUP BY c.id
 `

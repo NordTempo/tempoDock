@@ -124,26 +124,13 @@ func (c *Core) AddUptimeCheck(ctx context.Context, a Actor, ref ServiceRef, req 
 	if ss.svc.ArchivedAt != nil {
 		return apitypes.UptimeCheck{}, invalid("service %s is archived; uptime checks are for live services", ss)
 	}
-	params := store.CreateUptimeCheckParams{ServiceID: ss.svc.ID, CreatedAt: now(), CreatedBy: a.Name}
+	params := store.CreateUptimeCheckParams{ServiceID: &ss.svc.ID, CreatedAt: now(), CreatedBy: a.Name}
 	if params.ExpectStatus, err = parseExpectStatus(req.ExpectStatus); err != nil {
 		return apitypes.UptimeCheck{}, err
 	}
-	interval, timeout := uptimeDefaultInterval, uptimeDefaultTimeout
-	if req.IntervalSeconds != 0 {
-		interval = time.Duration(req.IntervalSeconds) * time.Second
+	if params.IntervalS, params.TimeoutMs, err = checkTiming(req, uptimeMinInterval); err != nil {
+		return apitypes.UptimeCheck{}, err
 	}
-	if req.TimeoutSeconds != 0 {
-		timeout = time.Duration(req.TimeoutSeconds) * time.Second
-	}
-	switch {
-	case interval < uptimeMinInterval || interval > uptimeMaxInterval:
-		return apitypes.UptimeCheck{}, invalid("the interval must be 30 seconds to 1 hour, not %s", interval)
-	case timeout < time.Second || timeout > uptimeMaxTimeout:
-		return apitypes.UptimeCheck{}, invalid("the timeout must be 1 to 30 seconds, not %s", timeout)
-	case timeout >= interval:
-		return apitypes.UptimeCheck{}, invalid("the timeout (%s) must be shorter than the interval (%s)", timeout, interval)
-	}
-	params.IntervalS, params.TimeoutMs = int64(interval/time.Second), timeout.Milliseconds()
 	domains, err := c.store.ListDomainsByService(ctx, ss.svc.ID)
 	if err != nil {
 		return apitypes.UptimeCheck{}, err
@@ -227,7 +214,7 @@ func domainChecks(ss svcScope, domains []store.Domain, existing []store.UptimeCh
 		}
 		checked[d.Hostname] = true
 		out = append(out, store.CreateUptimeCheckParams{
-			ServiceID: ss.svc.ID, Url: "https://" + d.Hostname + "/", ExpectStatus: 200,
+			ServiceID: &ss.svc.ID, Url: "https://" + d.Hostname + "/", ExpectStatus: 200,
 			IntervalS: int64(uptimeDefaultInterval / time.Second), TimeoutMs: uptimeDefaultTimeout.Milliseconds(),
 			CreatedAt: now(), CreatedBy: by, Auto: true,
 		})
@@ -326,25 +313,64 @@ func expectStatusString(v int64) string {
 	return strconv.FormatInt(v, 10)
 }
 
-// checkURL validates a check's URL and returns it normalized: http or
-// https, no credentials or port other than the scheme's, and a host
-// that is one of the service's domains.
-func checkURL(raw string, ss svcScope, domains []store.Domain) (string, error) {
+// checkTiming is a new check's interval in seconds and timeout in
+// milliseconds from req (defaults for zero), the interval at least floor.
+func checkTiming(req apitypes.AddUptimeCheckRequest, floor time.Duration) (int64, int64, error) {
+	interval, timeout := uptimeDefaultInterval, uptimeDefaultTimeout
+	if req.IntervalSeconds != 0 {
+		interval = time.Duration(req.IntervalSeconds) * time.Second
+	}
+	if req.TimeoutSeconds != 0 {
+		timeout = time.Duration(req.TimeoutSeconds) * time.Second
+	}
+	switch {
+	case interval < floor || interval > uptimeMaxInterval:
+		return 0, 0, invalid("the interval must be %s to 1 hour, not %s", seconds(floor), interval)
+	case timeout < time.Second || timeout > uptimeMaxTimeout:
+		return 0, 0, invalid("the timeout must be 1 to 30 seconds, not %s", timeout)
+	case timeout >= interval:
+		return 0, 0, invalid("the timeout (%s) must be shorter than the interval (%s)", timeout, interval)
+	}
+	return int64(interval / time.Second), timeout.Milliseconds(), nil
+}
+
+// seconds says a whole number of seconds in words: "30 seconds".
+func seconds(d time.Duration) string { return strconv.Itoa(int(d/time.Second)) + " seconds" }
+
+// parseCheckURL validates a check's URL and returns it parsed and
+// normalized (lower-case host, no fragment, path at least "/"): http or
+// https, no credentials, no port other than the scheme's.
+func parseCheckURL(raw string) (*url.URL, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return "", invalid("%q is not an http:// or https:// URL", raw)
+		return nil, invalid("%q is not an http:// or https:// URL", raw)
 	}
 	if u.User != nil {
-		return "", invalid("uptime check URLs can't hold credentials")
+		return nil, invalid("uptime check URLs can't hold credentials")
 	}
 	standard := "80"
 	if u.Scheme == "https" {
 		standard = "443"
 	}
 	if p := u.Port(); p != "" && p != standard {
-		return "", invalid("uptime checks probe a domain as visitors reach it; drop the port %s", p)
+		return nil, invalid("uptime checks probe a site as visitors reach it, on ports 80 and 443; drop the port %s", p)
 	}
-	host := strings.ToLower(u.Hostname())
+	u.Host, u.Fragment, u.RawFragment = strings.ToLower(u.Hostname()), "", ""
+	if u.Path == "" {
+		u.Path = "/"
+	}
+	return u, nil
+}
+
+// checkURL validates a service check's URL and returns it normalized
+// (parseCheckURL), with a host that is one of the service's verified
+// domains.
+func checkURL(raw string, ss svcScope, domains []store.Domain) (string, error) {
+	u, err := parseCheckURL(raw)
+	if err != nil {
+		return "", err
+	}
+	host := u.Hostname()
 	if i := slices.IndexFunc(domains, func(d store.Domain) bool { return d.Hostname == host }); i >= 0 && domains[i].VerifiedAt == nil {
 		// Its DNS may point anywhere until it is proven the service's.
 		return "", invalid("%s isn't verified yet; add its TXT record (`dock domain show %s`), then add the check", host, host)
@@ -359,10 +385,6 @@ func checkURL(raw string, ss svcScope, domains []store.Domain) (string, error) {
 		}
 		return "", invalid("%s is not a domain of service %s; use one of %s", host, ss, strings.Join(names, ", "))
 	}
-	u.Host, u.Fragment, u.RawFragment = host, "", ""
-	if u.Path == "" {
-		u.Path = "/"
-	}
 	return u.String(), nil
 }
 
@@ -375,31 +397,16 @@ func (c *Core) UpdateUptimeCheck(ctx context.Context, a Actor, ref ServiceRef, i
 	if err != nil {
 		return apitypes.UptimeCheck{}, err
 	}
-	if req.IntervalSeconds == nil && req.ExpectStatus == nil {
-		return apitypes.UptimeCheck{}, invalid("nothing to change: give interval_seconds or expect_status")
-	}
 	row, err := c.store.GetUptimeCheck(ctx, id)
-	if store.IsNotFound(err) || (err == nil && row.ServiceID != ss.svc.ID) {
+	if store.IsNotFound(err) || (err == nil && !ofService(row, ss)) {
 		return apitypes.UptimeCheck{}, notFound("uptime check %d not found on service %s; `dock uptime list` lists them", id, ss)
 	}
 	if err != nil {
 		return apitypes.UptimeCheck{}, err
 	}
-	params := store.UpdateUptimeCheckParams{ID: id, IntervalS: row.IntervalS, ExpectStatus: row.ExpectStatus}
-	if req.ExpectStatus != nil {
-		if params.ExpectStatus, err = parseExpectStatus(*req.ExpectStatus); err != nil {
-			return apitypes.UptimeCheck{}, err
-		}
-	}
-	if req.IntervalSeconds != nil {
-		interval, timeout := time.Duration(*req.IntervalSeconds)*time.Second, time.Duration(row.TimeoutMs)*time.Millisecond
-		switch {
-		case interval < uptimeMinInterval || interval > uptimeMaxInterval:
-			return apitypes.UptimeCheck{}, invalid("the interval must be 30 seconds to 1 hour, not %s", interval)
-		case timeout >= interval:
-			return apitypes.UptimeCheck{}, invalid("the interval must be longer than the check's timeout (%s); remove the check and add it again with a shorter --timeout", timeout)
-		}
-		params.IntervalS = int64(*req.IntervalSeconds)
+	params, err := checkUpdate(row, req, uptimeMinInterval)
+	if err != nil {
+		return apitypes.UptimeCheck{}, err
 	}
 	if params.IntervalS == row.IntervalS && params.ExpectStatus == row.ExpectStatus {
 		return c.uptimeCheck(ctx, ss, a.Operator, id)
@@ -410,6 +417,37 @@ func (c *Core) UpdateUptimeCheck(ctx context.Context, a Actor, ref ServiceRef, i
 	c.audit(ctx, a, "uptime.update", &ss.project, &ss.env, ss.String(), fmt.Sprintf("changed uptime check %d of %s to every %ds, expecting %s", id, row.Url, params.IntervalS, expectStatusString(params.ExpectStatus)))
 	c.kickUptime()
 	return c.uptimeCheck(ctx, ss, a.Operator, id)
+}
+
+// ofService reports whether r is one of ss's checks.
+func ofService(r store.UptimeCheck, ss svcScope) bool {
+	return r.ServiceID != nil && *r.ServiceID == ss.svc.ID
+}
+
+// checkUpdate is row with req's changes, validated: an interval of
+// floor to an hour and longer than the check's timeout.
+func checkUpdate(row store.UptimeCheck, req apitypes.UpdateUptimeCheckRequest, floor time.Duration) (store.UpdateUptimeCheckParams, error) {
+	params := store.UpdateUptimeCheckParams{ID: row.ID, IntervalS: row.IntervalS, ExpectStatus: row.ExpectStatus}
+	if req.IntervalSeconds == nil && req.ExpectStatus == nil {
+		return params, invalid("nothing to change: give interval_seconds or expect_status")
+	}
+	var err error
+	if req.ExpectStatus != nil {
+		if params.ExpectStatus, err = parseExpectStatus(*req.ExpectStatus); err != nil {
+			return params, err
+		}
+	}
+	if req.IntervalSeconds != nil {
+		interval, timeout := time.Duration(*req.IntervalSeconds)*time.Second, time.Duration(row.TimeoutMs)*time.Millisecond
+		switch {
+		case interval < floor || interval > uptimeMaxInterval:
+			return params, invalid("the interval must be %s to 1 hour, not %s", seconds(floor), interval)
+		case timeout >= interval:
+			return params, invalid("the interval must be longer than the check's timeout (%s); remove the check and add it again with a shorter --timeout", timeout)
+		}
+		params.IntervalS = int64(*req.IntervalSeconds)
+	}
+	return params, nil
 }
 
 // uptimeCheck is one of a service's checks with its results.
@@ -432,7 +470,7 @@ func (c *Core) RemoveUptimeCheck(ctx context.Context, a Actor, ref ServiceRef, i
 		return err
 	}
 	row, err := c.store.GetUptimeCheck(ctx, id)
-	if store.IsNotFound(err) || (err == nil && row.ServiceID != ss.svc.ID) {
+	if store.IsNotFound(err) || (err == nil && !ofService(row, ss)) {
 		return notFound("uptime check %d not found on service %s; `dock uptime list` lists them", id, ss)
 	}
 	if err != nil {
@@ -480,6 +518,14 @@ func (c *Core) uptimeChecks(ctx context.Context, ss svcScope, operator bool) ([]
 	if err != nil {
 		return nil, err
 	}
+	return c.checkResults(ctx, rows, ss.env.ServerID, operator, n, totals, series, incidents)
+}
+
+// checkResults puts checks together with their results: percentages
+// from totals, the strip from series and incidents, newest first.
+// envServer is where their service runs, 0 for outside checks.
+func (c *Core) checkResults(ctx context.Context, rows []store.UptimeCheck, envServer int64, operator bool, n time.Time,
+	totals []store.UptimeTotalsRow, series []store.UptimeSeriesRow, incidents []store.ListUptimeIncidentsRow) ([]apitypes.UptimeCheck, error) {
 	servers, err := c.store.ListServers(ctx)
 	if err != nil {
 		return nil, err
@@ -487,7 +533,7 @@ func (c *Core) uptimeChecks(ctx context.Context, ss svcScope, operator bool) ([]
 	slices.SortFunc(incidents, func(x, y store.ListUptimeIncidentsRow) int { return int(y.ID - x.ID) })
 	out := make([]apitypes.UptimeCheck, 0, len(rows))
 	for _, r := range rows {
-		uc := c.toUptimeCheck(r, ss.env.ServerID, servers, operator)
+		uc := c.toUptimeCheck(r, envServer, servers, operator)
 		if i := slices.IndexFunc(totals, func(t store.UptimeTotalsRow) bool { return t.CheckID == r.ID }); i >= 0 {
 			t := totals[i]
 			uc.Uptime24h, uc.Uptime7d, uc.Uptime30d = percent(t.UpDay, t.TotalDay), percent(t.UpWeek, t.TotalWeek), percent(t.UpMonth, t.TotalMonth)
@@ -707,14 +753,20 @@ func (c *Core) recordProbe(ctx context.Context, chk store.ListUptimeScheduleRow,
 		c.signalAlert(ctx, uptimeDown(chk, c.serverLabel(server, false), res.Error, since))
 	}
 	if state != before {
+		// Everyone watching gets it, so the server goes unnamed.
+		shown := *probe
+		shown.Server = c.serverLabel(shown.Server, false)
+		ev := apitypes.Event{Type: apitypes.EventUptime, Uptime: &apitypes.UptimeUpdate{ID: chk.ID, State: state, LastProbe: &shown}}
+		if chk.ServiceID == 0 {
+			// An outside check: the organization's.
+			c.bus.publish(busEvent{orgID: chk.OrgID, ev: ev})
+			return
+		}
 		ss := svcScope{envScope{
 			store.Project{ID: chk.ProjectID, OrgID: chk.OrgID, Name: chk.Project},
 			store.Environment{ID: chk.EnvironmentID, Name: chk.Environment},
 		}, store.Service{ID: chk.ServiceID, Name: chk.Service}}
-		// Everyone watching gets it, so the server goes unnamed.
-		shown := *probe
-		shown.Server = c.serverLabel(shown.Server, false)
-		c.publish(ss, apitypes.Event{Type: apitypes.EventUptime, Uptime: &apitypes.UptimeUpdate{ID: chk.ID, State: state, LastProbe: &shown}})
+		c.publish(ss, ev)
 	}
 }
 
@@ -735,10 +787,18 @@ func uptimeDown(chk store.ListUptimeScheduleRow, server, reason string, since ti
 	if reason != "" {
 		msg += " (" + reason + ")"
 	}
-	msg += " since " + since.UTC().Format("15:04 MST") + ". Check the service's logs and status, and its domain's DNS."
+	msg += " since " + since.UTC().Format("15:04 MST") + "."
+	if chk.ServiceID == 0 {
+		// An outside check (no service): the organization's alert.
+		return alertSignal{
+			Key: uptimeKey(chk.ID), Kind: apitypes.AlertUptimeDown, Severity: apitypes.SeverityCritical,
+			Title: where + " is down", Message: msg + " The site is outside Dock; `dock uptime list --outside` shows its check.",
+			orgID: chk.OrgID,
+		}
+	}
 	return alertSignal{
 		Key: uptimeKey(chk.ID), Kind: apitypes.AlertUptimeDown, Severity: apitypes.SeverityCritical,
-		Title: where + " is down", Message: msg,
+		Title: where + " is down", Message: msg + " Check the service's logs and status, and its domain's DNS.",
 		Project: chk.Project, Environment: chk.Environment, Service: chk.Service,
 		projectID: chk.ProjectID, serviceID: chk.ServiceID,
 	}

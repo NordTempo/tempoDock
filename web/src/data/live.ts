@@ -384,7 +384,8 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       applyJobEvent(queryClient, event);
       return;
     case "uptime": {
-      // An uptime check went up or down (ADR 0055).
+      // An uptime check went up or down (ADR 0055); an outside check's
+      // names no service and shows only on Status (its pages' subtree).
       invalidateStatusPages(queryClient);
       const update = event.uptime;
       if (!ref || !update) return;
@@ -792,6 +793,9 @@ function invalidateForAudit(
   // A status page or one of its incidents made, changed or removed (ADR
   // 0073).
   if (kind === "status_page" || kind === "incident") invalidate(statusPagesKey);
+  // An outside uptime check (no project, ADR 0055) added, changed or
+  // removed: Status's table and the components that show it.
+  if (kind === "uptime" && !audit.project) invalidate(statusPagesKey);
   if (kind === "data") return invalidateForData(queryClient, audit);
   // An organization template saved or removed (from the CLI too): the
   // picker's list (features/templates/data.ts) holds them with Dock's.

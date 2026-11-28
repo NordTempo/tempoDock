@@ -29,10 +29,11 @@ func TestLockedEnvironmentRefusesTools(t *testing.T) {
 	// are capped at proposing instead (core's TestLockedDataProposes).
 	// request_access asks rather than changes. Waking is read scope:
 	// anyone who sees an environment wakes it by opening its address.
-	// Status page incidents and maintenance change no environment (ADR 0073).
+	// Status page incidents and maintenance, and outside uptime checks,
+	// change no environment (ADR 0073, 0055).
 	skip := func(name string) bool {
 		return name == "clone_environment" || strings.Contains(name, "data") || name == "request_access" || name == "wake_environment" ||
-			strings.HasPrefix(name, "status_incident_") || name == "status_maintenance"
+			strings.HasPrefix(name, "status_incident_") || name == "status_maintenance" || name == "outside_uptime_checks"
 	}
 	n := 0
 	for _, tool := range list.Tools {

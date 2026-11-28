@@ -89,7 +89,7 @@ export const orgPlaces = {
   errors: { to: "/$org/errors", label: "Errors" },
   analytics: { to: "/$org/analytics", label: "Analytics" },
   images: { to: "/$org/images", label: "Images" },
-  statusPages: { to: "/$org/status-pages", label: "Status pages" },
+  statusPages: { to: "/$org/status", label: "Status" },
   inbox: { to: "/$org/inbox", label: "Inbox" },
   alerts: { to: "/$org/settings/alerts", label: "Alerts settings" },
   members: { to: "/$org/settings/members", label: "Members" },

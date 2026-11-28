@@ -1,11 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { statusQueries } from "../features/status/data";
-import { StatusPagesPage } from "../features/status/StatusPagesPage";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-// The organization's public status pages (ADR 0073), for every member;
-// admins make and change them.
+// The older address of Status (renamed from Status pages, 2026-11-28):
+// bookmarks and links keep working.
 export const Route = createFileRoute("/_app/$org/status-pages/")({
-  loader: ({ context: { queryClient } }) =>
-    queryClient.ensureQueryData(statusQueries.list()),
-  component: StatusPagesPage,
+  beforeLoad: ({ params }) => {
+    throw redirect({ to: "/$org/status", params, replace: true });
+  },
 });

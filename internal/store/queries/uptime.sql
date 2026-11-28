@@ -1,8 +1,10 @@
 -- Uptime checks (ADR 0055).
 
 -- name: CreateUptimeCheck :one
-INSERT INTO uptime_checks (service_id, url, expect_status, interval_s, timeout_ms, created_at, created_by, auto)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+-- A service's check (service_id) or an organization's outside check
+-- (org_id), never both.
+INSERT INTO uptime_checks (service_id, org_id, url, expect_status, interval_s, timeout_ms, created_at, created_by, auto)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetUptimeCheck :one
@@ -18,20 +20,25 @@ RETURNING *;
 DELETE FROM uptime_checks WHERE id = +?;
 
 -- name: ListServiceUptimeChecks :many
-SELECT * FROM uptime_checks WHERE service_id = +? ORDER BY id;
+SELECT * FROM uptime_checks WHERE service_id = +CAST(sqlc.arg(service_id) AS INTEGER) ORDER BY id;
 
 -- name: ListUptimeSchedule :many
 -- Every check the scheduler probes: those of live services in live
 -- projects, with where their service runs and its names for alerts and
--- events.
-SELECT uptime_checks.id, uptime_checks.service_id, uptime_checks.url, uptime_checks.expect_status,
-  uptime_checks.interval_s, uptime_checks.timeout_ms,
-  environments.server_id, environments.id AS environment_id, projects.id AS project_id, projects.org_id,
-  projects.name AS project, environments.name AS environment, services.name AS service
+-- events, and the organizations' outside checks, with 0 and '' for the
+-- service's part.
+SELECT uptime_checks.id, CAST(coalesce(uptime_checks.service_id, 0) AS INTEGER) AS service_id,
+  uptime_checks.url, uptime_checks.expect_status, uptime_checks.interval_s, uptime_checks.timeout_ms,
+  CAST(coalesce(environments.server_id, 0) AS INTEGER) AS server_id,
+  CAST(coalesce(environments.id, 0) AS INTEGER) AS environment_id,
+  CAST(coalesce(projects.id, 0) AS INTEGER) AS project_id,
+  CAST(coalesce(projects.org_id, uptime_checks.org_id) AS INTEGER) AS org_id,
+  CAST(coalesce(projects.name, '') AS TEXT) AS project, CAST(coalesce(environments.name, '') AS TEXT) AS environment,
+  CAST(coalesce(services.name, '') AS TEXT) AS service
 FROM uptime_checks
-JOIN services ON services.id = uptime_checks.service_id
-JOIN environments ON environments.id = services.environment_id
-JOIN projects ON projects.id = environments.project_id
+LEFT JOIN services ON services.id = uptime_checks.service_id
+LEFT JOIN environments ON environments.id = services.environment_id
+LEFT JOIN projects ON projects.id = environments.project_id
 WHERE services.archived_at IS NULL AND projects.archived_at IS NULL;
 
 -- name: ListProtectedDomains :many
@@ -91,7 +98,7 @@ SELECT s.check_id,
   CAST(coalesce(sum(CASE WHEN s.res = 3600 OR s.at >= sqlc.arg(minute_from) THEN s.total END), 0) AS INTEGER) AS total_month
 FROM uptime_checks AS c
 CROSS JOIN uptime_stats AS s ON s.check_id = c.id
-WHERE c.service_id = +sqlc.arg(service_id)
+WHERE c.service_id = +CAST(sqlc.arg(service_id) AS INTEGER)
   AND ((s.res = 3600 AND s.at >= +sqlc.arg(since_month) AND s.at < +sqlc.arg(minute_from)) OR (s.res = 60 AND s.at >= +sqlc.arg(since_day)))
 GROUP BY c.id;
 
@@ -103,13 +110,13 @@ SELECT s.check_id, CAST(s.at / 1800 * 1800 AS INTEGER) AS bucket,
   CAST(sum(s.up) AS INTEGER) AS up, CAST(sum(s.total) AS INTEGER) AS total
 FROM uptime_checks AS c
 CROSS JOIN uptime_stats AS s ON s.check_id = c.id
-WHERE c.service_id = +sqlc.arg(service_id) AND s.res = 60 AND s.at >= +sqlc.arg(since)
+WHERE c.service_id = +CAST(sqlc.arg(service_id) AS INTEGER) AND s.res = 60 AND s.at >= +sqlc.arg(since)
 GROUP BY s.check_id, bucket;
 
 -- name: UptimeProjectSummary :many
 -- Every check of a project's services with its probes over the last day:
 -- the overview's uptime per service.
-SELECT c.id, c.service_id,
+SELECT c.id, CAST(c.service_id AS INTEGER) AS service_id,
   CAST(coalesce(sum(s.up), 0) AS INTEGER) AS up, CAST(coalesce(sum(s.total), 0) AS INTEGER) AS total
 FROM uptime_checks AS c
 JOIN services ON services.id = c.service_id
@@ -124,13 +131,65 @@ GROUP BY c.id;
 -- counted through alerts_key.
 SELECT alerts.id, alerts.key, alerts.title, alerts.message, alerts.server, alerts.opened_at, alerts.resolved_at
 FROM alerts
-WHERE alerts.key IN (SELECT 'uptime:' || uptime_checks.id FROM uptime_checks WHERE uptime_checks.service_id = +sqlc.arg(service_id))
+WHERE alerts.key IN (SELECT 'uptime:' || uptime_checks.id FROM uptime_checks WHERE uptime_checks.service_id = +CAST(sqlc.arg(service_id) AS INTEGER))
   AND (SELECT count(*) FROM alerts AS newer WHERE newer.key = alerts.key AND newer.id > alerts.id) < CAST(sqlc.arg(per_check) AS INTEGER);
 
 -- name: CountOrgUptimeChecks :one
--- An organization's uptime checks, for its cap.
-SELECT count(*) FROM uptime_checks
-JOIN services ON services.id = uptime_checks.service_id
-JOIN environments ON environments.id = services.environment_id
-JOIN projects ON projects.id = environments.project_id
-WHERE projects.org_id = +?;
+-- An organization's uptime checks, its services' and its outside ones,
+-- for its cap.
+SELECT (SELECT count(*) FROM uptime_checks
+  JOIN services ON services.id = uptime_checks.service_id
+  JOIN environments ON environments.id = services.environment_id
+  JOIN projects ON projects.id = environments.project_id
+  WHERE projects.org_id = +sqlc.arg(org_id))
+  + (SELECT count(*) FROM uptime_checks WHERE uptime_checks.org_id = +CAST(sqlc.arg(org_id) AS INTEGER));
+
+-- name: ListOutsideUptimeChecks :many
+-- An organization's outside checks (no service), oldest first.
+SELECT * FROM uptime_checks WHERE org_id = +CAST(sqlc.arg(org_id) AS INTEGER) ORDER BY id;
+
+-- name: OutsideUptimeTotals :many
+-- UptimeTotals for an organization's outside checks.
+SELECT s.check_id,
+  CAST(coalesce(sum(CASE WHEN s.res = 60 AND s.at >= sqlc.arg(since_day) THEN s.up END), 0) AS INTEGER) AS up_day,
+  CAST(coalesce(sum(CASE WHEN s.res = 60 AND s.at >= sqlc.arg(since_day) THEN s.total END), 0) AS INTEGER) AS total_day,
+  CAST(coalesce(sum(CASE WHEN s.at >= sqlc.arg(since_week) AND (s.res = 3600 OR s.at >= sqlc.arg(minute_from)) THEN s.up END), 0) AS INTEGER) AS up_week,
+  CAST(coalesce(sum(CASE WHEN s.at >= sqlc.arg(since_week) AND (s.res = 3600 OR s.at >= sqlc.arg(minute_from)) THEN s.total END), 0) AS INTEGER) AS total_week,
+  CAST(coalesce(sum(CASE WHEN s.res = 3600 OR s.at >= sqlc.arg(minute_from) THEN s.up END), 0) AS INTEGER) AS up_month,
+  CAST(coalesce(sum(CASE WHEN s.res = 3600 OR s.at >= sqlc.arg(minute_from) THEN s.total END), 0) AS INTEGER) AS total_month
+FROM uptime_checks AS c
+CROSS JOIN uptime_stats AS s ON s.check_id = c.id
+WHERE c.org_id = +CAST(sqlc.arg(org_id) AS INTEGER)
+  AND ((s.res = 3600 AND s.at >= +sqlc.arg(since_month) AND s.at < +sqlc.arg(minute_from)) OR (s.res = 60 AND s.at >= +sqlc.arg(since_day)))
+GROUP BY c.id;
+
+-- name: OutsideUptimeSeries :many
+-- UptimeSeries for an organization's outside checks.
+SELECT s.check_id, CAST(s.at / 1800 * 1800 AS INTEGER) AS bucket,
+  CAST(sum(s.up) AS INTEGER) AS up, CAST(sum(s.total) AS INTEGER) AS total
+FROM uptime_checks AS c
+CROSS JOIN uptime_stats AS s ON s.check_id = c.id
+WHERE c.org_id = +CAST(sqlc.arg(org_id) AS INTEGER) AND s.res = 60 AND s.at >= +sqlc.arg(since)
+GROUP BY s.check_id, bucket;
+
+-- name: ListOutsideUptimeIncidents :many
+-- ListUptimeIncidents for an organization's outside checks.
+SELECT alerts.id, alerts.key, alerts.title, alerts.message, alerts.server, alerts.opened_at, alerts.resolved_at
+FROM alerts
+WHERE alerts.key IN (SELECT 'uptime:' || uptime_checks.id FROM uptime_checks WHERE uptime_checks.org_id = +CAST(sqlc.arg(org_id) AS INTEGER))
+  AND (SELECT count(*) FROM alerts AS newer WHERE newer.key = alerts.key AND newer.id > alerts.id) < CAST(sqlc.arg(per_check) AS INTEGER);
+
+-- name: ListOutsideUptimeUses :many
+-- The status page components each of an organization's outside checks
+-- feeds, in no order (a few rows, sorted by the caller).
+SELECT src.check_id, sp.slug AS page, sc.name AS component
+FROM uptime_checks AS c
+JOIN status_sources AS src ON src.check_id = c.id
+JOIN status_components AS sc ON sc.id = src.component_id
+JOIN status_pages AS sp ON sp.id = sc.page_id
+WHERE c.org_id = +CAST(sqlc.arg(org_id) AS INTEGER);
+
+-- name: DeleteOrgUptimeChecks :exec
+-- An organization's outside checks, when it is deleted; their statistics
+-- and sources go with them.
+DELETE FROM uptime_checks WHERE org_id = +CAST(sqlc.arg(org_id) AS INTEGER);

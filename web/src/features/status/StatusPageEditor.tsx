@@ -1,6 +1,6 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { Link, Navigate, useNavigate } from "@tanstack/react-router";
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useIsAdmin, useSession } from "../../data/queries";
 import { useShortcuts } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
@@ -19,8 +19,10 @@ import {
   SectionHead,
   StateText,
 } from "../../ui/kit";
+import { checkState } from "../uptime/UptimePanel";
 import {
   incidentState,
+  type OutsideCheck,
   publishState,
   type StatusComponent,
   type StatusComponentInput,
@@ -29,6 +31,7 @@ import {
   statusQueries,
   statusState,
   toInputs,
+  useAddOutsideCheck,
   useAddStatusHook,
   useCheckStatusHostname,
   useDeleteStatusPage,
@@ -75,7 +78,7 @@ export function StatusPageEditor({ slug }: { slug: string }) {
   if (page.slug !== slug)
     return (
       <Navigate
-        to="/$org/status-pages/$page"
+        to="/$org/status/$page"
         params={{ org, page: page.slug }}
         replace
       />
@@ -84,12 +87,8 @@ export function StatusPageEditor({ slug }: { slug: string }) {
     <>
       <PageBar
         parent={
-          <Link
-            to="/$org/status-pages"
-            params={{ org }}
-            className="hover:text-fg"
-          >
-            Status pages
+          <Link to="/$org/status" params={{ org }} className="hover:text-fg">
+            Status
           </Link>
         }
         title={page.title}
@@ -184,7 +183,7 @@ function Incidents({ page }: { page: StatusPage }) {
   const rest = page.incidents.filter((i) => i.state !== "draft");
   const open = rest.filter((i) => !i.resolved_at).length;
   const link = (id: string) => ({
-    to: "/$org/status-pages/$page/incidents/$incident" as const,
+    to: "/$org/status/$page/incidents/$incident" as const,
     params: { org, page: page.slug, incident: id },
   });
   return (
@@ -463,7 +462,7 @@ function Settings({ page, admin }: { page: StatusPage; admin: boolean }) {
                     onSuccess: (p) => {
                       setName(null);
                       navigate({
-                        to: "/$org/status-pages/$page",
+                        to: "/$org/status/$page",
                         params: { org, page: p.slug },
                         replace: true,
                       });
@@ -582,7 +581,7 @@ function Settings({ page, admin }: { page: StatusPage; admin: boolean }) {
           onConfirm={() =>
             remove.mutate(undefined, {
               onSuccess: () =>
-                navigate({ to: "/$org/status-pages", params: { org } }),
+                navigate({ to: "/$org/status", params: { org } }),
             })
           }
           onCancel={() => setAsking(false)}
@@ -891,10 +890,15 @@ function Hostname({ page, admin }: { page: StatusPage; admin: boolean }) {
   );
 }
 
+/** A URL to check outside Dock, staged in the component dialog. */
+type StagedCheck = { url: string; expect_status: string };
+
 /**
  * Adds a component or changes one: its public name, group, description
  * and sources, picked from the organization's services and their uptime
- * checks.
+ * checks, and its checks of sites outside Dock (ADR 0055). A URL typed in
+ * "Check a URL" is staged, ticked, and becomes an outside check when the
+ * dialog saves: one commit for both.
  */
 function ComponentDialog({
   page,
@@ -906,7 +910,10 @@ function ComponentDialog({
   onClose: () => void;
 }) {
   const set = useSetStatusComponents(page.slug);
+  const addOutside = useAddOutsideCheck();
   const candidates = useQuery(statusQueries.sources());
+  const outside = useQuery(statusQueries.outside());
+  const [staged, setStaged] = useState<StagedCheck[]>([]);
   const list = toInputs(page);
   const start: StatusComponentInput =
     index === null
@@ -927,11 +934,32 @@ function ComponentDialog({
     });
   const save = (next: StatusComponentInput[]) =>
     set.mutate(next, { onSuccess: onClose });
+  // Staged checks are added first, then the component names them; one
+  // added stays ticked (and unstaged) if saving the component fails.
+  const submit = async (next: StatusComponentInput[], at: number) => {
+    let comp = c;
+    for (const st of staged) {
+      const made = await addOutside.mutateAsync(st);
+      comp = {
+        ...comp,
+        sources: [...(comp.sources ?? []), { check: made.id }],
+      };
+      setC(comp);
+      setStaged((all) => all.filter((x) => x !== st));
+    }
+    next[at] = comp;
+    save(next);
+  };
   const cli = [
+    ...staged.map(
+      (st) =>
+        `dock uptime add ${st.url} --outside --status ${st.expect_status} &&`,
+    ),
     `dock status-page component add ${page.slug} "${c.name || "<name>"}"`,
     ...sources.map((s) =>
       s.check ? `--check ${s.check}` : `--service ${s.service}`,
     ),
+    ...staged.map(() => "--check <its id>"),
     c.group ? `--group "${c.group}"` : "",
     c.auto === false ? "--manual" : "",
   ]
@@ -950,7 +978,8 @@ function ComponentDialog({
           const next = [...list];
           if (index === null) next.push(c);
           else next[index] = c;
-          save(next);
+          // The error shows in the footer (addOutside.error).
+          submit(next, index ?? next.length - 1).catch(() => {});
         }}
       >
         <label className="flex flex-col gap-1 text-xs text-mut">
@@ -1031,9 +1060,20 @@ function ComponentDialog({
             {candidates.data?.length === 0 && (
               <p className="text-mut">No services yet.</p>
             )}
+            <OutsideSources
+              checks={outside.data ?? []}
+              staged={staged}
+              hasCheck={hasCheck}
+              onToggle={(on, id) => toggle(on, { check: id })}
+              onStage={(st) => setStaged([...staged, st])}
+              onUnstage={(st) => setStaged(staged.filter((x) => x !== st))}
+            />
           </div>
         </div>
-        <DialogFoot cli={cli} note={<ErrorText error={set.error} />}>
+        <DialogFoot
+          cli={cli}
+          note={<ErrorText error={addOutside.error ?? set.error} />}
+        >
           {index !== null && (
             <Button
               danger
@@ -1047,12 +1087,152 @@ function ComponentDialog({
           <Button
             type="submit"
             primary
-            disabled={!c.name.trim() || set.isPending}
+            disabled={!c.name.trim() || set.isPending || addOutside.isPending}
           >
             {index === null ? "Add" : "Save"}
           </Button>
         </DialogFoot>
       </form>
     </Dialog>
+  );
+}
+
+/**
+ * The component dialog's "Outside Dock" group: the organization's checks
+ * of sites outside Dock, the URLs staged here (ticked, tagged new), and
+ * "+ Check a URL", which opens a URL and expected status in place. Enter
+ * there stages the URL; it never submits the dialog.
+ */
+function OutsideSources({
+  checks,
+  staged,
+  hasCheck,
+  onToggle,
+  onStage,
+  onUnstage,
+}: {
+  checks: OutsideCheck[];
+  staged: StagedCheck[];
+  hasCheck: (id: number) => boolean;
+  onToggle: (on: boolean, id: number) => void;
+  onStage: (st: StagedCheck) => void;
+  onUnstage: (st: StagedCheck) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState("");
+  const [status, setStatus] = useState("200");
+  const typed = url.trim();
+  // Opened by "+ Check a URL", so the URL takes the focus.
+  const urlField = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (open) urlField.current?.focus();
+  }, [open]);
+  const stage = () => {
+    if (!typed) return;
+    onStage({ url: typed, expect_status: status.trim() || "200" });
+    setUrl("");
+    setOpen(false);
+  };
+  // Enter stages the URL instead of submitting the dialog; Esc closes
+  // the row, not the dialog.
+  const keys = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      stage();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      setOpen(false);
+    }
+  };
+  return (
+    <div className="pt-2">
+      <span className="text-xs text-mut">Outside Dock</span>
+      {checks.map((chk) => (
+        <div key={chk.id} className="flex items-center gap-2 py-0.5 pl-6">
+          <Check
+            label={
+              <span className="flex items-center gap-2">
+                <span
+                  className={
+                    chk.state === "up"
+                      ? "text-ok"
+                      : chk.state === "down"
+                        ? "text-fail"
+                        : "text-mut"
+                  }
+                  title={checkState(chk.state).label}
+                >
+                  {checkState(chk.state).glyph}
+                </span>
+                <span className="font-mono text-sec">{chk.url}</span>
+              </span>
+            }
+            checked={hasCheck(chk.id)}
+            onChange={(on) => onToggle(on, chk.id)}
+          />
+          <span className="ml-auto font-mono text-xs text-mut">
+            {chk.expect_status}
+          </span>
+        </div>
+      ))}
+      {staged.map((st) => (
+        <div key={st.url} className="flex items-center gap-2 py-0.5 pl-6">
+          <Check
+            label={<span className="font-mono text-sec">{st.url}</span>}
+            checked
+            onChange={() => onUnstage(st)}
+          />
+          <span className="text-xs text-warn-text">new</span>
+          <span className="ml-auto font-mono text-xs text-mut">
+            {st.expect_status}
+          </span>
+        </div>
+      ))}
+      {open ? (
+        <div className="flex flex-col gap-1 py-1 pl-6">
+          <span className="flex items-center gap-2">
+            <input
+              ref={urlField}
+              aria-label="URL to check"
+              className="field min-w-0 flex-1 py-[3px] font-mono text-sm"
+              placeholder="https://status.example.com/"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              onKeyDown={keys}
+            />
+            <input
+              aria-label="Expected status"
+              title="The answer that counts as up: a code, 2xx or 3xx"
+              className="field w-[64px] py-[3px] font-mono text-sm"
+              value={status}
+              list="outside-statuses"
+              onChange={(e) => setStatus(e.target.value)}
+              onKeyDown={keys}
+            />
+            <datalist id="outside-statuses">
+              <option value="200" />
+              <option value="2xx" />
+              <option value="3xx" />
+            </datalist>
+            <Button small disabled={!typed} onClick={stage}>
+              Add
+            </Button>
+          </span>
+          <span className="text-xs text-mut">
+            Public sites on ports 80 and 443, probed every minute from another
+            server.
+          </span>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="lnk py-0.5 pl-6 text-sm"
+          onClick={() => setOpen(true)}
+        >
+          + Check a URL
+        </button>
+      )}
+    </div>
   );
 }

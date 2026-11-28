@@ -63,7 +63,7 @@ func validName(kind, name string) error {
 // page of a project.
 var (
 	reservedOrgSlugs         = []string{"access", "account", "api", "assets", "cli-login", "console", "fonts", "invite", "invite-only", "login", "no-org"}
-	reservedProjectNames     = []string{"alerts", "analytics", "audit", "errors", "help", "images", "inbox", "requests", "settings", "status-pages", "tokens"}
+	reservedProjectNames     = []string{"alerts", "analytics", "audit", "errors", "help", "images", "inbox", "requests", "settings", "status", "status-pages", "tokens"}
 	reservedEnvironmentNames = []string{"compare", "settings"}
 )
 

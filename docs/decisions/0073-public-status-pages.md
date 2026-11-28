@@ -10,6 +10,11 @@ Amended by [0087](0087-unguessable-generated-hostnames.md): a page's name
 is unique in its organization only, and its address is
 `status-<slug>-<random>`; the random part stays through renames, and
 old names belong to their organization.
+Amended 2026-11-28: components may show the organization's checks of
+sites outside Dock ([0055, outside checks](0055-uptime-checks.md#outside-checks)),
+and the UI's page is **Status** at `/<org>/status` (the old
+`/<org>/status-pages` paths redirect there); see
+[Outside checks and Status](#outside-checks-and-status).
 
 ## Context
 
@@ -120,6 +125,23 @@ published keep working.
 | Released when taken | Another page (or this one, renamed back) taking the name removes it from the table, and the old address is that page's. A page keeps its 5 newest old names: each is a route and a certificate |
 | Unchanged | IDs, components, incidents (their public URLs are built when sent, so they carry the new address), maintenance, hooks (sealed by page ID), the custom hostname and the Cloudflare record Dock made for it. A custom hostname's CNAME to the old generated address keeps resolving, since the base domain's names are a wildcard; the editor shows the new target |
 | Migration | 0101: `status_page_old_slugs` |
+
+## Outside checks and Status
+
+Amendment, 2026-11-28 (Saile). A component's sources may name an
+outside check: a check of a site outside Dock that belongs to the
+organization ([0055](0055-uptime-checks.md#outside-checks)). Several
+pages may show one check. The source has no service, so it adds no
+health and no environment to lock or to scope a token to; only people
+who post for the whole organization speak for a component built from
+one. Removing the check removes it from its components.
+
+The UI's organization page is renamed **Status** at `/<org>/status`,
+since it holds the pages and the outside checks they show; the old
+`/<org>/status-pages/...` paths redirect to the same path under
+`/status`, and `status` joins the project names that are refused. CLI
+commands keep their names (`dock status` is a service's health, `dock
+status-page` the pages).
 
 ## Performance
 

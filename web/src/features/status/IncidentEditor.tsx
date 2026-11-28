@@ -244,7 +244,7 @@ export function NewIncidentDialog({
       {
         onSuccess: (inc) =>
           navigate({
-            to: "/$org/status-pages/$page/incidents/$incident",
+            to: "/$org/status/$page/incidents/$incident",
             params: { org, page: page.slug, incident: inc.id },
           }),
       },
@@ -339,7 +339,7 @@ export function IncidentEditor({ slug, id }: { slug: string; id: string }) {
   const org = useOrg();
   const inc = page.incidents.find((i) => i.id === id);
   const parent = (
-    <Link to="/$org/status-pages/$page" params={{ org, page: slug }}>
+    <Link to="/$org/status/$page" params={{ org, page: slug }}>
       {page.title}
     </Link>
   );
@@ -455,7 +455,7 @@ function IncidentView({
             remove.mutate(undefined, {
               onSuccess: () =>
                 navigate({
-                  to: "/$org/status-pages/$page",
+                  to: "/$org/status/$page",
                   params: { org, page: page.slug },
                 }),
             })
@@ -852,7 +852,7 @@ export function ScheduleMaintenanceDialog({
             {
               onSuccess: (w) =>
                 navigate({
-                  to: "/$org/status-pages/$page/incidents/$incident",
+                  to: "/$org/status/$page/incidents/$incident",
                   params: { org, page: page.slug, incident: w.id },
                 }),
             },

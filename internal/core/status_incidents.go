@@ -361,7 +361,9 @@ func (c *Core) checkIncidentScope(ctx context.Context, a Actor, p store.StatusPa
 	ok := map[int64]bool{}
 	for _, s := range srcs {
 		v, seen := ok[s.ComponentID]
-		ok[s.ComponentID] = (v || !seen) && a.canSee(s.OrgID, s.ProjectID, s.EnvironmentID) &&
+		// An outside check (project 0) is the organization's: only those
+		// who post for all of it speak for it.
+		ok[s.ComponentID] = (v || !seen) && s.ProjectID != 0 && a.canSee(s.OrgID, s.ProjectID, s.EnvironmentID) &&
 			a.holdsAt(PermStatusPagesPost, s.ProjectID, s.EnvironmentID, kinds[s.EnvironmentID])
 	}
 	for _, im := range ims {
@@ -857,7 +859,8 @@ func (c *Core) DeleteIncident(ctx context.Context, a Actor, id string) error {
 // alert's words. One indexed query, when such an alert opens.
 func (c *Core) statusAlertOpened(ctx context.Context, al store.Alert) {
 	kind := apitypes.AlertKind(al.Kind)
-	if (kind != apitypes.AlertUptimeDown && kind != apitypes.AlertCrashLoop) || al.ServiceID == nil || al.MutedBy != nil {
+	// An outside check's uptime_down alert names no service (ADR 0055).
+	if (kind != apitypes.AlertUptimeDown && kind != apitypes.AlertCrashLoop) || (al.ServiceID == nil && kind != apitypes.AlertUptimeDown) || al.MutedBy != nil {
 		// A held alert is planned work's: no draft.
 		return
 	}
