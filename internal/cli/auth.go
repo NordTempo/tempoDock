@@ -102,6 +102,7 @@ the process list. Create the first token on the server with
 			if err != nil {
 				return err
 			}
+			g.warnPlaintext(anon, server)
 			ver, err := apiclient.Get[apitypes.Version](ctx, anon, apiPrefix+"/version")
 			if err != nil {
 				return err
