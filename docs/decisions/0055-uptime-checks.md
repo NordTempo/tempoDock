@@ -107,5 +107,5 @@ Dock too.
 | Status pages | A component's sources may name an outside check; removing the check removes it from them, and the remove asks first, naming each page and component (`used_by`) |
 | API, CLI, MCP, UI | `GET`/`POST /outside-uptime-checks`, `PATCH`/`DELETE /outside-uptime-checks/{id}`; `dock uptime list\|add\|update\|remove --outside`; the `outside_uptime_checks` tool; the **Outside checks** table on Status and an **Outside Dock** group in the component dialog, whose "+ Check a URL" stages a URL that is added when the dialog saves. Audited as `uptime.add`, `.update` and `.remove` with the target `outside checks` |
 | Org deleted | Its outside checks go with it |
-| Migration | 0143: `uptime_checks` rebuilt with `org_id` and a nullable `service_id` |
+| Migration | 0143: `uptime_checks` rebuilt with `org_id` and a nullable `service_id`, and with `AUTOINCREMENT`, started past every check ID an alert names: a check's alerts (keyed `uptime:<id>`) outlive it, so its ID is never another check's, another organization's included |
 
