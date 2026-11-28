@@ -19137,6 +19137,9 @@
           "maintenance": {
             "type": "boolean"
           },
+          "outage": {
+            "type": "boolean"
+          },
           "uptime": {
             "format": "double",
             "type": "number"

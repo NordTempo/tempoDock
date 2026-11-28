@@ -45,9 +45,12 @@ Organization admins make and change pages; every member sees them.
 | Major outage | all its checks are down |
 | Idle | its environment is asleep: not counted as downtime |
 
-The page's headline is its worst component. The bars show 90 UTC days:
-dark green for a perfect day, amber below 100%, red below 99%, gray
-without probes. `dock status-page update acme --show-uptime=false` hides
+The page's headline is its worst component. The bars show 90 UTC days,
+coloured by what happened: green when every probe passed, amber when a
+probe failed but the site wasn't down, red when it was down (two failed
+probes in a row, which raise an alert) or an incident was an outage,
+blue for maintenance, gray without probes. Hover a day for its
+percentage. `dock status-page update acme --show-uptime=false` hides
 the percentages; the colours stay.
 
 A component added with `--manual` reads operational whatever its

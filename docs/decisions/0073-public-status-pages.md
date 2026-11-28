@@ -15,6 +15,8 @@ sites outside Dock ([0055, outside checks](0055-uptime-checks.md#outside-checks)
 and the UI's page is **Status** at `/<org>/status` (the old
 `/<org>/status-pages` paths redirect there); see
 [Outside checks and Status](#outside-checks-and-status).
+Amended 2026-11-28 too: a day's colour says what happened, not a
+percentage; see [Day colours](#day-colours).
 
 ## Context
 
@@ -142,6 +144,41 @@ since it holds the pages and the outside checks they show; the old
 `/status`, and `status` joins the project names that are refused. CLI
 commands keep their names (`dock status` is a service's health, `dock
 status-page` the pages).
+
+## Day colours
+
+Amendment, 2026-11-28 (Saile). The bars coloured a day amber below 100%
+and red below 99%, in a muted green next to full-strength amber: one
+failed probe (about 99.93% at a minute's interval) painted a day bright
+amber, and a good month looked half broken. A day is now coloured by
+what happened, in colours of one weight:
+
+| Colour | When |
+|---|---|
+| Red `#dc3545` | A confirmed outage: one of the component's checks was down (two failed probes in a row, an `uptime_down` alert) that day, or an incident that was a partial or major outage |
+| Blue `#1747f5` | A maintenance window ran that day, and it isn't red |
+| Amber `#f8a306` | A probe failed but no check was down, or an incident degraded the component |
+| Green `#5cdd8b` | Every probe passed |
+| Gray | No probes |
+
+The hover keeps the day's percentage and says what happened ("some
+probes failed", "down", the incident, maintenance). A page that hides
+percentages says only whether probes failed.
+
+**Telling an outage from a blip.** Hour and day rows keep counts, not the
+probes' order, so they can't say whether two failures were in a row.
+The alerts can: an `uptime_down` alert is exactly that, and resolved
+alerts are kept `retention.alert_days`, 90 days by default, the page's
+whole history. So a page render reads its checks' `uptime_down` alerts
+(one query, `StatusPageOutages`, through `alerts_key`) and marks the days
+each one spans as `outage` (in the API, `status.json` and the editor).
+Nothing new is recorded or polled. An install that keeps alerts fewer
+days loses the red for older days: they fall back to amber for failed
+probes, red only for outage incidents. Probes muted by a maintenance
+window never fail a check, so they open no alert.
+
+The dots and status text keep their colours: red `#dc3545` and blue
+`#1747f5` are under 4.5:1 on black, too dark for text.
 
 ## Performance
 

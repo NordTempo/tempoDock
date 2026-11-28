@@ -179,6 +179,10 @@ type StatusDay struct {
 	Incident string          `json:"incident,omitempty"`
 	// Maintenance: a maintenance window ran that day.
 	Maintenance bool `json:"maintenance,omitempty"`
+	// Outage: one of the component's uptime checks was down that day (two
+	// failed probes in a row, an uptime_down alert), not just a failed
+	// probe. Days older than the alert history kept never have it.
+	Outage bool `json:"outage,omitempty"`
 }
 
 // PublicStatusPage is what a published page shows anyone: names people

@@ -1700,6 +1700,61 @@ func (q *Queries) StatusPageDays(ctx context.Context, arg StatusPageDaysParams) 
 	return items, nil
 }
 
+const statusPageOutages = `-- name: StatusPageOutages :many
+WITH checks AS (
+  SELECT src.component_id, src.check_id AS check_id
+  FROM status_components AS sc JOIN status_sources AS src ON src.component_id = sc.id
+  WHERE sc.page_id = +?2 AND src.check_id IS NOT NULL
+  UNION ALL
+  SELECT src.component_id, uc.id AS check_id
+  FROM status_components AS sc JOIN status_sources AS src ON src.component_id = sc.id
+  JOIN uptime_checks AS uc ON uc.service_id = src.service_id
+  WHERE sc.page_id = +?2
+)
+SELECT checks.component_id, a.opened_at, a.resolved_at
+FROM checks CROSS JOIN alerts AS a ON a.key = 'uptime:' || checks.check_id
+WHERE a.kind = 'uptime_down' AND (a.resolved_at IS NULL OR a.resolved_at >= +?1)
+`
+
+type StatusPageOutagesParams struct {
+	Since  *time.Time
+	PageID int64
+}
+
+type StatusPageOutagesRow struct {
+	ComponentID int64
+	OpenedAt    time.Time
+	ResolvedAt  *time.Time
+}
+
+// When a page's components' uptime checks were down (ADR 0073, day
+// colours): their uptime_down alerts, open or resolved since since.
+// Resolved alerts are kept retention.alert_days (90 by default), the
+// page's days. Each check's alerts are read through alerts_key; a check
+// a component names twice comes twice, which marks the same days.
+func (q *Queries) StatusPageOutages(ctx context.Context, arg StatusPageOutagesParams) ([]StatusPageOutagesRow, error) {
+	rows, err := q.db.QueryContext(ctx, statusPageOutages, arg.Since, arg.PageID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []StatusPageOutagesRow
+	for rows.Next() {
+		var i StatusPageOutagesRow
+		if err := rows.Scan(&i.ComponentID, &i.OpenedAt, &i.ResolvedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const statusSlugTaken = `-- name: StatusSlugTaken :one
 SELECT EXISTS (SELECT 1 FROM status_pages WHERE org_id = +? AND slug = +?)
 `

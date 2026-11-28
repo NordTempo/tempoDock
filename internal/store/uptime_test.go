@@ -34,6 +34,7 @@ func TestUptimeQueryPlans(t *testing.T) {
 		{"OutsideUptimeSeries", outsideUptimeSeries, []any{1, 0}, "s USING PRIMARY KEY (check_id=? AND res=? AND at>?)"},
 		{"ListOutsideUptimeIncidents", listOutsideUptimeIncidents, []any{1, 5}, "alerts USING INDEX alerts_key (key=?)"},
 		{"ListOutsideUptimeUses", listOutsideUptimeUses, []any{1}, "status_sources_check (check_id=?)"},
+		{"StatusPageOutages", statusPageOutages, []any{"2026-01-01", 1}, "a USING INDEX alerts_key (key=?)"},
 	} {
 		rows, err := f.s.DB.Query("EXPLAIN QUERY PLAN "+tc.sql, tc.args...)
 		if err != nil {

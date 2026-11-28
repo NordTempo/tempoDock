@@ -103,7 +103,7 @@ func TestStatusPagesServe(t *testing.T) {
 	}
 	body, _ := io.ReadAll(zr)
 	html := string(body)
-	for _, want := range []string{"Acme &lt;b&gt;", "Partial outage: API", "updated 14:06 UTC", "99.50%", `class="w" title="10 Nov: 99.50%"`, `title="13 Aug: no data"`, ">Idle<"} {
+	for _, want := range []string{"Acme &lt;b&gt;", "Partial outage: API", "updated 14:06 UTC", "99.50%", `class="w" title="10 Nov: 99.50%, some probes failed"`, `title="13 Aug: no data"`, ">Idle<"} {
 		if !strings.Contains(html, want) {
 			t.Errorf("page has no %q", want)
 		}
@@ -168,7 +168,7 @@ func TestStatusPageMoved(t *testing.T) {
 }
 
 // A page hiding percentages shows no numbers, only whether a day had
-// downtime.
+// failed probes.
 func TestStatusPageHidesUptime(t *testing.T) {
 	page := testStatusPage()
 	page.ShowUptime = false
@@ -177,7 +177,7 @@ func TestStatusPageHidesUptime(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, html, _ := strings.Cut(string(b), "<main>")
-	if strings.Contains(html, "%") || !strings.Contains(html, `title="10 Nov: downtime"`) {
+	if strings.Contains(html, "%") || !strings.Contains(html, `title="10 Nov: some probes failed"`) {
 		t.Errorf("page shows numbers: %s", html)
 	}
 }
@@ -275,7 +275,7 @@ func testIncident() apitypes.PublicIncident {
 // Open incidents lead the page and status.json; each has its own page,
 // the history lists them and the feed has one entry per update. What
 // people wrote is escaped, with https links made links, and a day an
-// incident ran is at least its colour.
+// outage incident ran is red.
 func TestStatusIncidentPages(t *testing.T) {
 	page := testStatusPage()
 	inc := testIncident()
@@ -289,7 +289,7 @@ func TestStatusIncidentPages(t *testing.T) {
 	html := statusGet(h, host, "/", true).Body.String()
 	for _, want := range []string{`<a href="/incidents/4f2kqz7mna">API &lt;errors&gt;</a>`, "Affects API", "b-partial_outage",
 		`<a href="https://acme.example/post" rel="nofollow noopener">https://acme.example/post</a>.`, "Moving &lt;b&gt;traffic&lt;/b&gt;.",
-		"<time>14:02</time>", "· edited", `class="r" title="10 Nov: 99.50%, Jobs &#34;stuck&#34;"`, `href="/history"`,
+		"<time>14:02</time>", "· edited", `class="r" title="10 Nov: 99.50%, some probes failed, Jobs &#34;stuck&#34;"`, `href="/history"`,
 		`<span class="desc">10 Nov</span><a href="/incidents/4f2kqz7mna">API &lt;errors&gt;</a><span class="desc">Identified</span>`} {
 		if !strings.Contains(html, want) {
 			t.Errorf("page has no %q", want)
@@ -365,5 +365,33 @@ func TestStatusMaintenancePage(t *testing.T) {
 	js, err := renderStatusJSON(page)
 	if err != nil || !strings.Contains(string(js), `"maintenance":[{"id":"m2kqz7mnab"`) || !strings.Contains(string(js), `"ends_at":"2026-11-13T02:30:00Z"`) {
 		t.Errorf("status.json: %s, %v", js, err)
+	}
+}
+
+// A day's colour says what happened, not a percentage (ADR 0073, day
+// colours): a failed probe is amber, a check down red, maintenance blue
+// unless it was red, and the hover keeps the day's number.
+func TestStatusDayColours(t *testing.T) {
+	pct := func(v float64) *float64 { return &v }
+	for _, tc := range []struct {
+		day         apitypes.StatusDay
+		class, hint string
+	}{
+		{apitypes.StatusDay{Date: "2026-11-10"}, "n", "10 Nov: no data"},
+		{apitypes.StatusDay{Date: "2026-11-10", Uptime: pct(100)}, "g", "10 Nov: 100%"},
+		{apitypes.StatusDay{Date: "2026-11-10", Uptime: pct(99.93)}, "w", "10 Nov: 99.93%, some probes failed"},
+		{apitypes.StatusDay{Date: "2026-11-10", Uptime: pct(99.93), Outage: true}, "r", "10 Nov: 99.93%, down"},
+		{apitypes.StatusDay{Date: "2026-11-10", Uptime: pct(100), Impact: apitypes.StatusDegraded, Incident: "Slow"}, "w", "10 Nov: 100%, Slow"},
+		{apitypes.StatusDay{Date: "2026-11-10", Uptime: pct(100), Impact: apitypes.StatusPartialOutage, Incident: "Errors"}, "r", "10 Nov: 100%, Errors"},
+		{apitypes.StatusDay{Date: "2026-11-10", Uptime: pct(99.5), Maintenance: true}, "b", "10 Nov: 99.50%, some probes failed, maintenance"},
+		{apitypes.StatusDay{Date: "2026-11-10", Uptime: pct(95), Outage: true, Maintenance: true}, "r", "10 Nov: 95.00%, down, maintenance"},
+	} {
+		if got := statusDayOf(tc.day, true); got.Class != tc.class || got.Title != tc.hint {
+			t.Errorf("%+v: %s %q, want %s %q", tc.day, got.Class, got.Title, tc.class, tc.hint)
+		}
+	}
+	// A page without numbers says whether probes failed.
+	if got := statusDayOf(apitypes.StatusDay{Date: "2026-11-10", Uptime: pct(99)}, false); got.Class != "w" || got.Title != "10 Nov: some probes failed" {
+		t.Errorf("without numbers: %+v", got)
 	}
 }

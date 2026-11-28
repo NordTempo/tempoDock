@@ -382,8 +382,10 @@ function Components({
 }
 
 /**
- * The last 90 days in thin cells: green, amber below 100%, red below 99%;
- * a day an incident ran is at least amber, red for an outage.
+ * The last 90 days in thin cells, by what happened (ADR 0073, as the
+ * public page): red for an outage (a check down, or an outage incident),
+ * blue for maintenance, amber when a probe failed or an incident degraded
+ * it, green when every probe passed, gray without probes.
  */
 function DayBar({ days }: { days: StatusComponent["days"] }) {
   return (
@@ -391,28 +393,22 @@ function DayBar({ days }: { days: StatusComponent["days"] }) {
       {days.map((d) => (
         <span
           key={d.date}
-          className={`inline-block h-3.5 w-[2px] ${
-            d.impact === "major_outage" || d.impact === "partial_outage"
-              ? "bg-fail"
-              : d.maintenance && (d.uptime === undefined || d.uptime >= 100)
-                ? "bg-info"
-                : d.uptime === undefined
-                  ? d.impact
-                    ? "bg-warn"
-                    : "bg-line"
-                  : d.uptime >= 100
-                    ? d.impact
-                      ? "bg-warn"
-                      : "bg-ok"
-                    : d.uptime >= 99
-                      ? "bg-warn"
-                      : "bg-fail"
-          }`}
-          title={`${d.date}: ${d.uptime === undefined ? "no probes" : percent(d.uptime)}${d.incident ? `, ${d.incident}` : ""}${d.maintenance ? ", maintenance" : ""}`}
+          className={`inline-block h-3.5 w-[2px] ${dayColor(d)}`}
+          title={`${d.date}: ${d.uptime === undefined ? "no probes" : percent(d.uptime)}${d.outage ? ", down" : d.uptime !== undefined && d.uptime < 100 ? ", some probes failed" : ""}${d.incident ? `, ${d.incident}` : ""}${d.maintenance ? ", maintenance" : ""}`}
         />
       ))}
     </span>
   );
+}
+
+/** A day's colour: what happened, worst first. */
+function dayColor(d: StatusComponent["days"][number]) {
+  if (d.outage || d.impact === "major_outage" || d.impact === "partial_outage")
+    return "bg-fail";
+  if (d.maintenance) return "bg-info";
+  if ((d.uptime !== undefined && d.uptime < 100) || d.impact === "degraded")
+    return "bg-warn";
+  return d.uptime === undefined ? "bg-line" : "bg-ok";
 }
 
 /** A percentage the way the page shows it: 100% only when perfect. */

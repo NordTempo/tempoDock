@@ -758,8 +758,8 @@ func statusSince(at time.Time) int64 {
 	return today - (apitypes.StatusDays-1)*uptimeDay
 }
 
-// computeStatus works out a page's components: three queries
-// (components, sources, history), the rest from memory, and the
+// computeStatus works out a page's components: four queries
+// (components, sources, history, outages), the rest from memory, and the
 // incidents' impact (incs, from loadStatusIncidents since statusSince).
 // a, when set, is whom the sources are shown to; nil for the public
 // page.
@@ -775,6 +775,14 @@ func (c *Core) computeStatus(ctx context.Context, p store.StatusPage, a *Actor, 
 	since := statusSince(at)
 	dayRows, err := c.store.StatusPageDays(ctx, store.StatusPageDaysParams{PageID: p.ID, Since: since,
 		DayFrom: c.uptimeDayFrom(at), MinuteFrom: c.uptimeMinuteFrom(at)})
+	if err != nil {
+		return nil, err
+	}
+	// A day with a confirmed outage (an uptime_down alert, two failed
+	// probes in a row) is told from one with a failed probe by the
+	// alerts' history, not the stats: hour and day rows don't keep the
+	// probes' order.
+	outages, err := c.store.StatusPageOutages(ctx, store.StatusPageOutagesParams{PageID: p.ID, Since: ptr(time.Unix(since, 0))})
 	if err != nil {
 		return nil, err
 	}
@@ -903,8 +911,29 @@ func (c *Core) computeStatus(ctx context.Context, p store.StatusPage, a *Actor, 
 		}
 		out[i].uptime = percent(up, total)
 	}
+	for _, o := range outages {
+		i, ok := index[o.ComponentID]
+		if !ok {
+			continue
+		}
+		markOutage(out[i].days, since, o.OpenedAt, o.ResolvedAt, at)
+	}
 	applyIncidents(out, incs, since, at)
 	return out, nil
+}
+
+// markOutage marks the days of days (since its first) that the outage
+// from opened to resolved (nil: still down at at) overlaps.
+func markOutage(days []apitypes.StatusDay, since int64, opened time.Time, resolved *time.Time, at time.Time) {
+	end := at
+	if resolved != nil {
+		end = *resolved
+	}
+	first := max(int((opened.Unix()-since)/uptimeDay), 0)
+	last := min(int((end.Unix()-since)/uptimeDay), len(days)-1)
+	for d := first; d <= last; d++ {
+		days[d].Outage = true
+	}
 }
 
 // statusRank orders statuses from good to bad; idle ranks with
@@ -1030,7 +1059,7 @@ func (c *Core) PublicStatusPage(ctx context.Context, id int64) (apitypes.PublicS
 			pc.Days = make([]apitypes.StatusDay, len(cc.days))
 			for i, d := range cc.days {
 				// The colour of a day stays; its number goes.
-				pc.Days[i] = apitypes.StatusDay{Date: d.Date, Uptime: roundedDay(d.Uptime), Impact: d.Impact, Incident: d.Incident, Maintenance: d.Maintenance}
+				pc.Days[i] = apitypes.StatusDay{Date: d.Date, Uptime: roundedDay(d.Uptime), Impact: d.Impact, Incident: d.Incident, Maintenance: d.Maintenance, Outage: d.Outage}
 			}
 		}
 		g := &out.Groups[len(out.Groups)-1]
@@ -1039,18 +1068,16 @@ func (c *Core) PublicStatusPage(ctx context.Context, id int64) (apitypes.PublicS
 	return out, nil
 }
 
-// roundedDay is a day's uptime reduced to the band its colour shows
-// (100, 99 or 0), for a page that hides percentages.
+// roundedDay is a day's uptime reduced to what its colour shows, for a
+// page that hides percentages: 100 when every probe passed, else 99 (a
+// confirmed outage is the day's Outage, not its number).
 func roundedDay(p *float64) *float64 {
 	if p == nil {
 		return nil
 	}
-	v := 0.0
-	switch {
-	case *p >= 100:
+	v := 99.0
+	if *p >= 100 {
 		v = 100
-	case *p >= 99:
-		v = 99
 	}
 	return &v
 }

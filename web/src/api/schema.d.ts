@@ -12997,6 +12997,7 @@ export interface components {
             impact?: "degraded" | "partial_outage" | "major_outage";
             incident?: string;
             maintenance?: boolean;
+            outage?: boolean;
             /** Format: double */
             uptime?: number;
         };

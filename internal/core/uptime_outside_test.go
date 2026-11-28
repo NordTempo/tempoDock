@@ -109,6 +109,10 @@ func TestOutsideUptimeCheckOnAStatusPage(t *testing.T) {
 	if src := page.Components[0].Sources; len(src) != 1 || src[0].Check != chk.ID || src[0].Hidden || src[0].Problem != "" {
 		t.Fatalf("sources = %+v", src)
 	}
+	// Its alert makes today a confirmed outage (the day's colour).
+	if days := page.Components[0].Days; !days[len(days)-1].Outage || days[len(days)-2].Outage {
+		t.Fatalf("days end %+v, want only today an outage", days[len(days)-2:])
+	}
 	got, err := h.c.ListOutsideUptimeChecks(h.ctx, testSystem)
 	if err != nil || len(got) != 1 || got[0].State != apitypes.UptimeDown ||
 		!slices.Equal(got[0].UsedBy, []apitypes.UptimeCheckUse{{Page: "acme", Component: "Vendor"}}) {
