@@ -382,7 +382,8 @@
    * Cells line up on their first line's baseline, so mono values (times,
    * targets, ids) and sans text sit on one line across a row. They don't
    * wrap: a cell holding sentences (a detail, a fix, a reason) sets
-   * whitespace-normal, or the table grows past the page and scrolls.
+   * whitespace-normal, or the table grows past the page and scrolls;
+   * text a user typed adds wrap-anywhere, since it may have no spaces.
    */
   td {
     padding: 9px 14px 9px 0;

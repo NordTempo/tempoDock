@@ -212,7 +212,7 @@ export function SecurityPage() {
                         </Link>
                       </td>
                       <td>{r.check.title}</td>
-                      <td className="min-w-[200px] whitespace-normal text-mut">
+                      <td className="min-w-[200px] whitespace-normal wrap-anywhere text-mut">
                         "{r.check.dismissed?.reason}" · {r.check.dismissed?.by},{" "}
                         {r.check.dismissed && ago(r.check.dismissed.at)}
                       </td>
