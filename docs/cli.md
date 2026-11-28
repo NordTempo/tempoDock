@@ -104,6 +104,11 @@ never follows redirects either; a 3xx is an error naming its target.
 why. Before its first change on a server that isn't on this machine (not
 localhost or a loopback address), a command names it on stderr, as
 `→ prod (https://dock.example.com)`; like other warnings, not with `--json`.
+A command that connects to such a server over plain `http://` first warns
+on stderr, once, that the token, keys, passwords and variables go to it
+unencrypted, with `--json` too (one line before any JSON error). It still
+connects: plain http is fine over an encrypted tunnel such as Tailscale;
+otherwise serve Dock over HTTPS with `dock address set`.
 
 Log in with `dock login <server-url>` (no URL: the current context's
 server). On a terminal it logs in through the browser, so there is no token

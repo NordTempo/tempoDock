@@ -63,6 +63,12 @@ func (g *globals) connect() (*session, error) {
 	}
 	api.Org, api.Reason = r.Org, g.reason
 	api.SetPlatformToken(r.PlatformToken)
+	if api.Remote() && api.Plaintext() && !g.warnedPlain {
+		// Even with --json: it's one line before any JSON on stderr, and
+		// the secrets go over the wire whatever the output format.
+		g.warnedPlain = true
+		_, _ = fmt.Fprintf(g.io.Err, "%s %s is plain http: your token and any keys, passwords and variables go to it unencrypted. Serve Dock over HTTPS with `dock address set <hostname>`, or ignore this over an encrypted tunnel such as Tailscale.\n", output.GlyphWarn, r.Server)
+	}
 	if api.Remote() && !g.io.JSON { // warnings are silent with --json
 		to := r.Server + " (" + clientconfig.EnvURL + ")"
 		if r.Name != "" {
