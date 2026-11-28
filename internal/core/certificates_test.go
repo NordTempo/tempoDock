@@ -34,8 +34,9 @@ func newTestPKI(t *testing.T) *testPKI {
 }
 
 // sign makes a certificate for names, a CA's or a leaf's, signed by
-// parent (nil: itself).
-func (p *testPKI) sign(cn string, names []string, ca bool, parent *x509.Certificate, parentKey *ecdsa.PrivateKey, from, until time.Time) (*x509.Certificate, *ecdsa.PrivateKey) {
+// parent (nil: itself). eku, when given (even empty), replaces the
+// extended key usage: serverAuth for a leaf, none for a CA.
+func (p *testPKI) sign(cn string, names []string, ca bool, parent *x509.Certificate, parentKey *ecdsa.PrivateKey, from, until time.Time, eku ...x509.ExtKeyUsage) (*x509.Certificate, *ecdsa.PrivateKey) {
 	p.t.Helper()
 	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	tmpl := &x509.Certificate{
@@ -45,6 +46,9 @@ func (p *testPKI) sign(cn string, names []string, ca bool, parent *x509.Certific
 	}
 	if ca {
 		tmpl.KeyUsage, tmpl.ExtKeyUsage = x509.KeyUsageCertSign, nil
+	}
+	if eku != nil {
+		tmpl.ExtKeyUsage = eku
 	}
 	if parent == nil {
 		parent, parentKey = tmpl, key
@@ -121,6 +125,12 @@ func TestParseUpload(t *testing.T) {
 		t.Errorf("chaining to a trusted root: public %v, %v", got.public, err)
 	}
 
+	// No extended key usage means any use, a private CA's included.
+	anyUse, anyUseKey := p.sign("any.example.com", []string{"any.example.com"}, false, p.inter, p.interKey, at.Add(-time.Hour), at.Add(time.Hour), []x509.ExtKeyUsage{}...)
+	if _, err := parseUpload(pemCerts(anyUse, p.inter), pemKey(t, anyUseKey), at, nil); err != nil {
+		t.Errorf("a leaf without extended key usage: %v", err)
+	}
+
 	other, otherKey := p.issue([]string{"other.example.com"}, at.Add(-time.Hour), at.Add(time.Hour))
 	expired, expiredKey := p.issue([]string{"old.example.com"}, at.Add(-48*time.Hour), at.Add(-time.Hour))
 	future, futureKey := p.issue([]string{"new.example.com"}, at.Add(time.Hour), at.Add(48*time.Hour))
@@ -133,7 +143,12 @@ func TestParseUpload(t *testing.T) {
 	twinRoot, twinRootKey := p.sign("Twin CA", nil, true, nil, nil, at.Add(-48*time.Hour), at.Add(48*time.Hour))
 	twin, twinKey := p.sign("Twin CA", nil, true, twinRoot, twinRootKey, at.Add(-48*time.Hour), at.Add(-time.Hour))
 	underTwin, underTwinKey := p.sign("twin.example.com", []string{"twin.example.com"}, false, twin, twinKey, at.Add(-time.Hour), at.Add(time.Hour))
+	client, clientKey := p.sign("client.example.com", []string{"client.example.com"}, false, p.inter, p.interKey, at.Add(-time.Hour), at.Add(time.Hour), x509.ExtKeyUsageClientAuth)
+	clientCA, clientCAKey := p.sign("Client Issuing CA", nil, true, p.root, p.rootKey, at.Add(-time.Hour), at.Add(time.Hour), x509.ExtKeyUsageClientAuth)
+	underClient, underClientKey := p.sign("uc.example.com", []string{"uc.example.com"}, false, clientCA, clientCAKey, at.Add(-time.Hour), at.Add(time.Hour))
 	for _, c := range []struct{ name, chain, key, want string }{
+		{"a client authentication leaf", pemCerts(client, p.inter), pemKey(t, clientKey), "doesn't include server authentication"},
+		{"a client authentication intermediate", pemCerts(underClient, clientCA), pemKey(t, underClientKey), "Client Issuing CA may not issue server certificates"},
 		{"an expired intermediate", pemCerts(underOld, oldCA), pemKey(t, underOldKey), "Old Issuing CA isn't valid now"},
 		{"an expired intermediate named like its issuer", pemCerts(underTwin, twin), pemKey(t, underTwinKey), "Twin CA isn't valid now"},
 		{"key of another certificate", pemCerts(leaf, p.inter), pemKey(t, otherKey), "doesn't belong to any certificate"},

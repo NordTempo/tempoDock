@@ -45,6 +45,9 @@ type globals struct {
 	// started is set once flags and arguments were accepted, so errors
 	// before that point are usage errors.
 	started bool
+	// warnedPlain is set once connect warned that the server is plain
+	// http, so a command that connects twice warns once.
+	warnedPlain bool
 }
 
 // run executes one command line against io and returns the exit code.

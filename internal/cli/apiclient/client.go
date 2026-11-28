@@ -96,6 +96,12 @@ func (c *Client) Remote() bool {
 	return ip == nil || !ip.IsLoopback()
 }
 
+// Plaintext reports whether the server URL is plain http: the token and
+// everything sent go unencrypted unless a tunnel encrypts them.
+func (c *Client) Plaintext() bool {
+	return c.base.Scheme == "http"
+}
+
 // NewRequest builds a request for path (which may include a query string),
 // relative to the server URL, with auth and User-Agent set. The first one
 // with a method other than GET or HEAD runs BeforeChange.

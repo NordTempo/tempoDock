@@ -388,6 +388,18 @@ func parseUpload(chainPEM, keyPEM string, at time.Time, roots *x509.CertPool) (p
 		return parsedCert{}, invalid("the certificate isn't valid until %s; upload it then, or check the server's clock", leaf.NotBefore.UTC().Format(time.DateTime))
 	}
 
+	// Browsers refuse a certificate for a website when its extended key
+	// usage, or an issuer's above it, leaves out server authentication.
+	// Public trust stays a classification: private CAs pass this too.
+	if !servesTLS(leaf) {
+		return parsedCert{}, invalid("the certificate's extended key usage doesn't include server authentication (it may be for client authentication only), so browsers would refuse it; request one for TLS server authentication (serverAuth)")
+	}
+	for _, ic := range chain[1:] {
+		if !servesTLS(ic) {
+			return parsedCert{}, invalid("the chain's %s may not issue server certificates (its extended key usage leaves out serverAuth); get the CA's intermediates for TLS server certificates", certName(ic)[4:])
+		}
+	}
+
 	var out bytes.Buffer
 	for _, c := range chain {
 		_ = pem.Encode(&out, &pem.Block{Type: "CERTIFICATE", Bytes: c.Raw})
@@ -417,6 +429,17 @@ func parseUpload(chainPEM, keyPEM string, at time.Time, roots *x509.CertPool) (p
 		leaf: leaf, notAfter: end, names: names, chainPEM: out.Bytes(), keyPEM: keyOut,
 		fingerprint: hex.EncodeToString(sum[:]), issuer: issuerName(leaf), public: verr == nil,
 	}, nil
+}
+
+// servesTLS reports whether c's extended key usage allows TLS server
+// authentication: it names none (any use), serverAuth or any.
+func servesTLS(c *x509.Certificate) bool {
+	if len(c.ExtKeyUsage) == 0 && len(c.UnknownExtKeyUsage) == 0 {
+		return true
+	}
+	return slices.ContainsFunc(c.ExtKeyUsage, func(u x509.ExtKeyUsage) bool {
+		return u == x509.ExtKeyUsageServerAuth || u == x509.ExtKeyUsageAny
+	})
 }
 
 // parseKey reads a PEM private key: PKCS#8, PKCS#1 (RSA) or SEC 1 (EC).
