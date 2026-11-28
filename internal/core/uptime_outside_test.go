@@ -25,6 +25,7 @@ func TestOutsideUptimeChecksValidateAndCheckTheirActor(t *testing.T) {
 		{apitypes.AddUptimeCheckRequest{URL: "http://db/"}, apitypes.CodeValidation},
 		{apitypes.AddUptimeCheckRequest{URL: "https://status.vendor.example:8443/"}, apitypes.CodeValidation},
 		{apitypes.AddUptimeCheckRequest{URL: "https://user:pw@status.vendor.example/"}, apitypes.CodeValidation},
+		{apitypes.AddUptimeCheckRequest{URL: "http://[::1]/"}, apitypes.CodeValidation},
 	} {
 		if _, err := h.c.AddOutsideUptimeCheck(h.ctx, testSystem, tc.req); CodeOf(err) != tc.code {
 			t.Errorf("add %+v: %v, want %s", tc.req, err, tc.code)
@@ -37,6 +38,10 @@ func TestOutsideUptimeChecksValidateAndCheckTheirActor(t *testing.T) {
 	if chk.URL != "https://status.vendor.example/" || chk.IntervalSeconds != 60 || chk.ExpectStatus != "200" {
 		t.Fatalf("check = %+v", chk)
 	}
+	// A public IPv6 address keeps its brackets.
+	if v6, err := h.c.AddOutsideUptimeCheck(h.ctx, testSystem, apitypes.AddUptimeCheckRequest{URL: "https://[2606:4700:4700::1111]/"}); err != nil || v6.URL != "https://[2606:4700:4700::1111]/" {
+		t.Errorf("an IPv6 address: %+v, %v", v6, err)
+	}
 	if _, err := h.c.AddOutsideUptimeCheck(h.ctx, testSystem, apitypes.AddUptimeCheckRequest{URL: chk.URL}); CodeOf(err) != apitypes.CodeConflict {
 		t.Errorf("the same URL twice: %v, want conflict", err)
 	}
@@ -46,7 +51,7 @@ func TestOutsideUptimeChecksValidateAndCheckTheirActor(t *testing.T) {
 
 	// Readers see them; deployers and a project's admin token don't change them.
 	reader, dev := h.user("reader@example.com", apitypes.ScopeRead), h.user("dev@example.com", apitypes.ScopeDeploy)
-	if got, err := h.c.ListOutsideUptimeChecks(h.ctx, reader); err != nil || len(got) != 1 {
+	if got, err := h.c.ListOutsideUptimeChecks(h.ctx, reader); err != nil || len(got) != 2 {
 		t.Errorf("reader lists %v, %v", got, err)
 	}
 	shopAdmin := h.token(testSystem, apitypes.CreateTokenRequest{Name: "shop", Scope: apitypes.ScopeAdmin, Project: "shop"})
@@ -154,5 +159,32 @@ func (h *harness) eventuallyStatus(slug string, want apitypes.ComponentStatus) a
 			h.t.Fatalf("status page %s is %s, want %s", slug, p.Status, want)
 		}
 		time.Sleep(2 * time.Millisecond)
+	}
+}
+
+// An outage marks the days it spans; one resolved at midnight ends the
+// day before.
+func TestMarkOutage(t *testing.T) {
+	since := int64(40 * uptimeDay)
+	at := time.Unix(since+3*uptimeDay+3600, 0)
+	day := func(d int, sec int64) time.Time { return time.Unix(since+int64(d)*uptimeDay+sec, 0) }
+	for _, tc := range []struct {
+		opened   time.Time
+		resolved *time.Time
+		want     []bool
+	}{
+		{day(1, 600), new(day(1, 900)), []bool{false, true, false, false}},
+		{day(0, 600), new(day(2, 0)), []bool{true, true, false, false}},
+		{day(2, 600), nil, []bool{false, false, true, true}},
+	} {
+		days := make([]apitypes.StatusDay, 4)
+		markOutage(days, since, tc.opened, tc.resolved, at)
+		got := make([]bool, len(days))
+		for i, d := range days {
+			got[i] = d.Outage
+		}
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("%v to %v: %v, want %v", tc.opened, tc.resolved, got, tc.want)
+		}
 	}
 }

@@ -338,7 +338,7 @@ func checkTiming(req apitypes.AddUptimeCheckRequest, floor time.Duration) (int64
 func seconds(d time.Duration) string { return strconv.Itoa(int(d/time.Second)) + " seconds" }
 
 // parseCheckURL validates a check's URL and returns it parsed and
-// normalized (lower-case host, no fragment, path at least "/"): http or
+// normalized (lower-case host, no port or fragment, path at least "/"): http or
 // https, no credentials, no port other than the scheme's.
 func parseCheckURL(raw string) (*url.URL, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
@@ -356,6 +356,9 @@ func parseCheckURL(raw string) (*url.URL, error) {
 		return nil, invalid("uptime checks probe a site as visitors reach it, on ports 80 and 443; drop the port %s", p)
 	}
 	u.Host, u.Fragment, u.RawFragment = strings.ToLower(u.Hostname()), "", ""
+	if strings.Contains(u.Host, ":") {
+		u.Host = "[" + u.Host + "]" // an IPv6 address stays bracketed
+	}
 	if u.Path == "" {
 		u.Path = "/"
 	}

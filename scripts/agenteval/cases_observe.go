@@ -135,7 +135,7 @@ func observeCases() []Case {
 					return err
 				}
 				return expect(slices.ContainsFunc(checks, func(c apitypes.UptimeCheck) bool {
-					return strings.HasPrefix(c.URL, "https://api.payvendor.example/health")
+					return c.URL == "https://api.payvendor.example/health"
 				}), "no outside check of the vendor's API: %+v", checks)
 			},
 		},

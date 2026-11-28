@@ -45,6 +45,7 @@ import {
   ScheduleMaintenanceDialog,
   windowText,
 } from "./IncidentEditor";
+import { shellArg } from "./OutsideChecks";
 import { impactText, Sources } from "./parts";
 
 /**
@@ -910,6 +911,12 @@ function ComponentDialog({
   const candidates = useQuery(statusQueries.sources());
   const outside = useQuery(statusQueries.outside());
   const [staged, setStaged] = useState<StagedCheck[]>([]);
+  // While staged checks are added and the component saved, the dialog
+  // neither changes nor closes: what is saved is what was submitted.
+  const [busy, setBusy] = useState(false);
+  const close = () => {
+    if (!busy) onClose();
+  };
   const list = toInputs(page);
   const start: StatusComponentInput =
     index === null
@@ -933,23 +940,29 @@ function ComponentDialog({
   // Staged checks are added first, then the component names them; one
   // added stays ticked (and unstaged) if saving the component fails.
   const submit = async (next: StatusComponentInput[], at: number) => {
-    let comp = c;
-    for (const st of staged) {
-      const made = await addOutside.mutateAsync(st);
-      comp = {
-        ...comp,
-        sources: [...(comp.sources ?? []), { check: made.id }],
-      };
-      setC(comp);
-      setStaged((all) => all.filter((x) => x !== st));
+    setBusy(true);
+    try {
+      let comp = c;
+      for (const st of staged) {
+        const made = await addOutside.mutateAsync(st);
+        comp = {
+          ...comp,
+          sources: [...(comp.sources ?? []), { check: made.id }],
+        };
+        setC(comp);
+        setStaged((all) => all.filter((x) => x !== st));
+      }
+      next[at] = comp;
+      await set.mutateAsync(next);
+      onClose();
+    } finally {
+      setBusy(false);
     }
-    next[at] = comp;
-    save(next);
   };
   const cli = [
     ...staged.map(
       (st) =>
-        `dock uptime add ${st.url} --outside --status ${st.expect_status} &&`,
+        `dock uptime add ${shellArg(st.url)} --outside --status ${shellArg(st.expect_status)} &&`,
     ),
     `dock status-page component add ${page.slug} "${c.name || "<name>"}"`,
     ...sources.map((s) =>
@@ -964,7 +977,7 @@ function ComponentDialog({
   return (
     <Dialog
       title={index === null ? "Add component" : `Edit ${start.name}`}
-      onClose={onClose}
+      onClose={close}
       wide
     >
       <form
@@ -974,120 +987,122 @@ function ComponentDialog({
           const next = [...list];
           if (index === null) next.push(c);
           else next[index] = c;
-          // The error shows in the footer (addOutside.error).
+          // The error shows in the footer (addOutside or set's).
           submit(next, index ?? next.length - 1).catch(() => {});
         }}
       >
-        <label className="flex flex-col gap-1 text-xs text-mut">
-          Public name, what everyone sees
-          <input
-            className="field text-sm text-fg"
-            value={c.name}
-            maxLength={60}
-            placeholder="API"
-            onChange={(e) => setC({ ...c, name: e.target.value })}
-          />
-        </label>
-        <div className="flex flex-wrap gap-3">
+        <fieldset disabled={busy} className="contents">
           <label className="flex flex-col gap-1 text-xs text-mut">
-            Group
-            <input
-              className="field w-48 text-sm text-fg"
-              value={c.group ?? ""}
-              maxLength={40}
-              placeholder="Core"
-              list="status-groups"
-              onChange={(e) => setC({ ...c, group: e.target.value })}
-            />
-            <datalist id="status-groups">
-              {[
-                ...new Set(page.components.map((x) => x.group).filter(Boolean)),
-              ].map((g) => (
-                <option key={g} value={g} />
-              ))}
-            </datalist>
-          </label>
-          <label className="flex min-w-64 flex-1 flex-col gap-1 text-xs text-mut">
-            Description, shown next to the name
+            Public name, what everyone sees
             <input
               className="field text-sm text-fg"
-              value={c.description ?? ""}
-              maxLength={200}
-              onChange={(e) => setC({ ...c, description: e.target.value })}
+              value={c.name}
+              maxLength={60}
+              placeholder="API"
+              onChange={(e) => setC({ ...c, name: e.target.value })}
             />
           </label>
-        </div>
-        <Check
-          label="Status from the sources' uptime checks and health"
-          checked={c.auto !== false}
-          onChange={(on) => setC({ ...c, auto: on })}
-        />
-        <div className="flex flex-col gap-1">
-          <span className="text-xs text-mut">
-            Shows (private): a service covers all its uptime checks and its
-            health; or pick single checks
-          </span>
-          <div className="max-h-72 overflow-y-auto border-y border-line py-1.5">
-            {candidates.isPending && (
-              <p className="text-mut">Loading services…</p>
-            )}
-            <ErrorText error={candidates.error} />
-            {candidates.data?.map((svc) => (
-              <div key={svc.service} className="py-0.5">
-                <Check
-                  label={<span className="font-mono">{svc.service}</span>}
-                  checked={has(svc.service)}
-                  onChange={(on) => toggle(on, { service: svc.service })}
-                />
-                {svc.checks.map((chk) => (
-                  <div key={chk.id} className="pl-6">
-                    <Check
-                      label={
-                        <span className="font-mono text-sec">{chk.url}</span>
-                      }
-                      checked={hasCheck(chk.id)}
-                      disabled={has(svc.service)}
-                      onChange={(on) => toggle(on, { check: chk.id })}
-                    />
-                  </div>
+          <div className="flex flex-wrap gap-3">
+            <label className="flex flex-col gap-1 text-xs text-mut">
+              Group
+              <input
+                className="field w-48 text-sm text-fg"
+                value={c.group ?? ""}
+                maxLength={40}
+                placeholder="Core"
+                list="status-groups"
+                onChange={(e) => setC({ ...c, group: e.target.value })}
+              />
+              <datalist id="status-groups">
+                {[
+                  ...new Set(
+                    page.components.map((x) => x.group).filter(Boolean),
+                  ),
+                ].map((g) => (
+                  <option key={g} value={g} />
                 ))}
-              </div>
-            ))}
-            {candidates.data?.length === 0 && (
-              <p className="text-mut">No services yet.</p>
-            )}
-            <OutsideSources
-              checks={outside.data ?? []}
-              staged={staged}
-              hasCheck={hasCheck}
-              onToggle={(on, id) => toggle(on, { check: id })}
-              onStage={(st) => setStaged([...staged, st])}
-              onUnstage={(st) => setStaged(staged.filter((x) => x !== st))}
-            />
+              </datalist>
+            </label>
+            <label className="flex min-w-64 flex-1 flex-col gap-1 text-xs text-mut">
+              Description, shown next to the name
+              <input
+                className="field text-sm text-fg"
+                value={c.description ?? ""}
+                maxLength={200}
+                onChange={(e) => setC({ ...c, description: e.target.value })}
+              />
+            </label>
           </div>
-        </div>
-        <DialogFoot
-          cli={cli}
-          note={<ErrorText error={addOutside.error ?? set.error} />}
-        >
-          {index !== null && (
-            <Button
-              danger
-              disabled={set.isPending}
-              onClick={() => save(list.filter((_, i) => i !== index))}
-            >
-              Remove
-            </Button>
-          )}
-          <Button onClick={onClose}>Cancel</Button>
-          <Button
-            type="submit"
-            primary
-            disabled={!c.name.trim() || set.isPending || addOutside.isPending}
+          <Check
+            label="Status from the sources' uptime checks and health"
+            checked={c.auto !== false}
+            onChange={(on) => setC({ ...c, auto: on })}
+          />
+          <div className="flex flex-col gap-1">
+            <span className="text-xs text-mut">
+              Shows (private): a service covers all its uptime checks and its
+              health; or pick single checks
+            </span>
+            <div className="max-h-72 overflow-y-auto border-y border-line py-1.5">
+              {candidates.isPending && (
+                <p className="text-mut">Loading services…</p>
+              )}
+              <ErrorText error={candidates.error} />
+              {candidates.data?.map((svc) => (
+                <div key={svc.service} className="py-0.5">
+                  <Check
+                    label={<span className="font-mono">{svc.service}</span>}
+                    checked={has(svc.service)}
+                    onChange={(on) => toggle(on, { service: svc.service })}
+                  />
+                  {svc.checks.map((chk) => (
+                    <div key={chk.id} className="pl-6">
+                      <Check
+                        label={
+                          <span className="font-mono text-sec">{chk.url}</span>
+                        }
+                        checked={hasCheck(chk.id)}
+                        disabled={has(svc.service)}
+                        onChange={(on) => toggle(on, { check: chk.id })}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ))}
+              {candidates.data?.length === 0 && (
+                <p className="text-mut">No services yet.</p>
+              )}
+              <OutsideSources
+                checks={outside.data ?? []}
+                staged={staged}
+                hasCheck={hasCheck}
+                onToggle={(on, id) => toggle(on, { check: id })}
+                onStage={(st) => setStaged([...staged, st])}
+                onUnstage={(st) => setStaged(staged.filter((x) => x !== st))}
+              />
+            </div>
+          </div>
+          <DialogFoot
+            cli={cli}
+            note={<ErrorText error={addOutside.error ?? set.error} />}
           >
-            {index === null ? "Add" : "Save"}
-          </Button>
-        </DialogFoot>
+            {index !== null && (
+              <Button
+                danger
+                disabled={set.isPending}
+                onClick={() => save(list.filter((_, i) => i !== index))}
+              >
+                Remove
+              </Button>
+            )}
+            <Button onClick={close} disabled={busy}>
+              Cancel
+            </Button>
+            <Button type="submit" primary disabled={!c.name.trim() || busy}>
+              {index === null ? "Add" : "Save"}
+            </Button>
+          </DialogFoot>
+        </fieldset>
       </form>
     </Dialog>
   );

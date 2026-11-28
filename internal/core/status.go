@@ -931,6 +931,9 @@ func markOutage(days []apitypes.StatusDay, since int64, opened time.Time, resolv
 	}
 	first := max(int((opened.Unix()-since)/uptimeDay), 0)
 	last := min(int((end.Unix()-since)/uptimeDay), len(days)-1)
+	if resolved != nil && (end.Unix()-since)%uptimeDay == 0 {
+		last-- // resolved at midnight: the day starting then had none of it
+	}
 	for d := first; d <= last; d++ {
 		days[d].Outage = true
 	}

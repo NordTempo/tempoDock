@@ -33,6 +33,13 @@ import {
 // add, change and remove them; the component dialog adds them too. Live
 // state comes from uptime events (data/live.ts).
 
+/**
+ * A value as one shell argument for a CLI hint: as it is when it is
+ * plain, else in single quotes ("?a=1&b=2" would end the command).
+ */
+export const shellArg = (v: string) =>
+  /^[\w@%+=:,./-]+$/.test(v) ? v : `'${v.replaceAll("'", "'\\''")}'`;
+
 /** Outside checks are probed at most once a minute. */
 const floor = 60;
 
@@ -290,7 +297,7 @@ function AddOutside({
         primary
         type="submit"
         className={control}
-        cli={`dock uptime add ${typed || "<url>"} --outside --status ${status} --interval ${intervalS}s`}
+        cli={`dock uptime add ${typed ? shellArg(typed) : "<url>"} --outside --status ${shellArg(status)} --interval ${intervalS}s`}
         disabled={!typed || add.isPending}
         reason={typed ? undefined : "type a URL first"}
       >

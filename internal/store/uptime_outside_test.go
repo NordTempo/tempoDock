@@ -7,8 +7,9 @@ import (
 )
 
 // TestOutsideUptimeChecksMigration: a service's checks keep their ID,
-// history and status page sources through the rebuild (ADR 0055), and a
-// check is then a service's or an organization's, never both or neither.
+// history and status page sources through the rebuild (ADR 0055), a
+// check is then a service's or an organization's, never both or neither,
+// and a project named status is renamed out of the Status page's way.
 func TestOutsideUptimeChecksMigration(t *testing.T) {
 	ctx := context.Background()
 	path := openBefore(t, "_outside_uptime_checks.sql",
@@ -23,6 +24,9 @@ func TestOutsideUptimeChecksMigration(t *testing.T) {
 		`INSERT INTO status_pages (id, org_id, slug, title, created_at, created_by) VALUES (1, 1, 'acme', 'Acme', '2026-11-01', 'a')`,
 		`INSERT INTO status_components (id, page_id, position, name) VALUES (1, 1, 0, 'Web')`,
 		`INSERT INTO status_sources (component_id, check_id) VALUES (1, 7)`,
+		`INSERT INTO projects (id, org_id, name) VALUES (2, 1, 'status')`,
+		// Check 9 was removed; its alert stays.
+		`INSERT INTO alerts (key, kind, severity, title, opened_at, updated_at, resolved_at) VALUES ('uptime:9', 'uptime_down', 'critical', 'gone', '2026-11-01', '2026-11-01', '2026-11-01')`,
 	)
 	s, err := Open(ctx, path)
 	if err != nil {
@@ -38,9 +42,25 @@ func TestOutsideUptimeChecksMigration(t *testing.T) {
 	if err := s.DB.QueryRow(`SELECT (SELECT count(*) FROM uptime_stats WHERE check_id = 7), (SELECT count(*) FROM status_sources WHERE check_id = 7)`).Scan(&stats, &sources); err != nil || stats != 1 || sources != 1 {
 		t.Fatalf("history %d, sources %d, %v; want 1 and 1", stats, sources, err)
 	}
+	// A project named status moves aside for the Status page, and says so.
+	var name string
+	var audits int
+	if err := s.DB.QueryRow(`SELECT name, (SELECT count(*) FROM audit_events WHERE action = 'project.rename' AND project_id = 2) FROM projects WHERE id = 2`).Scan(&name, &audits); err != nil || name != "status-2" || audits != 1 {
+		t.Errorf("project status: %q, %d audit events, %v; want status-2 and 1", name, audits, err)
+	}
+	// New IDs start past every one an alert names, and a removed check's
+	// ID is never given again: its alerts would become the new check's.
 	org := int64(1)
-	if _, err := s.CreateUptimeCheck(ctx, CreateUptimeCheckParams{OrgID: &org, Url: "https://status.vendor.example/", ExpectStatus: 200, IntervalS: 60, TimeoutMs: 10000, CreatedAt: time.Now()}); err != nil {
-		t.Errorf("an outside check: %v", err)
+	outside := CreateUptimeCheckParams{OrgID: &org, Url: "https://status.vendor.example/", ExpectStatus: 200, IntervalS: 60, TimeoutMs: 10000, CreatedAt: time.Now()}
+	c1, err := s.CreateUptimeCheck(ctx, outside)
+	if err != nil || c1.ID != 10 {
+		t.Fatalf("an outside check: %d, %v; want ID 10", c1.ID, err)
+	}
+	if err := s.DeleteUptimeCheck(ctx, c1.ID); err != nil {
+		t.Fatal(err)
+	}
+	if c2, err := s.CreateUptimeCheck(ctx, outside); err != nil || c2.ID != 11 {
+		t.Errorf("after removing check 10: ID %d, %v; want 11", c2.ID, err)
 	}
 	for name, p := range map[string]CreateUptimeCheckParams{
 		"both":    {ServiceID: &org, OrgID: &org},
