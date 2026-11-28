@@ -35,13 +35,22 @@ WHERE name = 'uptime_checks';
 
 -- The UI's organization page Status is /<org>/status now (ADR 0073,
 -- 2026-11-28), which would shadow a project named status: such a
--- project becomes status-<id>, as `dock project rename` would (its ID,
--- services, domains and history stay; its open alerts carry the new
--- name), and its organization's Activity says so.
+-- project becomes status-<id> (with a random suffix when its
+-- organization has that name already), as `dock project rename` would
+-- (its ID, services, domains and history stay; its open alerts carry
+-- the new name), and its organization's Activity says so.
+CREATE TEMP TABLE status_renames AS
+SELECT p.id, p.org_id,
+  CASE WHEN EXISTS (SELECT 1 FROM projects AS o WHERE o.org_id = p.org_id AND o.name = 'status-' || p.id)
+    THEN 'status-' || p.id || '-' || lower(hex(randomblob(3)))
+    ELSE 'status-' || p.id END AS name
+FROM projects AS p WHERE p.name = 'status';
 INSERT INTO audit_events (actor, actor_kind, action, project_id, target, summary, org_id)
-SELECT 'system', 'system', 'project.rename', id, 'status-' || id,
-  'renamed project status to status-' || id || ': /<organization>/status is the Status page now; rename it again with `dock project rename`', org_id
-FROM projects WHERE name = 'status';
-UPDATE alerts SET project = 'status-' || project_id
-WHERE project = 'status' AND project_id IN (SELECT id FROM projects WHERE name = 'status');
-UPDATE projects SET name = 'status-' || id WHERE name = 'status';
+SELECT 'system', 'system', 'project.rename', id, name,
+  'renamed project status to ' || name || ': /<organization>/status is the Status page now; rename it again with `dock project rename`', org_id
+FROM status_renames;
+UPDATE alerts SET project = (SELECT name FROM status_renames WHERE status_renames.id = alerts.project_id)
+WHERE project = 'status' AND project_id IN (SELECT id FROM status_renames);
+UPDATE projects SET name = (SELECT name FROM status_renames WHERE status_renames.id = projects.id)
+WHERE id IN (SELECT id FROM status_renames);
+DROP TABLE status_renames;

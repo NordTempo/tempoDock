@@ -143,7 +143,8 @@ since it holds the pages and the outside checks they show; the old
 `/<org>/status-pages/...` paths redirect to the same path under
 `/status`, and `status` joins the project names that are refused. An
 existing project named `status` is renamed `status-<id>` by migration
-0143, as `dock project rename` would (services, domains and history
+0143 (with a random suffix when its organization has that name
+already), as `dock project rename` would (services, domains and history
 stay), with an entry in its organization's Activity. CLI
 commands keep their names (`dock status` is a service's health, `dock
 status-page` the pages).

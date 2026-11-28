@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"regexp"
 	"testing"
 	"time"
 )
@@ -24,7 +25,8 @@ func TestOutsideUptimeChecksMigration(t *testing.T) {
 		`INSERT INTO status_pages (id, org_id, slug, title, created_at, created_by) VALUES (1, 1, 'acme', 'Acme', '2026-11-01', 'a')`,
 		`INSERT INTO status_components (id, page_id, position, name) VALUES (1, 1, 0, 'Web')`,
 		`INSERT INTO status_sources (component_id, check_id) VALUES (1, 7)`,
-		`INSERT INTO projects (id, org_id, name) VALUES (2, 1, 'status')`,
+		`INSERT INTO orgs (id, slug, name) VALUES (2, 'two', 'Two')`,
+		`INSERT INTO projects (id, org_id, name) VALUES (2, 1, 'status'), (3, 1, 'status-2'), (4, 2, 'status')`,
 		// Check 9 was removed; its alert stays.
 		`INSERT INTO alerts (key, kind, severity, title, opened_at, updated_at, resolved_at) VALUES ('uptime:9', 'uptime_down', 'critical', 'gone', '2026-11-01', '2026-11-01', '2026-11-01')`,
 	)
@@ -43,10 +45,14 @@ func TestOutsideUptimeChecksMigration(t *testing.T) {
 		t.Fatalf("history %d, sources %d, %v; want 1 and 1", stats, sources, err)
 	}
 	// A project named status moves aside for the Status page, and says so.
-	var name string
-	var audits int
-	if err := s.DB.QueryRow(`SELECT name, (SELECT count(*) FROM audit_events WHERE action = 'project.rename' AND project_id = 2) FROM projects WHERE id = 2`).Scan(&name, &audits); err != nil || name != "status-2" || audits != 1 {
-		t.Errorf("project status: %q, %d audit events, %v; want status-2 and 1", name, audits, err)
+	// Org one has a status-2 already, so its status gets a suffix.
+	for id, want := range map[int64]string{2: `^status-2-[0-9a-f]{6}$`, 4: `^status-4$`} {
+		var name string
+		var audits int
+		if err := s.DB.QueryRow(`SELECT name, (SELECT count(*) FROM audit_events WHERE action = 'project.rename' AND project_id = ?1 AND target = projects.name) FROM projects WHERE id = ?1`, id).Scan(&name, &audits); err != nil ||
+			!regexp.MustCompile(want).MatchString(name) || audits != 1 {
+			t.Errorf("project %d: %q, %d audit events, %v; want %s and 1", id, name, audits, err, want)
+		}
 	}
 	// New IDs start past every one an alert names, and a removed check's
 	// ID is never given again: its alerts would become the new check's.

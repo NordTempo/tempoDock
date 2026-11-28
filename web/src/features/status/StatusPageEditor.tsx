@@ -914,6 +914,8 @@ function ComponentDialog({
   // While staged checks are added and the component saved, the dialog
   // neither changes nor closes: what is saved is what was submitted.
   const [busy, setBusy] = useState(false);
+  // Saving or removing: no second call starts until the first ends.
+  const pending = busy || set.isPending;
   const close = () => {
     if (!busy) onClose();
   };
@@ -1089,7 +1091,7 @@ function ComponentDialog({
             {index !== null && (
               <Button
                 danger
-                disabled={set.isPending}
+                disabled={pending}
                 onClick={() => save(list.filter((_, i) => i !== index))}
               >
                 Remove
@@ -1098,7 +1100,7 @@ function ComponentDialog({
             <Button onClick={close} disabled={busy}>
               Cancel
             </Button>
-            <Button type="submit" primary disabled={!c.name.trim() || busy}>
+            <Button type="submit" primary disabled={!c.name.trim() || pending}>
               {index === null ? "Add" : "Save"}
             </Button>
           </DialogFoot>
