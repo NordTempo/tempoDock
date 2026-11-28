@@ -132,11 +132,12 @@ func registerData(s *Server, a huma.API) {
 		After  string `query:"after" doc:"The previous page's next cursor"`
 		Limit  int    `query:"limit" minimum:"0" maximum:"1000" doc:"Rows per page; 0 means 100"`
 		Filter string `query:"filter" doc:"JSON array of DataFilter, ANDed, e.g. [{\"column\":\"status\",\"op\":\"eq\",\"value\":\"paid\"}]"`
+		Where  string `query:"where" maxLength:"65536" doc:"MongoDB: a find filter, Extended JSON as typed in the shell, e.g. {status: \"open\"}; ANDed with filter"`
 		Count  bool   `query:"count" doc:"Also count the matching rows exactly (under the statement timeout)"`
 		Full   bool   `query:"full" doc:"Untruncated cells; only with limit 1"`
 		Reveal bool   `query:"reveal" doc:"Show the table's sensitive columns instead of masking them. Needs sensitive visible (403 otherwise); audited as data.reveal"`
 	}) (*out[apitypes.DataPage], error) {
-		req := apitypes.DataPageRequest{Table: in.Table, Order: in.Order, After: in.After, Limit: in.Limit, Count: in.Count, Full: in.Full, Reveal: in.Reveal}
+		req := apitypes.DataPageRequest{Table: in.Table, Order: in.Order, After: in.After, Limit: in.Limit, Count: in.Count, Full: in.Full, Reveal: in.Reveal, Where: in.Where}
 		var err error
 		if req.Filters, err = datahttp.ParseFilters(in.Filter); err != nil {
 			return nil, err

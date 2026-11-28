@@ -834,6 +834,7 @@ const databaseChoices: { value: DatabaseSetting; label: string }[] = [
   { value: "postgres", label: "postgres" },
   { value: "mysql", label: "mysql" },
   { value: "redis", label: "redis" },
+  { value: "mongodb", label: "mongodb" },
   { value: "none", label: "none" },
 ];
 
@@ -841,6 +842,7 @@ const engineNames: Record<NonNullable<Service["data_engine"]>, string> = {
   postgres: "Postgres",
   mysql: "MySQL or MariaDB",
   redis: "Redis or Valkey",
+  mongodb: "MongoDB",
 };
 
 /** What detection decided, in words. */

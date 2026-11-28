@@ -349,6 +349,14 @@ type Keys interface {
 	CommitKeys(ctx context.Context, t Target, c Call, changes []apitypes.DataKeyChange) (CommitResult, error)
 }
 
+// MasksItself is an engine that can't deny a role one field (MongoDB):
+// it masks sensitive fields in pages itself, and the panel keeps masked
+// callers off the console while any field is marked, since a query could
+// read what the pages mask.
+type MasksItself interface {
+	MasksItself()
+}
+
 // CancelResult is the session a Cancel hit.
 type CancelResult struct {
 	Found       bool

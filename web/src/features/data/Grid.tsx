@@ -21,6 +21,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { bsonText, isBson } from "./bson";
 import { type CellKind, cellKind, cellText, isNumericType } from "./cells";
 import type { DataCell, DataResultColumn, DataRow } from "./types";
 
@@ -230,7 +231,13 @@ export function Grid({
     const kind = cellKind(cell, column.type_name);
     const edit = staged?.(row, column.name);
     const text =
-      edit !== undefined ? (edit ?? "NULL") : cellText(cell, column.type_name);
+      edit !== undefined
+        ? edit === null
+          ? "NULL"
+          : isBson(column.type_name)
+            ? bsonText(edit)
+            : edit
+        : cellText(cell, column.type_name);
     const editable =
       !!onEdit &&
       !!column.editable &&

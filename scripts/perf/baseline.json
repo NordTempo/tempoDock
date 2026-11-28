@@ -350,6 +350,11 @@
       "bytes_op": 1852,
       "allocs_op": 48
     },
+    "data/mongo.BenchmarkAppendDocumentRow": {
+      "ns_op": 97164.6,
+      "bytes_op": 17648,
+      "allocs_op": 600
+    },
     "data/mysql.BenchmarkAppendRow": {
       "ns_op": 80088,
       "bytes_op": 78,

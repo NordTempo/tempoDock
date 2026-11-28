@@ -441,7 +441,8 @@ export const topics: Record<TopicId, Topic> = {
     ],
     related: ["backups", "access", "jobs"],
     guide: "data",
-    words: "postgres mysql redis valkey sql query table rows policy sensitive",
+    words:
+      "postgres mysql redis valkey mongodb documents collections sql query table rows policy sensitive",
   },
 
   backups: {

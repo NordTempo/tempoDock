@@ -14,10 +14,13 @@ const kindMark: Partial<Record<DataTable["kind"], string>> = {
  * (`/`). In the panel's left column in Dock, in the sidebar in tempoBase. `selected` and `onSelect` use "schema.name".
  */
 export function TableList({
+  noun = "table",
   tables,
   selected,
   onSelect,
 }: {
+  /** What the database calls a table: "collection" on MongoDB. */
+  noun?: string;
   tables: readonly DataTable[];
   selected?: string;
   onSelect: (table: string) => void;
@@ -37,8 +40,8 @@ export function TableList({
     <nav aria-label="Tables" className="flex min-h-0 flex-col gap-2">
       <input
         className="g-field h-8"
-        placeholder="Find table  /"
-        aria-label="Find table"
+        placeholder={`Find ${noun}  /`}
+        aria-label={`Find ${noun}`}
         value={filter}
         onChange={(e) => setFilter(e.target.value)}
         onKeyDown={(e) => {

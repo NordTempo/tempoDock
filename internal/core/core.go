@@ -31,6 +31,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/config"
 	"github.com/NordTempo/tempoDock/internal/cpbackup"
 	"github.com/NordTempo/tempoDock/internal/data"
+	"github.com/NordTempo/tempoDock/internal/data/mongo"
 	"github.com/NordTempo/tempoDock/internal/data/mysql"
 	"github.com/NordTempo/tempoDock/internal/data/pg"
 	"github.com/NordTempo/tempoDock/internal/data/redis"
@@ -452,7 +453,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		c.waitTXT = acmedns.WaitTXT
 	}
 	if c.data == nil {
-		c.data = []data.Engine{pg.New(pg.Options{}), mysql.New(mysql.Options{}), redis.New(redis.Options{})}
+		c.data = []data.Engine{pg.New(pg.Options{}), mysql.New(mysql.Options{}), redis.New(redis.Options{}), mongo.New(mongo.Options{})}
 	}
 	if c.lookupTXT == nil {
 		c.lookupTXT = net.DefaultResolver.LookupTXT

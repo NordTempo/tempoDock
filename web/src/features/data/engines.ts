@@ -16,6 +16,8 @@ export const engines: Record<
     dialect: DataEngine;
     /** Tab names that differ from the panel's (Redis' SQL is Commands). */
     labels?: Partial<Record<DataPanelView["tab"], string>>;
+    /** What its rows and tables are called (MongoDB: documents, collections). */
+    nouns: { row: string; table: string };
     health: readonly DataInsightView[];
     healthLabels?: Partial<Record<DataInsightView, string>>;
   }
@@ -23,18 +25,29 @@ export const engines: Record<
   postgres: {
     tabs: ["tables", "sql", "schema", "changes", "health"],
     dialect: "postgres",
+    nouns: { row: "row", table: "table" },
     health: ["overview", "queries", "sessions", "tables", "indexes"],
   },
   mysql: {
     tabs: ["tables", "sql", "schema", "changes", "health"],
     dialect: "mysql",
+    nouns: { row: "row", table: "table" },
     health: ["overview", "queries", "sessions", "tables", "indexes"],
   },
   redis: {
     tabs: ["keys", "sql", "changes", "health"],
     dialect: "redis",
+    nouns: { row: "key", table: "database" },
     labels: { sql: "Commands" },
     health: ["overview", "queries", "sessions", "keys"],
     healthLabels: { queries: "Commands", sessions: "Clients" },
+  },
+  mongodb: {
+    tabs: ["tables", "sql", "changes", "health"],
+    dialect: "mongodb",
+    nouns: { row: "document", table: "collection" },
+    labels: { tables: "Documents", sql: "Query" },
+    health: ["overview", "sessions"],
+    healthLabels: { sessions: "Operations" },
   },
 };

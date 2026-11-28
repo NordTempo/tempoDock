@@ -65,11 +65,12 @@ const (
 type DataEngine string
 
 // Supported engines. EngineMySQL covers MySQL and MariaDB, EngineRedis
-// Redis and Valkey (ADR 0072).
+// Redis and Valkey (ADR 0072), EngineMongoDB MongoDB (ADR 0110).
 const (
 	EnginePostgres DataEngine = "postgres"
 	EngineMySQL    DataEngine = "mysql"
 	EngineRedis    DataEngine = "redis"
+	EngineMongoDB  DataEngine = "mongodb"
 )
 
 // ServerLabel names a database server for people: "Postgres 17.2",
@@ -80,7 +81,7 @@ func ServerLabel(e DataEngine, version string) string {
 	if version != "" && (version[0] < '0' || version[0] > '9') {
 		return version
 	}
-	name := map[DataEngine]string{EnginePostgres: "Postgres", EngineMySQL: "MySQL", EngineRedis: "Redis"}[e]
+	name := map[DataEngine]string{EnginePostgres: "Postgres", EngineMySQL: "MySQL", EngineRedis: "Redis", EngineMongoDB: "MongoDB"}[e]
 	if name == "" {
 		name = string(e)
 	}
@@ -93,7 +94,7 @@ func ServerLabel(e DataEngine, version string) string {
 // DataEngines lists every engine. The store's CHECK constraints list them
 // too (services.database, data_access.engine); its tests check each one
 // takes every engine here, so a new engine needs a migration widening them.
-var DataEngines = []DataEngine{EnginePostgres, EngineMySQL, EngineRedis}
+var DataEngines = []DataEngine{EnginePostgres, EngineMySQL, EngineRedis, EngineMongoDB}
 
 // DatabaseSetting is a service's `database` setting: whether it is a
 // database, overriding detection. It applies immediately and never creates
@@ -112,6 +113,8 @@ const (
 	// DatabaseRedis marks the service as Redis or Valkey (the Redis
 	// template sets it).
 	DatabaseRedis DatabaseSetting = "redis"
+	// DatabaseMongoDB marks the service as MongoDB (the template sets it).
+	DatabaseMongoDB DatabaseSetting = "mongodb"
 	// DatabaseNone marks the service as not a database.
 	DatabaseNone DatabaseSetting = "none"
 )
@@ -120,7 +123,7 @@ const (
 // settings (PUT /services/{s}/database-settings). Only fields that are set
 // change. They apply immediately: never staged, never a release.
 type UpdateDatabaseSettingsRequest struct {
-	Database *DatabaseSetting `json:"database,omitempty" enum:",postgres,mysql,redis,none" doc:"Override database detection; empty detects from the image"`
+	Database *DatabaseSetting `json:"database,omitempty" enum:",postgres,mysql,redis,mongodb,none" doc:"Override database detection; empty detects from the image"`
 	// DatabaseURLVariable names the variable with the connection URL:
 	// DATABASE_URL, or another service's as api.DATABASE_URL. Empty uses
 	// the service's own DATABASE_URL, then the POSTGRES_* variables.
@@ -354,7 +357,7 @@ const (
 // DataInfo is a database service's panel state (GET /data). Services that
 // aren't databases are not_found.
 type DataInfo struct {
-	Engine     DataEngine    `json:"engine" enum:"postgres,mysql,redis"`
+	Engine     DataEngine    `json:"engine" enum:"postgres,mysql,redis,mongodb"`
 	DetectedBy DataDetection `json:"detected_by" enum:"setting,image"`
 	Status     DataStatus    `json:"status" enum:"ready,setup_needed,unsupported,unreachable,not_running"`
 	// Reason explains any status but ready and says what to do.
@@ -517,6 +520,10 @@ type DataPageRequest struct {
 	// key ascending.
 	Order   string       `json:"order,omitempty"`
 	Filters []DataFilter `json:"filters,omitempty"`
+	// Where is a MongoDB find filter, Extended JSON as typed in the shell
+	// ({status: "open", total: {$gt: 100}}), ANDed with Filters. Other
+	// engines refuse it.
+	Where string `json:"where,omitempty" maxLength:"65536"`
 	// After is the Next cursor of the previous page. Cursors are opaque
 	// and only valid with the same table, order and filters.
 	After string `json:"after,omitempty"`
@@ -558,6 +565,10 @@ type DataResultColumn struct {
 //     for a longer value (DataPageRequest.Full fetches all of it);
 //   - {"masked": true} for a sensitive column the caller can't see or
 //     hasn't revealed (DataPageRequest.Reveal).
+//
+// MongoDB's columns are typed bson:<type> ("bson:string"), and each cell
+// is the field's canonical Extended JSON text, null when the document
+// has no such field; a masked path inside it is {"$masked": true}.
 //
 // Values sent to the server (filters, keys, changesets) are strings in
 // the database's text input format (binary values as \x hex), or null; the

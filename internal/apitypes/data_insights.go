@@ -28,8 +28,11 @@ var DataInsightViews = []DataInsightView{InsightOverview, InsightQueries, Insigh
 // InsightViewsOf lists the views an engine has: tables and indexes for
 // the SQL engines, keys for Redis.
 func InsightViewsOf(e DataEngine) []DataInsightView {
-	if e == EngineRedis {
+	switch e {
+	case EngineRedis:
 		return []DataInsightView{InsightOverview, InsightQueries, InsightSessions, InsightKeys}
+	case EngineMongoDB:
+		return []DataInsightView{InsightOverview, InsightSessions}
 	}
 	return DataInsightViews[:5]
 }
@@ -81,7 +84,7 @@ type DataInsightsRequest struct {
 // DataInsights is how a database is doing right now (GET /data/insights).
 // Only the requested views are set.
 type DataInsights struct {
-	Engine DataEngine `json:"engine" enum:"postgres,mysql,redis"`
+	Engine DataEngine `json:"engine" enum:"postgres,mysql,redis,mongodb"`
 	ReadAt time.Time  `json:"read_at"`
 	// Since is when the counters (calls, scans, cache hits) started
 	// counting, at the latest: their last reset, else the server's start.

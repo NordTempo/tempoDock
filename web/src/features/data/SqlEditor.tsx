@@ -95,9 +95,10 @@ function namespace(tables: readonly DataTable[]): SQLNamespace {
 
 // MySQL's "schemas" are its databases: unqualified names complete from
 // the first one's tables (usually the only one).
-// Redis commands get no SQL language: plain text.
+// Redis commands and MongoDB's shell lines get no SQL language: plain
+// text.
 const language = (tables: readonly DataTable[], dialect: DataEngine) =>
-  dialect === "redis"
+  dialect === "redis" || dialect === "mongodb"
     ? []
     : sql({
         dialect: dialect === "mysql" ? MySQL : PostgreSQL,

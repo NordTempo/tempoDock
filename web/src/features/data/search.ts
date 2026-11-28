@@ -12,6 +12,8 @@ export type DataSearch = {
   table?: string;
   order?: string;
   filter?: DataFilter[];
+  /** MongoDB's find filter. */
+  where?: string;
   insight?: DataInsightView;
   db?: number;
   match?: string;
@@ -63,6 +65,7 @@ export function validateDataSearch(
     table: text(search.table),
     order: text(search.order),
     filter: filter.length ? filter : undefined,
+    where: text(search.where),
     insight: insights.find((v) => v === search.insight),
     db:
       typeof search.db === "number" &&
@@ -83,6 +86,7 @@ export const searchView = (search: DataSearch): DataPanelView => ({
   table: search.table,
   order: search.order,
   filters: search.filter,
+  where: search.where,
   insight: search.insight,
   db: search.db,
   match: search.match,
@@ -98,6 +102,7 @@ export const viewSearch = (view: DataPanelView): DataSearch => ({
   table: view.table,
   order: view.order,
   filter: view.filters?.length ? view.filters : undefined,
+  where: view.where || undefined,
   insight: view.tab === "health" ? view.insight : undefined,
   db: view.db || undefined,
   match: view.match,
