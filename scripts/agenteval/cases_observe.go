@@ -126,8 +126,9 @@ func observeCases() []Case {
 			// (ADR 0055), not a service's.
 			Name:   "outside-check",
 			Prompt: "Our checkout depends on our payment vendor's API. Have Dock watch https://api.payvendor.example/health so we get an alert when it goes down.",
-			Token:  TokenSpec{Unlimited: true},
-			Setup:  seedStatusPage,
+			// Organization admins add them: an unlimited admin token.
+			Token: TokenSpec{Scope: apitypes.ScopeAdmin, Unlimited: true},
+			Setup: seedStatusPage,
 			Check: func(w *World, _ Transcript) error {
 				checks, err := get[[]apitypes.UptimeCheck](w.daemon, "/outside-uptime-checks")
 				if err != nil {
